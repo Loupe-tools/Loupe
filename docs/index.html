@@ -9617,27 +9617,27 @@ class PptBinaryRenderer {
       const cfb = new OleCfbParser(buffer).parse();
 
       // Check for VBA macros
-      const vbaDir = cfb.get('_VBA_PROJECT_CUR/VBA/dir') || cfb.get('VBA/dir');
-      const vbaProj = cfb.get('_VBA_PROJECT_CUR/vbaProject.bin') || cfb.get('VBA/vbaProject.bin');
+      const vbaDir = cfb.streams.get('_vba_project_cur/vba/dir') || cfb.streams.get('vba/dir');
+      const vbaProj = cfb.streams.get('_vba_project_cur/vbaproject.bin') || cfb.streams.get('vba/vbaproject.bin');
       if (vbaDir || vbaProj) {
         f.hasMacros = true; f.risk = 'medium';
       }
 
       // Try to extract VBA modules
-      for (const [name, data] of cfb.entries()) {
-        if (/VBA/i.test(name) && !name.endsWith('/')) {
+      for (const [name, data] of cfb.streams.entries()) {
+        if (/vba/i.test(name) && !name.endsWith('/')) {
           f.macroSize += data.length;
           if (!f.hasMacros) { f.hasMacros = true; f.risk = 'medium'; }
         }
       }
 
       // Parse VBA if we can find the project
-      const vbaProjBin = cfb.get('_VBA_PROJECT_CUR/VBA') || cfb.get('_VBA_PROJECT_CUR');
+      const vbaProjBin = cfb.streams.get('_vba_project_cur/vba') || cfb.streams.get('_vba_project_cur');
       if (f.hasMacros) {
         // Try to get raw VBA binary for download
         const rawEntries = [];
-        for (const [name, data] of cfb.entries()) {
-          if (/VBA/i.test(name)) rawEntries.push({ name, data });
+        for (const [name, data] of cfb.streams.entries()) {
+          if (/vba/i.test(name)) rawEntries.push({ name, data });
         }
         if (rawEntries.length) {
           // Concatenate all VBA-related streams
@@ -9648,7 +9648,7 @@ class PptBinaryRenderer {
       }
 
       // Metadata from DocumentSummaryInfo / SummaryInfo streams
-      const summaryInfo = cfb.get('\x05SummaryInformation') || cfb.get('SummaryInformation');
+      const summaryInfo = cfb.streams.get('\x05summaryinformation') || cfb.streams.get('summaryinformation');
       if (summaryInfo) {
         try {
           f.metadata = this._parseSummaryInfo(summaryInfo);
@@ -9665,7 +9665,7 @@ class PptBinaryRenderer {
 
   _extract(cfb) {
     // Get the PowerPoint Document stream
-    const pptDoc = cfb.get('PowerPoint Document') || cfb.get('PowerPoint_Document');
+    const pptDoc = cfb.streams.get('powerpoint document') || cfb.streams.get('powerpoint_document');
     if (!pptDoc) return this._extractFallback(cfb);
 
     const slides = [];
@@ -9749,8 +9749,8 @@ class PptBinaryRenderer {
   _extractFallback(cfb) {
     // Fallback: try to extract any visible text from all streams
     const texts = [];
-    for (const [name, data] of cfb.entries()) {
-      if (/PowerPoint|Current.*User/i.test(name)) {
+    for (const [name, data] of cfb.streams.entries()) {
+      if (/powerpoint|current.*user/i.test(name)) {
         const extracted = this._extractTextFromStream(data);
         if (extracted.length) texts.push(...extracted);
       }
