@@ -153,6 +153,10 @@ Object.assign(App.prototype, {
         const r = new PdfRenderer();
         this.findings = await r.analyzeForSecurity(buffer, file.name);
         docEl = await r.render(buffer);
+      } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'ico', 'tif', 'tiff', 'avif'].includes(ext)) {
+        const r = new ImageRenderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        docEl = r.render(buffer, file.name);
       } else {
         // Catch-all: plain text or hex dump for any unrecognised format
         const r = new PlainTextRenderer();

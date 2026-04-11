@@ -2682,3 +2682,61 @@ body.dark .ppt-slide-content {
 .wsf-script-block {
   margin: 0 8px;
 }
+
+/* ── Image view ─────────────────────────────────────────────────────────── */
+.image-view {
+  padding: 8px;
+  max-width: 1100px;
+}
+
+.image-preview-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  background: repeating-conic-gradient(#f0f0f0 0% 25%, white 0% 50%) 50% / 20px 20px;
+  border-radius: 8px;
+  margin: 8px 0;
+  min-height: 100px;
+}
+
+body.dark .image-preview-wrap {
+  background: repeating-conic-gradient(#1a1a2e 0% 25%, #12131c 0% 50%) 50% / 20px 20px;
+}
+
+.image-preview {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .15);
+}
+
+body.dark .image-preview {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .4);
+}
+
+.image-info {
+  text-align: center;
+  padding: 8px;
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+body.dark .image-info {
+  color: #aaa;
+}
+
+.image-hex-header {
+  padding: 6px 12px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+  color: #888;
+  border-top: 1px solid #eee;
+  margin-top: 8px;
+}
+
+body.dark .image-hex-header {
+  color: #666;
+  border-color: #2a2a3e;
+}

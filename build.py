@@ -51,6 +51,7 @@ JS_FILES = [
     'src/renderers/hta-renderer.js',
     'src/renderers/html-renderer.js',
     'src/renderers/pdf-renderer.js',
+    'src/renderers/image-renderer.js',
     'src/renderers/plaintext-renderer.js',
     'src/app/app-core.js',
     'src/app/app-load.js',
@@ -84,7 +85,7 @@ HTML = f"""<!DOCTYPE html>
     <button class="tb-btn" id="btn-security" title="Toggle security sidebar (S)">🛡 Toggle Sidebar</button>
     <button class="tb-btn" id="btn-yara" title="YARA rule editor (Y)">📐 YARA Rules</button>
     <button class="tb-btn" id="btn-theme" title="Toggle dark mode">🌙</button>
-    <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.ppt,.odt,.odp,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.rtf,.pdf,.zip,.rar,.7z,.cab,.iso,.img,.one,.url,.webloc,.iqy,.slk,.wsf,.wsc,.wsh,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml" style="display:none">
+    <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.ppt,.odt,.odp,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.rtf,.pdf,.zip,.rar,.7z,.cab,.iso,.img,.one,.url,.webloc,.iqy,.slk,.wsf,.wsc,.wsh,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml,.jpg,.jpeg,.png,.gif,.bmp,.webp,.ico,.tif,.tiff,.avif,.svg" style="display:none">
   </div>
 
   <!-- ── Main area (viewer + sidebar side-by-side) ──────────────────── -->
