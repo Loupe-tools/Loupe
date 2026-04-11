@@ -29,7 +29,7 @@ Object.assign(App.prototype, {
     let startX, startW;
     const onMove=e=>{
       const dx=startX-e.clientX;
-      const newW=Math.min(Math.max(startW+dx,200),window.innerWidth*0.6);
+      const newW=Math.min(Math.max(startW+dx,window.innerWidth*0.33),window.innerWidth*0.6);
       sidebar.style.width=newW+'px';
     };
     const onUp=()=>{

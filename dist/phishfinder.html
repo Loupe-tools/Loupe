@@ -58,7 +58,7 @@ body.sb-resizing { cursor: col-resize; user-select: none; }
 
 /* ── Sidebar ── */
 #sidebar {
-  width: fit-content; min-width: 250px; max-width: 50vw; flex-shrink: 0;
+  width: fit-content; min-width: 33vw; max-width: 50vw; flex-shrink: 0;
   border-left: 1px solid #ddd;
   display: flex; flex-direction: column;
   background: #fafafa; overflow: hidden;
@@ -4313,7 +4313,7 @@ Object.assign(App.prototype, {
     let startX, startW;
     const onMove=e=>{
       const dx=startX-e.clientX;
-      const newW=Math.min(Math.max(startW+dx,200),window.innerWidth*0.6);
+      const newW=Math.min(Math.max(startW+dx,window.innerWidth*0.33),window.innerWidth*0.6);
       sidebar.style.width=newW+'px';
     };
     const onUp=()=>{

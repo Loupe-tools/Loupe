@@ -50,7 +50,7 @@ body.sb-resizing { cursor: col-resize; user-select: none; }
 
 /* ── Sidebar ── */
 #sidebar {
-  width: fit-content; min-width: 250px; max-width: 50vw; flex-shrink: 0;
+  width: fit-content; min-width: 33vw; max-width: 50vw; flex-shrink: 0;
   border-left: 1px solid #ddd;
   display: flex; flex-direction: column;
   background: #fafafa; overflow: hidden;
