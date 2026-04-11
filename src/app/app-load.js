@@ -101,11 +101,16 @@ Object.assign(App.prototype, {
 
       const dz=document.getElementById('drop-zone');
       dz.className='has-document'; dz.innerHTML='';
-      const sp=document.createElement('span'); sp.textContent='📁 Drop another file to open'; dz.appendChild(sp);
 
       const pages=pc.querySelectorAll('.page').length;
       const pi=pages>0?`  ·  ${pages} page${pages!==1?'s':''}`:'';
       document.getElementById('file-info').textContent=`${file.name}${pi}  ·  ${this._fmtBytes(file.size)}`;
+      document.getElementById('btn-close').classList.remove('hidden');
+
+      // Enable grab-to-pan on non-plaintext views
+      const viewer=document.getElementById('viewer');
+      const isPlaintext=!!pc.querySelector('.plaintext-view, .hex-view');
+      viewer.classList.toggle('pannable',!isPlaintext);
 
       // Await hashes and render sidebar
       this.fileHashes=await hashPromise;

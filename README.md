@@ -1,4 +1,4 @@
-# 🔒 PhishFinder
+# 🐡 PhishFinder
 
 A **100% offline**, single-file HTML viewer and security analyser for suspicious files.  
 No server, no upload, no tracking — just drop a file and inspect it.

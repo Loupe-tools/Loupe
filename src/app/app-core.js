@@ -13,6 +13,7 @@ class App {
     this._setupDrop();
     this._setupToolbar();
     this._setupSidebarResize();
+    this._setupViewerPan();
     // Keyboard shortcuts: S=toggle sidebar, 1/2/3=switch tabs
     document.addEventListener('keydown',e=>{
       if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.altKey||e.ctrlKey||e.metaKey) return;
@@ -37,6 +38,7 @@ class App {
   _setupToolbar() {
     document.getElementById('btn-open').addEventListener('click',()=>document.getElementById('file-input').click());
     document.getElementById('btn-security').addEventListener('click',()=>this._toggleSidebar());
+    document.getElementById('btn-close').addEventListener('click',()=>this._clearFile());
     document.getElementById('btn-zoom-out').addEventListener('click',()=>this._setZoom(this.zoom-10));
     document.getElementById('btn-zoom-in').addEventListener('click',()=>this._setZoom(this.zoom+10));
     document.getElementById('btn-theme').addEventListener('click',()=>this._toggleTheme());

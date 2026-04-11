@@ -56,13 +56,13 @@ HTML = f"""<!DOCTYPE html>
 
   <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
   <div id="toolbar">
-    <span id="app-title">🔒 PhishFinder</span>
-    <span id="file-info"></span>
-    <button class="tb-btn" id="btn-open" title="Open file (or drag &amp; drop)">📁 Open</button>
-    <button class="tb-btn" id="btn-security" title="Toggle security panel">🛡 Security</button>
-    <button class="tb-btn" id="btn-zoom-out" title="Zoom out">🔍−</button>
-    <span id="zoom-level">100%</span>
-    <button class="tb-btn" id="btn-zoom-in" title="Zoom in">🔍+</button>
+    <span id="app-title">🐡 PhishFinder</span>
+    <button class="tb-btn" id="btn-open" title="Open file (or drag &amp; drop)">📁 Open File</button>
+    <div id="file-info-wrap">
+      <span id="file-info"></span>
+      <button class="tb-close hidden" id="btn-close" title="Close file">✕</button>
+    </div>
+    <button class="tb-btn" id="btn-security" title="Toggle security sidebar (S)">🛡 Toggle Sidebar</button>
     <button class="tb-btn" id="btn-theme" title="Toggle dark mode">🌙</button>
     <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.pdf,.rtf,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.wsf,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml" style="display:none">
   </div>
@@ -72,6 +72,11 @@ HTML = f"""<!DOCTYPE html>
 
     <!-- viewer -->
     <div id="viewer">
+      <div class="zoom-fab">
+        <button class="tb-btn" id="btn-zoom-out" title="Zoom out">−</button>
+        <span id="zoom-level">100%</span>
+        <button class="tb-btn" id="btn-zoom-in" title="Zoom in">+</button>
+      </div>
       <div id="drop-zone">
         <span class="dz-icon">📄</span>
         <div class="dz-text">Drop a file here to analyse</div>

@@ -91,6 +91,60 @@ Object.assign(App.prototype, {
     document.body.removeChild(ta);
   },
 
+  // ── Clear file ────────────────────────────────────────────────────────────
+  _clearFile() {
+    // Reset viewer
+    document.getElementById('page-container').innerHTML='';
+    // Restore drop zone
+    const dz=document.getElementById('drop-zone');
+    dz.className=''; dz.innerHTML='';
+    const icon=document.createElement('span');icon.className='dz-icon';icon.textContent='📄';dz.appendChild(icon);
+    const txt=document.createElement('div');txt.className='dz-text';txt.textContent='Drop a file here to analyse';dz.appendChild(txt);
+    const sub=document.createElement('div');sub.className='dz-sub';sub.textContent='docx · xlsx · pptx · pdf · doc · msg · eml · lnk · hta · csv · and any file · 100% offline';dz.appendChild(sub);
+    // Hide file info + close button
+    document.getElementById('file-info').textContent='';
+    document.getElementById('btn-close').classList.add('hidden');
+    // Close sidebar
+    if(this.sidebarOpen) this._toggleSidebar();
+    // Reset state
+    this.findings=null; this.fileHashes=null;
+    // Remove pan cursor
+    document.getElementById('viewer').classList.remove('pannable');
+    // Reset zoom
+    this._setZoom(100);
+  },
+
+  // ── Viewer pan (click-and-drag) ───────────────────────────────────────────
+  _setupViewerPan() {
+    const viewer=document.getElementById('viewer');
+    let isPanning=false, startX, startY, scrollL, scrollT;
+    viewer.addEventListener('mousedown',e=>{
+      // Only pan if a document is loaded (drop zone hidden) and not on interactive elements
+      const dz=document.getElementById('drop-zone');
+      if(!dz.classList.contains('has-document')) return;
+      const tag=e.target.tagName;
+      if(tag==='BUTTON'||tag==='INPUT'||tag==='A'||tag==='TEXTAREA'||tag==='SELECT') return;
+      if(e.target.closest('.zoom-fab')||e.target.closest('.tb-btn')||e.target.closest('.copy-url-btn')) return;
+      // Don't pan on plaintext views (they have their own scrolling)
+      if(e.target.closest('.plaintext-scroll')||e.target.closest('.sheet-content-area')||e.target.closest('.csv-scroll')) return;
+      isPanning=true;
+      startX=e.clientX; startY=e.clientY;
+      scrollL=viewer.scrollLeft; scrollT=viewer.scrollTop;
+      viewer.classList.add('panning');
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove',e=>{
+      if(!isPanning) return;
+      viewer.scrollLeft=scrollL-(e.clientX-startX);
+      viewer.scrollTop=scrollT-(e.clientY-startY);
+    });
+    window.addEventListener('mouseup',()=>{
+      if(!isPanning) return;
+      isPanning=false;
+      viewer.classList.remove('panning');
+    });
+  },
+
   // ── Zoom / theme / loading / toast ────────────────────────────────────────
   _setZoom(z) {
     this.zoom=Math.min(200,Math.max(50,z));
