@@ -12,7 +12,7 @@ html, body { height: 100%; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #525659; color: #222;
-  display: flex; flex-direction: column; min-height: 100vh;
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden;
 }
 body.dark { background: #1c1c1c; color: #e0e0e0; }
 
@@ -39,41 +39,101 @@ body.dark .tb-btn { background: #3a3a3a; border-color: #555; color: #ccc; }
 body.dark .tb-btn:hover { background: #4a4a4a; }
 #zoom-level { font-size: 12px; min-width: 36px; text-align: center; }
 
-/* ── Security panel ── */
-#security-panel { margin: 0 16px 8px; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
-#security-panel.hidden { display: none; }
-.security-header {
-  padding: 10px 16px; cursor: pointer; display: flex; align-items: center; gap: 8px;
-  font-weight: 600; font-size: 13px; user-select: none;
+/* ── Main layout ── */
+#main-area { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+/* ── Viewer ── */
+#viewer { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow: auto; }
+#page-container { display: flex; flex-direction: column; align-items: center; gap: 20px; transform-origin: top center; }
+
+/* ── Sidebar ── */
+#sidebar {
+  width: 340px; min-width: 340px; flex-shrink: 0;
+  border-left: 1px solid #ddd;
+  display: flex; flex-direction: column;
+  background: #fafafa; overflow: hidden;
 }
-.toggle-arrow { margin-left: auto; font-size: 11px; opacity: .7; }
-.risk-low  { background: #d4edda; color: #155724; }
+#sidebar.hidden { display: none; }
+body.dark #sidebar { background: #1a1a1a; border-color: #333; }
+
+.sb-risk { padding: 9px 14px; font-weight: 700; font-size: 12px; flex-shrink: 0; letter-spacing: .1px; }
+.risk-low    { background: #d4edda; color: #155724; }
 .risk-medium { background: #fff3cd; color: #856404; }
-.risk-high { background: #f8d7da; color: #721c24; }
-.security-body {
-  padding: 12px 16px; background: white;
-  border: 1px solid rgba(0,0,0,.1); border-top: none; font-size: 13px;
+.risk-high   { background: #f8d7da; color: #721c24; }
+
+#sb-tabs { display: flex; border-bottom: 1px solid #ddd; flex-shrink: 0; background: #f0f0f0; }
+body.dark #sb-tabs { background: #222; border-color: #3a3a3a; }
+
+.stab {
+  flex: 1; padding: 8px 3px; font-size: 11px; font-weight: 600;
+  border: none; border-bottom: 2px solid transparent;
+  background: transparent; cursor: pointer; color: #777;
+  transition: all .15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.security-body.collapsed { display: none; }
-body.dark .security-body { background: #2a2a2a; border-color: #3a3a3a; color: #ddd; }
-.security-body h3 { font-size: 13px; font-weight: 700; margin: 0 0 8px; }
-.security-body ul { margin: 4px 0 4px 20px; }
-.security-body details { margin-top: 8px; }
-.security-body summary { cursor: pointer; font-weight: 600; font-size: 12px; padding: 2px 0; }
-.security-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
-.security-table th { text-align: left; padding: 5px 8px; background: #f8f9fa; border: 1px solid #dee2e6; font-weight: 600; }
-.security-table td { padding: 5px 8px; border: 1px solid #dee2e6; }
-body.dark .security-table th { background: #333; border-color: #444; }
-body.dark .security-table td { border-color: #444; }
+.stab:hover { background: rgba(0,0,0,.04); color: #444; }
+.stab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+body.dark .stab { color: #888; }
+body.dark .stab.active { color: #5aabff; border-bottom-color: #5aabff; }
+body.dark .stab:hover { background: rgba(255,255,255,.05); color: #bbb; }
+
+.stab-badge {
+  display: inline-block; margin-left: 2px; padding: 0 5px;
+  border-radius: 8px; font-size: 10px; font-weight: 700;
+  background: #ddd; color: #555; vertical-align: middle; line-height: 1.7;
+}
+.stab-badge.danger { background: #f8d7da; color: #721c24; }
+.stab-badge.hidden { display: none !important; }
+body.dark .stab-badge { background: #333; color: #aaa; }
+body.dark .stab-badge.danger { background: #5a1a1a; color: #ffaaaa; }
+
+#sb-body { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.stab-pane { padding: 12px 12px 24px; font-size: 12px; }
+.stab-pane.hidden { display: none; }
+
+.sb-section {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .6px; color: #999; margin: 14px 0 6px;
+  padding-bottom: 4px; border-bottom: 1px solid #e8e8e8;
+}
+body.dark .sb-section { color: #555; border-color: #2a2a2a; }
+
+.hash-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 4px; }
+.hash-table td { padding: 4px 0; vertical-align: top; border-bottom: 1px solid #f0f0f0; }
+.hash-table td:first-child { color: #888; font-weight: 700; white-space: nowrap; width: 52px; padding-right: 8px; font-size: 10px; }
+.hash-val { font-family: 'Consolas','Courier New',monospace; word-break: break-all; color: #333; font-size: 10px; }
+body.dark .hash-table td { border-color: #222; }
+body.dark .hash-table td:first-child { color: #666; }
+body.dark .hash-val { color: #bbb; }
+
+.meta-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.meta-table td { padding: 4px 0; vertical-align: top; border-bottom: 1px solid #f0f0f0; word-break: break-word; }
+.meta-table td:first-child { color: #888; font-weight: 600; white-space: nowrap; width: 108px; font-size: 11px; padding-right: 8px; }
+body.dark .meta-table td { border-color: #222; }
+body.dark .meta-table td:first-child { color: #666; }
+
+.sev-bar { display: flex; gap: 12px; padding: 2px 0 8px; font-size: 11px; font-weight: 600; flex-wrap: wrap; }
+
+.ext-search {
+  width: 100%; padding: 6px 10px; font-size: 12px;
+  border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px;
+  box-sizing: border-box; background: white; color: #333;
+}
+body.dark .ext-search { background: #252525; border-color: #444; color: #ddd; }
+.ext-search:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.15); }
+
+.ext-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ext-table th { text-align: left; padding: 5px 6px; background: #f5f5f5; border-bottom: 2px solid #ddd; font-weight: 700; color: #666; white-space: nowrap; }
+.ext-table td { padding: 5px 6px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+.ext-table .ext-val { font-family: 'Consolas','Courier New',monospace; font-size: 10px; word-break: break-all; }
+.ext-table tr.hidden { display: none; }
+body.dark .ext-table th { background: #222; border-color: #333; color: #777; }
+body.dark .ext-table td { border-color: #252525; }
+
 .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
 .badge-high   { background: #f8d7da; color: #721c24; }
 .badge-medium { background: #fff3cd; color: #856404; }
 .badge-low    { background: #d4edda; color: #155724; }
 .badge-info   { background: #d1ecf1; color: #0c5460; }
-
-/* ── Viewer ── */
-#viewer { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow: auto; }
-#page-container { display: flex; flex-direction: column; align-items: center; gap: 20px; transform-origin: top center; }
 
 /* ── Drop zone ── */
 #drop-zone {
@@ -406,24 +466,40 @@ body.dark .msg-attach-item { background: #2a2a2a; border-color: #444; color: #cc
     <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.csv,.tsv,.doc,.msg" style="display:none">
   </div>
 
-  <!-- ── Security panel ──────────────────────────────────────────────── -->
-  <div id="security-panel" class="hidden">
-    <div id="security-header" class="security-header risk-low">
-      <span id="security-title">No threats detected</span>
-      <span class="toggle-arrow">▼</span>
-    </div>
-    <div id="security-body" class="security-body collapsed"></div>
-  </div>
+  <!-- ── Main area (viewer + sidebar side-by-side) ──────────────────── -->
+  <div id="main-area">
 
-  <!-- ── Main viewer ─────────────────────────────────────────────────── -->
-  <div id="viewer">
-    <div id="drop-zone">
-      <span class="dz-icon">📄</span>
-      <div class="dz-text">Drop an Office file here to preview</div>
-      <div class="dz-sub">docx · xlsx · xls · pptx · csv · doc · msg · and more · 100% offline</div>
+    <!-- viewer -->
+    <div id="viewer">
+      <div id="drop-zone">
+        <span class="dz-icon">📄</span>
+        <div class="dz-text">Drop an Office file here to preview</div>
+        <div class="dz-sub">docx · xlsx · xls · pptx · csv · doc · msg · and more · 100% offline</div>
+      </div>
+      <div id="page-container"></div>
     </div>
-    <div id="page-container"></div>
-  </div>
+
+    <!-- sidebar -->
+    <div id="sidebar" class="hidden">
+      <!-- risk bar -->
+      <div id="sb-risk" class="sb-risk risk-low">
+        <span id="sb-risk-title">No threats detected</span>
+      </div>
+      <!-- tab strip (S=toggle, 1/2/3=switch tabs) -->
+      <div id="sb-tabs">
+        <button class="stab active" data-tab="summary"  title="Summary (key 1)">📋 Summary</button>
+        <button class="stab"        data-tab="extracted" title="Extracted (key 2)">🔍 Extracted<span id="stab-badge-extracted" class="stab-badge hidden"></span></button>
+        <button class="stab"        data-tab="macros"    title="Macros (key 3)">⚡ Macros<span id="stab-badge-macros" class="stab-badge hidden"></span></button>
+      </div>
+      <!-- pane container -->
+      <div id="sb-body">
+        <div id="stab-summary"   class="stab-pane"></div>
+        <div id="stab-extracted" class="stab-pane hidden"></div>
+        <div id="stab-macros"    class="stab-pane hidden"></div>
+      </div>
+    </div>
+
+  </div><!-- /#main-area -->
 
   <!-- ── Loading overlay ─────────────────────────────────────────────── -->
   <div id="loading" class="hidden">
@@ -562,6 +638,8 @@ class XlsxRenderer {
           if(vbaEntry){
             const vbaData=await vbaEntry.async('uint8array');
             if(!f.macroSize) f.macroSize=vbaData.length;
+            // Fix 5: store raw binary so download can fall back to .bin if text decoding fails
+            f.rawBin=vbaData;
             f.modules=this._parseVBAText(vbaData);
             // check for auto-exec patterns
             for(const m of f.modules){
@@ -570,7 +648,16 @@ class XlsxRenderer {
               if(pats.length){f.autoExec.push({module:m.name,patterns:pats});f.risk='high';}
             }
           }
-        } catch(e){}
+          // If JSZip entry was missing but SheetJS gave us the raw VBA bytes, use those
+          if(!f.rawBin&&wb.vbaraw){
+            f.rawBin=wb.vbaraw instanceof Uint8Array?wb.vbaraw:new Uint8Array(wb.vbaraw);
+          }
+        } catch(e){
+          // JSZip failed — still preserve vbaraw bytes if available
+          if(!f.rawBin&&wb.vbaraw){
+            try{f.rawBin=wb.vbaraw instanceof Uint8Array?wb.vbaraw:new Uint8Array(wb.vbaraw);}catch(_){}
+          }
+        }
       }
     } catch(e){}
     return f;
@@ -723,13 +810,45 @@ class PptxRenderer {
 
   async _xml(zip,path){try{const f=zip.file(path);if(!f)return null;const d=new DOMParser().parseFromString(await f.async('string'),'text/xml');return d.getElementsByTagName('parsererror').length?null:d;}catch(e){return null;}}
 
+  // Fix 6: VBA text extraction helpers (same pattern as XlsxRenderer)
+  _parseVBAText(data){
+    const txt=new TextDecoder('latin1').decode(data);
+    const mods=[];
+    const nameRe=/Attribute VB_Name = "([^"]+)"/g; let m;
+    while((m=nameRe.exec(txt))!==null) mods.push({name:m[1],source:''});
+    const chunks=(txt.match(/[ -~\r\n\t]{40,}/g)||[])
+      .filter(c=>/\b(Sub |Function |End Sub|End Function|Dim |Set |If |Then|For |MsgBox|Shell|CreateObject|WScript|AutoOpen|Workbook_Open|Document_Open|Auto_Open)\b/i.test(c));
+    const src=chunks.join('\n').trim();
+    if(mods.length===0&&src) mods.push({name:'(extracted)',source:src});
+    else if(mods.length>0&&src) mods[0].source=src;
+    return mods;
+  }
+  _autoExecPatterns(src){
+    const pats=[[/\bAutoOpen\b/i,'AutoOpen'],[/\bDocument_Open\b/i,'Document_Open'],[/\bAuto_Open\b/i,'Auto_Open'],[/\bWorkbook_Open\b/i,'Workbook_Open'],[/\bShell\s*\(/i,'Shell()'],[/WScript\.Shell/i,'WScript.Shell'],[/\bPowerShell\b/i,'PowerShell'],[/cmd\.exe/i,'cmd.exe'],[/URLDownloadToFile/i,'URLDownloadToFile'],[/XMLHTTP/i,'XMLHTTP'],[/CreateObject\s*\(/i,'CreateObject']];
+    return pats.filter(([re])=>re.test(src)).map(([,n])=>n);
+  }
+
   async analyzeForSecurity(buffer,fileName){
     const ext=(fileName||'').split('.').pop().toLowerCase();
     const f={risk:'low',hasMacros:false,macroSize:0,macroHash:'',autoExec:[],modules:[],externalRefs:[],metadata:{}};
     try{
       const zip=await JSZip.loadAsync(buffer);
       const vba=zip.file('ppt/vbaProject.bin');
-      if(vba||['pptm','potm','ppam'].includes(ext)){f.hasMacros=true;f.risk='medium';if(vba){const d=await vba.async('uint8array');f.macroSize=d.length;}}
+      if(vba||['pptm','potm','ppam'].includes(ext)){
+        f.hasMacros=true;f.risk='medium';
+        if(vba){
+          const d=await vba.async('uint8array');
+          f.macroSize=d.length;
+          // Fix 6: store raw binary + attempt text extraction + pattern scan
+          f.rawBin=d;
+          f.modules=this._parseVBAText(d);
+          for(const m of f.modules){
+            if(!m.source) continue;
+            const pats=this._autoExecPatterns(m.source);
+            if(pats.length){f.autoExec.push({module:m.name,patterns:pats});f.risk='high';}
+          }
+        }
+      }
       const core=await this._xml(zip,'docProps/core.xml');
       if(core){const DC='http://purl.org/dc/elements/1.1/',DCP='http://schemas.openxmlformats.org/package/2006/metadata/core-properties';const g=(ns,n)=>core.getElementsByTagNameNS(ns,n)[0]?.textContent?.trim()||'';f.metadata={title:g(DC,'title'),subject:g(DC,'subject'),creator:g(DC,'creator'),lastModifiedBy:g(DCP,'lastModifiedBy'),created:g(DCP,'created'),modified:g(DCP,'modified')};}
       for(const[p,file] of Object.entries(zip.files)){if(!p.endsWith('.rels')||file.dir)continue;const rXml=new DOMParser().parseFromString(await file.async('string'),'text/xml');for(const r of rXml.getElementsByTagNameNS(PKG,'Relationship')){const mode=r.getAttribute('TargetMode'),target=r.getAttribute('Target');if(mode==='External'&&target){const t=(r.getAttribute('Type')||'').split('/').pop();const sv=t==='hyperlink'?'info':'medium';f.externalRefs.push({type:t==='hyperlink'?'Hyperlink':'External',url:target,severity:sv});if(sv!=='info'&&f.risk==='low')f.risk='medium';}}}
@@ -931,7 +1050,21 @@ class DocBinaryRenderer {
     const f={risk:'low',hasMacros:false,macroSize:0,macroHash:'',autoExec:[],modules:[],externalRefs:[],metadata:{}};
     try{
       const cfb=new OleCfbParser(buffer).parse();
-      for(const name of cfb.streams.keys())if(name.includes('vba')||name.includes('macro')){f.hasMacros=true;f.risk='medium';}
+      // Fix 7: collect the actual VBA/macro stream bytes rather than just setting a flag.
+      // We keep the largest matching stream as the representative binary to download.
+      // Priority: 'vba/vba' (the compressed source stream inside the VBA storage),
+      // then any stream whose name contains 'vba' or 'macro'.
+      let vbaStream=null;
+      for(const [name,data] of cfb.streams.entries()){
+        if(name==='vba/vba'||name.includes('vba')||name.includes('macro')){
+          f.hasMacros=true; f.risk='medium';
+          if(!vbaStream||data.length>vbaStream.length) vbaStream=data;
+        }
+      }
+      if(vbaStream){
+        f.macroSize=vbaStream.length;
+        f.rawBin=vbaStream;
+      }
       const si=cfb.streams.get('\x05summaryinformation');
       if(si) f.metadata=this._si(si);
     }catch(e){}
@@ -1172,7 +1305,9 @@ class DocxParser {
     if (!f) return null;
     try {
       const data = await f.async('uint8array');
-      return {present:true, size:data.length, sha256:await this._sha256(data), modules:this._parseVBA(data)};
+      // rawBin is kept so _downloadMacros can offer a binary download even when
+      // text decoding fails to produce readable source (Fix 1).
+      return {present:true, size:data.length, sha256:await this._sha256(data), modules:this._parseVBA(data), rawBin:data};
     } catch(e) { return {present:true, size:0, sha256:null, modules:[], error:e.message}; }
   }
 
@@ -1833,11 +1968,14 @@ class ContentRenderer {
 // ════════════════════════════════════════════════════════════════════════════
 class SecurityAnalyzer {
   analyze(parsed) {
-    const f={hasMacros:false,autoExec:[],externalRefs:[],modules:[],metadata:{},risk:'low',macroSize:0,macroHash:null};
+    const f={hasMacros:false,autoExec:[],externalRefs:[],modules:[],metadata:{},risk:'low',macroSize:0,macroHash:null,rawBin:null};
     if(parsed.metadata) f.metadata=this._metadata(parsed.metadata);
     if(parsed.macros?.present){
       f.hasMacros=true; f.modules=parsed.macros.modules||[];
       f.macroSize=parsed.macros.size||0; f.macroHash=parsed.macros.sha256;
+      // Fix 2: carry the raw binary forward so _downloadMacros can offer it
+      // even when text decoding produced no readable source.
+      if(parsed.macros.rawBin) f.rawBin=parsed.macros.rawBin;
       for(const m of f.modules) if(m.source){const p=this._patterns(m.source);if(p.length)f.autoExec.push({module:m.name,patterns:p});}
     }
     f.externalRefs=this._externalRefs(parsed);
@@ -1869,17 +2007,38 @@ class SecurityAnalyzer {
 
   _externalRefs(parsed) {
     const refs=[];
-    if(!parsed.rels) return refs;
     const typeNames={
       'hyperlink':'Hyperlink','image':'External Image','oleObject':'OLE Object',
       'frame':'External Frame','subDocument':'Sub-Document','attachedTemplate':'Template Injection','externalLinkPath':'External Link',
     };
-    for(const rel of parsed.rels.getElementsByTagNameNS(PKG,'Relationship')){
-      const mode=rel.getAttribute('TargetMode'), target=rel.getAttribute('Target'), type=rel.getAttribute('Type')||'';
-      if(mode==='External'&&target){
-        const typeName=Object.entries(typeNames).find(([k])=>type.endsWith('/'+k))?.[1]||'External';
-        refs.push({type:typeName,url:target,severity:typeName==='Hyperlink'?'info':typeName==='External Image'?'medium':'high'});
+    // Scan relationship file for external targets
+    if(parsed.rels){
+      for(const rel of parsed.rels.getElementsByTagNameNS(PKG,'Relationship')){
+        const mode=rel.getAttribute('TargetMode'), target=rel.getAttribute('Target'), type=rel.getAttribute('Type')||'';
+        if(mode==='External'&&target){
+          const typeName=Object.entries(typeNames).find(([k])=>type.endsWith('/'+k))?.[1]||'External';
+          refs.push({type:typeName,url:target,severity:typeName==='Hyperlink'?'info':typeName==='External Image'?'medium':'high'});
+        }
       }
+    }
+    // Fix 3: Also scan w:instrText nodes for HYPERLINK field codes.
+    // Some documents embed hyperlinks via field codes (e.g. HYPERLINK "https://…")
+    // that never appear as External relationships in the rels file.
+    if(parsed.document){
+      const seen=new Set(refs.map(r=>r.url));
+      try {
+        for(const instr of Array.from(parsed.document.getElementsByTagNameNS(W,'instrText'))){
+          const text=(instr.textContent||'').trim();
+          const m=text.match(/\bHYPERLINK\s+"([^"]+)"/i);
+          if(!m) continue;
+          const url=m[1].trim();
+          if(!url||seen.has(url)) continue;
+          seen.add(url);
+          // Only report HTTP/HTTPS/mailto as info; anything else (file://, UNC, etc.) is medium
+          const safe=sanitizeUrl(url);
+          refs.push({type:'Hyperlink (field code)',url:url,severity:safe?'info':'medium'});
+        }
+      } catch(e){}
     }
     return refs;
   }
@@ -1890,22 +2049,60 @@ class SecurityAnalyzer {
   }
 }
 
+// ── Compact pure-JS MD5 (no crypto.subtle — not supported for MD5) ───────────
+function _md5(bytes) {
+  function add(x,y){const l=(x&0xFFFF)+(y&0xFFFF);return(((x>>16)+(y>>16)+(l>>16))<<16)|(l&0xFFFF);}
+  function rol(x,n){return(x<<n)|(x>>>(32-n));}
+  const T=[];for(let i=1;i<=64;i++)T[i]=Math.floor(Math.abs(Math.sin(i))*0x100000000)>>>0;
+  const S=[7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+  const n=bytes.length,pad=new Uint8Array((n+72)&~63);
+  pad.set(bytes);pad[n]=0x80;
+  const dv=new DataView(pad.buffer);
+  dv.setUint32(pad.length-8,n<<3,true);dv.setUint32(pad.length-4,n>>>29,true);
+  let a=0x67452301,b=0xEFCDAB89,c=0x98BADCFE,d=0x10325476;
+  for(let o=0;o<pad.length;o+=64){
+    const W=[];for(let i=0;i<16;i++)W[i]=dv.getUint32(o+i*4,true);
+    let A=a,B=b,C=c,D=d;
+    for(let i=0;i<64;i++){
+      let F,g;
+      if(i<16){F=(B&C)|(~B&D);g=i;}
+      else if(i<32){F=(D&B)|(~D&C);g=(5*i+1)%16;}
+      else if(i<48){F=B^C^D;g=(3*i+5)%16;}
+      else{F=C^(B|~D);g=7*i%16;}
+      F=add(add(add(F,A),W[g]),T[i+1]);
+      A=D;D=C;C=B;B=add(B,rol(F,S[i]));
+    }
+    a=add(a,A);b=add(b,B);c=add(c,C);d=add(d,D);
+  }
+  return[a,b,c,d].map(v=>[v&255,v>>8&255,v>>16&255,v>>24&255].map(x=>x.toString(16).padStart(2,'0')).join('')).join('');
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // App
 // ════════════════════════════════════════════════════════════════════════════
 class App {
-  constructor() { this.zoom=100; this.dark=true; this.secExp=false; this.findings=null; }
+  constructor() {
+    this.zoom=100; this.dark=true; this.findings=null;
+    this.fileHashes=null; this.sidebarOpen=false; this.activeTab='summary';
+  }
 
   init() {
-    // Dark mode on by default
     document.body.classList.add('dark');
-    document.getElementById('btn-theme').textContent = '☀';
+    document.getElementById('btn-theme').textContent='☀';
     this._setupDrop();
     this._setupToolbar();
+    // Keyboard shortcuts: S=toggle sidebar, 1/2/3=switch tabs
+    document.addEventListener('keydown',e=>{
+      if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.altKey||e.ctrlKey||e.metaKey) return;
+      if(e.key==='s'||e.key==='S') this._toggleSidebar();
+      else if(e.key==='1') this._switchTab('summary');
+      else if(e.key==='2') this._switchTab('extracted');
+      else if(e.key==='3') this._switchTab('macros');
+    });
   }
 
   _setupDrop() {
-    const dz=document.getElementById('drop-zone'), fi=document.getElementById('file-input');
+    const dz=document.getElementById('drop-zone'),fi=document.getElementById('file-input');
     window.addEventListener('dragover',e=>{e.preventDefault();e.stopPropagation();});
     window.addEventListener('drop',e=>{e.preventDefault();e.stopPropagation();this._handleFiles(e.dataTransfer?.files);});
     dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
@@ -1917,18 +2114,20 @@ class App {
 
   _setupToolbar() {
     document.getElementById('btn-open').addEventListener('click',()=>document.getElementById('file-input').click());
-    document.getElementById('btn-security').addEventListener('click',()=>this._toggleSecPanel());
+    document.getElementById('btn-security').addEventListener('click',()=>this._toggleSidebar());
     document.getElementById('btn-zoom-out').addEventListener('click',()=>this._setZoom(this.zoom-10));
     document.getElementById('btn-zoom-in').addEventListener('click',()=>this._setZoom(this.zoom+10));
     document.getElementById('btn-theme').addEventListener('click',()=>this._toggleTheme());
-    document.getElementById('security-header').addEventListener('click',()=>this._toggleSecBody());
+    document.querySelectorAll('.stab').forEach(btn=>
+      btn.addEventListener('click',()=>this._switchTab(btn.dataset.tab))
+    );
   }
 
   _handleFiles(files) {
     if(!files||!files.length) return;
     const f=files[0];
     if(!/\.(docx|docm|xlsx|xlsm|xls|ods|pptx|pptm|csv|tsv|doc|msg)$/i.test(f.name)){
-      this._toast('Unsupported file type. Supported: .docx .xlsx .xls .pptx .csv .doc .msg and more','error'); return;
+      this._toast('Unsupported file type','error'); return;
     }
     this._loadFile(f);
   }
@@ -1939,43 +2138,43 @@ class App {
     const ext=file.name.split('.').pop().toLowerCase();
     try {
       const buffer=await file.arrayBuffer();
-      let docEl;
+      let docEl, analyzer=null;
+
+      // Compute file hashes in parallel with parsing
+      const hashPromise=this._hashFile(buffer,file.name);
 
       if(['docx','docm'].includes(ext)){
         const parsed=await new DocxParser().parse(buffer);
-        const analyzer=new SecurityAnalyzer();
+        analyzer=new SecurityAnalyzer();
         this.findings=analyzer.analyze(parsed);
-        this._renderSecPanel(analyzer);
         docEl=new ContentRenderer(parsed).render();
       } else if(['xlsx','xlsm','xls','ods'].includes(ext)){
         const r=new XlsxRenderer();
         this.findings=await r.analyzeForSecurity(buffer,file.name);
-        this._renderSecPanelGeneric();
         docEl=r.render(buffer,file.name);
       } else if(['pptx','pptm'].includes(ext)){
         const r=new PptxRenderer();
         this.findings=await r.analyzeForSecurity(buffer,file.name);
-        this._renderSecPanelGeneric();
         docEl=await r.render(buffer);
       } else if(['csv','tsv'].includes(ext)){
         const text=await file.text();
         const r=new CsvRenderer();
         this.findings=r.analyzeForSecurity(text);
-        this._renderSecPanelGeneric();
         docEl=r.render(text,file.name);
       } else if(ext==='doc'){
         const r=new DocBinaryRenderer();
         this.findings=r.analyzeForSecurity(buffer);
-        this._renderSecPanelGeneric();
         docEl=r.render(buffer);
       } else if(ext==='msg'){
         const r=new MsgRenderer();
         this.findings=r.analyzeForSecurity(buffer);
-        this._renderSecPanelGeneric();
         docEl=r.render(buffer);
       } else {
         throw new Error(`Unsupported format: .${ext}`);
       }
+
+      // Extract interesting strings from rendered text + VBA source
+      this.findings.interestingStrings=this._extractInterestingStrings(docEl.textContent,this.findings);
 
       const pc=document.getElementById('page-container');
       pc.innerHTML=''; pc.appendChild(docEl);
@@ -1984,207 +2183,343 @@ class App {
       dz.className='has-document'; dz.innerHTML='';
       const sp=document.createElement('span'); sp.textContent='📁 Drop another file to open'; dz.appendChild(sp);
 
-      const panel=document.getElementById('security-panel'); panel.classList.remove('hidden');
-      if(this.findings.risk!=='low'&&!this.secExp) this._toggleSecBody();
-
       const pages=pc.querySelectorAll('.page').length;
       const pi=pages>0?`  ·  ${pages} page${pages!==1?'s':''}`:'';
       document.getElementById('file-info').textContent=`${file.name}${pi}  ·  ${this._fmtBytes(file.size)}`;
+
+      // Await hashes and render sidebar
+      this.fileHashes=await hashPromise;
+      this._renderSidebar(file.name,analyzer);
     } catch(e){
       console.error(e);
       this._toast(`Failed to open: ${e.message}`,'error');
-      const pc=document.getElementById('page-container');
-      pc.innerHTML='';
+      const pc=document.getElementById('page-container'); pc.innerHTML='';
       const eb=document.createElement('div'); eb.className='error-box';
       const h3=document.createElement('h3'); h3.textContent='Failed to open file'; eb.appendChild(h3);
       const p1=document.createElement('p'); p1.textContent=e.message; eb.appendChild(p1);
       pc.appendChild(eb);
-    } finally {
-      this._setLoading(false);
-    }
+    } finally { this._setLoading(false); }
   }
 
-  _renderSecPanel(analyzer) {
+  // ── Hashing ───────────────────────────────────────────────────────────────
+  async _hashFile(buffer) {
+    const data=buffer instanceof ArrayBuffer?buffer:buffer.buffer;
+    try {
+      const [s1,s256]=await Promise.all([
+        crypto.subtle.digest('SHA-1',data),
+        crypto.subtle.digest('SHA-256',data)
+      ]);
+      const hex=b=>Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');
+      return {md5:_md5(new Uint8Array(data)),sha1:hex(s1),sha256:hex(s256)};
+    } catch(e){ return {md5:'—',sha1:'—',sha256:'—'}; }
+  }
+
+  // ── Interesting string extraction ─────────────────────────────────────────
+  _extractInterestingStrings(text,findings) {
+    const seen=new Set((findings.externalRefs||[]).map(r=>r.url));
+    const results=[];
+    const add=(type,val,sev)=>{
+      val=(val||'').trim().replace(/[.,;:!?)\]>]+$/,'');
+      if(!val||val.length<4||val.length>400||seen.has(val)) return;
+      seen.add(val); results.push({type,url:val,severity:sev});
+    };
+    // Scan rendered text + VBA modules
+    const sources=[text,...(findings.modules||[]).map(m=>m.source||'')];
+    const full=sources.join('\n');
+    for(const m of full.matchAll(/https?:\/\/[^\s"'<>()\[\]{}\u0000-\u001F]{6,}/g)) add('URL',m[0],'info');
+    for(const m of full.matchAll(/\b[a-zA-Z0-9._%+\-]{2,}@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,6}\b/g)) add('Email',m[0],'info');
+    for(const m of full.matchAll(/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g)){
+      const parts=m[0].split('.').map(Number);
+      if(parts.every(p=>p<=255)&&!m[0].startsWith('0.')) add('IP Address',m[0],'medium');
+    }
+    for(const m of full.matchAll(/[A-Za-z]:\\(?:[\w\-. ]+\\)+[\w\-. ]{2,}/g)) add('File Path',m[0],'medium');
+    for(const m of full.matchAll(/\\\\[\w.\-]{2,}(?:\\[\w.\-]{1,})+/g)) add('UNC Path',m[0],'medium');
+    // VBA-specific URL scan with higher severity
+    for(const mod of (findings.modules||[])){
+      for(const m of (mod.source||'').matchAll(/https?:\/\/[^\s"']{6,}/g)){
+        const v=m[0].replace(/[.,;:!?)\]>]+$/,'');
+        if(!seen.has(v)){seen.add(v);results.push({type:'URL (VBA)',url:v,severity:'high'});}
+      }
+    }
+    return results.slice(0,300);
+  }
+
+  // ── Sidebar rendering ─────────────────────────────────────────────────────
+  _renderSidebar(fileName,analyzer) {
     const f=this.findings;
-    const header=document.getElementById('security-header');
-    const body=document.getElementById('security-body');
-    const title=document.getElementById('security-title');
-    header.className=`security-header risk-${f.risk}`;
-    title.textContent=f.risk==='high'?'🔴 HIGH RISK — Macros with auto-execute detected':
-                      f.risk==='medium'?(f.hasMacros?'🟡 Macros present in document':'🟡 External references detected'):
-                      '🟢 No macros · No external references';
-    body.innerHTML=''; // safe – no user content injected here
+    // Risk bar
+    const rb=document.getElementById('sb-risk');
+    rb.className=`sb-risk risk-${f.risk}`;
+    document.getElementById('sb-risk-title').textContent=
+      f.risk==='high'?'🔴 HIGH RISK — Auto-execute macros detected':
+      f.risk==='medium'?(f.hasMacros?'🟡 Macros present':'🟡 Potential risks detected'):
+      '🟢 No threats detected';
+    // Populate tabs
+    this._renderSummaryTab(fileName);
+    const allRefs=[...(f.externalRefs||[]),...(f.interestingStrings||[])];
+    this._renderExtractedTab(allRefs,fileName);
+    this._renderMacrosTab(analyzer);
+    // Badges
+    const eb=document.getElementById('stab-badge-extracted');
+    if(allRefs.length){eb.textContent=allRefs.length;eb.classList.remove('hidden');}
+    else eb.classList.add('hidden');
+    const mb=document.getElementById('stab-badge-macros');
+    if(f.hasMacros){
+      mb.textContent=(f.autoExec&&f.autoExec.length)?'!':'•';
+      mb.className='stab-badge'+(f.autoExec&&f.autoExec.length?' danger':'');
+      mb.classList.remove('hidden');
+    } else mb.classList.add('hidden');
+    // Auto-select best tab
+    let tab='summary';
+    if(f.hasMacros&&f.autoExec&&f.autoExec.length) tab='macros';
+    else if(allRefs.length) tab='extracted';
+    this._switchTab(tab);
+    // Show sidebar
+    if(!this.sidebarOpen) this._toggleSidebar();
+  }
+
+  _renderSummaryTab(fileName) {
+    const f=this.findings,pane=document.getElementById('stab-summary');
+    pane.innerHTML='';
+    const ext=(fileName||'').split('.').pop().toLowerCase();
+    const FMT={docx:'Word Document',docm:'Word Macro-Enabled Document',
+      xlsx:'Excel Workbook',xlsm:'Excel Macro-Enabled Workbook',
+      xls:'Excel 97-2003 Workbook',ods:'OpenDocument Spreadsheet',
+      pptx:'PowerPoint Presentation',pptm:'PowerPoint Macro-Enabled Presentation',
+      csv:'Comma-Separated Values',tsv:'Tab-Separated Values',
+      doc:'Word 97-2003 Document',msg:'Outlook Message'};
+    const fmtEl=document.createElement('p');
+    fmtEl.style.cssText='font-size:11px;color:#888;margin-bottom:8px;';
+    fmtEl.textContent=(FMT[ext]||'Office Document')+' (.'+ext+')';
+    pane.appendChild(fmtEl);
+
+    // Hashes
+    const hh=this._sec('File Hashes');pane.appendChild(hh);
+    const ht=document.createElement('table');ht.className='hash-table';
+    const hashes=this.fileHashes
+      ?[['MD5',this.fileHashes.md5],['SHA-1',this.fileHashes.sha1],['SHA-256',this.fileHashes.sha256]]
+      :[['MD5','computing…'],['SHA-1','computing…'],['SHA-256','computing…']];
+    for(const[alg,val] of hashes){
+      const tr=document.createElement('tr');
+      const td1=document.createElement('td');td1.textContent=alg;
+      const td2=document.createElement('td');td2.className='hash-val';
+      const sp=document.createElement('span');sp.textContent=val;td2.appendChild(sp);
+      if(val&&val.length>10){
+        const cb=document.createElement('button');cb.className='copy-url-btn';cb.textContent='📋';cb.title='Copy';
+        cb.addEventListener('click',()=>this._copyToClipboard(val));td2.appendChild(cb);
+      }
+      if(alg==='SHA-256'&&this.fileHashes&&this.fileHashes.sha256.length>10){
+        const vt=document.createElement('a');
+        vt.href='https://www.virustotal.com/gui/file/'+val+'/detection';
+        vt.target='_blank';vt.rel='noopener noreferrer';
+        vt.textContent='🔎 VT';vt.title='Search on VirusTotal';
+        vt.style.cssText='font-size:10px;margin-left:6px;color:#1a73e8;text-decoration:none;';
+        td2.appendChild(vt);
+      }
+      tr.appendChild(td1);tr.appendChild(td2);ht.appendChild(tr);
+    }
+    pane.appendChild(ht);
+
+    // VBA project info
+    if(f.hasMacros&&f.macroHash){
+      pane.appendChild(this._sec('VBA Project'));
+      const vt=document.createElement('table');vt.className='hash-table';
+      const r1=document.createElement('tr');
+      const r1a=document.createElement('td');r1a.textContent='Size';
+      const r1b=document.createElement('td');r1b.className='hash-val';r1b.textContent=this._fmtBytes(f.macroSize||0);
+      r1.appendChild(r1a);r1.appendChild(r1b);vt.appendChild(r1);
+      const r2=document.createElement('tr');
+      const r2a=document.createElement('td');r2a.textContent='SHA-256';
+      const r2b=document.createElement('td');r2b.className='hash-val';
+      const sp2=document.createElement('span');sp2.textContent=f.macroHash;r2b.appendChild(sp2);
+      const cb2=document.createElement('button');cb2.className='copy-url-btn';cb2.textContent='📋';
+      cb2.addEventListener('click',()=>this._copyToClipboard(f.macroHash));r2b.appendChild(cb2);
+      r2.appendChild(r2a);r2.appendChild(r2b);vt.appendChild(r2);
+      pane.appendChild(vt);
+    }
 
     // Metadata
-    const metaVals=Object.entries(f.metadata).filter(([,v])=>v);
-    if(metaVals.length){
-      const h3=document.createElement('h3'); h3.textContent='Document Metadata'; body.appendChild(h3);
-      const tbl=document.createElement('table'); tbl.className='security-table';
-      const labels={title:'Title',subject:'Subject',creator:'Author',lastModifiedBy:'Last Modified By',created:'Created',modified:'Modified',revision:'Revision'};
-      for(const [k,v] of metaVals){
-        const tr=document.createElement('tr');
-        const th=document.createElement('th'); th.textContent=labels[k]||k;
-        const td=document.createElement('td'); td.textContent=v;
-        tr.appendChild(th); tr.appendChild(td); tbl.appendChild(tr);
-      }
-      body.appendChild(tbl);
-    }
-
-    // Macros
-    if(f.hasMacros){
-      const h3=document.createElement('h3'); h3.textContent='⚠ Macros Detected'; h3.style.marginTop='14px'; body.appendChild(h3);
-      const sz=document.createElement('p'); sz.textContent=`VBA project: ${this._fmtBytes(f.macroSize)}`; body.appendChild(sz);
-      if(f.macroHash){const hp=document.createElement('p');hp.style.cssText='font-family:monospace;font-size:11px;word-break:break-all';hp.textContent='SHA-256: '+f.macroHash;body.appendChild(hp);}
-      // Download button — always shown when macros are present
-      {
-        const dlBtn=document.createElement('button'); dlBtn.className='tb-btn';
-        dlBtn.style.cssText='margin-top:10px;font-size:12px;display:block;';
-        const hasSource=f.modules&&f.modules.some(m=>m.source);
-        dlBtn.textContent=hasSource?'💾 Download Macros (.txt)':'💾 Download Macros (binary .bin)';
-        dlBtn.title=hasSource?'Save decoded VBA source as .txt':'Save raw vbaProject.bin (source could not be decoded as text)';
-        dlBtn.addEventListener('click',()=>this._downloadMacros());
-        body.appendChild(dlBtn);
-      }
-      if(f.autoExec.length){
-        const wp=document.createElement('p');wp.style.cssText='color:#721c24;font-weight:bold;margin-top:8px';wp.textContent='🚨 Auto-execute patterns:';body.appendChild(wp);
-        const ul=document.createElement('ul');
-        for(const {module,patterns} of f.autoExec) for(const pat of patterns){const li=document.createElement('li');li.textContent=`${module}: ${pat}`;ul.appendChild(li);}
-        body.appendChild(ul);
-      }
-      for(const mod of f.modules){
-        if(!mod.source) continue;
-        const det=document.createElement('details'); det.style.marginTop='8px';
-        const sum=document.createElement('summary');sum.style.cursor='pointer';sum.style.fontWeight='600';sum.style.fontSize='12px';
-        sum.textContent=`VBA Module: ${mod.name}`; det.appendChild(sum);
-        const pre=document.createElement('pre'); pre.className='vba-code';
-        pre.innerHTML=analyzer.highlightVBA(mod.source); // safe: content is escaped in highlightVBA
-        det.appendChild(pre); body.appendChild(det);
-      }
-    }
-
-    // External refs
-    if(f.externalRefs.length){
-      const h3=document.createElement('h3'); h3.textContent='External References'; h3.style.marginTop='14px'; body.appendChild(h3);
-      const tbl=document.createElement('table'); tbl.className='security-table';
-      const thead=document.createElement('thead'); const htr=document.createElement('tr');
-      for(const h of ['Type','URL','Risk']){const th=document.createElement('th');th.textContent=h;htr.appendChild(th);}
-      thead.appendChild(htr); tbl.appendChild(thead);
-      const tbody=document.createElement('tbody');
-      for(const ref of f.externalRefs){
-        const tr=document.createElement('tr');
-        const td1=document.createElement('td');td1.textContent=ref.type;
-        const td2=document.createElement('td');td2.style.cssText='font-family:monospace;font-size:11px;word-break:break-all';
-        td2.appendChild(document.createTextNode(ref.url));
-        const copyBtn=document.createElement('button');copyBtn.className='copy-url-btn';copyBtn.textContent='📋';copyBtn.title='Copy URL';
-        copyBtn.addEventListener('click',(e)=>{e.stopPropagation();this._copyToClipboard(ref.url);});
-        td2.appendChild(copyBtn);
-        const td3=document.createElement('td');const badge=document.createElement('span');badge.className=`badge badge-${ref.severity}`;badge.textContent=ref.severity;td3.appendChild(badge);
-        tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);tbody.appendChild(tr);
-      }
-      tbl.appendChild(tbody); body.appendChild(tbl);
-    }
-
-    if(!f.hasMacros&&!f.externalRefs.length){const ok=document.createElement('p');ok.style.color='#155724';ok.textContent='✅ No security threats found.';body.appendChild(ok);}
-  }
-
-  _renderSecPanelGeneric() {
-    const f=this.findings;
-    const header=document.getElementById('security-header');
-    const body=document.getElementById('security-body');
-    const title=document.getElementById('security-title');
-    header.className=`security-header risk-${f.risk}`;
-    title.textContent=f.risk==='high'?'🔴 HIGH RISK — Dangerous content detected':
-                      f.risk==='medium'?(f.hasMacros?'🟡 Macros present':'🟡 Potential risks detected'):
-                      '🟢 No threats detected';
-    body.innerHTML='';
     const metaVals=Object.entries(f.metadata||{}).filter(([,v])=>v);
     if(metaVals.length){
-      const h3=document.createElement('h3'); h3.textContent='File Metadata'; body.appendChild(h3);
-      const tbl=document.createElement('table'); tbl.className='security-table';
-      const labels={title:'Title',subject:'Subject',creator:'Author/Sender',lastModifiedBy:'Last Modified By',created:'Created',modified:'Modified'};
-      for(const[k,v] of metaVals){const tr=document.createElement('tr');const th=document.createElement('th');th.textContent=labels[k]||k;const td=document.createElement('td');td.textContent=v;tr.appendChild(th);tr.appendChild(td);tbl.appendChild(tr);}
-      body.appendChild(tbl);
-    }
-    if(f.hasMacros){
-      const h3=document.createElement('h3');h3.textContent='⚠ Macros Detected';h3.style.marginTop='14px';body.appendChild(h3);
-      if(f.macroSize){const sz=document.createElement('p');sz.textContent=`VBA project: ${this._fmtBytes(f.macroSize)}`;body.appendChild(sz);}
-      const dlBtn=document.createElement('button');dlBtn.className='tb-btn';
-      dlBtn.style.cssText='margin-top:10px;font-size:12px;display:block;';
-      const hasSource=f.modules&&f.modules.some(m=>m.source);
-      dlBtn.textContent=hasSource?'💾 Download Macros (.txt)':'💾 Download Macros (.bin)';
-      dlBtn.addEventListener('click',()=>this._downloadMacros());
-      body.appendChild(dlBtn);
-    }
-    if(f.externalRefs&&f.externalRefs.length){
-      const h3=document.createElement('h3');h3.textContent='References & Risks';h3.style.marginTop='14px';body.appendChild(h3);
-      const tbl=document.createElement('table');tbl.className='security-table';
-      const thead=document.createElement('thead');const htr=document.createElement('tr');
-      for(const h of ['Type','Details','Risk']){const th=document.createElement('th');th.textContent=h;htr.appendChild(th);}
-      thead.appendChild(htr);tbl.appendChild(thead);
-      const tbody=document.createElement('tbody');
-      for(const ref of f.externalRefs){
+      pane.appendChild(this._sec('Document Metadata'));
+      const mt=document.createElement('table');mt.className='meta-table';
+      const labels={title:'Title',subject:'Subject',creator:'Author',lastModifiedBy:'Last Modified By',created:'Created',modified:'Modified',revision:'Revision'};
+      for(const[k,v] of metaVals){
         const tr=document.createElement('tr');
-        const td1=document.createElement('td');td1.textContent=ref.type;
-        const td2=document.createElement('td');td2.style.cssText='font-family:monospace;font-size:11px;word-break:break-all';
-        td2.appendChild(document.createTextNode(ref.url));
-        const copyBtn=document.createElement('button');copyBtn.className='copy-url-btn';copyBtn.textContent='📋';copyBtn.title='Copy URL';
-        copyBtn.addEventListener('click',(e)=>{e.stopPropagation();this._copyToClipboard(ref.url);});
-        td2.appendChild(copyBtn);
-        const td3=document.createElement('td');const badge=document.createElement('span');badge.className=`badge badge-${ref.severity}`;badge.textContent=ref.severity;td3.appendChild(badge);
-        tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);tbody.appendChild(tr);
+        const td1=document.createElement('td');td1.textContent=labels[k]||k;
+        const td2=document.createElement('td');td2.textContent=v;
+        tr.appendChild(td1);tr.appendChild(td2);mt.appendChild(tr);
       }
-      tbl.appendChild(tbody);body.appendChild(tbl);
+      pane.appendChild(mt);
     }
-    if(!f.hasMacros&&(!f.externalRefs||!f.externalRefs.length)){const ok=document.createElement('p');ok.style.color='#155724';ok.textContent='No security threats found.';body.appendChild(ok);}
+    if(!metaVals.length&&!f.hasMacros){
+      const p=document.createElement('p');p.style.cssText='color:#888;font-size:11px;margin-top:8px;';
+      p.textContent='No metadata found.';pane.appendChild(p);
+    }
   }
 
-  _copyToClipboard(text) {
-    if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(()=>this._toast('URL copied to clipboard')).catch(()=>this._copyFallback(text));
-    } else { this._copyFallback(text); }
+  _renderExtractedTab(refs,fileName) {
+    const pane=document.getElementById('stab-extracted');pane.innerHTML='';
+    if(!refs.length){
+      const p=document.createElement('p');p.style.cssText='color:#888;text-align:center;margin-top:20px;font-size:12px;';
+      p.textContent='✅ No external references or interesting strings found.';pane.appendChild(p);return;
+    }
+    // Severity summary bar
+    const high=refs.filter(r=>r.severity==='high').length;
+    const med=refs.filter(r=>r.severity==='medium').length;
+    const inf=refs.filter(r=>r.severity==='info').length;
+    const bar=document.createElement('div');bar.className='sev-bar';
+    if(high){const s=document.createElement('span');s.style.color='#721c24';s.textContent=`🔴 ${high} high`;bar.appendChild(s);}
+    if(med) {const s=document.createElement('span');s.style.color='#856404';s.textContent=`🟡 ${med} medium`;bar.appendChild(s);}
+    if(inf) {const s=document.createElement('span');s.style.color='#666';s.textContent=`ℹ ${inf} info`;bar.appendChild(s);}
+    pane.appendChild(bar);
+    // Search
+    const srch=document.createElement('input');srch.type='text';srch.placeholder='Search…';srch.className='ext-search';
+    pane.appendChild(srch);
+    // Download all
+    const dl=document.createElement('button');dl.className='tb-btn';
+    dl.style.cssText='font-size:11px;margin-bottom:8px;width:100%;display:block;';
+    dl.textContent='⬇ Download All (.txt)';
+    dl.addEventListener('click',()=>this._downloadExtracted(refs,fileName));
+    pane.appendChild(dl);
+    // Table
+    const tbl=document.createElement('table');tbl.className='ext-table';
+    const thead=document.createElement('thead');const htr=document.createElement('tr');
+    for(const h of ['Type','Value','Risk']){const th=document.createElement('th');th.textContent=h;htr.appendChild(th);}
+    thead.appendChild(htr);tbl.appendChild(thead);
+    const tbody=document.createElement('tbody');
+    for(const ref of refs){
+      const tr=document.createElement('tr');tr.dataset.search=(ref.type+' '+ref.url).toLowerCase();
+      const td1=document.createElement('td');td1.textContent=ref.type;
+      const td2=document.createElement('td');td2.className='ext-val';
+      const sp=document.createElement('span');sp.textContent=ref.url;td2.appendChild(sp);
+      const cb=document.createElement('button');cb.className='copy-url-btn';cb.textContent='📋';cb.title='Copy';
+      cb.addEventListener('click',(e)=>{e.stopPropagation();this._copyToClipboard(ref.url);});
+      td2.appendChild(cb);
+      const td3=document.createElement('td');
+      const badge=document.createElement('span');badge.className=`badge badge-${ref.severity}`;badge.textContent=ref.severity;
+      td3.appendChild(badge);
+      tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);tbody.appendChild(tr);
+    }
+    tbl.appendChild(tbody);pane.appendChild(tbl);
+    srch.addEventListener('input',()=>{
+      const q=srch.value.toLowerCase();
+      for(const tr of tbody.rows) tr.classList.toggle('hidden',!!q&&!tr.dataset.search.includes(q));
+    });
   }
-  _copyFallback(text) {
-    const ta=document.createElement('textarea'); ta.value=text;
-    ta.style.cssText='position:fixed;opacity:0;top:0;left:0;';
-    document.body.appendChild(ta); ta.focus(); ta.select();
-    try{ document.execCommand('copy'); this._toast('URL copied to clipboard'); }
-    catch(e){ this._toast('Copy failed — select manually','error'); }
+
+  _renderMacrosTab(analyzer) {
+    const f=this.findings,pane=document.getElementById('stab-macros');pane.innerHTML='';
+    if(!f.hasMacros){
+      const p=document.createElement('p');p.style.cssText='color:#888;text-align:center;margin-top:20px;font-size:12px;';
+      p.textContent='No macros detected in this file.';pane.appendChild(p);return;
+    }
+    const hasSource=f.modules&&f.modules.some(m=>m.source);
+    // Download button
+    const dl=document.createElement('button');dl.className='tb-btn';
+    dl.style.cssText='font-size:11px;margin-bottom:10px;width:100%;display:block;';
+    dl.textContent=hasSource?'💾 Download Macros (.txt)':'💾 Download Macros (.bin)';
+    dl.addEventListener('click',()=>this._downloadMacros());pane.appendChild(dl);
+    // Auto-exec warning
+    if(f.autoExec&&f.autoExec.length){
+      const w=document.createElement('div');
+      w.style.cssText='background:#f8d7da;border:1px solid #f5c6cb;border-radius:4px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#721c24;';
+      w.innerHTML='<strong>🚨 Auto-execute patterns:</strong>';
+      const ul=document.createElement('ul');ul.style.cssText='margin:4px 0 0 16px;';
+      for(const{module,patterns} of f.autoExec) for(const pat of patterns){
+        const li=document.createElement('li');li.textContent=`${module}: ${pat}`;ul.appendChild(li);}
+      w.appendChild(ul);pane.appendChild(w);
+    }
+    // Obfuscation hint
+    if(f.rawBin&&f.rawBin.length>0&&hasSource){
+      const srcLen=(f.modules||[]).reduce((s,m)=>s+(m.source||'').length,0);
+      if(srcLen>0&&f.rawBin.length>srcLen*5){
+        const hint=document.createElement('div');
+        hint.style.cssText='background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#856404;';
+        hint.textContent=`⚠ Decoded source (${this._fmtBytes(srcLen)}) is much smaller than VBA binary (${this._fmtBytes(f.rawBin.length)}) — possible obfuscation or compression.`;
+        pane.appendChild(hint);
+      }
+    }
+    if(!hasSource){
+      const note=document.createElement('p');note.style.cssText='color:#888;font-size:11px;font-style:italic;margin-bottom:8px;';
+      note.textContent='Source could not be decoded as text. Raw binary available for download above.';pane.appendChild(note);return;
+    }
+    // Module source blocks
+    const hi=analyzer||{highlightVBA:s=>escHtml(s)};
+    for(const mod of (f.modules||[])){
+      if(!mod.source) continue;
+      const hasAuto=(f.autoExec||[]).some(a=>a.module===mod.name);
+      const det=document.createElement('details');det.open=(f.modules.filter(m=>m.source).length===1);
+      const sum=document.createElement('summary');sum.style.cssText='cursor:pointer;font-weight:600;font-size:11px;padding:4px 0;';
+      sum.textContent=`📄 ${mod.name}`;
+      if(hasAuto){const b=document.createElement('span');b.className='badge badge-high';b.style.marginLeft='6px';b.textContent='auto-exec';sum.appendChild(b);}
+      det.appendChild(sum);
+      const pre=document.createElement('pre');pre.className='vba-code';
+      pre.innerHTML=hi.highlightVBA(mod.source);
+      det.appendChild(pre);pane.appendChild(det);
+    }
+  }
+
+  // ── Helper: section heading ────────────────────────────────────────────────
+  _sec(label){const d=document.createElement('div');d.className='sb-section';d.textContent=label;return d;}
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  _switchTab(name){
+    if(!this.sidebarOpen) this._toggleSidebar();
+    this.activeTab=name;
+    document.querySelectorAll('.stab').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+    document.querySelectorAll('.stab-pane').forEach(p=>p.classList.toggle('hidden',p.id!==`stab-${name}`));
+  }
+
+  _toggleSidebar(){
+    this.sidebarOpen=!this.sidebarOpen;
+    document.getElementById('sidebar').classList.toggle('hidden',!this.sidebarOpen);
+  }
+
+  // ── Downloads ──────────────────────────────────────────────────────────────
+  _downloadMacros() {
+    const f=this.findings;
+    const info=document.getElementById('file-info').textContent;
+    const base=info.split('·')[0].trim().replace(/\.[^.]+$/,'')||'macros';
+    const mods=(f.modules||[]).filter(m=>m.source);
+    if(mods.length){
+      const sep='='.repeat(60),lines=[];
+      for(const mod of mods){lines.push(`' ${sep}`);lines.push(`' VBA Module: ${mod.name}`);lines.push(`' ${sep}`);lines.push(mod.source);lines.push('');}
+      const blob=new Blob([lines.join('\n')],{type:'text/plain'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download=base+'_macros.txt';a.click();
+      URL.revokeObjectURL(url);this._toast('Macro source downloaded');
+    } else if(f.rawBin&&f.rawBin.length){
+      const blob=new Blob([f.rawBin],{type:'application/octet-stream'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download=base+'_vbaProject.bin';a.click();
+      URL.revokeObjectURL(url);this._toast('Raw VBA binary downloaded — use olevba/oledump to inspect');
+    } else { this._toast('No macro data available','error'); }
+  }
+
+  _downloadExtracted(refs,fileName) {
+    const base=(fileName||'extracted').replace(/\.[^.]+$/,'');
+    const lines=['Type\tValue\tSeverity',...refs.map(r=>`${r.type}\t${r.url}\t${r.severity}`)];
+    const blob=new Blob([lines.join('\n')],{type:'text/plain'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=base+'_extracted.txt';a.click();
+    URL.revokeObjectURL(url);this._toast('Extracted data downloaded');
+  }
+
+  // ── Clipboard ─────────────────────────────────────────────────────────────
+  _copyToClipboard(text){
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(()=>this._toast('Copied!')).catch(()=>this._copyFallback(text));
+    } else this._copyFallback(text);
+  }
+  _copyFallback(text){
+    const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;opacity:0;top:0;left:0;';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    try{document.execCommand('copy');this._toast('Copied!');}catch(e){this._toast('Copy failed','error');}
     document.body.removeChild(ta);
   }
 
-  _downloadMacros() {
-    const f=this.findings;
-    const mods=(f.modules||[]).filter(m=>m.source);
-    if(!mods.length){this._toast('No decoded macro source available','error');return;}
-    const sep='='.repeat(60);
-    const lines=[];
-    for(const mod of mods){
-      lines.push(`' ${sep}`);
-      lines.push(`' VBA Module: ${mod.name}`);
-      lines.push(`' ${sep}`);
-      lines.push(mod.source);
-      lines.push('');
-    }
-    const blob=new Blob([lines.join('\n')],{type:'text/plain'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    const info=document.getElementById('file-info').textContent;
-    const base=info.split('·')[0].trim().replace(/\.[^.]+$/,'')||'macros';
-    a.download=base+'_macros.txt';
-    a.click();
-    URL.revokeObjectURL(url);
-    this._toast('Macro source downloaded');
-  }
-
-  _toggleSecPanel(){document.getElementById('security-panel').classList.toggle('hidden');}
-  _toggleSecBody(){
-    const body=document.getElementById('security-body');
-    const arrow=document.querySelector('#security-header .toggle-arrow');
-    this.secExp=!this.secExp;
-    body.classList.toggle('collapsed',!this.secExp);
-    if(arrow) arrow.textContent=this.secExp?'▲':'▼';
-  }
+  // ── Zoom / theme / loading / toast ────────────────────────────────────────
   _setZoom(z){
     this.zoom=Math.min(200,Math.max(50,z));
     document.getElementById('zoom-level').textContent=`${this.zoom}%`;
@@ -2195,9 +2530,9 @@ class App {
   _toast(msg,type='info'){
     const t=document.getElementById('toast');t.textContent=msg;
     t.className=type==='error'?'toast-error':'';t.classList.remove('hidden');
-    setTimeout(()=>t.classList.add('hidden'),3500);
+    setTimeout(()=>t.classList.add('hidden'),3000);
   }
-  _fmtBytes(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB';}
+  _fmtBytes(b){if(!b||b<1024)return(b||0)+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB';}
 }
 
 document.addEventListener('DOMContentLoaded', () => new App().init());

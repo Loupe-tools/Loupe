@@ -80,6 +80,8 @@ class XlsxRenderer {
           if(vbaEntry){
             const vbaData=await vbaEntry.async('uint8array');
             if(!f.macroSize) f.macroSize=vbaData.length;
+            // Fix 5: store raw binary so download can fall back to .bin if text decoding fails
+            f.rawBin=vbaData;
             f.modules=this._parseVBAText(vbaData);
             // check for auto-exec patterns
             for(const m of f.modules){
@@ -88,7 +90,16 @@ class XlsxRenderer {
               if(pats.length){f.autoExec.push({module:m.name,patterns:pats});f.risk='high';}
             }
           }
-        } catch(e){}
+          // If JSZip entry was missing but SheetJS gave us the raw VBA bytes, use those
+          if(!f.rawBin&&wb.vbaraw){
+            f.rawBin=wb.vbaraw instanceof Uint8Array?wb.vbaraw:new Uint8Array(wb.vbaraw);
+          }
+        } catch(e){
+          // JSZip failed — still preserve vbaraw bytes if available
+          if(!f.rawBin&&wb.vbaraw){
+            try{f.rawBin=wb.vbaraw instanceof Uint8Array?wb.vbaraw:new Uint8Array(wb.vbaraw);}catch(_){}
+          }
+        }
       }
     } catch(e){}
     return f;
@@ -241,13 +252,45 @@ class PptxRenderer {
 
   async _xml(zip,path){try{const f=zip.file(path);if(!f)return null;const d=new DOMParser().parseFromString(await f.async('string'),'text/xml');return d.getElementsByTagName('parsererror').length?null:d;}catch(e){return null;}}
 
+  // Fix 6: VBA text extraction helpers (same pattern as XlsxRenderer)
+  _parseVBAText(data){
+    const txt=new TextDecoder('latin1').decode(data);
+    const mods=[];
+    const nameRe=/Attribute VB_Name = "([^"]+)"/g; let m;
+    while((m=nameRe.exec(txt))!==null) mods.push({name:m[1],source:''});
+    const chunks=(txt.match(/[ -~\r\n\t]{40,}/g)||[])
+      .filter(c=>/\b(Sub |Function |End Sub|End Function|Dim |Set |If |Then|For |MsgBox|Shell|CreateObject|WScript|AutoOpen|Workbook_Open|Document_Open|Auto_Open)\b/i.test(c));
+    const src=chunks.join('\n').trim();
+    if(mods.length===0&&src) mods.push({name:'(extracted)',source:src});
+    else if(mods.length>0&&src) mods[0].source=src;
+    return mods;
+  }
+  _autoExecPatterns(src){
+    const pats=[[/\bAutoOpen\b/i,'AutoOpen'],[/\bDocument_Open\b/i,'Document_Open'],[/\bAuto_Open\b/i,'Auto_Open'],[/\bWorkbook_Open\b/i,'Workbook_Open'],[/\bShell\s*\(/i,'Shell()'],[/WScript\.Shell/i,'WScript.Shell'],[/\bPowerShell\b/i,'PowerShell'],[/cmd\.exe/i,'cmd.exe'],[/URLDownloadToFile/i,'URLDownloadToFile'],[/XMLHTTP/i,'XMLHTTP'],[/CreateObject\s*\(/i,'CreateObject']];
+    return pats.filter(([re])=>re.test(src)).map(([,n])=>n);
+  }
+
   async analyzeForSecurity(buffer,fileName){
     const ext=(fileName||'').split('.').pop().toLowerCase();
     const f={risk:'low',hasMacros:false,macroSize:0,macroHash:'',autoExec:[],modules:[],externalRefs:[],metadata:{}};
     try{
       const zip=await JSZip.loadAsync(buffer);
       const vba=zip.file('ppt/vbaProject.bin');
-      if(vba||['pptm','potm','ppam'].includes(ext)){f.hasMacros=true;f.risk='medium';if(vba){const d=await vba.async('uint8array');f.macroSize=d.length;}}
+      if(vba||['pptm','potm','ppam'].includes(ext)){
+        f.hasMacros=true;f.risk='medium';
+        if(vba){
+          const d=await vba.async('uint8array');
+          f.macroSize=d.length;
+          // Fix 6: store raw binary + attempt text extraction + pattern scan
+          f.rawBin=d;
+          f.modules=this._parseVBAText(d);
+          for(const m of f.modules){
+            if(!m.source) continue;
+            const pats=this._autoExecPatterns(m.source);
+            if(pats.length){f.autoExec.push({module:m.name,patterns:pats});f.risk='high';}
+          }
+        }
+      }
       const core=await this._xml(zip,'docProps/core.xml');
       if(core){const DC='http://purl.org/dc/elements/1.1/',DCP='http://schemas.openxmlformats.org/package/2006/metadata/core-properties';const g=(ns,n)=>core.getElementsByTagNameNS(ns,n)[0]?.textContent?.trim()||'';f.metadata={title:g(DC,'title'),subject:g(DC,'subject'),creator:g(DC,'creator'),lastModifiedBy:g(DCP,'lastModifiedBy'),created:g(DCP,'created'),modified:g(DCP,'modified')};}
       for(const[p,file] of Object.entries(zip.files)){if(!p.endsWith('.rels')||file.dir)continue;const rXml=new DOMParser().parseFromString(await file.async('string'),'text/xml');for(const r of rXml.getElementsByTagNameNS(PKG,'Relationship')){const mode=r.getAttribute('TargetMode'),target=r.getAttribute('Target');if(mode==='External'&&target){const t=(r.getAttribute('Type')||'').split('/').pop();const sv=t==='hyperlink'?'info':'medium';f.externalRefs.push({type:t==='hyperlink'?'Hyperlink':'External',url:target,severity:sv});if(sv!=='info'&&f.risk==='low')f.risk='medium';}}}
@@ -449,7 +492,21 @@ class DocBinaryRenderer {
     const f={risk:'low',hasMacros:false,macroSize:0,macroHash:'',autoExec:[],modules:[],externalRefs:[],metadata:{}};
     try{
       const cfb=new OleCfbParser(buffer).parse();
-      for(const name of cfb.streams.keys())if(name.includes('vba')||name.includes('macro')){f.hasMacros=true;f.risk='medium';}
+      // Fix 7: collect the actual VBA/macro stream bytes rather than just setting a flag.
+      // We keep the largest matching stream as the representative binary to download.
+      // Priority: 'vba/vba' (the compressed source stream inside the VBA storage),
+      // then any stream whose name contains 'vba' or 'macro'.
+      let vbaStream=null;
+      for(const [name,data] of cfb.streams.entries()){
+        if(name==='vba/vba'||name.includes('vba')||name.includes('macro')){
+          f.hasMacros=true; f.risk='medium';
+          if(!vbaStream||data.length>vbaStream.length) vbaStream=data;
+        }
+      }
+      if(vbaStream){
+        f.macroSize=vbaStream.length;
+        f.rawBin=vbaStream;
+      }
       const si=cfb.streams.get('\x05summaryinformation');
       if(si) f.metadata=this._si(si);
     }catch(e){}

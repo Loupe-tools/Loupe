@@ -19,7 +19,7 @@ html, body { height: 100%; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #525659; color: #222;
-  display: flex; flex-direction: column; min-height: 100vh;
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden;
 }
 body.dark { background: #1c1c1c; color: #e0e0e0; }
 
@@ -46,41 +46,101 @@ body.dark .tb-btn { background: #3a3a3a; border-color: #555; color: #ccc; }
 body.dark .tb-btn:hover { background: #4a4a4a; }
 #zoom-level { font-size: 12px; min-width: 36px; text-align: center; }
 
-/* ── Security panel ── */
-#security-panel { margin: 0 16px 8px; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
-#security-panel.hidden { display: none; }
-.security-header {
-  padding: 10px 16px; cursor: pointer; display: flex; align-items: center; gap: 8px;
-  font-weight: 600; font-size: 13px; user-select: none;
+/* ── Main layout ── */
+#main-area { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+/* ── Viewer ── */
+#viewer { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow: auto; }
+#page-container { display: flex; flex-direction: column; align-items: center; gap: 20px; transform-origin: top center; }
+
+/* ── Sidebar ── */
+#sidebar {
+  width: 340px; min-width: 340px; flex-shrink: 0;
+  border-left: 1px solid #ddd;
+  display: flex; flex-direction: column;
+  background: #fafafa; overflow: hidden;
 }
-.toggle-arrow { margin-left: auto; font-size: 11px; opacity: .7; }
-.risk-low  { background: #d4edda; color: #155724; }
+#sidebar.hidden { display: none; }
+body.dark #sidebar { background: #1a1a1a; border-color: #333; }
+
+.sb-risk { padding: 9px 14px; font-weight: 700; font-size: 12px; flex-shrink: 0; letter-spacing: .1px; }
+.risk-low    { background: #d4edda; color: #155724; }
 .risk-medium { background: #fff3cd; color: #856404; }
-.risk-high { background: #f8d7da; color: #721c24; }
-.security-body {
-  padding: 12px 16px; background: white;
-  border: 1px solid rgba(0,0,0,.1); border-top: none; font-size: 13px;
+.risk-high   { background: #f8d7da; color: #721c24; }
+
+#sb-tabs { display: flex; border-bottom: 1px solid #ddd; flex-shrink: 0; background: #f0f0f0; }
+body.dark #sb-tabs { background: #222; border-color: #3a3a3a; }
+
+.stab {
+  flex: 1; padding: 8px 3px; font-size: 11px; font-weight: 600;
+  border: none; border-bottom: 2px solid transparent;
+  background: transparent; cursor: pointer; color: #777;
+  transition: all .15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.security-body.collapsed { display: none; }
-body.dark .security-body { background: #2a2a2a; border-color: #3a3a3a; color: #ddd; }
-.security-body h3 { font-size: 13px; font-weight: 700; margin: 0 0 8px; }
-.security-body ul { margin: 4px 0 4px 20px; }
-.security-body details { margin-top: 8px; }
-.security-body summary { cursor: pointer; font-weight: 600; font-size: 12px; padding: 2px 0; }
-.security-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
-.security-table th { text-align: left; padding: 5px 8px; background: #f8f9fa; border: 1px solid #dee2e6; font-weight: 600; }
-.security-table td { padding: 5px 8px; border: 1px solid #dee2e6; }
-body.dark .security-table th { background: #333; border-color: #444; }
-body.dark .security-table td { border-color: #444; }
+.stab:hover { background: rgba(0,0,0,.04); color: #444; }
+.stab.active { color: #1a73e8; border-bottom-color: #1a73e8; }
+body.dark .stab { color: #888; }
+body.dark .stab.active { color: #5aabff; border-bottom-color: #5aabff; }
+body.dark .stab:hover { background: rgba(255,255,255,.05); color: #bbb; }
+
+.stab-badge {
+  display: inline-block; margin-left: 2px; padding: 0 5px;
+  border-radius: 8px; font-size: 10px; font-weight: 700;
+  background: #ddd; color: #555; vertical-align: middle; line-height: 1.7;
+}
+.stab-badge.danger { background: #f8d7da; color: #721c24; }
+.stab-badge.hidden { display: none !important; }
+body.dark .stab-badge { background: #333; color: #aaa; }
+body.dark .stab-badge.danger { background: #5a1a1a; color: #ffaaaa; }
+
+#sb-body { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.stab-pane { padding: 12px 12px 24px; font-size: 12px; }
+.stab-pane.hidden { display: none; }
+
+.sb-section {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .6px; color: #999; margin: 14px 0 6px;
+  padding-bottom: 4px; border-bottom: 1px solid #e8e8e8;
+}
+body.dark .sb-section { color: #555; border-color: #2a2a2a; }
+
+.hash-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 4px; }
+.hash-table td { padding: 4px 0; vertical-align: top; border-bottom: 1px solid #f0f0f0; }
+.hash-table td:first-child { color: #888; font-weight: 700; white-space: nowrap; width: 52px; padding-right: 8px; font-size: 10px; }
+.hash-val { font-family: 'Consolas','Courier New',monospace; word-break: break-all; color: #333; font-size: 10px; }
+body.dark .hash-table td { border-color: #222; }
+body.dark .hash-table td:first-child { color: #666; }
+body.dark .hash-val { color: #bbb; }
+
+.meta-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.meta-table td { padding: 4px 0; vertical-align: top; border-bottom: 1px solid #f0f0f0; word-break: break-word; }
+.meta-table td:first-child { color: #888; font-weight: 600; white-space: nowrap; width: 108px; font-size: 11px; padding-right: 8px; }
+body.dark .meta-table td { border-color: #222; }
+body.dark .meta-table td:first-child { color: #666; }
+
+.sev-bar { display: flex; gap: 12px; padding: 2px 0 8px; font-size: 11px; font-weight: 600; flex-wrap: wrap; }
+
+.ext-search {
+  width: 100%; padding: 6px 10px; font-size: 12px;
+  border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px;
+  box-sizing: border-box; background: white; color: #333;
+}
+body.dark .ext-search { background: #252525; border-color: #444; color: #ddd; }
+.ext-search:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 2px rgba(26,115,232,.15); }
+
+.ext-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ext-table th { text-align: left; padding: 5px 6px; background: #f5f5f5; border-bottom: 2px solid #ddd; font-weight: 700; color: #666; white-space: nowrap; }
+.ext-table td { padding: 5px 6px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+.ext-table .ext-val { font-family: 'Consolas','Courier New',monospace; font-size: 10px; word-break: break-all; }
+.ext-table tr.hidden { display: none; }
+body.dark .ext-table th { background: #222; border-color: #333; color: #777; }
+body.dark .ext-table td { border-color: #252525; }
+
 .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
 .badge-high   { background: #f8d7da; color: #721c24; }
 .badge-medium { background: #fff3cd; color: #856404; }
 .badge-low    { background: #d4edda; color: #155724; }
 .badge-info   { background: #d1ecf1; color: #0c5460; }
-
-/* ── Viewer ── */
-#viewer { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow: auto; }
-#page-container { display: flex; flex-direction: column; align-items: center; gap: 20px; transform-origin: top center; }
 
 /* ── Drop zone ── */
 #drop-zone {
@@ -423,24 +483,40 @@ HTML = f"""<!DOCTYPE html>
     <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.csv,.tsv,.doc,.msg" style="display:none">
   </div>
 
-  <!-- ── Security panel ──────────────────────────────────────────────── -->
-  <div id="security-panel" class="hidden">
-    <div id="security-header" class="security-header risk-low">
-      <span id="security-title">No threats detected</span>
-      <span class="toggle-arrow">▼</span>
-    </div>
-    <div id="security-body" class="security-body collapsed"></div>
-  </div>
+  <!-- ── Main area (viewer + sidebar side-by-side) ──────────────────── -->
+  <div id="main-area">
 
-  <!-- ── Main viewer ─────────────────────────────────────────────────── -->
-  <div id="viewer">
-    <div id="drop-zone">
-      <span class="dz-icon">📄</span>
-      <div class="dz-text">Drop an Office file here to preview</div>
-      <div class="dz-sub">docx · xlsx · xls · pptx · csv · doc · msg · and more · 100% offline</div>
+    <!-- viewer -->
+    <div id="viewer">
+      <div id="drop-zone">
+        <span class="dz-icon">📄</span>
+        <div class="dz-text">Drop an Office file here to preview</div>
+        <div class="dz-sub">docx · xlsx · xls · pptx · csv · doc · msg · and more · 100% offline</div>
+      </div>
+      <div id="page-container"></div>
     </div>
-    <div id="page-container"></div>
-  </div>
+
+    <!-- sidebar -->
+    <div id="sidebar" class="hidden">
+      <!-- risk bar -->
+      <div id="sb-risk" class="sb-risk risk-low">
+        <span id="sb-risk-title">No threats detected</span>
+      </div>
+      <!-- tab strip (S=toggle, 1/2/3=switch tabs) -->
+      <div id="sb-tabs">
+        <button class="stab active" data-tab="summary"  title="Summary (key 1)">📋 Summary</button>
+        <button class="stab"        data-tab="extracted" title="Extracted (key 2)">🔍 Extracted<span id="stab-badge-extracted" class="stab-badge hidden"></span></button>
+        <button class="stab"        data-tab="macros"    title="Macros (key 3)">⚡ Macros<span id="stab-badge-macros" class="stab-badge hidden"></span></button>
+      </div>
+      <!-- pane container -->
+      <div id="sb-body">
+        <div id="stab-summary"   class="stab-pane"></div>
+        <div id="stab-extracted" class="stab-pane hidden"></div>
+        <div id="stab-macros"    class="stab-pane hidden"></div>
+      </div>
+    </div>
+
+  </div><!-- /#main-area -->
 
   <!-- ── Loading overlay ─────────────────────────────────────────────── -->
   <div id="loading" class="hidden">
