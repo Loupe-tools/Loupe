@@ -2756,6 +2756,7 @@ body.dark .image-hex-header {
   <div id="toolbar">
     <span id="app-title">🐡 PhishFinder</span>
     <button class="tb-btn" id="btn-open" title="Open file (or drag &amp; drop)">📁 Open File</button>
+    <button class="tb-btn" id="btn-paste" title="Paste from clipboard (Ctrl+V)">📋 Paste</button>
     <div id="file-info-wrap">
       <span id="file-info"></span>
       <button class="tb-close hidden" id="btn-close" title="Close file">✕</button>
@@ -14323,12 +14324,113 @@ class App {
 
   _setupToolbar() {
     document.getElementById('btn-open').addEventListener('click', () => document.getElementById('file-input').click());
+    document.getElementById('btn-paste').addEventListener('click', () => this._pasteFromClipboard());
     document.getElementById('btn-security').addEventListener('click', () => this._toggleSidebar());
     document.getElementById('btn-yara').addEventListener('click', () => this._openYaraDialog());
     document.getElementById('btn-close').addEventListener('click', () => this._clearFile());
     document.getElementById('btn-zoom-out').addEventListener('click', () => this._setZoom(this.zoom - 10));
     document.getElementById('btn-zoom-in').addEventListener('click', () => this._setZoom(this.zoom + 10));
     document.getElementById('btn-theme').addEventListener('click', () => this._toggleTheme());
+
+    // Ctrl+V paste shortcut (when not focused on an input)
+    document.addEventListener('paste', e => {
+      // Don't intercept paste in text inputs, textareas, or YARA editor
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      e.preventDefault();
+      this._handlePasteEvent(e);
+    });
+  }
+
+  // ── Paste from clipboard ────────────────────────────────────────────────
+  async _pasteFromClipboard() {
+    try {
+      // Try the Clipboard API (requires HTTPS or localhost, user permission)
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          // Check for files/images first
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getType(type);
+              const ext = type.split('/')[1] === 'jpeg' ? 'jpg' : type.split('/')[1];
+              const file = new File([blob], `clipboard.${ext}`, { type });
+              this._loadFile(file);
+              return;
+            }
+          }
+          // Check for text
+          if (item.types.includes('text/html')) {
+            const blob = await item.getType('text/html');
+            const text = await blob.text();
+            const file = new File([text], 'clipboard.html', { type: 'text/html' });
+            this._loadFile(file);
+            return;
+          }
+          if (item.types.includes('text/plain')) {
+            const blob = await item.getType('text/plain');
+            const text = await blob.text();
+            const file = new File([text], 'clipboard.txt', { type: 'text/plain' });
+            this._loadFile(file);
+            return;
+          }
+        }
+        this._toast('Clipboard is empty or contains unsupported content', 'error');
+      } else {
+        // Fallback: readText only
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          const file = new File([text], 'clipboard.txt', { type: 'text/plain' });
+          this._loadFile(file);
+        } else {
+          this._toast('Clipboard is empty', 'error');
+        }
+      }
+    } catch (e) {
+      this._toast('Clipboard access denied — try Ctrl+V instead', 'error');
+    }
+  }
+
+  _handlePasteEvent(e) {
+    const dt = e.clipboardData;
+    if (!dt) return;
+
+    // Check for files (e.g., copied file from explorer, screenshot)
+    if (dt.files && dt.files.length) {
+      this._loadFile(dt.files[0]);
+      return;
+    }
+
+    // Check for images in clipboard items
+    for (const item of (dt.items || [])) {
+      if (item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (blob) {
+          const ext = item.type.split('/')[1] === 'jpeg' ? 'jpg' : item.type.split('/')[1];
+          const file = new File([blob], `clipboard.${ext}`, { type: item.type });
+          this._loadFile(file);
+          return;
+        }
+      }
+    }
+
+    // Check for HTML text
+    const html = dt.getData('text/html');
+    if (html && html.trim()) {
+      const file = new File([html], 'clipboard.html', { type: 'text/html' });
+      this._loadFile(file);
+      return;
+    }
+
+    // Fallback to plain text
+    const text = dt.getData('text/plain');
+    if (text && text.trim()) {
+      const file = new File([text], 'clipboard.txt', { type: 'text/plain' });
+      this._loadFile(file);
+      return;
+    }
+
+    this._toast('Nothing to paste', 'error');
   }
 
   _handleFiles(files) {
