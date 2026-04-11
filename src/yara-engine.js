@@ -291,9 +291,9 @@ class YaraEngine {
       const count = (stringMatches[varId] || []).length;
       const val = parseInt(countCond[3]);
       switch (countCond[2]) {
-        case '>':  return count > val;
+        case '>': return count > val;
         case '>=': return count >= val;
-        case '<':  return count < val;
+        case '<': return count < val;
         case '<=': return count <= val;
         case '==': return count === val;
         case '!=': return count !== val;

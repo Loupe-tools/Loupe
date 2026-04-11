@@ -24,7 +24,6 @@ default_yara_js = f'const DEFAULT_YARA_RULES = `{yar_rules_escaped}`;\n'
 JS_FILES = [
     'src/constants.js',
     'src/vba-utils.js',
-    'src/threat-signatures.js',
     'src/yara-engine.js',
     'src/docx-parser.js',
     'src/style-resolver.js',
@@ -34,6 +33,16 @@ JS_FILES = [
     'src/renderers/ole-cfb-parser.js',
     'src/renderers/xlsx-renderer.js',
     'src/renderers/pptx-renderer.js',
+    'src/renderers/odt-renderer.js',
+    'src/renderers/odp-renderer.js',
+    'src/renderers/ppt-renderer.js',
+    'src/renderers/rtf-renderer.js',
+    'src/renderers/zip-renderer.js',
+    'src/renderers/iso-renderer.js',
+    'src/renderers/url-renderer.js',
+    'src/renderers/onenote-renderer.js',
+    'src/renderers/iqy-slk-renderer.js',
+    'src/renderers/wsf-renderer.js',
     'src/renderers/csv-renderer.js',
     'src/renderers/doc-renderer.js',
     'src/renderers/msg-renderer.js',
@@ -75,7 +84,7 @@ HTML = f"""<!DOCTYPE html>
     <button class="tb-btn" id="btn-security" title="Toggle security sidebar (S)">🛡 Toggle Sidebar</button>
     <button class="tb-btn" id="btn-yara" title="YARA rule editor (Y)">📐 YARA Rules</button>
     <button class="tb-btn" id="btn-theme" title="Toggle dark mode">🌙</button>
-    <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.pdf,.rtf,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.wsf,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml" style="display:none">
+    <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.ppt,.odt,.odp,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.rtf,.pdf,.zip,.rar,.7z,.cab,.iso,.img,.one,.url,.webloc,.iqy,.slk,.wsf,.wsc,.wsh,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml" style="display:none">
   </div>
 
   <!-- ── Main area (viewer + sidebar side-by-side) ──────────────────── -->
@@ -91,7 +100,11 @@ HTML = f"""<!DOCTYPE html>
       <div id="drop-zone">
         <span class="dz-icon">📄</span>
         <div class="dz-text">Drop a file here to analyse</div>
-        <div class="dz-sub">docx · xlsx · pptx · pdf · doc · msg · eml · lnk · hta · csv · and any file · 100% offline</div>
+        <div class="dz-sub">docx · xlsx · pptx · pdf · doc · eml · rtf · zip · iso · odt · one · lnk · hta · and any file · 100% offline</div>
+      </div>
+      <div id="doc-search-wrap" class="hidden">
+        <input type="text" id="doc-search" placeholder="Search content…" spellcheck="false">
+        <span id="doc-search-count"></span>
       </div>
       <div id="page-container"></div>
     </div>
@@ -101,22 +114,10 @@ HTML = f"""<!DOCTYPE html>
 
     <!-- sidebar -->
     <div id="sidebar" class="hidden">
-      <!-- risk bar -->
       <div id="sb-risk" class="sb-risk risk-low">
         <span id="sb-risk-title">No threats detected</span>
       </div>
-      <!-- tab strip (S=toggle, 1/2/3=switch tabs) -->
-      <div id="sb-tabs">
-        <button class="stab active" data-tab="summary"  title="Summary (key 1)">📋 Summary</button>
-        <button class="stab"        data-tab="extracted" title="Signatures (key 2)">🔍 Signatures<span id="stab-badge-extracted" class="stab-badge hidden"></span></button>
-        <button class="stab"        data-tab="macros"    title="Macros (key 3)">⚡ Macros<span id="stab-badge-macros" class="stab-badge hidden"></span></button>
-      </div>
-      <!-- pane container -->
-      <div id="sb-body">
-        <div id="stab-summary"   class="stab-pane"></div>
-        <div id="stab-extracted" class="stab-pane hidden"></div>
-        <div id="stab-macros"    class="stab-pane hidden"></div>
-      </div>
+      <div id="sb-body"></div>
     </div>
 
   </div><!-- /#main-area -->

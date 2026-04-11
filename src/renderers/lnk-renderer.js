@@ -113,16 +113,16 @@ class LnkRenderer {
 
       const dangers = this._findDangers(info);
       for (const d of dangers) {
-        f.externalRefs.push({ type: 'LNK Danger', url: d.label + ': ' + d.detail, severity: d.sev });
+        f.externalRefs.push({ type: IOC.PATTERN, url: d.label + ': ' + d.detail, severity: d.sev });
         if (d.sev === 'high') f.risk = 'high';
         else if (d.sev === 'medium' && f.risk !== 'high') f.risk = 'medium';
       }
 
       // Check for UNC paths (credential theft)
       const allPaths = [info.targetPath, info.localBasePath, info.iconLocation, info.workingDir,
-        info.netSharePath, info.envPath].filter(Boolean).join('\n');
+      info.netSharePath, info.envPath].filter(Boolean).join('\n');
       for (const m of allPaths.matchAll(/\\\\[^\s\\]+\\[^\s]+/g)) {
-        f.externalRefs.push({ type: 'UNC Path (LNK)', url: m[0], severity: 'medium' });
+        f.externalRefs.push({ type: IOC.UNC_PATH, url: m[0], severity: 'medium' });
         if (f.risk === 'low') f.risk = 'medium';
       }
 
@@ -146,19 +146,19 @@ class LnkRenderer {
     const info = {
       flags,
       hasLinkTargetIDList: !!(flags & 0x01),
-      hasLinkInfo:         !!(flags & 0x02),
-      hasName:             !!(flags & 0x04),
-      hasRelativePath:     !!(flags & 0x08),
-      hasWorkingDir:       !!(flags & 0x10),
-      hasArguments:        !!(flags & 0x20),
-      hasIconLocation:     !!(flags & 0x40),
-      isUnicode:           !!(flags & 0x80),
-      fileSize:  dv.getUint32(52, true),
+      hasLinkInfo: !!(flags & 0x02),
+      hasName: !!(flags & 0x04),
+      hasRelativePath: !!(flags & 0x08),
+      hasWorkingDir: !!(flags & 0x10),
+      hasArguments: !!(flags & 0x20),
+      hasIconLocation: !!(flags & 0x40),
+      isUnicode: !!(flags & 0x80),
+      fileSize: dv.getUint32(52, true),
       showCommand: this._showCmd(dv.getUint32(60, true)),
       attrStr: this._attrStr(attrs),
       creationTime: this._fileTime(dv, 28),
-      accessTime:   this._fileTime(dv, 36),
-      writeTime:    this._fileTime(dv, 44),
+      accessTime: this._fileTime(dv, 36),
+      writeTime: this._fileTime(dv, 44),
     };
 
     let off = 76;
@@ -256,7 +256,7 @@ class LnkRenderer {
   _findDangers(info) {
     const dangers = [];
     const allText = [info.targetPath, info.arguments, info.localBasePath,
-      info.workingDir, info.iconLocation, info.envPath, info.relativePath]
+    info.workingDir, info.iconLocation, info.envPath, info.relativePath]
       .filter(Boolean).join(' ').toLowerCase();
 
     const suspExes = [

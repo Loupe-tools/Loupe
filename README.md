@@ -24,11 +24,17 @@ Phishing attachments are the #1 initial access vector. SOC analysts, incident re
 | Category | Extensions |
 |---|---|
 | **Office (modern)** | `.docx` `.docm` `.xlsx` `.xlsm` `.pptx` `.pptm` `.ods` |
-| **Office (legacy)** | `.doc` `.xls` |
+| **Office (legacy)** | `.doc` `.xls` `.ppt` |
+| **OpenDocument** | `.odt` (text) · `.odp` (presentation) |
+| **RTF** | `.rtf` — text extraction + OLE/exploit analysis |
 | **PDF** | `.pdf` |
 | **Email** | `.eml` `.msg` |
-| **Windows** | `.lnk` (Shell Link) · `.hta` (HTML Application) |
-| **Data** | `.csv` `.tsv` |
+| **Archives** | `.zip` `.rar` `.7z` `.cab` — content listing + threat flagging |
+| **Disk images** | `.iso` `.img` — ISO 9660 filesystem listing |
+| **OneNote** | `.one` — embedded object extraction + phishing detection |
+| **Windows** | `.lnk` (Shell Link) · `.hta` (HTML Application) · `.url` `.webloc` (Internet shortcuts) |
+| **Scripts** | `.wsf` `.wsc` `.wsh` (Windows Script Files — parsed) |
+| **Data** | `.csv` `.tsv` · `.iqy` (Internet Query) · `.slk` (Symbolic Link) |
 | **Catch-all** | *Any file* — plain-text view with line numbers, or hex dump for binary data |
 
 ### Security Analysis
@@ -36,7 +42,8 @@ Phishing attachments are the #1 initial access vector. SOC analysts, incident re
 | Capability | Detail |
 |---|---|
 | **Risk assessment** | Colour-coded risk bar (low / medium / high) with finding summary |
-| **Threat signatures** | 84+ scored signatures across 6 categories: PDF, Office VBA, JavaScript, PowerShell, PE binaries, and general obfuscation — each with severity scores (1–3) |
+| **Document search** | In-toolbar search with match highlighting, match counter, and `Enter`/`Shift+Enter` navigation (`Ctrl+F` to focus) |
+| **Threat signatures** | 84+ scored signatures across 6 categories: PDF, Office VBA, JavaScript, PowerShell, PE binaries, and general obfuscation — each with severity scores (1–3), sorted by risk |
 | **YARA rule engine** | In-browser YARA rule parser and matcher — load/edit/save `.yar` rules, scan any loaded file with text, hex, and regex string support |
 | **File hashes** | MD5 (pure-JS) · SHA-1 · SHA-256 computed in-browser, with one-click VirusTotal lookup |
 | **IOC extraction** | URLs, email addresses, IP addresses, file paths, and UNC paths pulled from document content and VBA source |
@@ -57,8 +64,9 @@ Phishing attachments are the #1 initial access vector. SOC analysts, incident re
 | **Light / dark toggle** | Switch between dark and light themes with one click (🌙 / ☀) |
 | **Floating zoom controls** | Zoom 50–200% via a floating control that stays out of the way |
 | **Click-and-drag panning** | Grab and drag to pan around rendered documents |
+| **Collapsible sidebar** | Single-pane sidebar with collapsible `<details>` sections: File Info, Macros, Signatures & IOCs |
 | **Resizable sidebar** | Drag the sidebar edge to resize (33–60% of the viewport) |
-| **Keyboard shortcuts** | `S` toggle sidebar · `1` / `2` / `3` switch tabs |
+| **Keyboard shortcuts** | `S` toggle sidebar · `Y` YARA dialog · `Ctrl+F` search document |
 | **Loading overlay** | Spinner with status message while parsing large files |
 | **Toast notifications** | Non-intrusive feedback for downloads, clipboard operations, and errors |
 
@@ -69,10 +77,10 @@ Phishing attachments are the #1 initial access vector. SOC analysts, incident re
 1. **Open** `phishfinder.html` in any modern browser (Chrome, Firefox, Edge, Safari).
 2. **Drop** a file onto the drop zone, or click **📁 Open File**.
 3. The file renders in the viewer — use click-and-drag to pan, and the floating ± buttons to zoom.
-4. Click **🛡 Toggle Sidebar** (or press **S**) to open the security panel:
-   - **📋 Summary** — file format, MD5/SHA-1/SHA-256 hashes, VBA project hash, document metadata.
-   - **🔍 Extracted** — IOCs (URLs, emails, IPs, file paths, UNC paths), searchable and downloadable as `.txt`.
-   - **⚡ Macros** — VBA module source with syntax highlighting, auto-execute warnings, and download options.
+4. Click **🛡 Toggle Sidebar** (or press **S**) to open the security panel — a single scrollable pane with collapsible sections:
+   - **📋 File Info** — file format, MD5/SHA-1/SHA-256 hashes, VBA project hash, document metadata.
+   - **⚡ Macros** — VBA module source with syntax highlighting, auto-execute warnings, and download options (only shown when macros are detected).
+   - **🔍 Signatures & IOCs** — threat signatures and IOCs (URLs, emails, IPs, file paths, UNC paths), sorted by severity, filterable, and downloadable as `.txt`.
 5. Use **🌙** to toggle between dark and light themes.
 
 ---

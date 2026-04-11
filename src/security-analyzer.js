@@ -1,7 +1,7 @@
 'use strict';
 // ════════════════════════════════════════════════════════════════════════════
 // security-analyzer.js — DOCX security analysis (macros, external refs, metadata)
-// Depends on: constants.js, vba-utils.js
+// Depends on: constants.js, vba-utils.js, yara-engine.js (pattern detection via YARA)
 // ════════════════════════════════════════════════════════════════════════════
 class SecurityAnalyzer {
   /**
@@ -11,32 +11,25 @@ class SecurityAnalyzer {
    *                               metadata, risk, macroSize, macroHash, rawBin }
    */
   analyze(parsed) {
-    const f = {hasMacros:false, autoExec:[], externalRefs:[], modules:[],
-               metadata:{}, risk:'low', macroSize:0, macroHash:null, rawBin:null,
-               signatureMatches:[]};
+    const f = {
+      hasMacros: false, autoExec: [], externalRefs: [], modules: [],
+      metadata: {}, risk: 'low', macroSize: 0, macroHash: null, rawBin: null,
+      signatureMatches: []
+    };
     if (parsed.metadata) f.metadata = this._metadata(parsed.metadata);
     if (parsed.macros?.present) {
       f.hasMacros = true;
-      f.modules   = parsed.macros.modules || [];
-      f.macroSize = parsed.macros.size    || 0;
+      f.modules = parsed.macros.modules || [];
+      f.macroSize = parsed.macros.size || 0;
       f.macroHash = parsed.macros.sha256;
       if (parsed.macros.rawBin) f.rawBin = parsed.macros.rawBin;
       for (const m of f.modules) {
         if (m.source) {
           const p = autoExecPatterns(m.source);
-          if (p.length) f.autoExec.push({module: m.name, patterns: p});
+          if (p.length) f.autoExec.push({ module: m.name, patterns: p });
         }
       }
-      // Run threat signature scan against VBA source
-      const vbaSrc = f.modules.map(m => m.source || '').join('\n');
-      if (vbaSrc.trim()) {
-        const sigMatches = ThreatScanner.scan(vbaSrc, ['office_vba', 'general_obfuscation']);
-        f.signatureMatches.push(...sigMatches);
-        f.externalRefs.push(...ThreatScanner.toFindings(sigMatches));
-        const tl = ThreatScanner.computeThreatLevel(sigMatches);
-        if (tl.level === 'high') f.risk = 'high';
-        else if (tl.level === 'medium' && f.risk !== 'high') f.risk = 'medium';
-      }
+      // Pattern detection against VBA source is handled by YARA (auto-scan on file load)
     }
     f.externalRefs.push(...this._externalRefs(parsed));
     if (f.hasMacros && f.autoExec.length) f.risk = 'high';
@@ -50,37 +43,37 @@ class SecurityAnalyzer {
     const CP = 'http://schemas.openxmlformats.org/package/2006/metadata/core-properties';
     const DT = 'http://purl.org/dc/terms/';
     return {
-      title:          g(DC,'title'),
-      subject:        g(DC,'subject'),
-      creator:        g(DC,'creator'),
-      lastModifiedBy: g(CP,'lastModifiedBy'),
-      revision:       g(CP,'revision'),
-      created:        g(DT,'created'),
-      modified:       g(DT,'modified'),
+      title: g(DC, 'title'),
+      subject: g(DC, 'subject'),
+      creator: g(DC, 'creator'),
+      lastModifiedBy: g(CP, 'lastModifiedBy'),
+      revision: g(CP, 'revision'),
+      created: g(DT, 'created'),
+      modified: g(DT, 'modified'),
     };
   }
 
   _externalRefs(parsed) {
     const refs = [];
-    const typeNames = {
-      'hyperlink':        'Hyperlink',
-      'image':            'External Image',
-      'oleObject':        'OLE Object',
-      'frame':            'External Frame',
-      'subDocument':      'Sub-Document',
-      'attachedTemplate': 'Template Injection',
-      'externalLinkPath': 'External Link',
+    const sevByRelType = {
+      'hyperlink': 'info',
+      'image': 'medium',
+      'oleObject': 'high',
+      'frame': 'high',
+      'subDocument': 'high',
+      'attachedTemplate': 'high',
+      'externalLinkPath': 'high',
     };
     // Scan relationship file for External targets
     if (parsed.rels) {
-      for (const rel of parsed.rels.getElementsByTagNameNS(PKG,'Relationship')) {
-        const mode   = rel.getAttribute('TargetMode');
+      for (const rel of parsed.rels.getElementsByTagNameNS(PKG, 'Relationship')) {
+        const mode = rel.getAttribute('TargetMode');
         const target = rel.getAttribute('Target');
-        const type   = rel.getAttribute('Type') || '';
+        const type = rel.getAttribute('Type') || '';
         if (mode === 'External' && target) {
-          const typeName = Object.entries(typeNames).find(([k]) => type.endsWith('/'+k))?.[1] || 'External';
-          refs.push({type: typeName, url: target,
-            severity: typeName==='Hyperlink'?'info' : typeName==='External Image'?'medium' : 'high'});
+          const relKey = Object.keys(sevByRelType).find(k => type.endsWith('/' + k));
+          const severity = relKey ? sevByRelType[relKey] : 'high';
+          refs.push({ type: IOC.URL, url: target, severity });
         }
       }
     }
@@ -88,7 +81,7 @@ class SecurityAnalyzer {
     if (parsed.document) {
       const seen = new Set(refs.map(r => r.url));
       try {
-        for (const instr of Array.from(parsed.document.getElementsByTagNameNS(W,'instrText'))) {
+        for (const instr of Array.from(parsed.document.getElementsByTagNameNS(W, 'instrText'))) {
           const text = (instr.textContent || '').trim();
           const m = text.match(/\bHYPERLINK\s+"([^"]+)"/i);
           if (!m) continue;
@@ -96,16 +89,16 @@ class SecurityAnalyzer {
           if (!url || seen.has(url)) continue;
           seen.add(url);
           const safe = sanitizeUrl(url);
-          refs.push({type:'Hyperlink (field code)', url, severity: safe ? 'info' : 'medium'});
+          refs.push({ type: IOC.URL, url, severity: safe ? 'info' : 'medium' });
         }
-      } catch(e) {}
+      } catch (e) { }
     }
     return refs;
   }
 
   /** Apply syntax highlighting to decoded VBA source. */
   highlightVBA(src) {
-    const esc = src.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const esc = src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return esc.replace(
       /\b(AutoOpen|Document_Open|Auto_Open|Workbook_Open|Shell|WScript\.Shell|PowerShell|cmd\.exe|URLDownloadToFile|XMLHTTP|WinHttpRequest|RegWrite|RegDelete|Kill|CreateObject|GetObject|CallByName|Environ)\b/gi,
       '<mark class="vba-danger">$&</mark>'

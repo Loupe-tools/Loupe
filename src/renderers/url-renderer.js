@@ -1,0 +1,191 @@
+'use strict';
+// ════════════════════════════════════════════════════════════════════════════
+// url-renderer.js — Internet shortcut file analysis (.url, .webloc, .website)
+// Depends on: constants.js (IOC, escHtml)
+// ════════════════════════════════════════════════════════════════════════════
+class UrlShortcutRenderer {
+
+  render(buffer, fileName) {
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const ext = (fileName || '').split('.').pop().toLowerCase();
+    const wrap = document.createElement('div'); wrap.className = 'url-view';
+
+    // Banner
+    const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
+    banner.innerHTML = '<strong>Internet Shortcut Analysis</strong> — .url / .webloc / .website files can redirect users to malicious sites or UNC paths.';
+    wrap.appendChild(banner);
+
+    const parsed = ext === 'webloc' ? this._parseWebloc(text) : this._parseUrlFile(text);
+
+    // URL display card
+    const card = document.createElement('div'); card.className = 'url-card';
+
+    // URL
+    if (parsed.url) {
+      const urlDiv = document.createElement('div'); urlDiv.className = 'url-target';
+      const lbl = document.createElement('span'); lbl.className = 'url-label'; lbl.textContent = 'Target URL: ';
+      const val = document.createElement('span'); val.className = 'url-value';
+      val.textContent = parsed.url;
+      urlDiv.appendChild(lbl); urlDiv.appendChild(val);
+      card.appendChild(urlDiv);
+
+      // Risk indicators
+      const risks = this._assessUrl(parsed.url);
+      if (risks.length) {
+        const riskDiv = document.createElement('div'); riskDiv.className = 'url-risks';
+        for (const r of risks) {
+          const d = document.createElement('div'); d.className = `url-risk url-risk-${r.sev}`;
+          d.textContent = r.msg; riskDiv.appendChild(d);
+        }
+        card.appendChild(riskDiv);
+      }
+    } else {
+      const nf = document.createElement('div'); nf.className = 'url-no-target';
+      nf.textContent = 'No target URL found.'; card.appendChild(nf);
+    }
+
+    // Additional fields
+    if (parsed.iconFile) {
+      const row = document.createElement('div'); row.className = 'url-field';
+      row.innerHTML = `<span class="url-label">Icon File:</span> <span class="url-value">${escHtml(parsed.iconFile)}</span>`;
+      card.appendChild(row);
+    }
+    if (parsed.iconIndex !== undefined) {
+      const row = document.createElement('div'); row.className = 'url-field';
+      row.innerHTML = `<span class="url-label">Icon Index:</span> <span class="url-value">${escHtml(String(parsed.iconIndex))}</span>`;
+      card.appendChild(row);
+    }
+    if (parsed.workingDir) {
+      const row = document.createElement('div'); row.className = 'url-field';
+      row.innerHTML = `<span class="url-label">Working Directory:</span> <span class="url-value">${escHtml(parsed.workingDir)}</span>`;
+      card.appendChild(row);
+    }
+    if (parsed.hotKey) {
+      const row = document.createElement('div'); row.className = 'url-field';
+      row.innerHTML = `<span class="url-label">Hot Key:</span> <span class="url-value">${escHtml(parsed.hotKey)}</span>`;
+      card.appendChild(row);
+    }
+
+    wrap.appendChild(card);
+
+    // Raw file content
+    const details = document.createElement('details'); details.className = 'rtf-raw-details';
+    const summary = document.createElement('summary'); summary.textContent = 'Show Raw File Content';
+    details.appendChild(summary);
+    const rawPre = document.createElement('pre'); rawPre.className = 'rtf-raw-source';
+    rawPre.textContent = text.length > 10000 ? text.slice(0, 10000) + '\n… truncated' : text;
+    details.appendChild(rawPre); wrap.appendChild(details);
+
+    return wrap;
+  }
+
+  analyzeForSecurity(buffer, fileName) {
+    const f = {
+      risk: 'medium', hasMacros: false, macroSize: 0, macroHash: '',
+      autoExec: [], modules: [], externalRefs: [], metadata: {},
+      signatureMatches: []
+    };
+
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const ext = (fileName || '').split('.').pop().toLowerCase();
+    const parsed = ext === 'webloc' ? this._parseWebloc(text) : this._parseUrlFile(text);
+
+    if (parsed.url) {
+      const risks = this._assessUrl(parsed.url);
+      for (const r of risks) {
+        f.externalRefs.push({ type: IOC.PATTERN, url: r.msg, severity: r.sev });
+        if (r.sev === 'high') f.risk = 'high';
+        else if (r.sev === 'medium' && f.risk !== 'high') f.risk = 'medium';
+      }
+      // Add the URL itself as a finding
+      const urlSev = /^\\\\|^file:/i.test(parsed.url) ? 'high' : 'medium';
+      f.externalRefs.push({ type: IOC.URL, url: parsed.url, severity: urlSev });
+    }
+
+    if (parsed.iconFile) {
+      f.externalRefs.push({ type: IOC.FILE_PATH, url: parsed.iconFile, severity: 'info' });
+    }
+
+    // Pattern detection is handled entirely by YARA (auto-scan on file load)
+    return f;
+  }
+
+  // ── INI-format .url parser ──────────────────────────────────────────────────
+
+  _parseUrlFile(text) {
+    const result = {};
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      const m = line.match(/^\s*(\w+)\s*=\s*(.*?)\s*$/);
+      if (!m) continue;
+      const key = m[1].toLowerCase(), val = m[2];
+      if (key === 'url') result.url = val;
+      else if (key === 'iconfile') result.iconFile = val;
+      else if (key === 'iconindex') result.iconIndex = val;
+      else if (key === 'workingdirectory') result.workingDir = val;
+      else if (key === 'hotkey') result.hotKey = val;
+    }
+    return result;
+  }
+
+  // ── XML plist .webloc parser ────────────────────────────────────────────────
+
+  _parseWebloc(text) {
+    const result = {};
+    try {
+      const doc = new DOMParser().parseFromString(text, 'text/xml');
+      const strings = doc.getElementsByTagName('string');
+      if (strings.length) result.url = strings[0].textContent.trim();
+    } catch (e) { }
+    return result;
+  }
+
+  // ── URL risk assessment ─────────────────────────────────────────────────────
+
+  _assessUrl(url) {
+    const risks = [];
+
+    // UNC path — credential theft
+    if (/^\\\\/.test(url)) {
+      risks.push({ sev: 'high', msg: '⚠ UNC path — can steal NTLM credentials via SMB authentication' });
+    }
+
+    // file:// protocol
+    if (/^file:/i.test(url)) {
+      risks.push({ sev: 'high', msg: '⚠ file:// protocol — accesses local or network filesystem' });
+    }
+
+    // IP-based URL (no hostname)
+    if (/^https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/i.test(url)) {
+      risks.push({ sev: 'medium', msg: 'IP-based URL — no domain name (common in phishing)' });
+    }
+
+    // Non-standard port
+    const portMatch = url.match(/^https?:\/\/[^\/:]+(:\d+)/i);
+    if (portMatch) {
+      const port = parseInt(portMatch[1].slice(1));
+      if (![80, 443, 8080, 8443].includes(port)) {
+        risks.push({ sev: 'medium', msg: `Non-standard port: ${port}` });
+      }
+    }
+
+    // Data URI
+    if (/^data:/i.test(url)) {
+      risks.push({ sev: 'high', msg: '⚠ data: URI — can embed executable content' });
+    }
+
+    // JavaScript URI
+    if (/^javascript:/i.test(url)) {
+      risks.push({ sev: 'high', msg: '⚠ javascript: URI — code execution' });
+    }
+
+    // URL shortener domains
+    if (/^https?:\/\/(bit\.ly|goo\.gl|tinyurl|t\.co|is\.gd|buff\.ly|ow\.ly|rebrand\.ly)/i.test(url)) {
+      risks.push({ sev: 'medium', msg: 'URL shortener — hides true destination' });
+    }
+
+    return risks;
+  }
+}

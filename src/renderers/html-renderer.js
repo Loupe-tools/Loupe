@@ -8,31 +8,7 @@
 class HtmlRenderer {
 
   // URL-bearing attributes to extract from parsed DOM
-  static URL_ATTRS = ['href','src','action','formaction','data','poster','background','cite','codebase','longdesc','usemap'];
-
-  // HTML-specific security patterns
-  static HTML_PATTERNS = [
-    { rx: /<script[\s>]/gi,                   label: '<script> tag', sev: 'high' },
-    { rx: /\bon\w+\s*=/gi,                    label: 'Inline event handler', sev: 'high' },
-    { rx: /<iframe[\s>]/gi,                   label: '<iframe> tag', sev: 'high' },
-    { rx: /<object[\s>]/gi,                   label: '<object> tag', sev: 'high' },
-    { rx: /<embed[\s>]/gi,                    label: '<embed> tag', sev: 'high' },
-    { rx: /<form[\s>]/gi,                     label: '<form> tag', sev: 'medium' },
-    { rx: /type\s*=\s*["']?password/gi,       label: 'Password input field', sev: 'high' },
-    { rx: /document\.cookie/gi,               label: 'document.cookie access', sev: 'high' },
-    { rx: /window\.location/gi,               label: 'window.location redirect', sev: 'high' },
-    { rx: /\.submit\s*\(/gi,                  label: 'Form auto-submit', sev: 'high' },
-    { rx: /eval\s*\(/gi,                      label: 'eval() call', sev: 'high' },
-    { rx: /document\.write/gi,                label: 'document.write', sev: 'medium' },
-    { rx: /atob\s*\(/gi,                      label: 'Base64 decode (atob)', sev: 'medium' },
-    { rx: /unescape\s*\(/gi,                  label: 'unescape() obfuscation', sev: 'medium' },
-    { rx: /String\.fromCharCode/gi,           label: 'String.fromCharCode obfuscation', sev: 'medium' },
-    { rx: /<meta[^>]+refresh/gi,              label: 'Meta refresh redirect', sev: 'medium' },
-    { rx: /<base\s+href/gi,                   label: '<base href> tag', sev: 'medium' },
-    { rx: /javascript\s*:/gi,                 label: 'javascript: URI', sev: 'high' },
-    { rx: /data\s*:\s*text\/html/gi,          label: 'data: HTML URI', sev: 'high' },
-    { rx: /vbscript\s*:/gi,                   label: 'vbscript: URI', sev: 'high' },
-  ];
+  static URL_ATTRS = ['href', 'src', 'action', 'formaction', 'data', 'poster', 'background', 'cite', 'codebase', 'longdesc', 'usemap'];
 
   /**
    * Render HTML file with sandboxed iframe preview + source view.
@@ -152,21 +128,7 @@ class HtmlRenderer {
     const refs = [];
     let risk = 'low';
 
-    // ── 1. HTML-specific pattern scanning ────────────────────────────────
-    for (const pat of HtmlRenderer.HTML_PATTERNS) {
-      const matches = text.match(pat.rx);
-      if (matches) {
-        refs.push({
-          type: 'HTML Pattern',
-          url: `${pat.label} (${matches.length} occurrence${matches.length > 1 ? 's' : ''})`,
-          severity: pat.sev
-        });
-        if (pat.sev === 'high') risk = 'high';
-        else if (pat.sev === 'medium' && risk === 'low') risk = 'medium';
-      }
-    }
-
-    // ── 2. DOM-aware URL extraction ──────────────────────────────────────
+    // ── 1. DOM-aware URL extraction ──────────────────────────────────────
     const domInfo = this._extractDomContent(text);
 
     for (const url of domInfo.urls) {
@@ -180,17 +142,17 @@ class HtmlRenderer {
         if (risk === 'low') risk = 'medium';
       }
       refs.push({
-        type: 'URL',
+        type: IOC.URL,
         url: url,
         severity: sev
       });
     }
 
-    // ── 3. Form credential harvesting detection ─────────────────────────
+    // ── 2. Form credential harvesting detection ─────────────────────────
     for (const form of domInfo.forms) {
       if (form.hasPassword) {
         refs.push({
-          type: 'Credential Harvest',
+          type: IOC.PATTERN,
           url: `Form with password field → action="${form.action || '(same page)'}"`,
           severity: 'high'
         });
@@ -198,37 +160,7 @@ class HtmlRenderer {
       }
     }
 
-    // ── 4. PlainTextRenderer danger patterns ─────────────────────────────
-    if (typeof PlainTextRenderer !== 'undefined' && PlainTextRenderer.DANGER_PATTERNS) {
-      for (const pat of PlainTextRenderer.DANGER_PATTERNS) {
-        const matches = text.match(pat.rx);
-        if (matches && !refs.some(r => r.url.includes(pat.label))) {
-          refs.push({
-            type: 'Pattern',
-            url: `${pat.label} (${matches.length}×)`,
-            severity: pat.sev
-          });
-          if (pat.sev === 'high' && risk !== 'high') risk = 'high';
-          else if (pat.sev === 'medium' && risk === 'low') risk = 'medium';
-        }
-      }
-    }
-
-    // ── 5. ThreatScanner integration ─────────────────────────────────────
-    let signatureMatches = [];
-    if (typeof ThreatScanner !== 'undefined') {
-      const cats = ['javascript', 'general_obfuscation'];
-      signatureMatches = ThreatScanner.scan(text, cats);
-      if (signatureMatches.length) {
-        const level = ThreatScanner.computeThreatLevel(signatureMatches);
-        if (level === 'high') risk = 'high';
-        else if (level === 'medium' && risk === 'low') risk = 'medium';
-        const sigFindings = ThreatScanner.toFindings(signatureMatches);
-        refs.push(...sigFindings);
-      }
-    }
-
-    // ── 6. Build augmented buffer (raw + DOM text + extracted URLs) ──────
+    // ── 3. Build augmented buffer (raw + DOM text + extracted URLs) ──────
     const augmentSections = [
       '\n\n=== RENDERED DOM TEXT ===\n\n',
       domInfo.textContent,
@@ -242,7 +174,9 @@ class HtmlRenderer {
     augmentedBuffer.set(rawBytes, 0);
     augmentedBuffer.set(augmentBytes, rawBytes.length);
 
-    // ── 7. Metadata extraction ───────────────────────────────────────────
+    // Pattern detection is handled entirely by YARA (auto-scan on file load)
+
+    // ── 4. Metadata extraction ───────────────────────────────────────────
     const metadata = {};
     const titleMatch = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     if (titleMatch) metadata.title = titleMatch[1].replace(/<[^>]*>/g, '').trim().slice(0, 200);
@@ -254,7 +188,7 @@ class HtmlRenderer {
       hasMacros: false,
       modules: [],
       autoExec: [],
-      signatureMatches,
+      signatureMatches: [],
       augmentedBuffer: augmentedBuffer.buffer
     };
   }
@@ -322,7 +256,7 @@ class HtmlRenderer {
     try {
       const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
       return text;
-    } catch (_) {}
+    } catch (_) { }
     // Fallback to latin-1
     const chunks = [];
     const CHUNK = 512 * 1024;

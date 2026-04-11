@@ -79,11 +79,11 @@ Object.assign(App.prototype, {
     editor.placeholder = 'Paste or type YARA rules here…';
     // Load from localStorage or use examples
     const saved = null;
-    try { const s = localStorage.getItem('phishfinder_yara_rules'); if (s) editor.value = s; } catch(_){}
+    try { const s = localStorage.getItem('phishfinder_yara_rules'); if (s) editor.value = s; } catch (_) { }
     if (!editor.value) editor.value = YaraEngine.EXAMPLE_RULES;
     // Auto-save on change
     editor.addEventListener('input', () => {
-      try { localStorage.setItem('phishfinder_yara_rules', editor.value); } catch(_){}
+      try { localStorage.setItem('phishfinder_yara_rules', editor.value); } catch (_) { }
     });
     editorWrap.appendChild(editor);
     dialog.appendChild(editorWrap);
@@ -113,7 +113,7 @@ Object.assign(App.prototype, {
       const reader = new FileReader();
       reader.onload = () => {
         document.getElementById('yara-editor').value = reader.result;
-        try { localStorage.setItem('phishfinder_yara_rules', reader.result); } catch(_){}
+        try { localStorage.setItem('phishfinder_yara_rules', reader.result); } catch (_) { }
         this._yaraSetStatus(`Loaded: ${f.name}`, 'info');
       };
       reader.readAsText(f);
@@ -268,9 +268,12 @@ Object.assign(App.prototype, {
         tags.textContent = r.tags;
         hdr.appendChild(tags);
       }
+      const severity = (r.meta && r.meta.severity) ? r.meta.severity.toLowerCase() : 'high';
+      const validSeverities = ['critical', 'high', 'medium', 'info'];
+      const sevClass = validSeverities.includes(severity) ? severity : 'high';
       const badge = document.createElement('span');
-      badge.className = 'badge badge-high';
-      badge.textContent = 'MATCH';
+      badge.className = `badge badge-${sevClass}`;
+      badge.textContent = severity;
       hdr.appendChild(badge);
       card.appendChild(hdr);
 
@@ -311,7 +314,7 @@ Object.assign(App.prototype, {
   _autoYaraScan() {
     if (!this._fileBuffer) return;
     let source = '';
-    try { source = localStorage.getItem('phishfinder_yara_rules') || ''; } catch(_){}
+    try { source = localStorage.getItem('phishfinder_yara_rules') || ''; } catch (_) { }
     if (!source) source = YaraEngine.EXAMPLE_RULES;
     if (!source) return;
 
@@ -322,30 +325,40 @@ Object.assign(App.prototype, {
       const results = YaraEngine.scan(this._fileBuffer, rules);
       this._yaraResults = results;
       if (this.findings) this._updateSidebarWithYara(results);
-    } catch(_){ /* silently ignore scan errors during auto-scan */ }
+    } catch (_) { /* silently ignore scan errors during auto-scan */ }
   },
 
   /** Update sidebar extracted tab with YARA results. */
   _updateSidebarWithYara(results) {
     if (!this.findings) return;
     // Remove any previous YARA findings
-    this.findings.externalRefs = (this.findings.externalRefs || []).filter(r => r.type !== 'YARA Match');
-    // Add new YARA findings
+    this.findings.externalRefs = (this.findings.externalRefs || []).filter(r => r.type !== IOC.YARA);
+    // Add new YARA findings with severity from rule meta
+    const validSeverities = ['critical', 'high', 'medium', 'info'];
+    let maxSeverity = null;
+    const sevRank = { critical: 4, high: 3, medium: 2, info: 1 };
     for (const r of results) {
       const desc = (r.meta && r.meta.description) ? r.meta.description : null;
+      const severity = (r.meta && r.meta.severity) ? r.meta.severity.toLowerCase() : 'high';
+      const sev = validSeverities.includes(severity) ? severity : 'high';
       const strings = r.matches.map(m => `${m.id}=${m.value}`).join(', ');
       let text = `Rule "${r.ruleName}"`;
       if (desc) text += ` — ${desc}`;
       text += ` — ${r.matches.length} string(s) matched: ${strings}`;
       this.findings.externalRefs.push({
-        type: 'YARA Match',
+        type: IOC.YARA,
         url: text,
-        severity: 'high'
+        severity: sev
       });
+      if (!maxSeverity || sevRank[sev] > sevRank[maxSeverity]) maxSeverity = sev;
     }
-    // If YARA matches found, bump risk
-    if (results.length > 0 && this.findings.risk === 'low') {
-      this.findings.risk = 'medium';
+    // Bump overall risk based on highest YARA severity
+    if (results.length > 0) {
+      const riskRank = { critical: 4, high: 3, medium: 2, low: 1 };
+      const currentRank = riskRank[this.findings.risk] || 1;
+      if (maxSeverity === 'critical' && currentRank < 4) this.findings.risk = 'critical';
+      else if (maxSeverity === 'high' && currentRank < 3) this.findings.risk = 'high';
+      else if (maxSeverity === 'medium' && currentRank < 2) this.findings.risk = 'medium';
     }
     // Re-render sidebar
     const fileName = (document.getElementById('file-info').textContent || '').split('·')[0].trim();

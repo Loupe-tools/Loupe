@@ -15,9 +15,9 @@ class DocxParser {
     ]);
     const headers = await this._parseHeaders(zip);
     const footers = await this._parseFooters(zip);
-    const media   = await this._extractMedia(zip);
-    const macros  = await this._extractMacros(zip);
-    return {document, styles, numbering, rels, metadata, headers, footers, media, macros};
+    const media = await this._extractMedia(zip);
+    const macros = await this._extractMacros(zip);
+    return { document, styles, numbering, rels, metadata, headers, footers, media, macros };
   }
 
   async _xml(zip, path) {
@@ -27,14 +27,14 @@ class DocxParser {
       const d = new DOMParser().parseFromString(t, 'text/xml');
       if (d.getElementsByTagName('parsererror').length) return null;
       return d;
-    } catch(e) { return null; }
+    } catch (e) { return null; }
   }
 
   async _parseHeaders(zip) {
     const h = {};
     for (const p of Object.keys(zip.files))
       if (/^word\/header\d*\.xml$/.test(p))
-        h[p.replace('word/','')] = await this._xml(zip, p);
+        h[p.replace('word/', '')] = await this._xml(zip, p);
     return h;
   }
 
@@ -42,22 +42,24 @@ class DocxParser {
     const f = {};
     for (const p of Object.keys(zip.files))
       if (/^word\/footer\d*\.xml$/.test(p))
-        f[p.replace('word/','')] = await this._xml(zip, p);
+        f[p.replace('word/', '')] = await this._xml(zip, p);
     return f;
   }
 
   async _extractMedia(zip) {
-    const mime = {png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',
-                  bmp:'image/bmp',svg:'image/svg+xml',emf:'image/x-emf',wmf:'image/x-wmf',
-                  tiff:'image/tiff',tif:'image/tiff',webp:'image/webp'};
+    const mime = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+      bmp: 'image/bmp', svg: 'image/svg+xml', emf: 'image/x-emf', wmf: 'image/x-wmf',
+      tiff: 'image/tiff', tif: 'image/tiff', webp: 'image/webp'
+    };
     const m = {};
     for (const [p, f] of Object.entries(zip.files)) {
       if (p.startsWith('word/media/') && !f.dir) {
         try {
           const data = await f.async('base64');
-          const ext  = p.split('.').pop().toLowerCase();
-          m[p.replace('word/','')] = `data:${mime[ext]||'application/octet-stream'};base64,${data}`;
-        } catch(e) {}
+          const ext = p.split('.').pop().toLowerCase();
+          m[p.replace('word/', '')] = `data:${mime[ext] || 'application/octet-stream'};base64,${data}`;
+        } catch (e) { }
       }
     }
     return m;
@@ -69,14 +71,14 @@ class DocxParser {
     try {
       const data = await f.async('uint8array');
       // rawBin preserved so _downloadMacros can offer binary download when text decoding fails.
-      return {present:true, size:data.length, sha256:await this._sha256(data), modules:parseVBAText(data), rawBin:data};
-    } catch(e) { return {present:true, size:0, sha256:null, modules:[], error:e.message}; }
+      return { present: true, size: data.length, sha256: await this._sha256(data), modules: parseVBAText(data), rawBin: data };
+    } catch (e) { return { present: true, size: 0, sha256: null, modules: [], error: e.message }; }
   }
 
   async _sha256(data) {
     try {
       const buf = await crypto.subtle.digest('SHA-256', data);
-      return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-    } catch(e) { return null; }
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) { return null; }
   }
 }

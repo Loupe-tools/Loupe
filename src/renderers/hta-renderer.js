@@ -5,23 +5,6 @@
 // ════════════════════════════════════════════════════════════════════════════
 class HtaRenderer {
 
-  // Additional HTA-specific danger patterns (supplements PlainTextRenderer patterns)
-  static HTA_PATTERNS = [
-    { rx: /<HTA:APPLICATION[^>]*>/gi,       label: '<HTA:APPLICATION> tag', sev: 'high' },
-    { rx: /\bExecuteGlobal\b/gi,            label: 'ExecuteGlobal', sev: 'high' },
-    { rx: /\bExecuteStatement\b/gi,         label: 'ExecuteStatement', sev: 'high' },
-    { rx: /\bExecute\s*\(/gi,              label: 'Execute()', sev: 'high' },
-    { rx: /\bEval\s*\(/gi,                 label: 'Eval()', sev: 'high' },
-    { rx: /\bGetRef\s*\(/gi,               label: 'GetRef()', sev: 'medium' },
-    { rx: /\bChr\s*\(\s*\d/gi,             label: 'Chr() character obfuscation', sev: 'medium' },
-    { rx: /\bChrW\s*\(\s*\d/gi,            label: 'ChrW() character obfuscation', sev: 'medium' },
-    { rx: /\bStrReverse\b/gi,               label: 'StrReverse (string obfuscation)', sev: 'medium' },
-    { rx: /\bReplace\s*\([^,]+,[^,]+,[^)]+\)/gi, label: 'Replace() (possible deobfuscation)', sev: 'info' },
-    { rx: /\bMsgBox\b/gi,                   label: 'MsgBox (user interaction)', sev: 'info' },
-    { rx: /language\s*=\s*["']?vbscript/gi, label: 'VBScript language block', sev: 'medium' },
-    { rx: /language\s*=\s*["']?jscript/gi,  label: 'JScript language block', sev: 'medium' },
-  ];
-
   render(buffer) {
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
@@ -121,54 +104,30 @@ class HtaRenderer {
     const f = {
       risk: 'high', // HTA files are inherently high-risk
       hasMacros: false, macroSize: 0, macroHash: '',
-      autoExec: [], modules: [], externalRefs: [], metadata: {}
+      autoExec: [], modules: [], externalRefs: [], metadata: {},
+      signatureMatches: []
     };
 
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 
     f.externalRefs.push({
-      type: 'File Type',
+      type: IOC.INFO,
       url: 'HTML Application (HTA) — runs with full system access via mshta.exe',
       severity: 'high'
     });
 
-    // Script block count
+    // Script block count (structural check)
     const scriptBlocks = this._extractScripts(text);
     if (scriptBlocks.length) {
       f.externalRefs.push({
-        type: 'Scripts',
+        type: IOC.PATTERN,
         url: `${scriptBlocks.length} embedded <script> block(s): ${scriptBlocks.map(s => s.language || 'unknown').join(', ')}`,
         severity: 'medium'
       });
     }
 
-    // HTA-specific patterns
-    for (const { rx, label, sev } of HtaRenderer.HTA_PATTERNS) {
-      const matches = text.match(rx);
-      if (matches) {
-        f.externalRefs.push({
-          type: 'HTA Pattern',
-          url: `${label} — ${matches.length} occurrence(s)`,
-          severity: sev
-        });
-      }
-    }
-
-    // Also run the PlainTextRenderer's danger patterns if available
-    if (typeof PlainTextRenderer !== 'undefined' && PlainTextRenderer.DANGER_PATTERNS) {
-      for (const { rx, label, sev } of PlainTextRenderer.DANGER_PATTERNS) {
-        const matches = text.match(rx);
-        if (matches) {
-          f.externalRefs.push({
-            type: 'Suspicious Pattern',
-            url: `${label} — ${matches.length} occurrence(s)`,
-            severity: sev
-          });
-        }
-      }
-    }
-
+    // Pattern detection is handled entirely by YARA (auto-scan on file load)
     return f;
   }
 

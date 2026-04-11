@@ -59,30 +59,16 @@ class PdfRenderer {
       signatureMatches: []
     };
 
-    // ── Threat signature scanning ─────────────────────────────────────────
-    const raw = this._decodeRaw(buffer);
-    const categories = ThreatScanner.getCategories(fileName || 'file.pdf', 'pdf');
-    const sigMatches = ThreatScanner.scan(raw, categories);
-    f.signatureMatches = sigMatches;
-
-    // Convert signature matches to findings
-    const sigFindings = ThreatScanner.toFindings(sigMatches);
-    f.externalRefs.push(...sigFindings);
-
-    // Update risk level from signatures
-    const threatLevel = ThreatScanner.computeThreatLevel(sigMatches);
-    if (threatLevel.level === 'high') f.risk = 'high';
-    else if (threatLevel.level === 'medium' && f.risk !== 'high') f.risk = 'medium';
-
     // ── Extract URIs from raw stream ──────────────────────────────────────
+    const raw = this._decodeRaw(buffer);
     for (const m of raw.matchAll(/\/URI\s*\(([^)]{4,})\)/g)) {
-      f.externalRefs.push({ type: 'URL', url: m[1], severity: 'medium' });
+      f.externalRefs.push({ type: IOC.URL, url: m[1], severity: 'medium' });
       if (f.risk === 'low') f.risk = 'medium';
     }
     for (const m of raw.matchAll(/\/URI\s*<([0-9A-Fa-f]+)>/g)) {
       try {
         const decoded = m[1].match(/.{2}/g).map(h => String.fromCharCode(parseInt(h, 16))).join('');
-        f.externalRefs.push({ type: 'URL', url: decoded, severity: 'medium' });
+        f.externalRefs.push({ type: IOC.URL, url: decoded, severity: 'medium' });
         if (f.risk === 'low') f.risk = 'medium';
       } catch (_) { /* skip malformed */ }
     }
@@ -95,12 +81,12 @@ class PdfRenderer {
       if (meta && meta.info) {
         const i = meta.info;
         f.metadata = {};
-        if (i.Title)        f.metadata.title = i.Title;
-        if (i.Author)       f.metadata.author = i.Author;
-        if (i.Creator)      f.metadata.creator = i.Creator;
-        if (i.Producer)     f.metadata.producer = i.Producer;
+        if (i.Title) f.metadata.title = i.Title;
+        if (i.Author) f.metadata.author = i.Author;
+        if (i.Creator) f.metadata.creator = i.Creator;
+        if (i.Producer) f.metadata.producer = i.Producer;
         if (i.CreationDate) f.metadata.created = i.CreationDate;
-        if (i.ModDate)      f.metadata.modified = i.ModDate;
+        if (i.ModDate) f.metadata.modified = i.ModDate;
       }
       f.metadata.pages = pdf.numPages;
 
@@ -113,12 +99,12 @@ class PdfRenderer {
           for (const a of annots) {
             if (a.url && !seenUrls.has(a.url)) {
               seenUrls.add(a.url);
-              f.externalRefs.push({ type: 'URL', url: a.url, severity: 'medium' });
+              f.externalRefs.push({ type: IOC.URL, url: a.url, severity: 'medium' });
               if (f.risk === 'low') f.risk = 'medium';
             }
             if (a.unsafeUrl && !seenUrls.has(a.unsafeUrl)) {
               seenUrls.add(a.unsafeUrl);
-              f.externalRefs.push({ type: 'URL', url: a.unsafeUrl, severity: 'medium' });
+              f.externalRefs.push({ type: IOC.URL, url: a.unsafeUrl, severity: 'medium' });
               if (f.risk === 'low') f.risk = 'medium';
             }
           }

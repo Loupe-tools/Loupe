@@ -121,7 +121,7 @@ class EmlRenderer {
       // Suspicious: Reply-To different from From
       if (email.replyTo && email.from && email.replyTo !== email.from) {
         f.externalRefs.push({
-          type: 'Suspicious Header',
+          type: IOC.PATTERN,
           url: `Reply-To (${email.replyTo}) differs from From (${email.from})`,
           severity: 'medium'
         });
@@ -133,7 +133,7 @@ class EmlRenderer {
       for (const att of email.attachments) {
         if (dangerExts.test(att.filename)) {
           f.externalRefs.push({
-            type: 'Dangerous Attachment',
+            type: IOC.ATTACHMENT,
             url: att.filename,
             severity: 'high'
           });
@@ -146,9 +146,9 @@ class EmlRenderer {
         const imgMatches = email.bodyHtml.match(/<img[^>]+>/gi) || [];
         for (const img of imgMatches) {
           if (/width\s*[=:]\s*["']?1(?:px)?["']?/i.test(img) &&
-              /height\s*[=:]\s*["']?1(?:px)?["']?/i.test(img)) {
+            /height\s*[=:]\s*["']?1(?:px)?["']?/i.test(img)) {
             f.externalRefs.push({
-              type: 'Tracking Pixel',
+              type: IOC.PATTERN,
               url: (img.match(/src\s*=\s*["']?([^"'\s>]+)/i) || ['', '(embedded)'])[1],
               severity: 'info'
             });
@@ -161,7 +161,7 @@ class EmlRenderer {
         const ar = email.authResults.toLowerCase();
         if (ar.includes('fail') || ar.includes('none')) {
           f.externalRefs.push({
-            type: 'Auth Warning',
+            type: IOC.PATTERN,
             url: 'SPF/DKIM/DMARC check: ' + email.authResults.substring(0, 200),
             severity: 'medium'
           });
@@ -332,12 +332,12 @@ class EmlRenderer {
   _sanitize(html, container) {
     // Sanitize HTML: strip scripts, event handlers, dangerous elements
     const allowedTags = new Set([
-      'p','br','div','span','b','i','u','em','strong','a','ul','ol','li',
-      'table','tr','td','th','thead','tbody','h1','h2','h3','h4','h5','h6',
-      'pre','code','blockquote','hr','font','center','sub','sup','small','big',
-      'dl','dt','dd','abbr','address','cite',
+      'p', 'br', 'div', 'span', 'b', 'i', 'u', 'em', 'strong', 'a', 'ul', 'ol', 'li',
+      'table', 'tr', 'td', 'th', 'thead', 'tbody', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'pre', 'code', 'blockquote', 'hr', 'font', 'center', 'sub', 'sup', 'small', 'big',
+      'dl', 'dt', 'dd', 'abbr', 'address', 'cite',
     ]);
-    const allowedAttrs = new Set(['style','class','align','valign','width','height','colspan','rowspan','dir','color','size','face']);
+    const allowedAttrs = new Set(['style', 'class', 'align', 'valign', 'width', 'height', 'colspan', 'rowspan', 'dir', 'color', 'size', 'face']);
 
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
