@@ -30,6 +30,7 @@ class App {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 's' || e.key === 'S') this._toggleSidebar();
       else if (e.key === 'y' || e.key === 'Y') this._openYaraDialog();
+      else if (e.key === '?' || e.key === 'h' || e.key === 'H') this._openHelpDialog();
     });
   }
 
@@ -87,6 +88,7 @@ class App {
     document.getElementById('btn-open').addEventListener('click', () => document.getElementById('file-input').click());
     document.getElementById('btn-security').addEventListener('click', () => this._toggleSidebar());
     document.getElementById('btn-yara').addEventListener('click', () => this._openYaraDialog());
+    document.getElementById('btn-help').addEventListener('click', () => this._openHelpDialog());
     document.getElementById('btn-close').addEventListener('click', () => this._clearFile());
     document.getElementById('btn-save').addEventListener('click', () => this._saveContent());
     document.getElementById('btn-copy').addEventListener('click', () => this._copyContent());

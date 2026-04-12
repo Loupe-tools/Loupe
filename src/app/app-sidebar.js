@@ -634,6 +634,11 @@ Object.assign(App.prototype, {
         let searchTerm = searchVal;
         const hashMatch = searchVal.match(/^(?:SHA256|SHA1|MD5|IMPHASH):(.+)$/i);
         if (hashMatch) searchTerm = hashMatch[1];
+        // For DOMAIN\User usernames, search just the username part (domain and
+        // username are stored as separate fields in EVTX event data)
+        if (ref.type === IOC.USERNAME && searchTerm.includes('\\')) {
+          searchTerm = searchTerm.split('\\').pop();
+        }
         // For very long values, truncate to avoid overly specific search
         if (searchTerm.length > 80) searchTerm = searchTerm.substring(0, 80);
 
@@ -653,7 +658,40 @@ Object.assign(App.prototype, {
       }
     }
 
-    // Fallback for non-EVTX content: try to find and highlight matching text
+    // Check if we have a SQLite view — scroll to matching row
+    const sqliteView = pc && pc.querySelector('.sqlite-view');
+    if (sqliteView && sqliteView._sqliteRows) {
+      const rows = sqliteView._sqliteRows;
+      const searchVal = (ref.url || '').toLowerCase();
+      if (searchVal) {
+        // Try full match first, then progressively shorter prefixes
+        const attempts = [searchVal];
+        if (searchVal.length > 40) attempts.push(searchVal.substring(0, 40));
+        if (searchVal.length > 20) attempts.push(searchVal.substring(0, 20));
+
+        for (const term of attempts) {
+          for (const r of rows) {
+            if (r.tr.style.display === 'none') continue;
+            if (r.searchText.includes(term)) {
+              // Scroll the row into view within the scroll container
+              const scrContainer = sqliteView._sqliteScrollContainer;
+              if (scrContainer) {
+                const rowTop = r.tr.offsetTop - scrContainer.offsetTop;
+                scrContainer.scrollTo({ top: rowTop - 60, behavior: 'smooth' });
+              } else {
+                r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+              // Flash highlight the row
+              r.tr.classList.add('sqlite-row-flash');
+              setTimeout(() => r.tr.classList.remove('sqlite-row-flash'), 1500);
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback for non-EVTX/non-SQLite content: try to find and highlight matching text
     if (pc && ref.url) {
       const searchText = ref.url;
       // Try using the browser's built-in find if the text is in the page

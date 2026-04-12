@@ -7,6 +7,7 @@ class PdfRenderer {
 
   /** Render every page of the PDF onto canvases, return a wrapper element. */
   async render(buffer) {
+    if (typeof pdfjsLib === 'undefined') throw new Error('PDF.js library not loaded — cannot render PDF');
     const data = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer).slice();
     const pdf = await pdfjsLib.getDocument({ data, disableAutoFetch: true, disableStream: true }).promise;
     const wrap = document.createElement('div');
@@ -75,6 +76,7 @@ class PdfRenderer {
 
     // ── pdf.js metadata ───────────────────────────────────────────────────
     try {
+      if (typeof pdfjsLib === 'undefined') return f;
       const data = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer).slice();
       const pdf = await pdfjsLib.getDocument({ data, disableAutoFetch: true, disableStream: true }).promise;
       const meta = await pdf.getMetadata();

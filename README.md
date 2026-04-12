@@ -9,7 +9,7 @@ No server, no uploads, no tracking — just drop a file and inspect it.
 
 ## Why GloveBox?
 
-Phishing attachments are the #1 initial access vector. SOC analysts, incident responders, and security-conscious users need a way to safely inspect suspicious files without uploading them to third-party services or spinning up a sandbox. GloveBox runs entirely in your browser — **nothing ever leaves your machine**.
+SOC analysts, incident responders, and security-conscious users need a way to safely inspect suspicious files without uploading them to third-party services or spinning up a sandbox. GloveBox runs entirely in your browser — **nothing ever leaves your machine**.
 
 - **Zero network access** — a strict Content-Security-Policy blocks all external fetches.
 - **Single HTML file** — no install, no dependencies, works on any OS with a modern browser.
@@ -57,7 +57,7 @@ Phishing attachments are the #1 initial access vector. SOC analysts, incident re
 | **HTA analysis** | Script extraction, `<HTA:APPLICATION>` attribute parsing, obfuscation detection, 40+ suspicious pattern checks |
 | **Script scanning** | Catch-all viewer scans `.vbs`, `.ps1`, `.bat`, `.rtf` and other script types for dangerous execution patterns + YARA matching |
 | **Image analysis** | Steganography indicators, polyglot file detection, and hex header inspection for embedded payloads |
-| **EVTX analysis** | Parses Windows Event Log binary format (ElfFile header, chunks, BinXml records); extracts Event ID, Level, Provider, Channel, Computer, timestamps, and EventData; flags suspicious events (4688, 4624/4625, 1102, 7045, 4104); Copy/Download as CSV |
+| **EVTX analysis** | Parses Windows Event Log binary format (ElfFile header, chunks, BinXml records); extracts Event ID, Level, Provider, Channel, Computer, timestamps, and EventData; flags suspicious events (4688, 4624/4625, 1102, 7045, 4104); extracts IOCs: usernames (`DOMAIN\User`), hostnames, IPs, process paths, command lines, hashes, URLs, file/UNC paths; Copy/Download as CSV |
 | **SQLite / browser history** | Reads SQLite binary format (B-tree pages, schema, cell data); auto-detects Chrome/Edge/Firefox history databases; extracts URLs, titles, visit counts, timestamps; generic table browser for non-history SQLite files; Copy/Download as CSV |
 | **Encoded content detection** | Scans for Base64, hex, Base32 encoded blobs and compressed streams (gzip/zlib/deflate); decodes, classifies payloads (PE, script, URL list, etc.), extracts IOCs, and offers "Load for analysis" to drill into decoded content |
 | **Archive drill-down** | Click entries inside ZIP/archive listings to open and analyse inner files, with Back navigation |
@@ -73,7 +73,7 @@ Phishing attachments are the #1 initial access vector. SOC analysts, incident re
 | **Click-and-drag panning** | Grab and drag to pan around rendered documents |
 | **Collapsible sidebar** | Single-pane sidebar with collapsible `<details>` sections: File Info, Macros, Signatures & IOCs |
 | **Resizable sidebar** | Drag the sidebar edge to resize (33–50% of the viewport) |
-| **Keyboard shortcuts** | `S` toggle sidebar · `Y` YARA dialog · `Ctrl+F` search document · `Ctrl+V` paste file for analysis |
+| **Keyboard shortcuts** | `S` toggle sidebar · `Y` YARA dialog · `?`/`H` help & about · `Ctrl+F` search document · `Ctrl+V` paste file for analysis |
 | **Loading overlay** | Spinner with status message while parsing large files |
 | **Toast notifications** | Non-intrusive feedback for downloads, clipboard operations, and errors |
 
@@ -222,8 +222,13 @@ GloveBox/
 │       ├── app-yara.js            # YARA rule editor, scanning, result display
 │       └── app-ui.js              # UI helpers + DOMContentLoaded bootstrap
 └── examples/
+    ├── encoded-base64-pe.txt       # Encoded content test — Base64 PE
+    ├── encoded-hex-base64-powershell.txt  # Encoded content test — hex + Base64 + PowerShell
+    ├── encoded-hex-shellcode.txt   # Encoded content test — hex shellcode
+    ├── encoded-powershell.bat      # Encoded content test — PowerShell in .bat
     ├── example.doc
     ├── example.docx
+    ├── example.evtx                # Windows Event Log sample
     ├── example.html
     ├── example.odp
     ├── example.ods
@@ -231,10 +236,14 @@ GloveBox/
     ├── example.pdf
     ├── example.ppt
     ├── example.rtf
+    ├── example.sqlite              # SQLite database sample
     ├── example.xls
     ├── example.xlsm
     ├── example.xlsx
     ├── example.zip
+    ├── example1.evtx               # Additional EVTX samples
+    ├── example2.evtx
+    ├── example3.evtx
     └── sample.xls
 ```
 
@@ -304,4 +313,4 @@ Contributions are welcome! The codebase is intentionally vanilla JavaScript (no 
 
 ## Licence
 
-This project is open source. See the repository for licence details.
+This project is licensed under the [GNU General Public License v3.0](LICENSE).

@@ -40,7 +40,7 @@ class EvtxRenderer {
         // ── Security log tampering ───────────────────────────────────────
         [1100, 'Event 1100: Event logging service shut down', 'high', 'high'],
         [1102, 'Event 1102: Security audit log was cleared', 'high', 'high'],
-        [104,  'Event 104: System log was cleared', 'high', 'high'],
+        [104, 'Event 104: System log was cleared', 'high', 'high'],
 
         // ── Authentication & logon ───────────────────────────────────────
         [4624, 'Event 4624: Successful logon events present', 'info', null],
@@ -104,14 +104,14 @@ class EvtxRenderer {
         [53504, 'Event 53504: PowerShell ISE session started', 'info', null],
 
         // ── Sysmon ───────────────────────────────────────────────────────
-        [1,  'Sysmon Event 1: Process created', 'medium', null],
-        [2,  'Sysmon Event 2: File creation time changed (timestomping)', 'high', 'medium'],
-        [3,  'Sysmon Event 3: Network connection detected', 'medium', null],
-        [5,  'Sysmon Event 5: Process terminated', 'info', null],
-        [6,  'Sysmon Event 6: Driver loaded', 'medium', null],
-        [7,  'Sysmon Event 7: Image loaded (DLL)', 'info', null],
-        [8,  'Sysmon Event 8: CreateRemoteThread (process injection indicator)', 'high', 'high'],
-        [9,  'Sysmon Event 9: RawAccessRead (direct disk access)', 'high', 'medium'],
+        [1, 'Sysmon Event 1: Process created', 'medium', null],
+        [2, 'Sysmon Event 2: File creation time changed (timestomping)', 'high', 'medium'],
+        [3, 'Sysmon Event 3: Network connection detected', 'medium', null],
+        [5, 'Sysmon Event 5: Process terminated', 'info', null],
+        [6, 'Sysmon Event 6: Driver loaded', 'medium', null],
+        [7, 'Sysmon Event 7: Image loaded (DLL)', 'info', null],
+        [8, 'Sysmon Event 8: CreateRemoteThread (process injection indicator)', 'high', 'high'],
+        [9, 'Sysmon Event 9: RawAccessRead (direct disk access)', 'high', 'medium'],
         [10, 'Sysmon Event 10: Process accessed (credential dumping indicator)', 'high', 'high'],
         [11, 'Sysmon Event 11: File created', 'info', null],
         [12, 'Sysmon Event 12: Registry object added or deleted', 'medium', null],
@@ -191,7 +191,7 @@ class EvtxRenderer {
 
       const riskRank = { low: 0, medium: 1, high: 2, critical: 3 };
       // Sysmon events (low EIDs 1-29) should only match when provider is Sysmon
-      const sysmonEids = new Set([1,2,3,5,6,7,8,9,10,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,29]);
+      const sysmonEids = new Set([1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
 
       for (const [eid, desc, severity, riskEsc] of suspiciousPatterns) {
         if (!found.has(eid)) continue;
@@ -267,7 +267,7 @@ class EvtxRenderer {
         const binXmlOff = recOff + 24;
         const binXmlLen = recSize - 24 - 4; // minus header and trailing copy of size
 
-        let ev = { recordId, timestamp: timestamp ? timestamp.toISOString() : '', eventId: '', level: '', channel: '', provider: '', computer: '', eventData: '' };
+        let ev = { recordId, timestamp: timestamp ? timestamp.toISOString() : '', eventId: '', level: '', channel: '', provider: '', computer: '', eventData: '', rawRecord: bytes.subarray(recOff, recOff + recSize) };
         try {
           const xml = this._decodeBinXml(bytes, dv, binXmlOff, binXmlLen, stringTable, chunkOff);
           Object.assign(ev, xml);
@@ -490,7 +490,7 @@ class EvtxRenderer {
           const mi = dv.getUint16(ctx.pos + 10, true), sc = dv.getUint16(ctx.pos + 12, true);
           const ms = dv.getUint16(ctx.pos + 14, true);
           ctx.pos += 16;
-          return `${yr}-${String(mo).padStart(2,'0')}-${String(dy).padStart(2,'0')}T${String(hr).padStart(2,'0')}:${String(mi).padStart(2,'0')}:${String(sc).padStart(2,'0')}.${String(ms).padStart(3,'0')}Z`;
+          return `${yr}-${String(mo).padStart(2, '0')}-${String(dy).padStart(2, '0')}T${String(hr).padStart(2, '0')}:${String(mi).padStart(2, '0')}:${String(sc).padStart(2, '0')}.${String(ms).padStart(3, '0')}Z`;
         }
         case 0x13: { // SID
           if (ctx.pos + 2 > end) return '';
@@ -1034,7 +1034,7 @@ class EvtxRenderer {
           // Handle both literal Data.Name (e.g., Sysmon hardcoded field names)
           // and substitution-based Data.Name attributes
           const nameVal = (n.literal !== undefined) ? n.literal :
-                          (n.idx >= 0 && n.idx < values.length) ? values[n.idx] : '';
+            (n.idx >= 0 && n.idx < values.length) ? values[n.idx] : '';
           // Find the next Data text content entry (same element, no attr)
           for (let j = i + 1; j < templateNames.length; j++) {
             const m = templateNames[j];
@@ -1157,7 +1157,7 @@ class EvtxRenderer {
           const yr = dv.getUint16(off, true), mo = dv.getUint16(off + 2, true);
           const dy = dv.getUint16(off + 6, true), hr = dv.getUint16(off + 8, true);
           const mi = dv.getUint16(off + 10, true), sc = dv.getUint16(off + 12, true);
-          return `${yr}-${String(mo).padStart(2,'0')}-${String(dy).padStart(2,'0')}T${String(hr).padStart(2,'0')}:${String(mi).padStart(2,'0')}:${String(sc).padStart(2,'0')}Z`;
+          return `${yr}-${String(mo).padStart(2, '0')}-${String(dy).padStart(2, '0')}T${String(hr).padStart(2, '0')}:${String(mi).padStart(2, '0')}:${String(sc).padStart(2, '0')}Z`;
         }
         case 0x13: return this._parseSid(bytes.subarray(off, off + size)); // SID
         case 0x14: return '0x' + dv.getUint32(off, true).toString(16).padStart(8, '0'); // HexInt32
@@ -1193,7 +1193,7 @@ class EvtxRenderer {
     return isNaN(d.getTime()) ? null : d;
   }
 
-  _getUint64(dv, off) {
+  _getUint64(dv, off, _le) {
     const lo = dv.getUint32(off, true);
     const hi = dv.getUint32(off + 4, true);
     return hi * 0x100000000 + lo;
@@ -1212,7 +1212,7 @@ class EvtxRenderer {
     if (sidBytes.length < 8) return Array.from(sidBytes).map(b => b.toString(16).padStart(2, '0')).join('');
     const rev = sidBytes[0];
     const subCount = sidBytes[1];
-    const auth = (sidBytes[2] << 40) | (sidBytes[3] << 32) | (sidBytes[4] << 24) | (sidBytes[5] << 16) | (sidBytes[6] << 8) | sidBytes[7];
+    const auth = sidBytes[2] * 0x10000000000 + sidBytes[3] * 0x100000000 + (sidBytes[4] << 24 | sidBytes[5] << 16 | sidBytes[6] << 8 | sidBytes[7]) >>> 0;
     let s = `S-${rev}-${auth}`;
     const dv = new DataView(sidBytes.buffer, sidBytes.byteOffset, sidBytes.byteLength);
     for (let i = 0; i < subCount && 8 + i * 4 + 3 < sidBytes.length; i++) {
@@ -1225,6 +1225,201 @@ class EvtxRenderer {
     const n = parseInt(val, 10);
     const map = { 0: 'LogAlways', 1: 'Critical', 2: 'Error', 3: 'Warning', 4: 'Information', 5: 'Verbose' };
     return map[n] || val;
+  }
+
+  // ── Human-readable Event ID descriptions for SOC analysts ───────────────
+  _getEventDescription(eventId, provider) {
+    const eid = parseInt(eventId, 10);
+    if (isNaN(eid)) return '';
+
+    const provLower = (provider || '').toLowerCase();
+    const isSysmon = /sysmon/i.test(provLower);
+
+    // Sysmon events (provider-specific — low EIDs overlap with other providers)
+    if (isSysmon) {
+      const sysmonDescs = {
+        1: 'Process Created — A new process was started on the system.',
+        2: 'File Creation Time Changed — A process modified the creation timestamp of a file (possible timestomping).',
+        3: 'Network Connection Detected — A TCP/UDP network connection was initiated by a process.',
+        4: 'Sysmon Service State Changed — The Sysmon service started or stopped.',
+        5: 'Process Terminated — A process exited.',
+        6: 'Driver Loaded — A kernel driver was loaded into the system.',
+        7: 'Image Loaded — A DLL or executable image was loaded into a process.',
+        8: 'CreateRemoteThread — A thread was created in another process (possible process injection).',
+        9: 'RawAccessRead — A process performed a raw disk read bypassing the filesystem.',
+        10: 'Process Accessed — A process opened a handle to another process (possible credential dumping via LSASS).',
+        11: 'File Created — A new file was created or overwritten.',
+        12: 'Registry Object Added or Deleted — A registry key or value was created or deleted.',
+        13: 'Registry Value Set — A registry value was modified.',
+        14: 'Registry Object Renamed — A registry key or value was renamed.',
+        15: 'File Stream Created — An Alternate Data Stream (ADS) was written to a file.',
+        16: 'Sysmon Configuration Changed — The Sysmon configuration was updated.',
+        17: 'Named Pipe Created — A named pipe was created for inter-process communication.',
+        18: 'Named Pipe Connected — A client connected to a named pipe.',
+        19: 'WMI EventFilter Activity — A WMI event filter was registered (possible persistence).',
+        20: 'WMI EventConsumer Activity — A WMI event consumer was registered (possible persistence).',
+        21: 'WMI EventConsumerToFilter — A WMI consumer was bound to a filter (possible persistence).',
+        22: 'DNS Query — A process performed a DNS lookup.',
+        23: 'File Deleted — A file was deleted and archived by Sysmon.',
+        24: 'Clipboard Changed — The clipboard contents were modified by a process.',
+        25: 'Process Tampering — A process image was replaced or hollowed (process hollowing/herpaderping).',
+        26: 'File Delete Logged — A file deletion was detected and logged.',
+        27: 'File Block Executable — An executable file write was blocked by Sysmon.',
+        28: 'File Block Shredding — A file shredding operation was blocked by Sysmon.',
+        29: 'File Executable Detected — An executable file was detected being written to disk.',
+        255: 'Sysmon Error — An error occurred within the Sysmon service.',
+      };
+      if (sysmonDescs[eid]) return sysmonDescs[eid];
+    }
+
+    // General / Security / System event IDs
+    const descriptions = {
+      // ── Security log management ──────────────────────────────────────
+      1100: 'Event Logging Service Shut Down — The Windows Event Log service was stopped.',
+      1102: 'Security Audit Log Cleared — The Security event log was cleared (possible anti-forensics).',
+      104: 'System Log Cleared — A system event log was cleared.',
+
+      // ── Authentication & Logon ───────────────────────────────────────
+      4624: 'Successful Logon — A user account successfully logged on to the computer.',
+      4625: 'Failed Logon — A logon attempt failed (wrong password, locked account, expired, etc.).',
+      4634: 'Account Logoff — A user account logged off.',
+      4647: 'User-Initiated Logoff — A user initiated a logoff.',
+      4648: 'Explicit Credential Logon — A logon was attempted using explicit credentials (pass-the-hash indicator).',
+      4672: 'Special Privileges Assigned — Administrative or special privileges were assigned to a new logon session.',
+      4675: 'SIDs Filtered — SIDs were filtered during logon.',
+
+      // ── Kerberos & NTLM ─────────────────────────────────────────────
+      4768: 'Kerberos TGT Requested — A Kerberos Ticket Granting Ticket (TGT) was requested.',
+      4769: 'Kerberos Service Ticket Requested — A Kerberos service ticket (TGS) was requested.',
+      4770: 'Kerberos Service Ticket Renewed — A Kerberos service ticket was renewed.',
+      4771: 'Kerberos Pre-Authentication Failed — Kerberos pre-auth failed (possible password spray/brute-force).',
+      4776: 'NTLM Credential Validation — The domain controller validated credentials via NTLM.',
+
+      // ── Process creation & execution ─────────────────────────────────
+      4688: 'Process Created — A new process was created on the system.',
+      4689: 'Process Exited — A process was terminated.',
+
+      // ── Account management ───────────────────────────────────────────
+      4720: 'User Account Created — A new user account was created.',
+      4722: 'User Account Enabled — A user account was enabled.',
+      4723: 'Password Change Attempted — An attempt was made to change an account\'s password.',
+      4724: 'Password Reset Attempted — An attempt was made to reset an account\'s password.',
+      4725: 'User Account Disabled — A user account was disabled.',
+      4726: 'User Account Deleted — A user account was deleted.',
+      4728: 'Member Added to Global Security Group — A member was added to a security-enabled global group.',
+      4729: 'Member Removed from Global Security Group — A member was removed from a security-enabled global group.',
+      4732: 'Member Added to Local Security Group — A member was added to a security-enabled local group.',
+      4733: 'Member Removed from Local Security Group — A member was removed from a security-enabled local group.',
+      4735: 'Local Security Group Changed — A security-enabled local group was modified.',
+      4737: 'Global Security Group Changed — A security-enabled global group was modified.',
+      4738: 'User Account Changed — A user account was modified.',
+      4740: 'Account Locked Out — A user account was locked out due to failed logon attempts.',
+      4741: 'Computer Account Created — A computer account was created in Active Directory.',
+      4742: 'Computer Account Changed — A computer account was modified.',
+      4743: 'Computer Account Deleted — A computer account was deleted.',
+      4756: 'Member Added to Universal Security Group — A member was added to a security-enabled universal group.',
+      4757: 'Member Removed from Universal Security Group — A member was removed from a security-enabled universal group.',
+
+      // ── Object access & audit ────────────────────────────────────────
+      4656: 'Handle Requested — A handle to an object (file, key, etc.) was requested.',
+      4657: 'Registry Value Modified — A registry value was changed.',
+      4658: 'Handle Closed — A handle to an object was closed.',
+      4660: 'Object Deleted — An object was deleted.',
+      4663: 'Object Access Attempted — An attempt was made to access an object.',
+      4670: 'Object Permissions Changed — Permissions on an object were changed.',
+
+      // ── Services & scheduled tasks ───────────────────────────────────
+      4697: 'Service Installed — A new service was installed in the system.',
+      4698: 'Scheduled Task Created — A new scheduled task was created.',
+      4699: 'Scheduled Task Deleted — A scheduled task was deleted.',
+      4700: 'Scheduled Task Enabled — A scheduled task was enabled.',
+      4701: 'Scheduled Task Disabled — A scheduled task was disabled.',
+      4702: 'Scheduled Task Updated — A scheduled task was updated.',
+      7034: 'Service Crashed — A service terminated unexpectedly.',
+      7036: 'Service State Changed — A service entered the running or stopped state.',
+      7040: 'Service Start Type Changed — The start type of a service was changed (possible persistence).',
+      7045: 'New Service Installed — A new service was installed in the system.',
+
+      // ── Network share access ─────────────────────────────────────────
+      5140: 'Network Share Accessed — A network share object was accessed.',
+      5142: 'Network Share Added — A network share object was added.',
+      5144: 'Network Share Deleted — A network share object was deleted.',
+      5145: 'Network Share Access Checked — Access to a network share object was checked.',
+      5156: 'WFP Connection Allowed — Windows Filtering Platform allowed a network connection.',
+      5157: 'WFP Connection Blocked — Windows Filtering Platform blocked a network connection.',
+
+      // ── PowerShell ───────────────────────────────────────────────────
+      4103: 'PowerShell Module Logging — A PowerShell module was loaded and logged.',
+      4104: 'PowerShell Script Block Logged — A PowerShell script block was captured for analysis.',
+      40961: 'PowerShell Console Started — A PowerShell console host session was started.',
+      40962: 'PowerShell Console Ready — A PowerShell console host session is ready for input.',
+      53504: 'PowerShell ISE Session — A Windows PowerShell ISE session was started.',
+
+      // ── Windows Defender ─────────────────────────────────────────────
+      1006: 'Defender: Malware Detected — Windows Defender detected malware or potentially unwanted software.',
+      1007: 'Defender: Protection Action — Windows Defender took action to protect the system from malware.',
+      1008: 'Defender: Action Failed — Windows Defender failed to take action on detected malware.',
+      1009: 'Defender: Item Restored — An item was restored from Windows Defender quarantine.',
+      1116: 'Defender: Threat Detected — Windows Defender detected a threat.',
+      1117: 'Defender: Protection Action Taken — Windows Defender performed an action against a threat.',
+      5001: 'Defender: Real-Time Protection Disabled — Windows Defender real-time protection was disabled.',
+      5004: 'Defender: Configuration Changed — Windows Defender real-time protection config was changed.',
+      5007: 'Defender: Platform Configuration Changed — The antimalware platform configuration was changed.',
+      5010: 'Defender: Malware Scanning Disabled — Scanning for malware and spyware was disabled.',
+      5012: 'Defender: Virus Scanning Disabled — Scanning for viruses was disabled.',
+
+      // ── WMI ──────────────────────────────────────────────────────────
+      5857: 'WMI Provider Started — A WMI provider was loaded and started.',
+      5858: 'WMI Provider Error — A WMI provider encountered an error.',
+      5859: 'WMI Subscription Operation — A WMI event subscription operation was performed.',
+      5860: 'WMI Temporary Event Created — A temporary WMI event subscription was created.',
+      5861: 'WMI Permanent Event Subscription — A permanent WMI event subscription was created (possible persistence).',
+
+      // ── AppLocker ────────────────────────────────────────────────────
+      8003: 'AppLocker: Executable Allowed — An executable file was allowed to run by AppLocker.',
+      8004: 'AppLocker: Executable Blocked — An executable file was blocked by AppLocker policy.',
+      8006: 'AppLocker: Script/MSI Allowed — A script or MSI file was allowed by AppLocker.',
+      8007: 'AppLocker: Script/MSI Blocked — A script or MSI file was blocked by AppLocker.',
+
+      // ── Remote Desktop ───────────────────────────────────────────────
+      1149: 'RDP Authentication Succeeded — A user was successfully authenticated via Remote Desktop.',
+      4778: 'Session Reconnected — A session was reconnected to a Window Station.',
+      4779: 'Session Disconnected — A session was disconnected from a Window Station.',
+
+      // ── BITS ─────────────────────────────────────────────────────────
+      60: 'BITS Transfer Started — A Background Intelligent Transfer Service job was started.',
+
+      // ── System events ────────────────────────────────────────────────
+      6005: 'Event Log Service Started — The Event Log service was started (system boot).',
+      6006: 'Event Log Service Stopped — The Event Log service was stopped (clean shutdown).',
+      6008: 'Unexpected Shutdown — The previous system shutdown was unexpected.',
+      6009: 'OS Information Logged — Operating system version information logged at boot.',
+      6013: 'System Uptime — System uptime information.',
+
+      // ── Group Policy ─────────────────────────────────────────────────
+      1501: 'Group Policy Applied — Group Policy settings were applied successfully.',
+      1502: 'Group Policy Failed — Group Policy processing failed.',
+
+      // ── Task Scheduler ───────────────────────────────────────────────
+      106: 'Task Registered — A new task was registered in Task Scheduler.',
+      140: 'Task Updated — A task was updated in Task Scheduler.',
+      141: 'Task Removed — A task was removed from Task Scheduler.',
+      200: 'Task Action Started — A scheduled task action was started.',
+      201: 'Task Action Completed — A scheduled task action completed.',
+
+      // ── Firewall ─────────────────────────────────────────────────────
+      2003: 'Firewall Rule Added — A Windows Firewall rule was added.',
+      2004: 'Firewall Rule Modified — A Windows Firewall rule was modified.',
+      2005: 'Firewall Rule Deleted — A Windows Firewall rule was deleted.',
+      2006: 'Firewall Rules Deleted — Windows Firewall rules were deleted (batch).',
+
+      // ── Audit policy ─────────────────────────────────────────────────
+      4719: 'Audit Policy Changed — System audit policy was changed.',
+      4907: 'Auditing Settings Changed — Auditing settings on an object were changed.',
+    };
+
+    if (descriptions[eid]) return descriptions[eid];
+    return '';
   }
 
   // ── Notable Event IDs for SOC triage ────────────────────────────────────
@@ -1283,12 +1478,58 @@ class EvtxRenderer {
 
     // Keys that contain IP addresses
     const ipKeys = new Set([
-      'SourceIp', 'DestinationIp',
+      'SourceIp', 'DestinationIp', 'IpAddress',
     ]);
 
     // Keys that contain hostnames
     const hostnameKeys = new Set([
       'DestinationHostname', 'SourceHostname',
+      'WorkstationName', 'Workstation', 'TargetServerName',
+      'ComputerName', 'MachineName',
+    ]);
+
+    // Keys that contain usernames
+    const usernameKeys = new Set([
+      'TargetUserName', 'SubjectUserName', 'User', 'AccountName',
+      'MemberName', 'UserName', 'RunAsUser',
+      'TargetOutboundUserName', 'OldTargetUserName', 'NewTargetUserName',
+      'SamAccountName',
+    ]);
+
+    // Keys that contain domain names (paired with usernames)
+    const domainKeys = new Set([
+      'TargetDomainName', 'SubjectDomainName',
+    ]);
+
+    // Username ↔ Domain pairing map: username key → domain key
+    const userDomainPairs = {
+      'TargetUserName': 'TargetDomainName',
+      'SubjectUserName': 'SubjectDomainName',
+      'TargetOutboundUserName': 'TargetDomainName',
+    };
+
+    // Noise filters — well-known system accounts and placeholders
+    const boringUsers = new Set([
+      'system', 'local service', 'network service',
+      'anonymous logon', '-', 'n/a', '',
+    ]);
+    const boringUserPrefixes = ['dwm-', 'umfd-', 'font driver host'];
+    // Well-known Windows built-in group names (not real user accounts)
+    const boringGroups = new Set([
+      'administrators', 'users', 'guests', 'power users', 'backup operators',
+      'replicator', 'remote desktop users', 'network configuration operators',
+      'performance monitor users', 'performance log users', 'distributed com users',
+      'iis_iusrs', 'cryptographic operators', 'event log readers',
+      'certificate service dcom access', 'rdp users', 'access control assistance operators',
+      'hyper-v administrators', 'storage replica administrators',
+      'device owners', 'none',
+    ]);
+    const boringDomains = new Set([
+      'nt authority', 'nt service', 'font driver host',
+      'window manager', '-', 'n/a', '',
+    ]);
+    const boringHosts = new Set([
+      '-', 'localhost', 'n/a', '',
     ]);
 
     // Common system paths to skip (reduce noise)
@@ -1312,14 +1553,46 @@ class EvtxRenderer {
       'system',
     ]);
 
+    // IP address pattern for filtering hostnames that are actually IPs
+    const ipRe = /^(?:::ffff:)?(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$|^[0-9a-f:]+$/i;
+
     // Hash regex: matches SHA256, SHA1, MD5, IMPHASH patterns from Sysmon Hashes field
     const hashRe = /\b(?:SHA256|SHA1|MD5|IMPHASH|SHA384|SHA512)=([A-Fa-f0-9]{32,128})\b/g;
     // Standalone hex hash (40 = SHA1, 32 = MD5, 64 = SHA256)
     const standaloneHashRe = /\b([A-Fa-f0-9]{64}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{32})\b/;
 
+    // Helper: check if a username is noise
+    const isBoringUser = (u) => {
+      const lower = u.toLowerCase();
+      if (boringUsers.has(lower)) return true;
+      if (boringGroups.has(lower)) return true;
+      if (lower.endsWith('$')) return true; // machine accounts
+      for (const pfx of boringUserPrefixes) if (lower.startsWith(pfx)) return true;
+      return false;
+    };
+
+    // Helper: check if a domain is noise
+    const isBoringDomain = (d) => boringDomains.has(d.toLowerCase());
+
+    // ── Extract unique Computer names from event system headers ──────────
+    for (const ev of events) {
+      if (ev.computer) {
+        const host = ev.computer.trim();
+        if (host && !boringHosts.has(host.toLowerCase())) {
+          add(IOC.HOSTNAME, host, 'info');
+        }
+      }
+    }
+
     for (const ev of events) {
       if (!ev.eventData) continue;
       const pairs = this._parseEventDataPairs(ev.eventData);
+
+      // Build a quick lookup for this event's key→value pairs (for domain pairing)
+      const kvMap = {};
+      for (const p of pairs) {
+        if (p.key) kvMap[p.key] = p.val;
+      }
 
       for (const p of pairs) {
         const key = p.key;
@@ -1370,9 +1643,40 @@ class EvtxRenderer {
         // ── Hostnames ──
         if (hostnameKeys.has(key)) {
           const host = val.trim();
-          if (host && host !== '-' && host.length > 2) {
-            add(IOC.HOSTNAME, host, 'info');
+          if (host && !boringHosts.has(host.toLowerCase()) && host.length > 2) {
+            // If the value looks like an IP, add as IP instead
+            if (ipRe.test(host)) {
+              if (host !== '0.0.0.0' && host !== '127.0.0.1' && host !== '::1' && host !== '::') {
+                add(IOC.IP, host, 'medium');
+              }
+            } else {
+              add(IOC.HOSTNAME, host, 'info');
+            }
           }
+          continue;
+        }
+
+        // ── Usernames ──
+        if (usernameKeys.has(key)) {
+          const user = val.trim().replace(/\0+$/, '');
+          if (!user || isBoringUser(user)) continue;
+
+          // Try to pair with a domain field from the same event
+          const domainKey = userDomainPairs[key];
+          const domain = domainKey && kvMap[domainKey] ? kvMap[domainKey].trim().replace(/\0+$/, '') : '';
+
+          if (domain && !isBoringDomain(domain)) {
+            add(IOC.USERNAME, domain + '\\' + user, 'medium');
+          } else {
+            add(IOC.USERNAME, user, 'medium');
+          }
+          continue;
+        }
+
+        // ── Domain names (standalone, skip if already paired above) ──
+        if (domainKeys.has(key)) {
+          // Domain values are handled via username pairing above;
+          // skip to avoid duplicate processing
           continue;
         }
       }
@@ -1474,13 +1778,7 @@ class EvtxRenderer {
     // ── CSV action bar ─────────────────────────────────────────────────
     const bar = this._buildCsvBar(events, fileName);
 
-    // Expand All / Collapse All toggle button
-    const expandToggle = document.createElement('button');
-    expandToggle.className = 'tb-btn csv-export-btn';
-    expandToggle.textContent = '📂 Expand All';
-    expandToggle.title = 'Expand all visible event rows';
     let allExpanded = false;
-    bar.appendChild(expandToggle);
 
     wrap.appendChild(bar);
 
@@ -1521,6 +1819,13 @@ class EvtxRenderer {
       levelSelect.innerHTML += `<option value="${lv}">${lv} (${levelCounts[lv]})</option>`;
     }
     filterBar.appendChild(levelSelect);
+
+    // Expand All / Collapse All toggle button (in filter bar)
+    const expandToggle = document.createElement('button');
+    expandToggle.className = 'tb-btn csv-export-btn evtx-expand-toggle';
+    expandToggle.textContent = '↕️ Expand All';
+    expandToggle.title = 'Expand all visible event rows';
+    filterBar.appendChild(expandToggle);
 
     const filterCount = document.createElement('span');
     filterCount.className = 'evtx-filter-count';
@@ -1704,7 +2009,7 @@ class EvtxRenderer {
         r.detailTr.style.display = '';
         r.tr.classList.add('evtx-row-selected');
       }
-      expandToggle.textContent = '📁 Collapse All';
+      expandToggle.textContent = '↔️ Collapse All';
       expandToggle.title = 'Collapse all expanded event rows';
     };
 
@@ -1744,7 +2049,7 @@ class EvtxRenderer {
           r.tr.classList.remove('evtx-row-selected');
         }
       }
-      expandToggle.textContent = allExpanded ? '📁 Collapse All' : '📂 Expand All';
+      expandToggle.textContent = allExpanded ? '↔️ Collapse All' : '↕️ Expand All';
       expandToggle.title = allExpanded ? 'Collapse all expanded event rows' : 'Expand all visible event rows';
     });
 
@@ -1755,6 +2060,21 @@ class EvtxRenderer {
   _buildDetailPane(container, ev) {
     const pane = document.createElement('div');
     pane.className = 'evtx-detail-pane';
+
+    // ── Event ID description (human-readable for SOC analysts) ──────
+    const desc = this._getEventDescription(ev.eventId, ev.provider);
+    if (desc) {
+      const descEl = document.createElement('div');
+      descEl.className = 'evtx-detail-desc';
+      const descIcon = document.createElement('span');
+      descIcon.className = 'evtx-detail-desc-icon';
+      descIcon.textContent = '📋';
+      descEl.appendChild(descIcon);
+      const descText = document.createElement('span');
+      descText.textContent = desc;
+      descEl.appendChild(descText);
+      pane.appendChild(descEl);
+    }
 
     // System fields summary
     const sysInfo = document.createElement('div');
@@ -1809,7 +2129,267 @@ class EvtxRenderer {
       pane.appendChild(empty);
     }
 
+    // ── Raw record data (collapsible, human-readable) ─────────────────
+    if (ev.rawRecord && ev.rawRecord.length > 0) {
+      const rawDetails = document.createElement('details');
+      rawDetails.className = 'evtx-raw-details';
+
+      const rawSummary = document.createElement('summary');
+      rawSummary.textContent = '📦 Raw Record (' + ev.rawRecord.length + ' bytes)';
+      rawDetails.appendChild(rawSummary);
+
+      const rawContent = document.createElement('div');
+      rawContent.className = 'evtx-raw-content';
+
+      // Copy button
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'tb-btn evtx-raw-copy-btn';
+      copyBtn.textContent = '📋 Copy Text';
+      copyBtn.title = 'Copy Raw Record to clipboard';
+      rawContent.appendChild(copyBtn);
+
+      // Build human-readable record reconstruction
+      const readableText = this._buildReadableRecord(ev);
+      const pre = document.createElement('pre');
+      pre.className = 'evtx-raw-hex';
+      const code = document.createElement('code');
+      code.textContent = readableText;
+      pre.appendChild(code);
+      rawContent.appendChild(pre);
+
+      rawDetails.appendChild(rawContent);
+      pane.appendChild(rawDetails);
+
+      // Copy handler
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(readableText).then(() => {
+            copyBtn.textContent = '✓ Copied!';
+            setTimeout(() => { copyBtn.textContent = '📋 Copy Text'; }, 1500);
+          });
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = readableText;
+          ta.style.cssText = 'position:fixed;opacity:0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          copyBtn.textContent = '✓ Copied!';
+          setTimeout(() => { copyBtn.textContent = '📋 Copy Text'; }, 1500);
+        }
+      });
+    }
+
     container.appendChild(pane);
+  }
+
+  // ── Build human-readable record reconstruction from parsed event ────────
+  _buildReadableRecord(ev) {
+    const lines = [];
+    const sep = '─'.repeat(60);
+
+    // ── System Fields ──────────────────────────────────────────────────
+    lines.push('┌' + sep + '┐');
+    lines.push('│  SYSTEM FIELDS');
+    lines.push('├' + sep + '┤');
+    const sysFields = [
+      ['Record ID', ev.recordId],
+      ['Timestamp', ev.timestamp],
+      ['Event ID', ev.eventId],
+      ['Level', ev.level],
+      ['Provider', ev.provider],
+      ['Channel', ev.channel],
+      ['Computer', ev.computer],
+    ];
+    // Include opcode/task if present (from BinXml decode)
+    if (ev.opcode) sysFields.push(['Opcode', ev.opcode]);
+    if (ev.task) sysFields.push(['Task', ev.task]);
+
+    const maxKeyLen = Math.max(...sysFields.map(f => f[0].length));
+    for (const [key, val] of sysFields) {
+      lines.push('│  ' + key.padEnd(maxKeyLen + 2) + ': ' + (val != null ? String(val) : ''));
+    }
+    lines.push('└' + sep + '┘');
+
+    // ── Event Description ──────────────────────────────────────────────
+    const desc = this._getEventDescription(ev.eventId, ev.provider);
+    if (desc) {
+      lines.push('');
+      lines.push('DESCRIPTION: ' + desc);
+    }
+
+    // ── Event Data (parsed key-value pairs) ────────────────────────────
+    if (ev.eventData) {
+      lines.push('');
+      lines.push('┌' + sep + '┐');
+      lines.push('│  EVENT DATA');
+      lines.push('├' + sep + '┤');
+
+      const pairs = this._parseEventDataPairs(ev.eventData);
+      if (pairs.length > 0 && pairs.some(p => p.key)) {
+        const dataKeyLen = Math.max(...pairs.filter(p => p.key).map(p => p.key.length), 1);
+        for (const p of pairs) {
+          if (p.key) {
+            // For long values (command lines, etc.), show on next line indented
+            if (p.val && p.val.length > 80) {
+              lines.push('│  ' + p.key.padEnd(dataKeyLen + 2) + ':');
+              // Wrap long values at ~76 chars with continuation indent
+              const indent = '│    ';
+              const maxWidth = 72;
+              let remaining = p.val;
+              while (remaining.length > 0) {
+                lines.push(indent + remaining.substring(0, maxWidth));
+                remaining = remaining.substring(maxWidth);
+              }
+            } else {
+              lines.push('│  ' + p.key.padEnd(dataKeyLen + 2) + ': ' + (p.val || ''));
+            }
+          } else if (p.val) {
+            lines.push('│  ' + p.val);
+          }
+        }
+      } else {
+        // Plain text event data — wrap it nicely
+        const maxWidth = 72;
+        const indent = '│  ';
+        let remaining = ev.eventData;
+        while (remaining.length > 0) {
+          lines.push(indent + remaining.substring(0, maxWidth));
+          remaining = remaining.substring(maxWidth);
+        }
+      }
+      lines.push('└' + sep + '┘');
+    }
+
+    // ── Additional strings from raw record ─────────────────────────────
+    // Extract any readable strings from raw bytes that might not have been
+    // captured by the structured parser (e.g., partially parsed XML fragments,
+    // embedded paths, registry keys, etc.)
+    if (ev.rawRecord && ev.rawRecord.length > 0) {
+      const extraStrings = this._extractExtraStrings(ev);
+      if (extraStrings.length > 0) {
+        lines.push('');
+        lines.push('┌' + sep + '┐');
+        lines.push('│  ADDITIONAL STRINGS FROM RAW RECORD');
+        lines.push('├' + sep + '┤');
+        for (const s of extraStrings) {
+          // Wrap long strings
+          if (s.length > 72) {
+            let remaining = s;
+            while (remaining.length > 0) {
+              lines.push('│  ' + remaining.substring(0, 72));
+              remaining = remaining.substring(72);
+            }
+          } else {
+            lines.push('│  ' + s);
+          }
+        }
+        lines.push('└' + sep + '┘');
+      }
+    }
+
+    // ── Record metadata ────────────────────────────────────────────────
+    lines.push('');
+    lines.push('── Record Size: ' + (ev.rawRecord ? ev.rawRecord.length : 0) + ' bytes ──');
+
+    return lines.join('\n');
+  }
+
+  // ── Extract readable strings from raw bytes not already in parsed fields ─
+  _extractExtraStrings(ev) {
+    const raw = ev.rawRecord;
+    if (!raw || raw.length === 0) return [];
+
+    // Collect all known parsed values to deduplicate
+    const knownValues = new Set();
+    const addKnown = (val) => {
+      if (!val) return;
+      const s = String(val).trim().toLowerCase();
+      if (s.length >= 3) knownValues.add(s);
+    };
+    addKnown(ev.provider);
+    addKnown(ev.channel);
+    addKnown(ev.computer);
+    addKnown(ev.eventData);
+    // Also add individual event data values
+    if (ev.eventData) {
+      for (const part of ev.eventData.split(' | ')) {
+        const eqIdx = part.indexOf('=');
+        if (eqIdx > 0) {
+          addKnown(part.substring(eqIdx + 1));
+        } else {
+          addKnown(part);
+        }
+      }
+    }
+
+    // Known BinXml structural/element names to skip
+    const structuralNames = new Set([
+      'event', 'system', 'eventdata', 'userdata', 'provider', 'eventid',
+      'version', 'level', 'task', 'opcode', 'keywords', 'timecreated',
+      'eventrecordid', 'correlation', 'execution', 'channel', 'computer',
+      'security', 'data', 'name', 'guid', 'systemtime', 'processid',
+      'threadid', 'activityid', 'qualifiers', 'userid',
+      'xmlns', 'http', 'schemas.microsoft.com',
+    ]);
+
+    // Extract UTF-16LE strings from raw bytes
+    const strings = [];
+    const end = raw.length - 1;
+    let i = 0;
+    while (i + 1 < end) {
+      if (raw[i] >= 0x20 && raw[i] < 0x7F && raw[i + 1] === 0) {
+        const strStart = i;
+        let len = 0;
+        while (i + 1 < end && raw[i] >= 0x20 && raw[i] < 0x7F && raw[i + 1] === 0) {
+          len++;
+          i += 2;
+        }
+        if (len >= 4) { // Minimum 4 chars to reduce noise
+          const str = this._readUtf16(raw, strStart, len);
+          const lower = str.trim().toLowerCase();
+          // Skip if it's a known parsed value, structural name, or very short noise
+          if (!knownValues.has(lower) && !structuralNames.has(lower) &&
+            !/^[\s\x00-\x1f]+$/.test(str) && // skip whitespace-only
+            !/^[{(]?[0-9a-f]{8}-[0-9a-f]{4}/i.test(str) && // skip GUIDs
+            !/^https?:\/\/schemas\./i.test(str) && // skip XML namespace URLs
+            str.trim().length >= 4) {
+            strings.push(str.trim());
+          }
+        }
+      } else {
+        i += 2;
+      }
+    }
+
+    // Also try extracting ASCII strings (some records contain ASCII-encoded data)
+    i = 0;
+    while (i < raw.length) {
+      if (raw[i] >= 0x20 && raw[i] < 0x7F) {
+        const strStart = i;
+        while (i < raw.length && raw[i] >= 0x20 && raw[i] < 0x7F) i++;
+        const len = i - strStart;
+        if (len >= 8) { // Longer threshold for ASCII to reduce false positives
+          const str = String.fromCharCode(...raw.subarray(strStart, strStart + len));
+          const lower = str.trim().toLowerCase();
+          if (!knownValues.has(lower) && !structuralNames.has(lower) &&
+            !strings.some(s => s.toLowerCase() === lower) && // deduplicate with UTF-16 results
+            !/^[\s.]+$/.test(str) && // skip dots/spaces
+            !/^https?:\/\/schemas\./i.test(str) &&
+            str.trim().length >= 8) {
+            strings.push('[ASCII] ' + str.trim());
+          }
+        }
+      } else {
+        i++;
+      }
+    }
+
+    // Deduplicate and limit results
+    const unique = [...new Set(strings)];
+    return unique.slice(0, 50); // Cap at 50 strings to avoid huge output
   }
 
   // ── CSV export helpers ──────────────────────────────────────────────────

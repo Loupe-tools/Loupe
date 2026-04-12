@@ -78,7 +78,6 @@ Object.assign(App.prototype, {
     editor.spellcheck = false;
     editor.placeholder = 'Paste or type YARA rules here…';
     // Load from localStorage or use examples
-    const saved = null;
     try { const s = localStorage.getItem('glovebox_yara_rules'); if (s) editor.value = s; } catch (_) { }
     if (!editor.value) editor.value = YaraEngine.EXAMPLE_RULES;
     // Auto-save on change

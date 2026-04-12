@@ -70,10 +70,11 @@ const IOC = Object.freeze({
   COMMAND_LINE: 'Command Line',
   PROCESS: 'Process',
   HOSTNAME: 'Hostname',
+  USERNAME: 'Username',
 });
 
 /** IOC types whose values are directly copyable in the sidebar. */
-const IOC_COPYABLE = new Set([IOC.URL, IOC.EMAIL, IOC.IP, IOC.FILE_PATH, IOC.UNC_PATH, IOC.HASH, IOC.COMMAND_LINE, IOC.PROCESS, IOC.HOSTNAME]);
+const IOC_COPYABLE = new Set([IOC.URL, IOC.EMAIL, IOC.IP, IOC.FILE_PATH, IOC.UNC_PATH, IOC.HASH, IOC.COMMAND_LINE, IOC.PROCESS, IOC.HOSTNAME, IOC.USERNAME]);
 
 // ── String helpers ────────────────────────────────────────────────────────────
 function escHtml(s) {

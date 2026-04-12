@@ -2,6 +2,8 @@
 """Build script: assembles dist/glovebox.html from source files."""
 import os
 
+VERSION = '1.0.1'
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 def read(rel):
@@ -72,7 +74,8 @@ HTML = f"""<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; frame-src blob:;">
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; frame-src blob:; worker-src blob:;">
+  <meta name="description" content="GloveBox — a 100% offline, single-file security analyser for suspicious files. No server, no uploads, no tracking.">
   <title>GloveBox</title>
   <style>{css}</style>
 </head>
@@ -89,6 +92,7 @@ HTML = f"""<!DOCTYPE html>
     <button class="tb-btn" id="btn-yara" title="YARA rule editor (Y)">📐 YARA Rules</button>
     <div class="tb-separator"></div>
     <button class="tb-btn tb-icon-btn" id="btn-security" title="Toggle security sidebar (S)">🛡</button>
+    <button class="tb-btn tb-icon-btn" id="btn-help" title="Help &amp; About (?)">?</button>
     <button class="tb-btn tb-icon-btn" id="btn-theme" title="Toggle dark mode">🌙</button>
     <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.ppt,.odt,.odp,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.rtf,.pdf,.zip,.rar,.7z,.cab,.iso,.img,.one,.url,.webloc,.iqy,.slk,.wsf,.wsc,.wsh,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml,.jpg,.jpeg,.png,.gif,.bmp,.webp,.ico,.tif,.tiff,.avif,.svg,.evtx,.sqlite,.db" style="display:none">
   </div>
@@ -144,6 +148,14 @@ HTML = f"""<!DOCTYPE html>
   <!-- ── Toast ───────────────────────────────────────────────────────── -->
   <div id="toast" class="hidden"></div>
 
+  <!-- ── Noscript ────────────────────────────────────────────────────── -->
+  <noscript>
+    <div class="noscript-msg">
+      <h2>🧤📦 GloveBox requires JavaScript</h2>
+      <p>This is a client-side security analysis tool — all processing happens locally in your browser. Please enable JavaScript to continue.</p>
+    </div>
+  </noscript>
+
   <!-- ── JSZip (inlined) ─────────────────────────────────────────────── -->
   <script>
 {jszip}
@@ -166,17 +178,12 @@ HTML = f"""<!DOCTYPE html>
 
   <!-- ── Application ─────────────────────────────────────────────────── -->
   <script>
+const GLOVEBOX_VERSION = '{VERSION}';
 {default_yara_js}
 {app_js}
   </script>
 </body>
 </html>"""
-
-# dist/ copy
-dist = os.path.join(BASE, 'dist')
-os.makedirs(dist, exist_ok=True)
-with open(os.path.join(dist, 'glovebox.html'), 'w', encoding='utf-8') as _f:
-    _f.write(HTML)
 
 # docs/index.html — served by GitHub Pages
 docs = os.path.join(BASE, 'docs')
@@ -184,11 +191,10 @@ os.makedirs(docs, exist_ok=True)
 with open(os.path.join(docs, 'index.html'), 'w', encoding='utf-8') as _f:
     _f.write(HTML)
 
-# root copy — convenient for local use
+# root copy
 out = os.path.join(BASE, 'glovebox.html')
 with open(out, 'w', encoding='utf-8') as f:
     f.write(HTML)
 
 size = os.path.getsize(out)
 print(f"OK  Built {out}  ({size:,} bytes / {size//1024} KB)")
-print(f"     docs/index.html ready for GitHub Pages")

@@ -295,6 +295,65 @@ Object.assign(App.prototype, {
     this._clearSearch = clearHighlights;
   },
 
+  // ── Help / About dialog ───────────────────────────────────────────────────
+  _openHelpDialog() {
+    // Don't open twice
+    if (document.querySelector('.help-overlay')) return;
+
+    const version = typeof GLOVEBOX_VERSION !== 'undefined' ? GLOVEBOX_VERSION : 'dev';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'help-overlay';
+    overlay.innerHTML = `
+      <div class="help-dialog">
+        <div class="help-header">
+          <span>🧤📦 GloveBox <small>v${version}</small></span>
+          <button class="help-close" title="Close (Esc)">✕</button>
+        </div>
+        <div class="help-body">
+          <p class="help-tagline">A 100% offline, single-file security analyser for suspicious files.<br>No server, no uploads, no tracking — just drop a file and inspect it.</p>
+
+          <h3>Keyboard Shortcuts</h3>
+          <table class="help-kbd-table">
+            <tr><td><kbd class="help-kbd">S</kbd></td><td>Toggle security sidebar</td></tr>
+            <tr><td><kbd class="help-kbd">Y</kbd></td><td>Open YARA rule editor</td></tr>
+            <tr><td><kbd class="help-kbd">?</kbd> / <kbd class="help-kbd">H</kbd></td><td>Open this help dialog</td></tr>
+            <tr><td><kbd class="help-kbd">Ctrl+F</kbd></td><td>Focus document search</td></tr>
+            <tr><td><kbd class="help-kbd">Ctrl+V</kbd></td><td>Paste file from clipboard</td></tr>
+            <tr><td><kbd class="help-kbd">Esc</kbd></td><td>Close dialog / clear search</td></tr>
+          </table>
+
+          <h3>Links</h3>
+          <p>
+            <a href="https://github.com/Sam-Dowling/GloveBox" target="_blank" rel="noopener">GitHub Repository</a>
+            ·
+            <a href="https://sam-dowling.github.io/GloveBox/" target="_blank" rel="noopener">Live Demo</a>
+          </p>
+
+          <p style="margin-top:1.2em;opacity:0.5;font-size:0.85em;">Licensed under the GNU General Public License v3.0</p>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    // Close handlers
+    const close = () => this._closeHelpDialog();
+    overlay.querySelector('.help-close').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    this._helpEscHandler = e => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', this._helpEscHandler);
+  },
+
+  _closeHelpDialog() {
+    const overlay = document.querySelector('.help-overlay');
+    if (overlay) overlay.remove();
+    if (this._helpEscHandler) {
+      document.removeEventListener('keydown', this._helpEscHandler);
+      this._helpEscHandler = null;
+    }
+  },
+
 });
 
 document.addEventListener('DOMContentLoaded', () => new App().init());

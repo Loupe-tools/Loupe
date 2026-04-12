@@ -493,6 +493,27 @@ class SqliteRenderer {
     summary.textContent = `${rows.length.toLocaleString()} history entries`;
     wrap.appendChild(summary);
 
+    // Filter bar
+    const filterBar = document.createElement('div');
+    filterBar.className = 'sqlite-filter-bar';
+
+    const searchLabel = document.createElement('span');
+    searchLabel.className = 'evtx-filter-label';
+    searchLabel.textContent = 'Search:';
+    filterBar.appendChild(searchLabel);
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = 'Filter rows…';
+    filterBar.appendChild(searchInput);
+
+    const filterCount = document.createElement('span');
+    filterCount.className = 'evtx-filter-count';
+    filterCount.textContent = `Showing ${Math.min(rows.length, 20000).toLocaleString()} of ${rows.length.toLocaleString()}`;
+    filterBar.appendChild(filterCount);
+
+    wrap.appendChild(filterBar);
+
     // CSV bar
     const bar = this._buildCsvBar(cols, rows, fileName);
     wrap.appendChild(bar);
@@ -516,10 +537,12 @@ class SqliteRenderer {
 
     const tbody = document.createElement('tbody');
     const limit = Math.min(rows.length, 20000);
+    const rowEls = [];
     for (let i = 0; i < limit; i++) {
       const row = rows[i];
       const tr = document.createElement('tr');
       const rh = document.createElement('td'); rh.className = 'xlsx-row-header'; rh.textContent = i + 1; tr.appendChild(rh);
+      const cellTexts = [];
       for (let j = 0; j < row.length; j++) {
         const td = document.createElement('td'); td.className = 'xlsx-cell';
         const val = row[j] == null ? '' : String(row[j]);
@@ -533,8 +556,10 @@ class SqliteRenderer {
         // Right-align numbers
         if (j === 2 && val && !isNaN(parseFloat(val))) td.style.textAlign = 'right';
         tr.appendChild(td);
+        cellTexts.push(val.toLowerCase());
       }
       tbody.appendChild(tr);
+      rowEls.push({ tr, searchText: cellTexts.join(' ') });
     }
     tbl.appendChild(tbody);
     scr.appendChild(tbl);
@@ -546,6 +571,43 @@ class SqliteRenderer {
       note.textContent = `⚠ Showing first ${limit.toLocaleString()} of ${rows.length.toLocaleString()} entries`;
       wrap.appendChild(note);
     }
+
+    // Filter logic
+    const applyFilters = () => {
+      const term = searchInput.value.toLowerCase().trim();
+      let shown = 0;
+      for (const r of rowEls) {
+        const match = !term || r.searchText.includes(term);
+        r.tr.style.display = match ? '' : 'none';
+        if (match) shown++;
+      }
+      filterCount.textContent = `Showing ${shown.toLocaleString()} of ${rowEls.length.toLocaleString()}`;
+    };
+
+    let filterTimeout;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(filterTimeout);
+      filterTimeout = setTimeout(applyFilters, 150);
+    });
+
+    // Expose filter controls and row data for sidebar IOC navigation
+    wrap._sqliteFilters = {
+      searchInput,
+      applyFilters,
+      scrollContainer: scr,
+      filterBar,
+    };
+    wrap._sqliteRows = rowEls;
+    wrap._sqliteScrollContainer = scr;
+
+    // Provide clean tab/newline-delimited text for IOC extraction.
+    // Without this, DOM textContent merges adjacent cells (URL + Title +
+    // Visit Count + Date) into one blob and the URL regex over-matches.
+    const rawLines = [cols.join('\t')];
+    for (const row of rows) {
+      rawLines.push(row.map(v => v == null ? '' : String(v)).join('\t'));
+    }
+    wrap._rawText = rawLines.join('\n');
   }
 
   _buildGenericView(wrap, db, fileName) {
@@ -566,10 +628,32 @@ class SqliteRenderer {
       return;
     }
 
+    // Filter bar (shared across all tabs)
+    const filterBar = document.createElement('div');
+    filterBar.className = 'sqlite-filter-bar';
+
+    const searchLabel = document.createElement('span');
+    searchLabel.className = 'evtx-filter-label';
+    searchLabel.textContent = 'Search:';
+    filterBar.appendChild(searchLabel);
+
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.placeholder = 'Filter rows…';
+    filterBar.appendChild(searchInput);
+
+    const filterCount = document.createElement('span');
+    filterCount.className = 'evtx-filter-count';
+    filterBar.appendChild(filterCount);
+
+    wrap.appendChild(filterBar);
+
     // Tab buttons for each table
     const tabBar = document.createElement('div');
     tabBar.className = 'sqlite-tab-bar';
     const containers = [];
+    const allTabRows = []; // array of arrays of { tr, searchText }
+    let activeTabIdx = 0;
 
     for (let ti = 0; ti < tableNames.length; ti++) {
       const tName = tableNames[ti];
@@ -582,6 +666,8 @@ class SqliteRenderer {
         tabBar.querySelectorAll('.sqlite-tab').forEach(t => t.classList.remove('sqlite-tab-active'));
         tab.classList.add('sqlite-tab-active');
         containers.forEach((c, i) => c.classList.toggle('hidden', i !== ti));
+        activeTabIdx = ti;
+        updateFilterCount();
       });
       tabBar.appendChild(tab);
 
@@ -614,10 +700,12 @@ class SqliteRenderer {
 
       const tbody = document.createElement('tbody');
       const limit = Math.min(tData.rows.length, 10000);
+      const tabRowEls = [];
       for (let i = 0; i < limit; i++) {
         const row = tData.rows[i];
         const tr = document.createElement('tr');
         const rh = document.createElement('td'); rh.className = 'xlsx-row-header'; rh.textContent = i + 1; tr.appendChild(rh);
+        const cellTexts = [];
         for (const val of row) {
           const td = document.createElement('td'); td.className = 'xlsx-cell';
           const s = val == null ? 'NULL' : String(val);
@@ -625,8 +713,10 @@ class SqliteRenderer {
           else td.textContent = s;
           if (val === null) td.style.color = '#999';
           tr.appendChild(td);
+          cellTexts.push(s.toLowerCase());
         }
         tbody.appendChild(tr);
+        tabRowEls.push({ tr, searchText: cellTexts.join(' ') });
       }
       tbl.appendChild(tbody);
       scr.appendChild(tbl);
@@ -640,10 +730,63 @@ class SqliteRenderer {
       }
 
       containers.push(container);
+      allTabRows.push(tabRowEls);
     }
+
+    // Update filter count for active tab
+    const updateFilterCount = () => {
+      const tabRows = allTabRows[activeTabIdx] || [];
+      const shown = tabRows.filter(r => r.tr.style.display !== 'none').length;
+      filterCount.textContent = `Showing ${shown.toLocaleString()} of ${tabRows.length.toLocaleString()}`;
+    };
+
+    // Initial count
+    if (allTabRows[0]) {
+      filterCount.textContent = `Showing ${allTabRows[0].length.toLocaleString()} of ${allTabRows[0].length.toLocaleString()}`;
+    }
+
+    // Filter logic — filters all tabs so switching tabs preserves the filter
+    const applyFilters = () => {
+      const term = searchInput.value.toLowerCase().trim();
+      for (const tabRows of allTabRows) {
+        for (const r of tabRows) {
+          const match = !term || r.searchText.includes(term);
+          r.tr.style.display = match ? '' : 'none';
+        }
+      }
+      updateFilterCount();
+    };
+
+    let filterTimeout;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(filterTimeout);
+      filterTimeout = setTimeout(applyFilters, 150);
+    });
 
     wrap.appendChild(tabBar);
     for (const c of containers) wrap.appendChild(c);
+
+    // Expose filter controls and row data for sidebar IOC navigation
+    wrap._sqliteFilters = {
+      searchInput,
+      applyFilters,
+      scrollContainer: containers[0] || wrap,
+      filterBar,
+    };
+    wrap._sqliteRows = allTabRows.flat();
+    wrap._sqliteScrollContainer = containers[0] || wrap;
+
+    // Provide clean tab/newline-delimited text for IOC extraction (generic tables).
+    const rawLines = [];
+    for (const tName of tableNames) {
+      const tData = db.allTableData[tName];
+      const cols = tData.columns.length ? tData.columns : tData.rows.length ? Array.from({ length: tData.rows[0].length }, (_, i) => `col_${i}`) : [];
+      rawLines.push(cols.join('\t'));
+      for (const row of tData.rows) {
+        rawLines.push(row.map(v => v == null ? '' : String(v)).join('\t'));
+      }
+    }
+    wrap._rawText = rawLines.join('\n');
   }
 
   // ── CSV export helpers ──────────────────────────────────────────────────

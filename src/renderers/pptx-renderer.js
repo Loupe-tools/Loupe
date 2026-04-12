@@ -175,7 +175,7 @@ class PptxRenderer {
 
   async analyzeForSecurity(buffer, fileName) {
     const ext = (fileName || '').split('.').pop().toLowerCase();
-    const f = { risk: 'low', hasMacros: false, macroSize: 0, macroHash: '', autoExec: [], modules: [], externalRefs: [], metadata: {} };
+    const f = { risk: 'low', hasMacros: false, macroSize: 0, autoExec: [], modules: [], externalRefs: [], metadata: {} };
     try {
       const zip = await JSZip.loadAsync(buffer);
       const vba = zip.file('ppt/vbaProject.bin');

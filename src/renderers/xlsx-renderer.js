@@ -45,7 +45,7 @@ class XlsxRenderer {
     const corner = document.createElement('th'); corner.className = 'xlsx-corner'; hRow.appendChild(corner);
     for (let c = rng.s.c; c <= rng.e.c; c++) {
       const th = document.createElement('th'); th.className = 'xlsx-col-header'; th.textContent = XLSX.utils.encode_col(c);
-      const w = cols[c - rng.s.c]; if (w && w.wch) th.style.minWidth = Math.max(40, Math.round(w.wch * 7)) + 'px';
+      const w = cols[c]; if (w && w.wch) th.style.minWidth = Math.max(40, Math.round(w.wch * 7)) + 'px';
       hRow.appendChild(th);
     }
     thead.appendChild(hRow); tbl.appendChild(thead);
@@ -76,7 +76,7 @@ class XlsxRenderer {
 
   async analyzeForSecurity(buffer, fileName) {
     const ext = (fileName || '').split('.').pop().toLowerCase();
-    const f = { risk: 'low', hasMacros: false, macroSize: 0, macroHash: '', autoExec: [], modules: [], externalRefs: [], metadata: {} };
+    const f = { risk: 'low', hasMacros: false, macroSize: 0, autoExec: [], modules: [], externalRefs: [], metadata: {} };
     try {
       const wb = XLSX.read(new Uint8Array(buffer), { type: 'array', bookVBA: true });
       if (wb.Props) {
