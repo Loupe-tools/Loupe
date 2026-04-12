@@ -753,6 +753,45 @@ body.dark .ext-search {
   word-break: break-all;
 }
 
+/* ── Per-type IOC visual accents ──────────────────────── */
+.ext-table td.ioc-type {
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 10px;
+  border-left: 3px solid transparent;
+  padding-left: 6px;
+}
+
+.ext-table td.ioc-type-yara-match       { border-left-color: #7c3aed; color: #7c3aed; }
+.ext-table td.ioc-type-url              { border-left-color: #2563eb; color: #2563eb; }
+.ext-table td.ioc-type-ip-address       { border-left-color: #dc2626; color: #dc2626; }
+.ext-table td.ioc-type-email            { border-left-color: #ea580c; color: #ea580c; }
+.ext-table td.ioc-type-file-path        { border-left-color: #16a34a; color: #16a34a; }
+.ext-table td.ioc-type-unc-path         { border-left-color: #16a34a; color: #16a34a; }
+.ext-table td.ioc-type-hash             { border-left-color: #475569; color: #475569; }
+.ext-table td.ioc-type-command-line     { border-left-color: #be123c; color: #be123c; }
+.ext-table td.ioc-type-process          { border-left-color: #be123c; color: #be123c; }
+.ext-table td.ioc-type-hostname         { border-left-color: #0891b2; color: #0891b2; }
+.ext-table td.ioc-type-username         { border-left-color: #0891b2; color: #0891b2; }
+.ext-table td.ioc-type-attachment       { border-left-color: #d97706; color: #d97706; }
+.ext-table td.ioc-type-pattern          { border-left-color: #64748b; color: #64748b; }
+.ext-table td.ioc-type-info             { border-left-color: #94a3b8; color: #94a3b8; }
+
+body.dark .ext-table td.ioc-type-yara-match   { border-left-color: #a78bfa; color: #a78bfa; }
+body.dark .ext-table td.ioc-type-url          { border-left-color: #60a5fa; color: #60a5fa; }
+body.dark .ext-table td.ioc-type-ip-address   { border-left-color: #f87171; color: #f87171; }
+body.dark .ext-table td.ioc-type-email        { border-left-color: #fb923c; color: #fb923c; }
+body.dark .ext-table td.ioc-type-file-path    { border-left-color: #4ade80; color: #4ade80; }
+body.dark .ext-table td.ioc-type-unc-path     { border-left-color: #4ade80; color: #4ade80; }
+body.dark .ext-table td.ioc-type-hash         { border-left-color: #94a3b8; color: #94a3b8; }
+body.dark .ext-table td.ioc-type-command-line  { border-left-color: #fb7185; color: #fb7185; }
+body.dark .ext-table td.ioc-type-process       { border-left-color: #fb7185; color: #fb7185; }
+body.dark .ext-table td.ioc-type-hostname      { border-left-color: #22d3ee; color: #22d3ee; }
+body.dark .ext-table td.ioc-type-username      { border-left-color: #22d3ee; color: #22d3ee; }
+body.dark .ext-table td.ioc-type-attachment    { border-left-color: #fbbf24; color: #fbbf24; }
+body.dark .ext-table td.ioc-type-pattern       { border-left-color: #94a3b8; color: #94a3b8; }
+body.dark .ext-table td.ioc-type-info          { border-left-color: #64748b; color: #64748b; }
+
 .ext-table tr.hidden {
   display: none;
 }
@@ -769,17 +808,6 @@ body.dark .ext-search {
 
 body.dark .ext-table tr.ioc-clickable:hover td {
   background: rgba(34, 211, 238, .10);
-}
-
-.ext-table tr.ioc-clickable td:first-child::before {
-  content: '🔗 ';
-  font-size: 9px;
-  opacity: 0;
-  transition: opacity .15s;
-}
-
-.ext-table tr.ioc-clickable:hover td:first-child::before {
-  opacity: .6;
 }
 
 /* IOC row flash animation */

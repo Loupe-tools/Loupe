@@ -656,6 +656,7 @@ Object.assign(App.prototype, {
       tr.className = 'ioc-clickable';
       tr.dataset.search = (ref.type + ' ' + ref.url).toLowerCase();
       const td1 = document.createElement('td'); td1.textContent = ref.type;
+      td1.className = 'ioc-type ioc-type-' + ref.type.toLowerCase().replace(/\s+/g, '-');
       const td2 = document.createElement('td'); td2.className = 'ext-val';
       const sp = document.createElement('span'); sp.textContent = ref.url; td2.appendChild(sp);
       if (IOC_COPYABLE.has(ref.type)) {
