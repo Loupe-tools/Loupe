@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build script: assembles dist/glovebox.html from source files."""
+"""Build script: assembles glovebox.html from source files."""
 import os
 
 VERSION = '1.0.2'

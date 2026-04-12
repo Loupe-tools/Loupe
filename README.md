@@ -101,12 +101,11 @@ Requires **Python 3.8+** (standard library only — no `pip install` needed).
 python build.py
 ```
 
-The build script reads `src/styles.css` and the JS source files listed below, inlines all CSS and JavaScript (including vendor libraries) into a single self-contained HTML document, and writes three identical copies:
+The build script reads `src/styles.css` and the JS source files listed below, inlines all CSS and JavaScript (including vendor libraries) into a single self-contained HTML document, and writes two identical copies:
 
 | Output | Purpose |
 |---|---|
 | `glovebox.html` | Root-level convenience copy for local use |
-| `dist/glovebox.html` | Distribution artefact |
 | `docs/index.html` | GitHub Pages deployment |
 
 ### JS Concatenation Order
@@ -138,10 +137,12 @@ src/renderers/onenote-renderer.js      # OneNoteRenderer — .one embedded objec
 src/renderers/iqy-slk-renderer.js      # IqySlkRenderer — Internet Query + Symbolic Link files
 src/renderers/wsf-renderer.js          # WsfRenderer — Windows Script File parser
 src/renderers/csv-renderer.js          # CsvRenderer — CSV/TSV table view
+src/renderers/evtx-renderer.js         # EvtxRenderer — Windows Event Log parser
+src/renderers/sqlite-renderer.js       # SqliteRenderer — SQLite + browser history
 src/renderers/doc-renderer.js          # DocBinaryRenderer — legacy .doc text extraction
 src/renderers/msg-renderer.js          # MsgRenderer — Outlook .msg email view
 src/renderers/eml-renderer.js          # EmlRenderer — RFC 5322/MIME email parser
-src/renderers/lnk-renderer.js         # LnkRenderer — Windows Shell Link (.lnk) parser
+src/renderers/lnk-renderer.js          # LnkRenderer — Windows Shell Link (.lnk) parser
 src/renderers/hta-renderer.js          # HtaRenderer — HTA source viewer + security scanner
 src/renderers/html-renderer.js         # HtmlRenderer — sandboxed HTML preview + source view
 src/renderers/pdf-renderer.js          # PdfRenderer — PDF page renderer + security scanner
@@ -167,8 +168,6 @@ GloveBox/
 ├── build.py                       # Build script — reads src/, writes HTML outputs
 ├── glovebox.html                  # Built output (root convenience copy)
 ├── README.md
-├── dist/
-│   └── glovebox.html              # Built output (distribution)
 ├── docs/
 │   └── index.html                 # Built output (GitHub Pages)
 ├── vendor/
@@ -221,30 +220,7 @@ GloveBox/
 │       ├── app-sidebar.js         # Sidebar rendering (risk bar + collapsible panes)
 │       ├── app-yara.js            # YARA rule editor, scanning, result display
 │       └── app-ui.js              # UI helpers + DOMContentLoaded bootstrap
-└── examples/
-    ├── encoded-base64-pe.txt       # Encoded content test — Base64 PE
-    ├── encoded-hex-base64-powershell.txt  # Encoded content test — hex + Base64 + PowerShell
-    ├── encoded-hex-shellcode.txt   # Encoded content test — hex shellcode
-    ├── encoded-powershell.bat      # Encoded content test — PowerShell in .bat
-    ├── example.doc
-    ├── example.docx
-    ├── example.evtx                # Windows Event Log sample
-    ├── example.html
-    ├── example.odp
-    ├── example.ods
-    ├── example.odt
-    ├── example.pdf
-    ├── example.ppt
-    ├── example.rtf
-    ├── example.sqlite              # SQLite database sample
-    ├── example.xls
-    ├── example.xlsm
-    ├── example.xlsx
-    ├── example.zip
-    ├── example1.evtx               # Additional EVTX samples
-    ├── example2.evtx
-    ├── example3.evtx
-    └── sample.xls
+└── examples/                      # Sample files for testing various formats
 ```
 
 ---
