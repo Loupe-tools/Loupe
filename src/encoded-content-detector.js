@@ -10,6 +10,27 @@ class EncodedContentDetector {
     this.maxCandidatesPerType = opts.maxCandidatesPerType || 50;
   }
 
+  // ── Helper: propagate severity & IOCs from inner findings ────────────────
+  static _propagateInnerFindings(severity, iocs, innerFindings) {
+    if (!innerFindings || innerFindings.length === 0) return severity;
+    const sevRank = { critical: 4, high: 3, medium: 2, info: 1 };
+    const seen = new Set(iocs.map(i => i.url));
+    for (const inner of innerFindings) {
+      if ((sevRank[inner.severity] || 0) > (sevRank[severity] || 0)) {
+        severity = inner.severity;
+      }
+      if (inner.iocs) {
+        for (const ioc of inner.iocs) {
+          if (!seen.has(ioc.url)) {
+            seen.add(ioc.url);
+            iocs.push(ioc);
+          }
+        }
+      }
+    }
+    return severity;
+  }
+
   // ── Magic byte signatures for decoded binary identification ──────────────
   static MAGIC_BYTES = [
     { magic: [0x4D, 0x5A],                     ext: '.exe',  type: 'PE Executable' },
@@ -17,6 +38,10 @@ class EncodedContentDetector {
     { magic: [0x25, 0x50, 0x44, 0x46],         ext: '.pdf',  type: 'PDF Document' },
     { magic: [0xD0, 0xCF, 0x11, 0xE0],         ext: '.ole',  type: 'OLE/CFB Document' },
     { magic: [0x1F, 0x8B],                     ext: '.gz',   type: 'Gzip Compressed' },
+    { magic: [0x78, 0x9C],                     ext: '.zlib', type: 'Zlib Compressed (default)' },
+    { magic: [0x78, 0xDA],                     ext: '.zlib', type: 'Zlib Compressed (best)' },
+    { magic: [0x78, 0x01],                     ext: '.zlib', type: 'Zlib Compressed (no/low)' },
+    { magic: [0x78, 0x5E],                     ext: '.zlib', type: 'Zlib Compressed (fast)' },
     { magic: [0x52, 0x61, 0x72, 0x21],         ext: '.rar',  type: 'RAR Archive' },
     { magic: [0x7F, 0x45, 0x4C, 0x46],         ext: '.elf',  type: 'ELF Binary' },
     { magic: [0x89, 0x50, 0x4E, 0x47],         ext: '.png',  type: 'PNG Image' },
@@ -45,6 +70,10 @@ class EncodedContentDetector {
     { prefix: 'TVpQ', desc: 'PE executable (MZ variant)' },
     { prefix: 'TVro', desc: 'PE executable (MZ variant)' },
     { prefix: 'H4sI', desc: 'Gzip compressed' },
+    { prefix: 'eJw',  desc: 'Zlib compressed (default)' },
+    { prefix: 'eNo',  desc: 'Zlib compressed (best)' },
+    { prefix: 'eAE',  desc: 'Zlib compressed (no/low)' },
+    { prefix: 'eF4',  desc: 'Zlib compressed (fast)' },
     { prefix: 'UEsD', desc: 'ZIP archive (PK)' },
     { prefix: 'JVBE', desc: 'PDF document (%PDF)' },
     { prefix: '0M8R', desc: 'OLE/CFB document' },
@@ -346,13 +375,14 @@ class EncodedContentDetector {
     // Build decode chain
     const chain = [candidate.type];
 
-    // If decoded content is compressed, try to decompress
-    if (classification.type === 'Gzip Compressed' || classification.ext === '.gz') {
+    // If decoded content is compressed (gzip or zlib), try to decompress
+    const cType = (classification.type || '').toLowerCase();
+    if (cType.includes('gzip') || cType.includes('zlib') || classification.ext === '.gz' || classification.ext === '.zlib') {
       try {
-        const inflated = await Decompressor.inflate(decoded, 'gzip');
-        if (inflated && inflated.length > 0) {
-          chain.push('gzip');
-          decoded = inflated;
+        const decompResult = await Decompressor.tryAll(decoded, 0);
+        if (decompResult && decompResult.data && decompResult.data.length > 0) {
+          chain.push(decompResult.format || 'decompressed');
+          decoded = decompResult.data;
           const innerClass = this._classify(decoded);
           Object.assign(classification, innerClass);
         }
@@ -407,16 +437,11 @@ class EncodedContentDetector {
       }
     }
 
-    // Propagate severity from inner findings — if nested content is more dangerous,
-    // the parent finding should reflect that
-    if (innerFindings.length > 0) {
-      const sevRank = { critical: 4, high: 3, medium: 2, info: 1 };
-      for (const inner of innerFindings) {
-        if ((sevRank[inner.severity] || 0) > (sevRank[severity] || 0)) {
-          severity = inner.severity;
-        }
-      }
-    }
+    // Propagate severity and IOCs from inner findings — if nested content is
+    // more dangerous, the parent finding should reflect that; IOCs discovered
+    // in deeper layers (e.g. a URL inside Hex → Base64 → text) surface here
+    // so the analyst sees them without having to drill down manually.
+    severity = EncodedContentDetector._propagateInnerFindings(severity, iocs, innerFindings);
 
     // Determine the file extension for the synthetic file
     const ext = classification.ext || (this._isValidUTF8(decoded) ? '.txt' : '.bin');
@@ -496,9 +521,43 @@ class EncodedContentDetector {
       };
     }
 
-    // Try decompression
-    // We need the raw bytes — they'll be passed by the caller
-    // For now, mark it for lazy decompression
+    // Attempt eager decompression of zlib/gzip blobs
+    if (rawBytes && typeof Decompressor !== 'undefined') {
+      try {
+        const result = await Decompressor.tryAll(rawBytes, candidate.offset);
+        if (result && result.data && result.data.length > 0) {
+          const decoded = result.data;
+          const classification = this._classify(decoded);
+          const entropy = this._shannonEntropyBytes(decoded);
+          const iocs = this._extractIOCsFromDecoded(decoded);
+          const chain = [candidate.label];
+          if (classification.type) chain.push(classification.type);
+          else if (this._isValidUTF8(decoded)) chain.push('text');
+          else chain.push('binary data');
+          const severity = this._assessSeverity(classification, iocs, decoded);
+          const ext = classification.ext || (this._isValidUTF8(decoded) ? '.txt' : '.bin');
+
+          return {
+            ...findingBase,
+            severity,
+            decodedSize: decoded.length,
+            decodedBytes: decoded,
+            chain,
+            classification,
+            entropy,
+            hint: `${candidate.label} compressed data at offset ${candidate.offset} — decompressed ${decoded.length.toLocaleString()} bytes`,
+            iocs,
+            innerFindings: [],
+            canLoad: !!(classification.type || this._isValidUTF8(decoded)),
+            ext,
+          };
+        }
+      } catch (_) {
+        // Decompression failed — fall through to lazy marker
+      }
+    }
+
+    // Fallback: mark for lazy decompression if eager attempt was skipped or failed
     return {
       ...findingBase,
       severity: 'info',
@@ -537,15 +596,8 @@ class EncodedContentDetector {
         finding.canLoad = true;
         finding.chain.push(finding.classification.type || 'binary data');
         finding.severity = this._assessSeverity(finding.classification, finding.iocs, result.data);
-        // Propagate severity from existing inner findings
-        if (finding.innerFindings && finding.innerFindings.length) {
-          const sevRank = { critical: 4, high: 3, medium: 2, info: 1 };
-          for (const inner of finding.innerFindings) {
-            if ((sevRank[inner.severity] || 0) > (sevRank[finding.severity] || 0)) {
-              finding.severity = inner.severity;
-            }
-          }
-        }
+        // Propagate severity and IOCs from existing inner findings
+        finding.severity = EncodedContentDetector._propagateInnerFindings(finding.severity, finding.iocs, finding.innerFindings);
       }
       return finding;
     }
@@ -573,15 +625,8 @@ class EncodedContentDetector {
         else chain.push('binary data');
         finding.chain = chain;
         finding.severity = this._assessSeverity(finding.classification, finding.iocs, decoded);
-        // Propagate severity from existing inner findings
-        if (finding.innerFindings && finding.innerFindings.length) {
-          const sevRank = { critical: 4, high: 3, medium: 2, info: 1 };
-          for (const inner of finding.innerFindings) {
-            if ((sevRank[inner.severity] || 0) > (sevRank[finding.severity] || 0)) {
-              finding.severity = inner.severity;
-            }
-          }
-        }
+        // Propagate severity and IOCs from existing inner findings
+        finding.severity = EncodedContentDetector._propagateInnerFindings(finding.severity, finding.iocs, finding.innerFindings);
         finding.ext = finding.classification.ext || (this._isValidUTF8(decoded) ? '.txt' : '.bin');
         finding.autoDecoded = true;
         finding.rawCandidate = null;

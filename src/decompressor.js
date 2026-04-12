@@ -78,7 +78,7 @@ const Decompressor = {
     }
 
     // Raw deflate — try as last resort
-    const r = await this.tryDecompress(bytes, offset, 'raw');
+    const r = await this.tryDecompress(bytes, offset, 'deflate-raw');
     if (r.success && r.data.length > 8) return { data: r.data, format: 'raw deflate' };
 
     return null;
@@ -87,7 +87,7 @@ const Decompressor = {
   /**
    * Inflate a known-compressed byte array with a given format.
    * @param {Uint8Array} compressedBytes
-   * @param {string}     format  'deflate' | 'gzip' | 'raw'
+   * @param {string}     format  'deflate' | 'gzip' | 'deflate-raw'
    * @returns {Promise<Uint8Array|null>}
    */
   async inflate(compressedBytes, format) {

@@ -1,0 +1,2 @@
+This file contains a Base64-encoded zlib-compressed blob for testing:
+eJwVyiEPQiEQB/CvQgOCx6xWNViewaAVeP8p7oCb3kS/PbP/TsebcQvG5pyeyGoWKF2R9lzQ1NOhj8Y9rhd9lXZ39qEquxDwKUz4xioMyr0Gib8/I3lvrZ/OTh1e

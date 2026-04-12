@@ -517,6 +517,40 @@ Object.assign(App.prototype, {
         actions.appendChild(loadZipBtn);
       }
 
+      // "Decompress & Analyse" for compressed blobs that weren't eagerly decompressed
+      if (finding.needsDecompression && !finding.decodedBytes) {
+        const decompBtn = document.createElement('button');
+        decompBtn.className = 'tb-btn enc-btn-load';
+        decompBtn.textContent = '▶ Decompress & Analyse';
+        decompBtn.title = 'Attempt decompression and open in the analysis pipeline';
+        decompBtn.addEventListener('click', async () => {
+          decompBtn.disabled = true;
+          decompBtn.textContent = '⏳ Decompressing…';
+          try {
+            const detector = new EncodedContentDetector();
+            await detector.lazyDecode(finding);
+            this._updateRiskFromEncodedContent();
+            if (finding.decodedBytes) {
+              const ext = finding.ext || '.bin';
+              const synName = `decompressed_${finding.encoding.toLowerCase().replace(/[^a-z0-9]/g, '_')}_offset${finding.offset}${ext}`;
+              const blob = new Blob([finding.decodedBytes], { type: 'application/octet-stream' });
+              const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
+              this._pushNavState(fileName);
+              this._loadFile(syntheticFile);
+            } else {
+              this._toast('Decompression failed — data may be corrupt or truncated', 'error');
+              decompBtn.disabled = false;
+              decompBtn.textContent = '▶ Decompress & Analyse';
+            }
+          } catch (err) {
+            this._toast('Decompression failed: ' + err.message, 'error');
+            decompBtn.disabled = false;
+            decompBtn.textContent = '▶ Decompress & Analyse';
+          }
+        });
+        actions.appendChild(decompBtn);
+      }
+
       if (actions.children.length > 0) card.appendChild(actions);
 
       // Inner findings (recursive)
