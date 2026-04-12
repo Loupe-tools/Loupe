@@ -565,7 +565,10 @@ Object.assign(App.prototype, {
       if (IOC_COPYABLE.has(ref.type)) {
         const cb = document.createElement('button'); cb.className = 'copy-url-btn';
         cb.textContent = '📋'; cb.title = 'Copy';
-        cb.addEventListener('click', (e) => { e.stopPropagation(); this._copyToClipboard(ref.url); });
+        let copyVal = ref.url;
+        const hm = copyVal.match(/^(?:SHA256|SHA1|MD5|IMPHASH|SHA384|SHA512):(.+)$/i);
+        if (hm) copyVal = hm[1];
+        cb.addEventListener('click', (e) => { e.stopPropagation(); this._copyToClipboard(copyVal); });
         td2.appendChild(cb);
       }
       const td3 = document.createElement('td');
