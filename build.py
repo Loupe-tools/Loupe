@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build script: assembles dist/phishfinder.html from source files."""
+"""Build script: assembles dist/glovebox.html from source files."""
 import os
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -69,14 +69,14 @@ HTML = f"""<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; frame-src blob:;">
-  <title>PhishFinder</title>
+  <title>GloveBox</title>
   <style>{css}</style>
 </head>
 <body>
 
   <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
   <div id="toolbar">
-    <span id="app-title">🐡 PhishFinder</span>
+    <span id="app-title">🧤📦 GloveBox</span>
     <button class="tb-btn" id="btn-open" title="Open file (or drag &amp; drop)">📁 Open File</button>
     <div id="file-info-wrap">
       <span id="file-info"></span>
@@ -163,7 +163,7 @@ HTML = f"""<!DOCTYPE html>
 # dist/ copy
 dist = os.path.join(BASE, 'dist')
 os.makedirs(dist, exist_ok=True)
-with open(os.path.join(dist, 'phishfinder.html'), 'w', encoding='utf-8') as _f:
+with open(os.path.join(dist, 'glovebox.html'), 'w', encoding='utf-8') as _f:
     _f.write(HTML)
 
 # docs/index.html — served by GitHub Pages
@@ -173,7 +173,7 @@ with open(os.path.join(docs, 'index.html'), 'w', encoding='utf-8') as _f:
     _f.write(HTML)
 
 # root copy — convenient for local use
-out = os.path.join(BASE, 'phishfinder.html')
+out = os.path.join(BASE, 'glovebox.html')
 with open(out, 'w', encoding='utf-8') as f:
     f.write(HTML)
 

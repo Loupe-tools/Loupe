@@ -79,11 +79,11 @@ Object.assign(App.prototype, {
     editor.placeholder = 'Paste or type YARA rules here…';
     // Load from localStorage or use examples
     const saved = null;
-    try { const s = localStorage.getItem('phishfinder_yara_rules'); if (s) editor.value = s; } catch (_) { }
+    try { const s = localStorage.getItem('glovebox_yara_rules'); if (s) editor.value = s; } catch (_) { }
     if (!editor.value) editor.value = YaraEngine.EXAMPLE_RULES;
     // Auto-save on change
     editor.addEventListener('input', () => {
-      try { localStorage.setItem('phishfinder_yara_rules', editor.value); } catch (_) { }
+      try { localStorage.setItem('glovebox_yara_rules', editor.value); } catch (_) { }
     });
     editorWrap.appendChild(editor);
     dialog.appendChild(editorWrap);
@@ -113,7 +113,7 @@ Object.assign(App.prototype, {
       const reader = new FileReader();
       reader.onload = () => {
         document.getElementById('yara-editor').value = reader.result;
-        try { localStorage.setItem('phishfinder_yara_rules', reader.result); } catch (_) { }
+        try { localStorage.setItem('glovebox_yara_rules', reader.result); } catch (_) { }
         this._yaraSetStatus(`Loaded: ${f.name}`, 'info');
       };
       reader.readAsText(f);
@@ -157,10 +157,10 @@ Object.assign(App.prototype, {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'phishfinder_rules.yar';
+    a.download = 'glovebox_rules.yar';
     a.click();
     URL.revokeObjectURL(url);
-    this._yaraSetStatus('Rules saved to phishfinder_rules.yar', 'info');
+    this._yaraSetStatus('Rules saved to glovebox_rules.yar', 'info');
   },
 
   /** Validate YARA rules syntax. */
@@ -314,7 +314,7 @@ Object.assign(App.prototype, {
   _autoYaraScan() {
     if (!this._fileBuffer) return;
     let source = '';
-    try { source = localStorage.getItem('phishfinder_yara_rules') || ''; } catch (_) { }
+    try { source = localStorage.getItem('glovebox_yara_rules') || ''; } catch (_) { }
     if (!source) source = YaraEngine.EXAMPLE_RULES;
     if (!source) return;
 
