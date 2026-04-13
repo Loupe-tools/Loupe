@@ -56,7 +56,7 @@ class YaraEngine {
     const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
     // Decode as latin-1 for string matching
     const textChunks = [];
-    const CHUNK = 512 * 1024;
+    const CHUNK = 32 * 1024;
     for (let i = 0; i < bytes.length; i += CHUNK) {
       textChunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)));
     }

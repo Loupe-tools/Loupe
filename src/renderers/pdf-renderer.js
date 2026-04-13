@@ -122,9 +122,9 @@ class PdfRenderer {
   /** Decode buffer to a string for regex scanning (latin-1 for raw bytes). */
   _decodeRaw(buffer) {
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
-    // Scan in 512 KB chunks to avoid call-stack limits with String.fromCharCode
+    // Scan in 32 KB chunks to avoid call-stack limits with String.fromCharCode
     const chunks = [];
-    const CHUNK = 512 * 1024;
+    const CHUNK = 32 * 1024;
     for (let i = 0; i < bytes.length; i += CHUNK) {
       chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)));
     }

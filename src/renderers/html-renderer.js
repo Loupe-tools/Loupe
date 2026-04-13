@@ -259,7 +259,7 @@ class HtmlRenderer {
     } catch (_) { }
     // Fallback to latin-1
     const chunks = [];
-    const CHUNK = 512 * 1024;
+    const CHUNK = 32 * 1024;
     for (let i = 0; i < bytes.length; i += CHUNK) {
       chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)));
     }
