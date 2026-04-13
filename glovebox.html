@@ -7,7 +7,7 @@
         content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; frame-src blob:; worker-src blob:;">
   <meta name="description" content="GloveBox — a 100% offline, single-file security analyser for suspicious files. No server, no uploads, no tracking.">
   <title>GloveBox</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧤📦</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 100'><text y='.9em' font-size='90'>🧤📦</text></svg>">
   <style>/* ══════════════════════════════════════════════════════
    GloveBox — "Midnight Glass" Theme
    Clean, modern dark-first UI with subtle accent colours
@@ -310,6 +310,42 @@ body.dark .vt-search input {
   outline: none;
   border-color: #22d3ee;
   box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
+}
+
+.vt-search-nav {
+  padding: 4px 8px;
+  font-size: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f5f5f5;
+  color: #555;
+  cursor: pointer;
+  transition: all .15s ease;
+  line-height: 1;
+}
+
+.vt-search-nav:hover {
+  background: #e8e8e8;
+  border-color: #aaa;
+}
+
+.vt-search-nav:active {
+  background: #ddd;
+}
+
+body.dark .vt-search-nav {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .1);
+  color: rgba(255, 255, 255, .6);
+}
+
+body.dark .vt-search-nav:hover {
+  background: rgba(255, 255, 255, .12);
+  border-color: rgba(255, 255, 255, .2);
+}
+
+body.dark .vt-search-nav:active {
+  background: rgba(255, 255, 255, .18);
 }
 
 #doc-search-count {
@@ -1781,7 +1817,6 @@ body.dark .xlsx-cap-notice {
    ══════════════════════════════════════════════════════ */
 .csv-view {
   width: 100%;
-  max-width: 1100px;
   background: white;
   box-shadow: 0 2px 16px rgba(0, 0, 0, .25);
   border-radius: 6px;
@@ -1865,6 +1900,90 @@ body.dark .csv-table tr:nth-child(even) td {
 
 body.dark .csv-formula-warn {
   background: rgba(251, 191, 36, .1) !important;
+}
+
+.csv-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f4f4f4;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+body.dark .csv-filter-bar {
+  background: rgba(255, 255, 255, .03);
+  border-color: rgba(255, 255, 255, .06);
+}
+
+.csv-filter-input {
+  flex: 1;
+  max-width: 300px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+}
+
+body.dark .csv-filter-input {
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(255, 255, 255, .1);
+  color: #e2e2ea;
+}
+
+.csv-filter-input:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, .2);
+}
+
+body.dark .csv-filter-input:focus {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, .2);
+}
+
+.csv-clear-btn {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+}
+
+.csv-filter-status {
+  font-size: 11px;
+  color: #666;
+  margin-left: auto;
+}
+
+body.dark .csv-filter-status {
+  color: rgba(255, 255, 255, .5);
+}
+
+.csv-row-highlight {
+  animation: csv-row-flash 2s ease-out;
+}
+
+@keyframes csv-row-flash {
+  0%, 30% { background: rgba(34, 211, 238, .3) !important; }
+  100% { background: transparent; }
+}
+
+body.dark .csv-row-highlight {
+  animation: csv-row-flash-dark 2s ease-out;
+}
+
+@keyframes csv-row-flash-dark {
+  0%, 30% { background: rgba(34, 211, 238, .2) !important; }
+  100% { background: transparent; }
+}
+
+.csv-filter-flash {
+  animation: csv-filter-bar-flash 1s ease-out;
+}
+
+@keyframes csv-filter-bar-flash {
+  0%, 40% { background: rgba(34, 211, 238, .15); }
+  100% { background: transparent; }
 }
 
 /* ══════════════════════════════════════════════════════
@@ -2405,7 +2524,18 @@ body.dark .hex-dump {
 .html-renderer {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  width: 100%;
+  height: calc(100vh - 120px);
+  min-height: 500px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, .15);
+  overflow: hidden;
+}
+
+body.dark .html-renderer {
+  background: #1a1b26;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, .4);
 }
 
 .html-toolbar {
@@ -2437,16 +2567,6 @@ body.dark .html-view-btn.active {
   background: rgba(34, 211, 238, .2) !important;
   color: #22d3ee !important;
   border-color: rgba(34, 211, 238, .3) !important;
-}
-
-.html-sandbox-badge {
-  font-size: 10px;
-  color: #888;
-  margin-left: auto;
-}
-
-body.dark .html-sandbox-badge {
-  color: rgba(255, 255, 255, .4);
 }
 
 .html-preview-pane {
@@ -4143,6 +4263,8 @@ body.dark .help-tagline {
         </div>
         <div class="vt-search">
           <input type="text" id="doc-search" placeholder="Search content…" spellcheck="false">
+          <button class="vt-search-nav" id="doc-search-prev" title="Previous match (Shift+Enter)">◀</button>
+          <button class="vt-search-nav" id="doc-search-next" title="Next match (Enter)">▶</button>
           <span id="doc-search-count"></span>
         </div>
         <div class="vt-spacer"></div>
@@ -4288,7 +4410,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
   <!-- ── Application ─────────────────────────────────────────────────── -->
   <script>
-const GLOVEBOX_VERSION = '1.0.3';
+const GLOVEBOX_VERSION = '1.0.4';
 const DEFAULT_YARA_RULES = `// ─── Default YARA Rules ───────────────────────────────────
 // Edit or replace these rules, then click "Run Scan"
 // Supports: text strings, hex strings {AA BB}, regex /pattern/
@@ -16824,23 +16946,135 @@ class CsvRenderer {
     const delim = ext === 'tsv' ? '\t' : this._delim(text);
     const rows = this._parse(text, delim);
     if (!rows.length) { wrap.textContent = 'Empty file.'; return wrap; }
+
+    // ── Info bar ─────────────────────────────────────────────────────────
     const info = document.createElement('div'); info.className = 'csv-info';
     const dn = delim === '\t' ? 'Tab' : delim === ',' ? 'Comma' : delim === ';' ? 'Semicolon' : 'Pipe';
-    info.textContent = `${rows.length} rows × ${rows[0].length} columns · delimiter: ${dn}`; wrap.appendChild(info);
-    const scr = document.createElement('div'); scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 140px)';
+    info.textContent = `${rows.length} rows × ${rows[0].length} columns · delimiter: ${dn}`;
+    wrap.appendChild(info);
+
+    // ── Filter bar ───────────────────────────────────────────────────────
+    const filterBar = document.createElement('div');
+    filterBar.className = 'csv-filter-bar';
+
+    const filterInput = document.createElement('input');
+    filterInput.type = 'text';
+    filterInput.placeholder = 'Filter rows…';
+    filterInput.className = 'csv-filter-input';
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'tb-btn csv-clear-btn';
+    clearBtn.textContent = '✕ Clear';
+    clearBtn.title = 'Clear filter and show all rows';
+    clearBtn.style.display = 'none';
+
+    const filterStatus = document.createElement('span');
+    filterStatus.className = 'csv-filter-status';
+
+    filterBar.appendChild(filterInput);
+    filterBar.appendChild(clearBtn);
+    filterBar.appendChild(filterStatus);
+    wrap.appendChild(filterBar);
+
+    // ── Table ────────────────────────────────────────────────────────────
+    const scr = document.createElement('div');
+    scr.className = 'csv-scroll';
+    scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 200px)';
+
     const tbl = document.createElement('table'); tbl.className = 'xlsx-table csv-table';
+
+    // Track data rows for filtering
+    const dataRows = [];
+
     rows.forEach((row, ri) => {
       if (ri > 10000) return;
       const tr = document.createElement('tr');
-      const rh = document.createElement(ri === 0 ? 'th' : 'td'); rh.className = 'xlsx-row-header'; rh.textContent = ri === 0 ? '#' : ri; tr.appendChild(rh);
+      const rh = document.createElement(ri === 0 ? 'th' : 'td');
+      rh.className = 'xlsx-row-header';
+      rh.textContent = ri === 0 ? '#' : ri;
+      tr.appendChild(rh);
+
+      const rowText = [];
       row.forEach(cell => {
-        const td = document.createElement(ri === 0 ? 'th' : 'td'); td.className = ri === 0 ? 'xlsx-col-header csv-header' : 'xlsx-cell'; td.textContent = cell;
+        const td = document.createElement(ri === 0 ? 'th' : 'td');
+        td.className = ri === 0 ? 'xlsx-col-header csv-header' : 'xlsx-cell';
+        td.textContent = cell;
         if (ri > 0 && cell.trim() && !isNaN(parseFloat(cell))) td.style.textAlign = 'right';
         tr.appendChild(td);
+        rowText.push(cell.toLowerCase());
       });
       tbl.appendChild(tr);
+
+      // Store reference for filtering (skip header row)
+      if (ri > 0) {
+        dataRows.push({
+          tr: tr,
+          searchText: rowText.join(' ')
+        });
+      }
     });
-    scr.appendChild(tbl); wrap.appendChild(scr); return wrap;
+
+    scr.appendChild(tbl);
+    wrap.appendChild(scr);
+
+    // ── Filter logic ─────────────────────────────────────────────────────
+    const applyFilter = () => {
+      const query = filterInput.value.toLowerCase().trim();
+      let visibleCount = 0;
+
+      if (!query) {
+        // Show all rows
+        for (const r of dataRows) {
+          r.tr.style.display = '';
+          r.tr.classList.remove('csv-row-highlight');
+        }
+        clearBtn.style.display = 'none';
+        filterStatus.textContent = '';
+        return;
+      }
+
+      // Filter rows
+      for (const r of dataRows) {
+        const matches = r.searchText.includes(query);
+        r.tr.style.display = matches ? '' : 'none';
+        if (matches) visibleCount++;
+      }
+
+      clearBtn.style.display = '';
+      filterStatus.textContent = `${visibleCount} of ${dataRows.length} rows`;
+    };
+
+    const clearFilter = () => {
+      filterInput.value = '';
+      applyFilter();
+    };
+
+    // Scroll to first match and highlight it
+    const scrollToFirstMatch = () => {
+      for (const r of dataRows) {
+        if (r.tr.style.display !== 'none') {
+          r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          r.tr.classList.add('csv-row-highlight');
+          setTimeout(() => r.tr.classList.remove('csv-row-highlight'), 2000);
+          break;
+        }
+      }
+    };
+
+    filterInput.addEventListener('input', applyFilter);
+    clearBtn.addEventListener('click', clearFilter);
+
+    // Expose filter controls for external access (IOC navigation)
+    wrap._csvFilters = {
+      filterInput,
+      applyFilter,
+      clearFilter,
+      scrollToFirstMatch,
+      scrollContainer: scr,
+      dataRows
+    };
+
+    return wrap;
   }
 
   /** Auto-detect delimiter by counting occurrences in the first line. */
@@ -21439,13 +21673,8 @@ class HtmlRenderer {
     sourceBtn.textContent = '📝 Source';
     sourceBtn.title = 'View raw HTML source';
 
-    const warning = document.createElement('span');
-    warning.className = 'html-sandbox-badge';
-    warning.textContent = '🔒 Sandboxed — scripts, forms & external resources blocked';
-
     toolbar.appendChild(previewBtn);
     toolbar.appendChild(sourceBtn);
-    toolbar.appendChild(warning);
     container.appendChild(toolbar);
 
     // ── Preview pane (sandboxed iframe) ──────────────────────────────────
@@ -24162,6 +24391,34 @@ Object.assign(App.prototype, {
       }
     }
 
+    // Check if we have a CSV view with filter controls
+    const csvView = pc && pc.querySelector('.csv-view');
+    if (csvView && csvView._csvFilters) {
+      const filters = csvView._csvFilters;
+      const searchVal = ref.url || '';
+      if (searchVal) {
+        // For hashes like "SHA256:ABCDEF...", just search the hash value part
+        let searchTerm = searchVal;
+        const hashMatch = searchVal.match(/^(?:SHA256|SHA1|MD5|IMPHASH):(.+)$/i);
+        if (hashMatch) searchTerm = hashMatch[1];
+        // Truncate very long values
+        if (searchTerm.length > 80) searchTerm = searchTerm.substring(0, 80);
+
+        filters.filterInput.value = searchTerm;
+        filters.applyFilter();
+        filters.scrollToFirstMatch();
+        filters.scrollContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Flash the filter bar for feedback
+        const filterBar = csvView.querySelector('.csv-filter-bar');
+        if (filterBar) {
+          filterBar.classList.add('csv-filter-flash');
+          setTimeout(() => filterBar.classList.remove('csv-filter-flash'), 1000);
+        }
+        return;
+      }
+    }
+
     // Check if we have a SQLite view — scroll to matching row
     const sqliteView = pc && pc.querySelector('.sqlite-view');
     if (sqliteView && sqliteView._sqliteRows) {
@@ -24972,6 +25229,8 @@ Object.assign(App.prototype, {
   _setupSearch() {
     const input = document.getElementById('doc-search');
     const countEl = document.getElementById('doc-search-count');
+    const prevBtn = document.getElementById('doc-search-prev');
+    const nextBtn = document.getElementById('doc-search-next');
     let marks = [], currentIdx = -1;
 
     const clearHighlights = () => {
@@ -25052,6 +25311,10 @@ Object.assign(App.prototype, {
         input.blur();
       }
     });
+
+    // Navigation button handlers
+    prevBtn.addEventListener('click', () => goTo(-1));
+    nextBtn.addEventListener('click', () => goTo(1));
 
     // Expose clear for _clearFile
     this._clearSearch = clearHighlights;

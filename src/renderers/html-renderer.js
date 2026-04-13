@@ -35,13 +35,8 @@ class HtmlRenderer {
     sourceBtn.textContent = '📝 Source';
     sourceBtn.title = 'View raw HTML source';
 
-    const warning = document.createElement('span');
-    warning.className = 'html-sandbox-badge';
-    warning.textContent = '🔒 Sandboxed — scripts, forms & external resources blocked';
-
     toolbar.appendChild(previewBtn);
     toolbar.appendChild(sourceBtn);
-    toolbar.appendChild(warning);
     container.appendChild(toolbar);
 
     // ── Preview pane (sandboxed iframe) ──────────────────────────────────

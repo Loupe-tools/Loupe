@@ -758,6 +758,34 @@ Object.assign(App.prototype, {
       }
     }
 
+    // Check if we have a CSV view with filter controls
+    const csvView = pc && pc.querySelector('.csv-view');
+    if (csvView && csvView._csvFilters) {
+      const filters = csvView._csvFilters;
+      const searchVal = ref.url || '';
+      if (searchVal) {
+        // For hashes like "SHA256:ABCDEF...", just search the hash value part
+        let searchTerm = searchVal;
+        const hashMatch = searchVal.match(/^(?:SHA256|SHA1|MD5|IMPHASH):(.+)$/i);
+        if (hashMatch) searchTerm = hashMatch[1];
+        // Truncate very long values
+        if (searchTerm.length > 80) searchTerm = searchTerm.substring(0, 80);
+
+        filters.filterInput.value = searchTerm;
+        filters.applyFilter();
+        filters.scrollToFirstMatch();
+        filters.scrollContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Flash the filter bar for feedback
+        const filterBar = csvView.querySelector('.csv-filter-bar');
+        if (filterBar) {
+          filterBar.classList.add('csv-filter-flash');
+          setTimeout(() => filterBar.classList.remove('csv-filter-flash'), 1000);
+        }
+        return;
+      }
+    }
+
     // Check if we have a SQLite view — scroll to matching row
     const sqliteView = pc && pc.querySelector('.sqlite-view');
     if (sqliteView && sqliteView._sqliteRows) {

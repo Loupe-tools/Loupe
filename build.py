@@ -2,7 +2,7 @@
 """Build script: assembles glovebox.html from source files."""
 import os
 
-VERSION = '1.0.3'
+VERSION = '1.0.4'
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
@@ -80,7 +80,7 @@ HTML = f"""<!DOCTYPE html>
         content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; frame-src blob:; worker-src blob:;">
   <meta name="description" content="GloveBox — a 100% offline, single-file security analyser for suspicious files. No server, no uploads, no tracking.">
   <title>GloveBox</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧤📦</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 100'><text y='.9em' font-size='90'>🧤📦</text></svg>">
   <style>{css}</style>
 </head>
 <body>
@@ -113,6 +113,8 @@ HTML = f"""<!DOCTYPE html>
         </div>
         <div class="vt-search">
           <input type="text" id="doc-search" placeholder="Search content…" spellcheck="false">
+          <button class="vt-search-nav" id="doc-search-prev" title="Previous match (Shift+Enter)">◀</button>
+          <button class="vt-search-nav" id="doc-search-next" title="Next match (Enter)">▶</button>
           <span id="doc-search-count"></span>
         </div>
         <div class="vt-spacer"></div>

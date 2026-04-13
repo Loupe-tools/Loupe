@@ -302,6 +302,42 @@ body.dark .vt-search input {
   box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
 }
 
+.vt-search-nav {
+  padding: 4px 8px;
+  font-size: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f5f5f5;
+  color: #555;
+  cursor: pointer;
+  transition: all .15s ease;
+  line-height: 1;
+}
+
+.vt-search-nav:hover {
+  background: #e8e8e8;
+  border-color: #aaa;
+}
+
+.vt-search-nav:active {
+  background: #ddd;
+}
+
+body.dark .vt-search-nav {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .1);
+  color: rgba(255, 255, 255, .6);
+}
+
+body.dark .vt-search-nav:hover {
+  background: rgba(255, 255, 255, .12);
+  border-color: rgba(255, 255, 255, .2);
+}
+
+body.dark .vt-search-nav:active {
+  background: rgba(255, 255, 255, .18);
+}
+
 #doc-search-count {
   font-size: 11px;
   color: #888;
@@ -1771,7 +1807,6 @@ body.dark .xlsx-cap-notice {
    ══════════════════════════════════════════════════════ */
 .csv-view {
   width: 100%;
-  max-width: 1100px;
   background: white;
   box-shadow: 0 2px 16px rgba(0, 0, 0, .25);
   border-radius: 6px;
@@ -1855,6 +1890,90 @@ body.dark .csv-table tr:nth-child(even) td {
 
 body.dark .csv-formula-warn {
   background: rgba(251, 191, 36, .1) !important;
+}
+
+.csv-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f4f4f4;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+body.dark .csv-filter-bar {
+  background: rgba(255, 255, 255, .03);
+  border-color: rgba(255, 255, 255, .06);
+}
+
+.csv-filter-input {
+  flex: 1;
+  max-width: 300px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+}
+
+body.dark .csv-filter-input {
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(255, 255, 255, .1);
+  color: #e2e2ea;
+}
+
+.csv-filter-input:focus {
+  outline: none;
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, .2);
+}
+
+body.dark .csv-filter-input:focus {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, .2);
+}
+
+.csv-clear-btn {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+}
+
+.csv-filter-status {
+  font-size: 11px;
+  color: #666;
+  margin-left: auto;
+}
+
+body.dark .csv-filter-status {
+  color: rgba(255, 255, 255, .5);
+}
+
+.csv-row-highlight {
+  animation: csv-row-flash 2s ease-out;
+}
+
+@keyframes csv-row-flash {
+  0%, 30% { background: rgba(34, 211, 238, .3) !important; }
+  100% { background: transparent; }
+}
+
+body.dark .csv-row-highlight {
+  animation: csv-row-flash-dark 2s ease-out;
+}
+
+@keyframes csv-row-flash-dark {
+  0%, 30% { background: rgba(34, 211, 238, .2) !important; }
+  100% { background: transparent; }
+}
+
+.csv-filter-flash {
+  animation: csv-filter-bar-flash 1s ease-out;
+}
+
+@keyframes csv-filter-bar-flash {
+  0%, 40% { background: rgba(34, 211, 238, .15); }
+  100% { background: transparent; }
 }
 
 /* ══════════════════════════════════════════════════════
@@ -2395,7 +2514,18 @@ body.dark .hex-dump {
 .html-renderer {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  width: 100%;
+  height: calc(100vh - 120px);
+  min-height: 500px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, .15);
+  overflow: hidden;
+}
+
+body.dark .html-renderer {
+  background: #1a1b26;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, .4);
 }
 
 .html-toolbar {
@@ -2427,16 +2557,6 @@ body.dark .html-view-btn.active {
   background: rgba(34, 211, 238, .2) !important;
   color: #22d3ee !important;
   border-color: rgba(34, 211, 238, .3) !important;
-}
-
-.html-sandbox-badge {
-  font-size: 10px;
-  color: #888;
-  margin-left: auto;
-}
-
-body.dark .html-sandbox-badge {
-  color: rgba(255, 255, 255, .4);
 }
 
 .html-preview-pane {

@@ -210,6 +210,8 @@ Object.assign(App.prototype, {
   _setupSearch() {
     const input = document.getElementById('doc-search');
     const countEl = document.getElementById('doc-search-count');
+    const prevBtn = document.getElementById('doc-search-prev');
+    const nextBtn = document.getElementById('doc-search-next');
     let marks = [], currentIdx = -1;
 
     const clearHighlights = () => {
@@ -290,6 +292,10 @@ Object.assign(App.prototype, {
         input.blur();
       }
     });
+
+    // Navigation button handlers
+    prevBtn.addEventListener('click', () => goTo(-1));
+    nextBtn.addEventListener('click', () => goTo(1));
 
     // Expose clear for _clearFile
     this._clearSearch = clearHighlights;
