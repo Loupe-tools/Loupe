@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build script: assembles glovebox.html from source files."""
 import os
+from datetime import datetime
 
-VERSION = '1.0.6'
+VERSION = datetime.now().strftime('%Y%m%d.%H%M')
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 
