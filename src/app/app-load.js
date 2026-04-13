@@ -178,10 +178,133 @@ Object.assign(App.prototype, {
         this.findings = r.analyzeForSecurity(buffer, file.name);
         docEl = r.render(buffer, file.name);
       } else {
-        // Catch-all: plain text or hex dump for any unrecognised format
-        const r = new PlainTextRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
+        // ── Content-based detection fallback for extensionless/unknown files ──
+        // Detect file type by magic bytes when extension is missing or unrecognized
+        const bytes = new Uint8Array(buffer);
+        const detectedType = this._detectFileType(bytes);
+        
+        if (detectedType === 'sqlite') {
+          const r = new SqliteRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'evtx') {
+          const r = new EvtxRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'lnk') {
+          const r = new LnkRenderer();
+          this.findings = r.analyzeForSecurity(buffer);
+          docEl = r.render(buffer);
+        } else if (detectedType === 'pdf') {
+          const r = new PdfRenderer();
+          this.findings = await r.analyzeForSecurity(buffer, file.name);
+          docEl = await r.render(buffer);
+        } else if (detectedType === 'zip') {
+          // ZIP could be DOCX, XLSX, PPTX, ODT, ODP, ODS, or plain ZIP
+          // Try to identify OOXML/ODF by checking internal structure
+          const r = new ZipRenderer();
+          this.findings = await r.analyzeForSecurity(buffer, file.name);
+          docEl = await r.render(buffer, file.name);
+          // Listen for inner-file open events
+          docEl.addEventListener('open-inner-file', (e) => {
+            const innerFile = e.detail;
+            if (innerFile) {
+              this._pushNavState(file.name);
+              this._loadFile(innerFile);
+            }
+          });
+        } else if (detectedType === 'ole') {
+          // OLE/CFB could be doc, xls, ppt, msg, or msi - try to identify
+          const oleType = this._tryOleCfbDisambiguation(buffer);
+          
+          if (oleType === 'doc') {
+            const r = new DocBinaryRenderer();
+            this.findings = r.analyzeForSecurity(buffer);
+            docEl = r.render(buffer);
+          } else if (oleType === 'xls') {
+            const r = new XlsxRenderer();
+            this.findings = await r.analyzeForSecurity(buffer, file.name);
+            docEl = r.render(buffer, file.name);
+          } else if (oleType === 'ppt') {
+            const r = new PptBinaryRenderer();
+            this.findings = r.analyzeForSecurity(buffer);
+            docEl = r.render(buffer);
+          } else if (oleType === 'msg') {
+            const r = new MsgRenderer();
+            this.findings = r.analyzeForSecurity(buffer);
+            docEl = r.render(buffer);
+          } else if (oleType === 'msi') {
+            const r = new MsiRenderer();
+            this.findings = r.analyzeForSecurity(buffer, file.name);
+            docEl = r.render(buffer, file.name);
+          } else {
+            // Unknown OLE type - try msg first (most common for forensics), then doc
+            try {
+              const r = new MsgRenderer();
+              this.findings = r.analyzeForSecurity(buffer);
+              docEl = r.render(buffer);
+            } catch (e) {
+              try {
+                const r = new DocBinaryRenderer();
+                this.findings = r.analyzeForSecurity(buffer);
+                docEl = r.render(buffer);
+              } catch (e2) {
+                // Fall through to plain text
+                const r = new PlainTextRenderer();
+                this.findings = r.analyzeForSecurity(buffer, file.name);
+                docEl = r.render(buffer, file.name);
+              }
+            }
+          }
+        } else if (detectedType === 'image') {
+          const r = new ImageRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'rtf') {
+          const r = new RtfRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'html') {
+          const r = new HtmlRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          if (this.findings.augmentedBuffer) {
+            this._fileBuffer = this.findings.augmentedBuffer;
+          }
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'hta') {
+          const r = new HtaRenderer();
+          this.findings = r.analyzeForSecurity(buffer);
+          docEl = r.render(buffer);
+        } else if (detectedType === 'eml') {
+          const r = new EmlRenderer();
+          this.findings = r.analyzeForSecurity(buffer);
+          docEl = r.render(buffer);
+        } else if (detectedType === 'url') {
+          const r = new UrlShortcutRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'reg') {
+          const r = new RegRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'inf') {
+          const r = new InfSctRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'iso') {
+          const r = new IsoRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'onenote') {
+          const r = new OneNoteRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else {
+          // Catch-all: plain text or hex dump for any unrecognised format
+          const r = new PlainTextRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        }
       }
 
       // Extract interesting strings from rendered text + VBA source
@@ -349,6 +472,141 @@ Object.assign(App.prototype, {
     if (bytes.length >= 16 && bytes[0] === 0xE4 && bytes[1] === 0x52 && bytes[2] === 0x5C && bytes[3] === 0x7B)
       return { hex: h(4), label: 'OneNote Document' };
     return { hex: h(Math.min(4, bytes.length)), label: 'Unknown' };
+  },
+
+  // ── OLE/CFB disambiguation (determine doc/xls/ppt/msg/msi from OLE compound) ──
+  _tryOleCfbDisambiguation(buffer) {
+    // Try to identify the specific OLE compound file type
+    // by checking internal structure and stream names
+    try {
+      // Parse OLE structure to get stream names
+      const parser = new OleCfbParser(buffer);
+      parser.parse();
+      
+      // Get all stream names (already lowercase from parser)
+      const streamNames = Array.from(parser.streams.keys());
+      
+      // MSG (Outlook message): has __substg1.0_ streams
+      if (streamNames.some(n => n.startsWith('__substg1.0_')))
+        return 'msg';
+      
+      // MSI (Windows Installer): has specific streams
+      if (streamNames.includes('!_stringpool') || streamNames.includes('!_stringdata'))
+        return 'msi';
+      
+      // DOC (Word): has WordDocument stream
+      if (streamNames.includes('worddocument'))
+        return 'doc';
+      
+      // XLS (Excel): has Workbook stream
+      if (streamNames.includes('workbook'))
+        return 'xls';
+      
+      // PPT (PowerPoint): has PowerPoint Document or Current User stream
+      if (streamNames.includes('powerpoint document') || streamNames.includes('current user'))
+        return 'ppt';
+      
+    } catch (e) {
+      // If parsing fails, return null and let it try renderers in sequence
+    }
+    
+    return null; // Unknown OLE type - will try renderers in sequence
+  },
+
+  // ── Content-based file type detection (fallback for extensionless files) ──
+  _detectFileType(bytes) {
+    if (bytes.length < 4) return null;
+    
+    // SQLite: "SQLite format 3\000"
+    if (bytes[0] === 0x53 && bytes[1] === 0x51 && bytes[2] === 0x4C && bytes[3] === 0x69 &&
+        bytes[4] === 0x74 && bytes[5] === 0x65 && bytes[6] === 0x20)
+      return 'sqlite';
+    
+    // EVTX: "ElfFile\0"
+    if (bytes[0] === 0x45 && bytes[1] === 0x6C && bytes[2] === 0x66 && bytes[3] === 0x46 &&
+        bytes[4] === 0x69 && bytes[5] === 0x6C && bytes[6] === 0x65 && bytes[7] === 0x00)
+      return 'evtx';
+    
+    // Windows Shortcut (LNK)
+    if (bytes[0] === 0x4C && bytes[1] === 0x00 && bytes[2] === 0x00 && bytes[3] === 0x00)
+      return 'lnk';
+    
+    // PDF
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)
+      return 'pdf';
+    
+    // ZIP / OOXML (could be docx, xlsx, pptx, odt, odp, ods, or just zip)
+    if (bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04)
+      return 'zip';
+    
+    // OLE/CFB Compound File (could be doc, xls, ppt, msg, msi)
+    if (bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0)
+      return 'ole';
+    
+    // PNG Image
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47)
+      return 'image';
+    
+    // JPEG Image
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF)
+      return 'image';
+    
+    // GIF Image
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46)
+      return 'image';
+    
+    // RAR Archive
+    if (bytes[0] === 0x52 && bytes[1] === 0x61 && bytes[2] === 0x72)
+      return 'zip'; // Route to ZipRenderer which handles RAR
+    
+    // 7-Zip Archive
+    if (bytes[0] === 0x37 && bytes[1] === 0x7A && bytes[2] === 0xBC && bytes[3] === 0xAF)
+      return 'zip'; // Route to ZipRenderer
+    
+    // ISO 9660 Disk Image (check at offset 32769)
+    if (bytes.length > 32768 + 5) {
+      const iso = String.fromCharCode(bytes[32769], bytes[32770], bytes[32771], bytes[32772], bytes[32773]);
+      if (iso === 'CD001') return 'iso';
+    }
+    
+    // OneNote
+    if (bytes.length >= 16 && bytes[0] === 0xE4 && bytes[1] === 0x52 && bytes[2] === 0x5C && bytes[3] === 0x7B)
+      return 'onenote';
+    
+    // Text-based detection (check first 20 bytes as string)
+    const head = String.fromCharCode(...bytes.subarray(0, Math.min(20, bytes.length)));
+    
+    // RTF
+    if (head.startsWith('{\\rtf')) return 'rtf';
+    
+    // HTML / HTA
+    if (head.startsWith('<!DOCTYPE') || head.startsWith('<html') || head.startsWith('<HTML'))
+      return 'html';
+    if (head.startsWith('<HTA:') || head.includes('<HTA:'))
+      return 'hta';
+    
+    // Email (RFC 5322)
+    if (head.startsWith('From ') || head.startsWith('Received:') || head.startsWith('MIME-Version'))
+      return 'eml';
+    
+    // URL shortcut
+    if (head.startsWith('[InternetShortcut]'))
+      return 'url';
+    
+    // Registry files
+    if (head.startsWith('REGEDIT4') || head.startsWith('Windows Registry'))
+      return 'reg';
+    if (bytes.length >= 4 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+      const u16 = new TextDecoder('utf-16le', { fatal: false }).decode(bytes.subarray(0, Math.min(80, bytes.length)));
+      if (u16.startsWith('Windows Registry'))
+        return 'reg';
+    }
+    
+    // INF Setup Information files
+    if (head.startsWith('[Version]') || head.startsWith('[version]'))
+      return 'inf';
+    
+    return null; // Unknown - will fall through to PlainTextRenderer
   },
 
   // ── Shannon entropy ─────────────────────────────────────────────────────
