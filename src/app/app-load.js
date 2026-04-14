@@ -175,6 +175,14 @@ Object.assign(App.prototype, {
         const r = new MsiRenderer();
         this.findings = r.analyzeForSecurity(buffer, file.name);
         docEl = r.render(buffer, file.name);
+        // Listen for stream open events from clickable MSI stream entries
+        docEl.addEventListener('open-inner-file', (e) => {
+          const innerFile = e.detail;
+          if (innerFile) {
+            this._pushNavState(file.name);
+            this._loadFile(innerFile);
+          }
+        });
       } else if (['html', 'htm', 'mht', 'mhtml', 'xhtml', 'svg'].includes(ext)) {
         const r = new HtmlRenderer();
         this.findings = r.analyzeForSecurity(buffer, file.name);
@@ -693,6 +701,12 @@ Object.assign(App.prototype, {
       this._reRenderZip(state, pc);
     }
 
+    // Re-attach click handlers on MSI streams (innerHTML loses event listeners)
+    const msiView = pc.querySelector('.msi-view');
+    if (msiView && state.fileBuffer) {
+      this._reRenderMsi(state, pc);
+    }
+
     // Re-render sidebar
     this._renderSidebar(state.parentName, null);
 
@@ -705,6 +719,23 @@ Object.assign(App.prototype, {
       const r = new ZipRenderer();
       const buf = state.fileBuffer;
       const docEl = await r.render(buf, state.parentName);
+      docEl.addEventListener('open-inner-file', (e) => {
+        const innerFile = e.detail;
+        if (innerFile) {
+          this._pushNavState(state.parentName);
+          this._loadFile(innerFile);
+        }
+      });
+      pc.innerHTML = '';
+      pc.appendChild(docEl);
+    } catch (_) { /* fallback: static HTML already set */ }
+  },
+
+  _reRenderMsi(state, pc) {
+    try {
+      const r = new MsiRenderer();
+      const buf = state.fileBuffer;
+      const docEl = r.render(buf, state.parentName);
       docEl.addEventListener('open-inner-file', (e) => {
         const innerFile = e.detail;
         if (innerFile) {

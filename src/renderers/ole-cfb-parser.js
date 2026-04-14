@@ -102,7 +102,8 @@ class OleCfbParser {
     if (e.rsib < 0xFFFFFFF0) this._walkMetaOnly(e.rsib, prefix, depth + 1);
   }
 
-  _so(sec) { return 512 + sec * this._ss; }
+  // MS-CFB spec: for sector size > 512, header occupies first full sector
+  _so(sec) { return this._ss > 512 ? (sec + 1) * this._ss : 512 + sec * this._ss; }
 
   _buildFAT(n) {
     const fat = []; let done = 0;
@@ -114,7 +115,10 @@ class OleCfbParser {
     };
     for (let i = 0; i < 109 && done < n; i++) { const s = this.dv.getUint32(0x4C + i * 4, true); if (s >= 0xFFFFFFF0) break; addSec(s); }
     let dif = this.dv.getUint32(0x44, true);
+    const visitedDif = new Set(); // Cycle detection for DIFAT chain
     while (dif < 0xFFFFFFF0 && done < n) {
+      if (visitedDif.has(dif)) break; // Prevent infinite loop on DIFAT cycle
+      visitedDif.add(dif);
       const off = this._so(dif);
       for (let i = 0; i < this._ss / 4 - 1 && done < n; i++) { const s = this.dv.getUint32(off + i * 4, true); if (s >= 0xFFFFFFF0) break; addSec(s); }
       dif = this.dv.getUint32(off + this._ss - 4, true);
@@ -124,7 +128,10 @@ class OleCfbParser {
 
   _buildMFAT(first, n) {
     const mf = []; let s = first;
+    const visited = new Set(); // Cycle detection
     while (s < 0xFFFFFFF0 && n-- > 0) {
+      if (visited.has(s)) break; // Prevent infinite loop on mini-FAT cycle
+      visited.add(s);
       const off = this._so(s);
       for (let i = 0; i < this._ss / 4; i++) mf.push(this.dv.getUint32(off + i * 4, true));
       s = this._fat[s] ?? 0xFFFFFFFE;
@@ -138,7 +145,10 @@ class OleCfbParser {
     const sz = mini ? this._ms : this._ss;
     const fat = mini ? this._mfat : this._fat;
     let sec = start, pos = 0;
+    const visited = new Set(); // Cycle detection
     while (sec < 0xFFFFFFF0 && pos < size) {
+      if (visited.has(sec)) break; // Prevent infinite loop on FAT cycle
+      visited.add(sec);
       const take = Math.min(sz, size - pos);
       if (mini) { const off = sec * this._ms; res.set(this._mini.slice(off, off + take), pos); }
       else { const off = this._so(sec); res.set(this.buf.slice(off, off + take), pos); }
@@ -149,7 +159,10 @@ class OleCfbParser {
 
   _readDir(first) {
     const dir = []; let sec = first;
+    const visited = new Set(); // Cycle detection
     while (sec < 0xFFFFFFF0) {
+      if (visited.has(sec)) break; // Prevent infinite loop on FAT cycle
+      visited.add(sec);
       const off = this._so(sec);
       for (let i = 0; i < this._ss / 128; i++) {
         const b = off + i * 128, nl = this.dv.getUint16(b + 64, true);

@@ -16,7 +16,7 @@ class MsiRenderer {
 
     // Banner
     const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-    banner.innerHTML = '<strong>Windows Installer Package (.msi)</strong> — MSI files execute with elevated privileges during installation. They can run custom actions (scripts, executables), modify the registry, install services, and alter system files.';
+    banner.innerHTML = '<strong>Windows Installer Package (.msi)</strong> — click any stream to analyze its contents. MSI files execute with elevated privileges and can run custom actions, modify the registry, and install services.';
     wrap.appendChild(banner);
 
     // Check for large files
@@ -102,7 +102,7 @@ class MsiRenderer {
       wrap.appendChild(caDiv);
     }
 
-    // OLE Streams (name + size only)
+    // OLE Streams (clickable for analysis)
     if (analysis.streams.length) {
       const stH = document.createElement('div'); stH.className = 'hta-section-hdr';
       stH.textContent = `OLE Streams (${analysis.streams.length})`;
@@ -111,7 +111,7 @@ class MsiRenderer {
       const stTbl = document.createElement('table'); stTbl.className = 'lnk-info-table';
       // Header
       const hdr = document.createElement('tr');
-      for (const h of ['Stream Name', 'Size']) {
+      for (const h of ['Stream Name', 'Size', 'Action']) {
         const th = document.createElement('td'); th.className = 'lnk-lbl';
         th.style.cssText = 'font-weight:bold;'; th.textContent = h;
         hdr.appendChild(th);
@@ -120,13 +120,29 @@ class MsiRenderer {
 
       for (const s of analysis.streams) {
         const tr = document.createElement('tr');
+        tr.classList.add('zip-row-clickable');
+
         const tdN = document.createElement('td'); tdN.className = 'lnk-val';
         tdN.textContent = s.name;
         tdN.style.cssText = 'font-family:monospace;font-size:12px;';
+
         const tdS = document.createElement('td'); tdS.className = 'lnk-val';
         tdS.textContent = this._fmtBytes(s.size);
         tdS.style.cssText = 'min-width:80px;';
-        tr.appendChild(tdN); tr.appendChild(tdS);
+
+        const tdAction = document.createElement('td'); tdAction.className = 'lnk-val';
+        if (s.size > 0) {
+          const openBtn = document.createElement('span'); openBtn.className = 'zip-badge-open';
+          openBtn.textContent = '🔍 Open';
+          openBtn.title = `Open ${s.name} for analysis`;
+          openBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            this._extractAndOpenStream(s.rawName, s.name, s.size, wrap);
+          });
+          tdAction.appendChild(openBtn);
+        }
+
+        tr.appendChild(tdN); tr.appendChild(tdS); tr.appendChild(tdAction);
         stTbl.appendChild(tr);
       }
       wrap.appendChild(stTbl);
@@ -312,10 +328,16 @@ class MsiRenderer {
 
     // Parse OLE structure in metadata-only mode (no stream content loading)
     const ole = new OleCfbParser(bytes.buffer).parseMetadataOnly();
+    // Store OLE parser for on-demand stream extraction when user clicks
+    this._ole = ole;
 
-    // Enumerate streams (metadata only - name and size)
+    // Enumerate streams (metadata only - name and size, decoded + raw for extraction)
     for (const [name, meta] of ole.streamMeta) {
-      result.streams.push({ name, size: meta.size });
+      result.streams.push({
+        name: this._decodeMsiStreamName(name),  // Decoded display name
+        rawName: name,                           // Raw name for getStream() lookup
+        size: meta.size
+      });
     }
 
     // Identify MSI database tables from stream names
@@ -395,19 +417,59 @@ class MsiRenderer {
     return result;
   }
 
-  // ── MSI table name decoding ──────────────────────────────────────────────
-  // MSI stores table/column names in OLE stream names with a specific encoding.
+  // ── MSI stream name decoding ──────────────────────────────────────────────
+  // MSI encodes stream names using a base-64-like scheme:
+  // - 0x4840 = start marker (skip)
+  // - 0x3800-0x383F = single character (base-64 digit)
+  // - 0x3840-0x483F = two characters (high = val/64, low = val%64)
+  // Base-64 mapping: 0-9=0-9, A-Z=10-35, a-z=36-61, _=62, .=63
+
+  _decodeMsiStreamName(encoded) {
+    let result = '';
+    const decodeDigit = (val) => {
+      if (val < 10) return String.fromCharCode(0x30 + val);        // 0-9
+      if (val < 36) return String.fromCharCode(0x41 + val - 10);   // A-Z
+      if (val < 62) return String.fromCharCode(0x61 + val - 36);   // a-z
+      if (val === 62) return '_';
+      if (val === 63) return '.';
+      return '?';
+    };
+
+    for (const c of encoded) {
+      const code = c.charCodeAt(0);
+      if (code === 0x4840) continue; // Skip start marker
+
+      if (code >= 0x3800 && code < 0x3840) {
+        // Single character encoding
+        result += decodeDigit(code - 0x3800);
+      } else if (code >= 0x3840 && code < 0x4840) {
+        // Two-character encoding
+        const val = code - 0x3840;
+        result += decodeDigit(Math.floor(val / 64));
+        result += decodeDigit(val % 64);
+      } else {
+        // Pass through other characters (e.g., regular ASCII)
+        result += c;
+      }
+    }
+    return result;
+  }
 
   _decodeMsiTableName(streamName) {
-    // Skip known non-table streams
+    // Skip known non-table streams (check original name before decoding)
+    const lowerName = streamName.toLowerCase();
     const skip = [
       '\x05summaryinformation', '\x05documentsummaryinformation',
       '\x01comptobj', '\x05digital signature',
     ];
-    if (skip.includes(streamName.toLowerCase())) return null;
-    if (streamName.startsWith('\x05') || streamName.startsWith('\x01')) return null;
+    if (skip.includes(lowerName)) return null;
+    if (streamName.charAt(0) === '\x05' || streamName.charAt(0) === '\x01') return null;
 
-    // Known MSI table names
+    // Decode MSI-encoded stream name
+    const decoded = this._decodeMsiStreamName(streamName);
+    if (!decoded) return null;
+
+    // Known MSI table names (for proper casing in output)
     const knownTables = [
       'ActionText', 'AdminExecuteSequence', 'AdminUISequence', 'AdvtExecuteSequence',
       'AdvtUISequence', 'AppId', 'AppSearch', 'BBControl', 'Billboard', 'Binary',
@@ -435,12 +497,15 @@ class MsiRenderer {
       '_StringData', '_StringPool',
     ];
 
-    // Check if stream name matches a known table or looks like a valid table name
-    if (knownTables.includes(streamName)) return streamName;
+    // Check against known tables (case-insensitive) and return proper casing
+    const lowerDecoded = decoded.toLowerCase();
+    for (const tableName of knownTables) {
+      if (tableName.toLowerCase() === lowerDecoded) return tableName;
+    }
 
     // Check if it looks like a valid MSI identifier (alphanumeric + underscore)
-    if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(streamName) && streamName.length <= 64) {
-      return streamName;
+    if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(decoded) && decoded.length <= 64) {
+      return decoded;
     }
 
     return null;
@@ -528,6 +593,33 @@ class MsiRenderer {
     }
 
     return result;
+  }
+
+  // ── Stream extraction for click-to-open ───────────────────────────────────
+
+  _extractAndOpenStream(rawName, displayName, size, wrap) {
+    if (!this._ole) {
+      console.warn('OLE parser not available for stream extraction');
+      return;
+    }
+
+    try {
+      // Get stream content from OLE parser (on-demand loading)
+      const data = this._ole.getStream(rawName);
+      if (!data || data.length === 0) {
+        console.warn('Stream empty or not found:', rawName);
+        return;
+      }
+
+      // Create a File object with the stream content
+      // Use displayName for the filename (decoded MSI name)
+      const file = new File([data], displayName, { type: 'application/octet-stream' });
+
+      // Dispatch custom event for the app to handle (same pattern as ZIP renderer)
+      wrap.dispatchEvent(new CustomEvent('open-inner-file', { bubbles: true, detail: file }));
+    } catch (e) {
+      console.warn('Failed to extract stream:', rawName, e.message);
+    }
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
