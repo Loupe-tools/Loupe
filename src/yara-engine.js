@@ -50,7 +50,7 @@ class YaraEngine {
    * Scan a buffer against parsed YARA rules.
    * @param {ArrayBuffer|Uint8Array} buffer  File content
    * @param {object[]} rules  Parsed rule objects from parseRules()
-   * @returns {{ ruleName: string, tags: string, matches: { id: string, offsets: number[] }[] }[]}
+   * @returns {{ ruleName: string, tags: string, meta: object, matches: { id: string, value: string, matches: {offset: number, length: number}[] }[] }[]}
    */
   static scan(buffer, rules) {
     const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
@@ -69,9 +69,9 @@ class YaraEngine {
 
       // Evaluate each string definition
       for (const strDef of rule.strings) {
-        const offsets = YaraEngine._findString(text, bytes, strDef);
-        stringMatches[strDef.id] = offsets;
-        if (offsets.length > 0) anyMatch = true;
+        const matchList = YaraEngine._findString(text, bytes, strDef);
+        stringMatches[strDef.id] = matchList;
+        if (matchList.length > 0) anyMatch = true;
       }
 
       // Evaluate condition
@@ -83,7 +83,7 @@ class YaraEngine {
             matchDetails.push({
               id: strDef.id,
               value: strDef.display || strDef.pattern,
-              offsets: stringMatches[strDef.id].slice(0, 20) // Cap at 20 offsets for display
+              matches: stringMatches[strDef.id].slice(0, 20) // Cap at 20 matches for display
             });
           }
         }
@@ -170,10 +170,11 @@ class YaraEngine {
     return rule;
   }
 
-  // ── Internal: Find all offsets of a string in the buffer ──────────────────
+  // ── Internal: Find all matches of a string in the buffer ───────────────────
+  // Returns array of { offset, length } objects for precise highlighting
 
   static _findString(text, bytes, strDef) {
-    const offsets = [];
+    const matches = [];
     const MAX = 1000; // cap matches per string
 
     if (strDef.type === 'text') {
@@ -185,9 +186,10 @@ class YaraEngine {
           widePat.push(pattern.charCodeAt(i));
           widePat.push(0);
         }
-        for (let i = 0; i <= bytes.length - widePat.length && offsets.length < MAX; i++) {
+        const matchLen = widePat.length;
+        for (let i = 0; i <= bytes.length - matchLen && matches.length < MAX; i++) {
           let match = true;
-          for (let j = 0; j < widePat.length; j++) {
+          for (let j = 0; j < matchLen; j++) {
             let b = bytes[i + j];
             let p = widePat[j];
             if (strDef.nocase && j % 2 === 0) {
@@ -196,22 +198,23 @@ class YaraEngine {
             }
             if (b !== p) { match = false; break; }
           }
-          if (match) offsets.push(i);
+          if (match) matches.push({ offset: i, length: matchLen });
         }
       } else {
         // ASCII text search
         const searchIn = strDef.nocase ? text.toLowerCase() : text;
         const searchFor = strDef.nocase ? pattern.toLowerCase() : pattern;
+        const matchLen = pattern.length;
         let pos = 0;
-        while (pos < searchIn.length && offsets.length < MAX) {
+        while (pos < searchIn.length && matches.length < MAX) {
           const idx = searchIn.indexOf(searchFor, pos);
           if (idx === -1) break;
           if (strDef.fullword) {
             const before = idx > 0 ? searchIn[idx - 1] : ' ';
-            const after = idx + searchFor.length < searchIn.length ? searchIn[idx + searchFor.length] : ' ';
+            const after = idx + matchLen < searchIn.length ? searchIn[idx + matchLen] : ' ';
             if (/\w/.test(before) || /\w/.test(after)) { pos = idx + 1; continue; }
           }
-          offsets.push(idx);
+          matches.push({ offset: idx, length: matchLen });
           pos = idx + 1;
         }
       }
@@ -219,27 +222,28 @@ class YaraEngine {
       // Parse hex pattern: { AA BB CC ?? DD [2-4] EE }
       const hexBytes = YaraEngine._parseHexPattern(strDef.pattern);
       if (hexBytes) {
-        for (let i = 0; i <= bytes.length - hexBytes.length && offsets.length < MAX; i++) {
+        const matchLen = hexBytes.length;
+        for (let i = 0; i <= bytes.length - matchLen && matches.length < MAX; i++) {
           let match = true;
-          for (let j = 0; j < hexBytes.length; j++) {
+          for (let j = 0; j < matchLen; j++) {
             if (hexBytes[j] === -1) continue; // wildcard ??
             if (bytes[i + j] !== hexBytes[j]) { match = false; break; }
           }
-          if (match) offsets.push(i);
+          if (match) matches.push({ offset: i, length: matchLen });
         }
       }
     } else if (strDef.type === 'regex') {
       try {
         const rx = new RegExp(strDef.pattern, 'g' + (strDef.nocase ? 'i' : ''));
         let rm;
-        while ((rm = rx.exec(text)) !== null && offsets.length < MAX) {
-          offsets.push(rm.index);
+        while ((rm = rx.exec(text)) !== null && matches.length < MAX) {
+          matches.push({ offset: rm.index, length: rm[0].length });
           if (rm.index === rx.lastIndex) rx.lastIndex++; // avoid infinite loop on zero-width
         }
       } catch (_) { /* invalid regex — skip */ }
     }
 
-    return offsets;
+    return matches;
   }
 
   // ── Internal: Parse hex pattern string ────────────────────────────────────

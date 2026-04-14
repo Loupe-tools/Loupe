@@ -126,6 +126,11 @@ class CsvRenderer {
     };
 
     filterInput.addEventListener('input', applyFilter);
+    filterInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        filterInput.blur();
+      }
+    });
     clearBtn.addEventListener('click', clearFilter);
 
     // Expose filter controls for external access (IOC navigation)
@@ -137,6 +142,9 @@ class CsvRenderer {
       scrollContainer: scr,
       dataRows
     };
+
+    // Store raw CSV text for proper IOC extraction (avoids cell concatenation issues)
+    wrap._rawText = text;
 
     return wrap;
   }

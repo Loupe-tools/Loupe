@@ -344,10 +344,19 @@ Object.assign(App.prototype, {
       let text = `Rule "${r.ruleName}"`;
       if (desc) text += ` — ${desc}`;
       text += ` — ${r.matches.length} string(s) matched: ${strings}`;
+      // Build flat list of all match locations for click-to-highlight
+      const allMatches = [];
+      for (const m of r.matches) {
+        for (const loc of m.matches) {
+          allMatches.push({ offset: loc.offset, length: loc.length, stringId: m.id, value: m.value });
+        }
+      }
+      allMatches.sort((a, b) => a.offset - b.offset);
       this.findings.externalRefs.push({
         type: IOC.YARA,
         url: text,
-        severity: sev
+        severity: sev,
+        _yaraMatches: allMatches  // For click-to-highlight cycling
       });
       if (!maxSeverity || sevRank[sev] > sevRank[maxSeverity]) maxSeverity = sev;
     }

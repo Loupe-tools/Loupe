@@ -697,8 +697,35 @@ Object.assign(App.prototype, {
     rowEl.classList.add('ioc-flash');
     setTimeout(() => rowEl.classList.remove('ioc-flash'), 600);
 
-    // Check if we have an EVTX view with filter controls
     const pc = document.getElementById('page-container');
+
+    // ── YARA match: inline highlight with cycling ───────────────────────────
+    if (ref.type === IOC.YARA && ref._yaraMatches && ref._yaraMatches.length > 0) {
+      const docEl = pc && pc.firstElementChild;
+      const sourceText = docEl && docEl._rawText;
+      const plaintextTable = pc && pc.querySelector('.plaintext-table');
+
+      if (plaintextTable && sourceText) {
+        const matches = ref._yaraMatches;
+
+        // Track current match index on the ref object for cycling
+        if (ref._currentMatchIndex === undefined) ref._currentMatchIndex = 0;
+        else ref._currentMatchIndex = (ref._currentMatchIndex + 1) % matches.length;
+
+        const match = matches[ref._currentMatchIndex];
+        const totalMatches = matches.length;
+        const currentNum = ref._currentMatchIndex + 1;
+
+        // Show match counter toast
+        this._toast(`Match ${currentNum}/${totalMatches}: ${match.stringId}`);
+
+        // Highlight the match inline
+        this._highlightYaraMatchInline(plaintextTable, sourceText, match.offset, match.length);
+        return;
+      }
+    }
+
+    // Check if we have an EVTX view with filter controls
     const evtxView = pc && pc.querySelector('.evtx-view');
     if (evtxView && evtxView._evtxFilters) {
       const filters = evtxView._evtxFilters;
@@ -758,12 +785,12 @@ Object.assign(App.prototype, {
       }
     }
 
-    // Check if we have a CSV view with filter controls
+    // Check if we have a CSV view — scroll to matching row without filtering
     const csvView = pc && pc.querySelector('.csv-view');
     if (csvView && csvView._csvFilters) {
       const filters = csvView._csvFilters;
       const searchVal = ref.url || '';
-      if (searchVal) {
+      if (searchVal && filters.dataRows && filters.dataRows.length > 0) {
         // For hashes like "SHA256:ABCDEF...", just search the hash value part
         let searchTerm = searchVal;
         const hashMatch = searchVal.match(/^(?:SHA256|SHA1|MD5|IMPHASH):(.+)$/i);
@@ -771,18 +798,64 @@ Object.assign(App.prototype, {
         // Truncate very long values
         if (searchTerm.length > 80) searchTerm = searchTerm.substring(0, 80);
 
-        filters.filterInput.value = searchTerm;
-        filters.applyFilter();
-        filters.scrollToFirstMatch();
-        filters.scrollContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Helper to scroll to row and highlight, with horizontal scroll for wide CSVs
+        const scrollAndHighlight = (r, term) => {
+          // Find the specific cell containing the match for horizontal scroll on wide CSVs
+          const cells = r.tr.querySelectorAll('td');
+          let matchingCell = null;
+          for (const cell of cells) {
+            if (cell.textContent.toLowerCase().includes(term)) {
+              matchingCell = cell;
+              break;
+            }
+          }
 
-        // Flash the filter bar for feedback
-        const filterBar = csvView.querySelector('.csv-filter-bar');
-        if (filterBar) {
-          filterBar.classList.add('csv-filter-flash');
-          setTimeout(() => filterBar.classList.remove('csv-filter-flash'), 1000);
+          // Scroll to matching cell (handles both vertical and horizontal)
+          if (matchingCell) {
+            matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+          } else {
+            r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          // Apply 5-second highlight using inline styles (more reliable than CSS classes)
+          cells.forEach(cell => {
+            cell.style.transition = 'background 1s ease-out';
+            cell.style.background = 'rgba(34, 211, 238, 0.4)';
+          });
+          // Fade out after 4 seconds (leaves 1s for transition)
+          setTimeout(() => {
+            cells.forEach(cell => {
+              cell.style.background = '';
+            });
+          }, 4000);
+          // Clean up transition style after animation completes
+          setTimeout(() => {
+            cells.forEach(cell => {
+              cell.style.transition = '';
+            });
+          }, 5000);
+        };
+
+        // Find and scroll to matching row (no filtering, just highlight)
+        const term = searchTerm.toLowerCase();
+        for (const r of filters.dataRows) {
+          if (r.searchText && r.searchText.includes(term)) {
+            scrollAndHighlight(r, term);
+            return;
+          }
         }
-        return;
+
+        // Fallback: if exact row match not found, try partial match on first few chars
+        // This handles cases where the IOC might be truncated or formatted differently
+        const shortTerm = term.length > 20 ? term.substring(0, 20) : term;
+        if (shortTerm !== term) {
+          for (const r of filters.dataRows) {
+            if (r.searchText && r.searchText.includes(shortTerm)) {
+              scrollAndHighlight(r, shortTerm);
+              return;
+            }
+          }
+        }
       }
     }
 
@@ -954,6 +1027,152 @@ Object.assign(App.prototype, {
     const highlighted = pc.querySelectorAll('.ioc-highlight-line');
     for (const el of highlighted) {
       el.classList.remove('ioc-highlight-line', 'ioc-highlight-flash');
+    }
+  },
+
+  // ── Highlight YARA match inline with character-level precision ──────────
+  _highlightYaraMatchInline(table, sourceText, offset, length) {
+    // Clear any existing YARA highlights
+    this._clearYaraHighlight();
+
+    // Calculate which line the offset falls on
+    const beforeText = sourceText.substring(0, offset);
+    const lineIndex = (beforeText.match(/\n/g) || []).length;  // 0-indexed
+
+    // Calculate character position within the line
+    const lastNewline = beforeText.lastIndexOf('\n');
+    const charPos = lastNewline === -1 ? offset : offset - lastNewline - 1;
+
+    const rows = table.rows;
+    if (lineIndex >= rows.length) return;
+
+    const row = rows[lineIndex];
+    const codeCell = row.querySelector('.plaintext-code');
+    if (!codeCell) return;
+
+    // Check if syntax highlighting is applied (HTML content)
+    const hasHighlighting = codeCell.innerHTML !== codeCell.textContent;
+
+    if (hasHighlighting) {
+      // For syntax-highlighted content, we need to walk text nodes
+      this._highlightInHtmlNode(codeCell, charPos, length);
+    } else {
+      // For plain text, we can use simple string manipulation
+      const cellText = codeCell.textContent;
+      const before = cellText.substring(0, charPos);
+      const matched = cellText.substring(charPos, charPos + length);
+      const after = cellText.substring(charPos + length);
+
+      // Escape HTML entities
+      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      codeCell.innerHTML = esc(before) +
+        `<mark class="yara-highlight yara-highlight-flash">${esc(matched)}</mark>` +
+        esc(after);
+    }
+
+    // Scroll the row into view
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Also add a subtle line highlight
+    row.classList.add('yara-line-highlight');
+
+    // Remove highlights after animation
+    setTimeout(() => {
+      this._clearYaraHighlight();
+    }, 3000);
+  },
+
+  // ── Highlight within syntax-highlighted HTML content ────────────────────
+  _highlightInHtmlNode(container, charPos, length) {
+    // Walk through text nodes to find the correct position
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    let currentPos = 0;
+    let node;
+    let startNode = null, startOffset = 0;
+    let endNode = null, endOffset = 0;
+
+    while ((node = walker.nextNode())) {
+      const nodeLen = node.textContent.length;
+      const nodeEnd = currentPos + nodeLen;
+
+      // Find start position
+      if (!startNode && charPos < nodeEnd) {
+        startNode = node;
+        startOffset = charPos - currentPos;
+      }
+
+      // Find end position
+      if (startNode && charPos + length <= nodeEnd) {
+        endNode = node;
+        endOffset = charPos + length - currentPos;
+        break;
+      }
+
+      currentPos = nodeEnd;
+    }
+
+    if (!startNode) return;  // Could not find position
+
+    // If start and end are in the same node, simple case
+    if (startNode === endNode) {
+      const text = startNode.textContent;
+      const before = text.substring(0, startOffset);
+      const matched = text.substring(startOffset, endOffset);
+      const after = text.substring(endOffset);
+
+      const frag = document.createDocumentFragment();
+      if (before) frag.appendChild(document.createTextNode(before));
+
+      const mark = document.createElement('mark');
+      mark.className = 'yara-highlight yara-highlight-flash';
+      mark.textContent = matched;
+      frag.appendChild(mark);
+
+      if (after) frag.appendChild(document.createTextNode(after));
+
+      startNode.parentNode.replaceChild(frag, startNode);
+    } else {
+      // Multi-node match: wrap from startNode to endNode
+      // For simplicity, just highlight the first node portion and line
+      const text = startNode.textContent;
+      const before = text.substring(0, startOffset);
+      const matched = text.substring(startOffset);
+
+      const frag = document.createDocumentFragment();
+      if (before) frag.appendChild(document.createTextNode(before));
+
+      const mark = document.createElement('mark');
+      mark.className = 'yara-highlight yara-highlight-flash';
+      mark.textContent = matched;
+      frag.appendChild(mark);
+
+      startNode.parentNode.replaceChild(frag, startNode);
+    }
+  },
+
+  // ── Clear YARA inline highlights ────────────────────────────────────────
+  _clearYaraHighlight() {
+    const pc = document.getElementById('page-container');
+    if (!pc) return;
+
+    // Remove line highlights
+    const highlighted = pc.querySelectorAll('.yara-line-highlight');
+    for (const el of highlighted) {
+      el.classList.remove('yara-line-highlight');
+    }
+
+    // Remove inline mark elements and restore text
+    const marks = pc.querySelectorAll('mark.yara-highlight');
+    for (const mark of marks) {
+      const textNode = document.createTextNode(mark.textContent);
+      mark.parentNode.replaceChild(textNode, mark);
+    }
+
+    // Normalize text nodes (merge adjacent text nodes)
+    const codesCells = pc.querySelectorAll('.plaintext-code');
+    for (const cell of codesCells) {
+      cell.normalize();
     }
   },
 

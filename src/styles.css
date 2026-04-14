@@ -1264,6 +1264,48 @@ body.dark .plaintext-table tr.ioc-highlight-line > td {
   100% { background: rgba(255, 200, 50, .10) !important; }
 }
 
+/* ── YARA match inline highlight ── */
+mark.yara-highlight {
+  background: rgba(34, 211, 238, .4);
+  border-radius: 2px;
+  padding: 0 2px;
+  color: inherit;
+}
+
+mark.yara-highlight-flash {
+  animation: yara-highlight-pulse 2.5s ease-out forwards;
+}
+
+@keyframes yara-highlight-pulse {
+  0%   { background: rgba(34, 211, 238, .7); box-shadow: 0 0 8px rgba(34, 211, 238, .5); }
+  30%  { background: rgba(34, 211, 238, .5); box-shadow: 0 0 4px rgba(34, 211, 238, .3); }
+  100% { background: rgba(34, 211, 238, .25); box-shadow: none; }
+}
+
+body.dark mark.yara-highlight {
+  background: rgba(34, 211, 238, .3);
+}
+
+body.dark mark.yara-highlight-flash {
+  animation: yara-highlight-pulse-dark 2.5s ease-out forwards;
+}
+
+@keyframes yara-highlight-pulse-dark {
+  0%   { background: rgba(34, 211, 238, .6); box-shadow: 0 0 8px rgba(34, 211, 238, .4); }
+  30%  { background: rgba(34, 211, 238, .4); box-shadow: 0 0 4px rgba(34, 211, 238, .2); }
+  100% { background: rgba(34, 211, 238, .2); box-shadow: none; }
+}
+
+.plaintext-table tr.yara-line-highlight > td {
+  background: rgba(34, 211, 238, .08) !important;
+  box-shadow: inset 3px 0 0 rgba(34, 211, 238, .5);
+}
+
+body.dark .plaintext-table tr.yara-line-highlight > td {
+  background: rgba(34, 211, 238, .06) !important;
+  box-shadow: inset 3px 0 0 rgba(34, 211, 238, .4);
+}
+
 /* ── Drop zone ── */
 #drop-zone {
   border: 2px dashed rgba(255, 255, 255, .18);
@@ -1786,8 +1828,17 @@ body.dark .xlsx-cap-notice {
 /* ══════════════════════════════════════════════════════
    CSV / TSV VIEW
    ══════════════════════════════════════════════════════ */
+
+/* Left-align CSV view in page container with padding */
+#page-container:has(.csv-view) {
+  align-items: flex-start;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
 .csv-view {
-  width: 100%;
+  width: auto;
+  max-width: calc(100vw - 40px);
   background: white;
   box-shadow: 0 2px 16px rgba(0, 0, 0, .25);
   border-radius: 6px;
@@ -1814,14 +1865,16 @@ body.dark .csv-info {
 }
 
 .csv-scroll {
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   max-height: 70vh;
 }
 
 .csv-table {
   border-collapse: collapse;
   font-size: 12px;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 }
 
@@ -1956,6 +2009,8 @@ body.dark .csv-row-highlight {
   0%, 40% { background: rgba(34, 211, 238, .15); }
   100% { background: transparent; }
 }
+
+
 
 /* ══════════════════════════════════════════════════════
    PPTX VIEW
