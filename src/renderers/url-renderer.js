@@ -48,22 +48,30 @@ class UrlShortcutRenderer {
     // Additional fields
     if (parsed.iconFile) {
       const row = document.createElement('div'); row.className = 'url-field';
-      row.innerHTML = `<span class="url-label">Icon File:</span> <span class="url-value">${escHtml(parsed.iconFile)}</span>`;
+      const lbl = document.createElement('span'); lbl.className = 'url-label'; lbl.textContent = 'Icon File:';
+      const val = document.createElement('span'); val.className = 'url-value'; val.textContent = parsed.iconFile;
+      row.appendChild(lbl); row.appendChild(document.createTextNode(' ')); row.appendChild(val);
       card.appendChild(row);
     }
     if (parsed.iconIndex !== undefined) {
       const row = document.createElement('div'); row.className = 'url-field';
-      row.innerHTML = `<span class="url-label">Icon Index:</span> <span class="url-value">${escHtml(String(parsed.iconIndex))}</span>`;
+      const lbl = document.createElement('span'); lbl.className = 'url-label'; lbl.textContent = 'Icon Index:';
+      const val = document.createElement('span'); val.className = 'url-value'; val.textContent = String(parsed.iconIndex);
+      row.appendChild(lbl); row.appendChild(document.createTextNode(' ')); row.appendChild(val);
       card.appendChild(row);
     }
     if (parsed.workingDir) {
       const row = document.createElement('div'); row.className = 'url-field';
-      row.innerHTML = `<span class="url-label">Working Directory:</span> <span class="url-value">${escHtml(parsed.workingDir)}</span>`;
+      const lbl = document.createElement('span'); lbl.className = 'url-label'; lbl.textContent = 'Working Directory:';
+      const val = document.createElement('span'); val.className = 'url-value'; val.textContent = parsed.workingDir;
+      row.appendChild(lbl); row.appendChild(document.createTextNode(' ')); row.appendChild(val);
       card.appendChild(row);
     }
     if (parsed.hotKey) {
       const row = document.createElement('div'); row.className = 'url-field';
-      row.innerHTML = `<span class="url-label">Hot Key:</span> <span class="url-value">${escHtml(parsed.hotKey)}</span>`;
+      const lbl = document.createElement('span'); lbl.className = 'url-label'; lbl.textContent = 'Hot Key:';
+      const val = document.createElement('span'); val.className = 'url-value'; val.textContent = parsed.hotKey;
+      row.appendChild(lbl); row.appendChild(document.createTextNode(' ')); row.appendChild(val);
       card.appendChild(row);
     }
 

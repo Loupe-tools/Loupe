@@ -107,19 +107,22 @@ class OleCfbParser {
 
   _buildFAT(n) {
     const fat = []; let done = 0;
+    const bufLen = this.buf.length;
     const addSec = s => {
       if (s >= 0xFFFFFFF0) return;
       const off = this._so(s);
-      for (let i = 0; i < this._ss / 4; i++) fat.push(this.dv.getUint32(off + i * 4, true));
+      for (let i = 0; i < this._ss / 4 && off + i * 4 + 4 <= bufLen; i++) fat.push(this.dv.getUint32(off + i * 4, true));
       done++;
     };
-    for (let i = 0; i < 109 && done < n; i++) { const s = this.dv.getUint32(0x4C + i * 4, true); if (s >= 0xFFFFFFF0) break; addSec(s); }
+    for (let i = 0; i < 109 && done < n && 0x4C + i * 4 + 4 <= bufLen; i++) { const s = this.dv.getUint32(0x4C + i * 4, true); if (s >= 0xFFFFFFF0) break; addSec(s); }
+    if (0x48 > bufLen) return fat;
     let dif = this.dv.getUint32(0x44, true);
     const visitedDif = new Set(); // Cycle detection for DIFAT chain
     while (dif < 0xFFFFFFF0 && done < n) {
       if (visitedDif.has(dif)) break; // Prevent infinite loop on DIFAT cycle
       visitedDif.add(dif);
       const off = this._so(dif);
+      if (off + this._ss > bufLen) break; // Bounds check
       for (let i = 0; i < this._ss / 4 - 1 && done < n; i++) { const s = this.dv.getUint32(off + i * 4, true); if (s >= 0xFFFFFFF0) break; addSec(s); }
       dif = this.dv.getUint32(off + this._ss - 4, true);
     }
@@ -128,12 +131,14 @@ class OleCfbParser {
 
   _buildMFAT(first, n) {
     const mf = []; let s = first;
+    const bufLen = this.buf.length;
     const visited = new Set(); // Cycle detection
     while (s < 0xFFFFFFF0 && n-- > 0) {
       if (visited.has(s)) break; // Prevent infinite loop on mini-FAT cycle
       visited.add(s);
       const off = this._so(s);
-      for (let i = 0; i < this._ss / 4; i++) mf.push(this.dv.getUint32(off + i * 4, true));
+      if (off + this._ss > bufLen) break; // Bounds check
+      for (let i = 0; i < this._ss / 4 && off + i * 4 + 4 <= bufLen; i++) mf.push(this.dv.getUint32(off + i * 4, true));
       s = this._fat[s] ?? 0xFFFFFFFE;
     }
     return mf;
@@ -159,19 +164,23 @@ class OleCfbParser {
 
   _readDir(first) {
     const dir = []; let sec = first;
+    const bufLen = this.buf.length;
     const visited = new Set(); // Cycle detection
     while (sec < 0xFFFFFFF0) {
       if (visited.has(sec)) break; // Prevent infinite loop on FAT cycle
       visited.add(sec);
       const off = this._so(sec);
+      if (off + this._ss > bufLen) break; // Bounds check
       for (let i = 0; i < this._ss / 128; i++) {
-        const b = off + i * 128, nl = this.dv.getUint16(b + 64, true);
+        const b = off + i * 128;
+        if (b + 128 > bufLen) break; // Entry bounds check
+        const nl = this.dv.getUint16(b + 64, true);
         if (!nl || nl > 64) {
           dir.push({ type: 0, name: '', start: 0, size: 0, child: 0xFFFFFFFF, lsib: 0xFFFFFFFF, rsib: 0xFFFFFFFF });
           continue;
         }
         let name = '';
-        for (let j = 0; j < (nl - 2) / 2; j++) name += String.fromCharCode(this.dv.getUint16(b + j * 2, true));
+        for (let j = 0; j < (nl - 2) / 2 && b + j * 2 + 2 <= bufLen; j++) name += String.fromCharCode(this.dv.getUint16(b + j * 2, true));
         dir.push({
           name, type: this.buf[b + 66],
           lsib: this.dv.getUint32(b + 68, true),

@@ -73,8 +73,9 @@ class IqySlkRenderer {
 
   _renderIqy(wrap, text, bytes) {
     const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-    banner.innerHTML = '<strong>⚠ Internet Query File (.iqy)</strong> — This file instructs Excel to fetch data from a remote URL. ' +
-      'IQY files are commonly weaponised in phishing to download and execute malicious payloads.';
+    const bannerStrong = document.createElement('strong'); bannerStrong.textContent = '⚠ Internet Query File (.iqy)';
+    banner.appendChild(bannerStrong);
+    banner.appendChild(document.createTextNode(' — This file instructs Excel to fetch data from a remote URL. IQY files are commonly weaponised in phishing to download and execute malicious payloads.'));
     wrap.appendChild(banner);
 
     const lines = text.split(/\r?\n/);
@@ -97,13 +98,17 @@ class IqySlkRenderer {
 
     if (parsed.queryType) {
       const row = document.createElement('div'); row.className = 'url-field';
-      row.innerHTML = `<span class="url-label">Query Type:</span> <span class="url-value">${escHtml(parsed.queryType)}</span>`;
+      const lbl = document.createElement('span'); lbl.className = 'url-label'; lbl.textContent = 'Query Type:';
+      const val = document.createElement('span'); val.className = 'url-value'; val.textContent = parsed.queryType;
+      row.appendChild(lbl); row.appendChild(document.createTextNode(' ')); row.appendChild(val);
       card.appendChild(row);
     }
 
     if (parsed.postParams) {
       const row = document.createElement('div'); row.className = 'url-field';
-      row.innerHTML = `<span class="url-label">POST Parameters:</span> <span class="url-value">${escHtml(parsed.postParams)}</span>`;
+      const lbl = document.createElement('span'); lbl.className = 'url-label'; lbl.textContent = 'POST Parameters:';
+      const val = document.createElement('span'); val.className = 'url-value'; val.textContent = parsed.postParams;
+      row.appendChild(lbl); row.appendChild(document.createTextNode(' ')); row.appendChild(val);
       card.appendChild(row);
     }
 
@@ -142,8 +147,9 @@ class IqySlkRenderer {
 
   _renderSlk(wrap, text, bytes) {
     const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-    banner.innerHTML = '<strong>⚠ Symbolic Link File (.slk)</strong> — SLK is a text-based spreadsheet format ' +
-      'that can contain executable macros (EXEC, CALL, RUN). These bypass many security controls.';
+    const bannerStrong = document.createElement('strong'); bannerStrong.textContent = '⚠ Symbolic Link File (.slk)';
+    banner.appendChild(bannerStrong);
+    banner.appendChild(document.createTextNode(' — SLK is a text-based spreadsheet format that can contain executable macros (EXEC, CALL, RUN). These bypass many security controls.'));
     wrap.appendChild(banner);
 
     // Analyze for dangerous content

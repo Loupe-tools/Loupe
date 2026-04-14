@@ -16,8 +16,13 @@ class MsiRenderer {
 
     // Banner
     const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-    banner.innerHTML = '<strong>Windows Installer Package (.msi)</strong> — click any stream to analyze its contents. MSI files execute with elevated privileges and can run custom actions, modify the registry, and install services.';
+    const bannerStrong = document.createElement('strong'); bannerStrong.textContent = 'Windows Installer Package (.msi)';
+    banner.appendChild(bannerStrong);
+    banner.appendChild(document.createTextNode(' — click any stream to analyze its contents. MSI files execute with elevated privileges and can run custom actions, modify the registry, and install services.'));
     wrap.appendChild(banner);
+
+    // Cleanup previous OLE parser reference to prevent memory leaks
+    this._ole = null;
 
     // Check for large files
     if (bytes.length > MSI_SIZE_LIMIT) {

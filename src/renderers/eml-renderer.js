@@ -412,43 +412,69 @@ class EmlRenderer {
       'p', 'br', 'div', 'span', 'b', 'i', 'u', 'em', 'strong', 'a', 'ul', 'ol', 'li',
       'table', 'tr', 'td', 'th', 'thead', 'tbody', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
       'pre', 'code', 'blockquote', 'hr', 'font', 'center', 'sub', 'sup', 'small', 'big',
-      'dl', 'dt', 'dd', 'abbr', 'address', 'cite',
+      'dl', 'dt', 'dd', 'abbr', 'address', 'cite', 'q', 'mark',
     ]);
-    const allowedAttrs = new Set(['style', 'class', 'align', 'valign', 'width', 'height', 'colspan', 'rowspan', 'dir', 'color', 'size', 'face']);
+    // Dangerous elements to completely remove (not just strip tag)
+    const dangerousTags = new Set(['script', 'style', 'meta', 'link', 'object', 'iframe', 'embed', 'svg', 'math', 'base', 'form']);
+    const allowedAttrs = new Set(['style', 'class', 'align', 'valign', 'width', 'height', 'colspan', 'rowspan', 'dir', 'color', 'size', 'face', 'href']);
 
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html;
-
-    function walk(node) {
-      const children = [...node.childNodes];
-      for (const child of children) {
-        if (child.nodeType === 3) continue; // text node
-        if (child.nodeType !== 1) { child.remove(); continue; }
-        const tag = child.tagName.toLowerCase();
-        if (!allowedTags.has(tag)) {
-          // Replace with its text content
-          const txt = document.createTextNode(child.textContent);
-          node.replaceChild(txt, child);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    
+    function walk(node, target) {
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType === 3) { // text node
+          target.appendChild(document.createTextNode(child.textContent));
           continue;
         }
-        // Strip dangerous attributes
-        for (const attr of [...child.attributes]) {
-          if (!allowedAttrs.has(attr.name.toLowerCase()) || attr.name.toLowerCase().startsWith('on')) {
-            child.removeAttribute(attr.name);
+        if (child.nodeType !== 1) continue;
+        const tag = child.tagName.toLowerCase();
+        
+        // Completely skip dangerous elements
+        if (dangerousTags.has(tag)) continue;
+        
+        // If not in allowed list, unwrap (keep children but not the tag)
+        if (!allowedTags.has(tag)) {
+          walk(child, target);
+          continue;
+        }
+        
+        const el = document.createElement(tag);
+        
+        // Copy allowed attributes with sanitization
+        for (const attr of Array.from(child.attributes)) {
+          const name = attr.name.toLowerCase();
+          // Skip event handlers
+          if (name.startsWith('on')) continue;
+          if (!allowedAttrs.has(name)) continue;
+          
+          if (name === 'href') {
+            const url = sanitizeUrl(attr.value);
+            // Block data: and javascript: URLs
+            if (url && !url.toLowerCase().startsWith('data:') && !url.toLowerCase().startsWith('javascript:')) {
+              el.setAttribute(name, url);
+            }
+          } else if (name === 'style') {
+            // Comprehensive CSS XSS sanitization
+            const cleanStyle = attr.value
+              .replace(/expression\s*\(/gi, '')
+              .replace(/javascript\s*:/gi, '')
+              .replace(/vbscript\s*:/gi, '')
+              .replace(/-moz-binding\s*:/gi, '')
+              .replace(/behavior\s*:/gi, '')
+              .replace(/url\s*\([^)]*\)/gi, '')  // Remove all url() to prevent data: exploits
+              .replace(/\\[0-9a-f]{1,6}/gi, ''); // Remove unicode escapes that could spell javascript
+            el.setAttribute(name, cleanStyle);
+          } else {
+            el.setAttribute(name, attr.value);
           }
         }
-        // Strip javascript: from style
-        if (child.getAttribute('style')) {
-          child.setAttribute('style',
-            child.getAttribute('style').replace(/expression\s*\(/gi, '').replace(/javascript\s*:/gi, '')
-          );
-        }
-        walk(child);
+        
+        walk(child, el);
+        target.appendChild(el);
       }
     }
 
-    walk(tmp);
-    container.innerHTML = tmp.innerHTML;
+    if (doc.body) walk(doc.body, container);
   }
 
   _fmtSize(n) {

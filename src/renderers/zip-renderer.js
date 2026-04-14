@@ -113,8 +113,9 @@ class ZipRenderer {
     }
 
     const decompInfo = document.createElement('div'); decompInfo.style.cssText = 'padding:0 20px 12px;';
+    const compressionRatio = decompressed.length > 0 ? ((1 - bytes.length / decompressed.length) * 100).toFixed(1) : '0.0';
     decompInfo.innerHTML = `<p><strong>Decompressed size:</strong> ${this._fmtBytes(decompressed.length)}</p>` +
-      `<p><strong>Compression ratio:</strong> ${((1 - bytes.length / decompressed.length) * 100).toFixed(1)}%</p>`;
+      `<p><strong>Compression ratio:</strong> ${compressionRatio}%</p>`;
     wrap.appendChild(decompInfo);
 
     // Check if decompressed content is a TAR archive
@@ -945,7 +946,7 @@ class ZipRenderer {
         if (decompressed) {
           f.metadata.compressedSize = bytes.length;
           f.metadata.decompressedSize = decompressed.length;
-          f.metadata.compressionRatio = ((1 - bytes.length / decompressed.length) * 100).toFixed(1) + '%';
+          f.metadata.compressionRatio = decompressed.length > 0 ? ((1 - bytes.length / decompressed.length) * 100).toFixed(1) + '%' : 'N/A';
 
           // Check if it's a tar archive
           if (this._isTar(decompressed)) {
@@ -1050,6 +1051,13 @@ class ZipRenderer {
 
     const htas = files.filter(e => /\.hta$/i.test(e.path || e.name || ''));
     if (htas.length) w.push({ sev: 'high', msg: `⚠ HTA file(s) — can execute arbitrary scripts` });
+
+    // Path traversal detection (Zip Slip vulnerability)
+    const traversal = entries.filter(e => {
+      const p = e.path || e.name || '';
+      return p.includes('../') || p.includes('..\\') || p.startsWith('/') || /^[A-Za-z]:/.test(p);
+    });
+    if (traversal.length) w.push({ sev: 'high', msg: `⚠ Path traversal attempt detected (Zip Slip) — ${traversal.length} entry/entries with suspicious paths` });
 
     return w;
   }

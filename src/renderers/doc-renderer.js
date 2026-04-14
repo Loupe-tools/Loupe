@@ -7,7 +7,9 @@ class DocBinaryRenderer {
   render(buffer) {
     const wrap = document.createElement('div'); wrap.className = 'doc-text-view';
     const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-    banner.innerHTML = '<strong>Text Extraction Mode</strong> — .doc (Word 97-2003) binary: content shown as plain text only; formatting, images and tables are not rendered.';
+    const bannerStrong = document.createElement('strong'); bannerStrong.textContent = 'Text Extraction Mode';
+    banner.appendChild(bannerStrong);
+    banner.appendChild(document.createTextNode(' — .doc (Word 97-2003) binary: content shown as plain text only; formatting, images and tables are not rendered.'));
     wrap.appendChild(banner);
     let paras = [];
     try {

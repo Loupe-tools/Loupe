@@ -20,7 +20,9 @@ class ImageRenderer {
 
     // Banner
     const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-    banner.innerHTML = `<strong>Image Preview</strong> — ${ext.toUpperCase()} image (${this._fmtBytes(bytes.length)})`;
+    const bannerStrong = document.createElement('strong'); bannerStrong.textContent = 'Image Preview';
+    banner.appendChild(bannerStrong);
+    banner.appendChild(document.createTextNode(` — ${ext.toUpperCase()} image (${this._fmtBytes(bytes.length)})`));
     wrap.appendChild(banner);
 
     // Image element
@@ -38,10 +40,14 @@ class ImageRenderer {
     infoDiv.textContent = `Loading image…`;
     img.addEventListener('load', () => {
       infoDiv.textContent = `${img.naturalWidth} × ${img.naturalHeight} px  ·  ${ext.toUpperCase()}  ·  ${this._fmtBytes(bytes.length)}`;
+      // Revoke blob URL after image is loaded to free memory
+      URL.revokeObjectURL(blobUrl);
     });
     img.addEventListener('error', () => {
       infoDiv.textContent = `Failed to render image — file may be corrupted or unsupported format`;
       infoDiv.style.color = '#f88';
+      // Revoke blob URL on error to free memory
+      URL.revokeObjectURL(blobUrl);
     });
 
     imgWrap.appendChild(img);

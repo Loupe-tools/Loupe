@@ -23,7 +23,12 @@ class InfSctRenderer {
   _renderInf(wrap, text, bytes, fileName) {
     // Banner
     const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-    banner.innerHTML = '<strong>⚠ Windows Setup Information File (.inf)</strong> — INF files configure driver and software installation. They can execute arbitrary commands via right-click "Install" and are abused for <code>CMSTP</code> UAC bypass, DLL side-loading, and malware persistence.';
+    const bannerStrong = document.createElement('strong'); bannerStrong.textContent = '⚠ Windows Setup Information File (.inf)';
+    banner.appendChild(bannerStrong);
+    banner.appendChild(document.createTextNode(' — INF files configure driver and software installation. They can execute arbitrary commands via right-click "Install" and are abused for '));
+    const codeEl = document.createElement('code'); codeEl.textContent = 'CMSTP';
+    banner.appendChild(codeEl);
+    banner.appendChild(document.createTextNode(' UAC bypass, DLL side-loading, and malware persistence.'));
     wrap.appendChild(banner);
 
     const analysis = this._analyzeInf(text);
@@ -88,7 +93,12 @@ class InfSctRenderer {
 
   _renderSct(wrap, text, bytes, fileName) {
     const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-    banner.innerHTML = '<strong>⚠ Windows Script Component (.sct)</strong> — COM scriptlet that executes via <code>regsvr32 /s /n /u /i:file.sct scrobj.dll</code> (Squiblydoo attack). Can run VBScript/JScript with full system access and download remote payloads.';
+    const bannerStrong = document.createElement('strong'); bannerStrong.textContent = '⚠ Windows Script Component (.sct)';
+    banner.appendChild(bannerStrong);
+    banner.appendChild(document.createTextNode(' — COM scriptlet that executes via '));
+    const codeEl = document.createElement('code'); codeEl.textContent = 'regsvr32 /s /n /u /i:file.sct scrobj.dll';
+    banner.appendChild(codeEl);
+    banner.appendChild(document.createTextNode(' (Squiblydoo attack). Can run VBScript/JScript with full system access and download remote payloads.'));
     wrap.appendChild(banner);
 
     const analysis = this._analyzeSct(text);

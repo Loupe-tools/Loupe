@@ -285,8 +285,8 @@ class SqliteRenderer {
       ctx.pos += 8;
       return v;
     }
-    if (serialType === 8) return (ctx.pos, 0); // Integer 0
-    if (serialType === 9) return (ctx.pos, 1); // Integer 1
+    if (serialType === 8) return 0; // Integer 0
+    if (serialType === 9) return 1; // Integer 1
     if (serialType >= 12 && serialType % 2 === 0) {
       // BLOB: length = (serialType - 12) / 2
       const len = (serialType - 12) / 2;

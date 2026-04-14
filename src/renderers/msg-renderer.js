@@ -36,7 +36,10 @@ class MsgRenderer {
     // Attachments — Extracted Files table (shown at top for easy access)
     if (msg.attachments.length) {
       const banner = document.createElement('div'); banner.className = 'doc-extraction-banner';
-      banner.innerHTML = `<strong>Attachments (${msg.attachments.length})</strong> — click any file to open it for analysis.`;
+      const bannerStrong = document.createElement('strong');
+      bannerStrong.textContent = `Attachments (${msg.attachments.length})`;
+      banner.appendChild(bannerStrong);
+      banner.appendChild(document.createTextNode(' — click any file to open it for analysis.'));
       page.appendChild(banner);
 
       const attTbl = document.createElement('table'); attTbl.className = 'zip-table';
@@ -195,20 +198,35 @@ class MsgRenderer {
   }
 
   _sanitize(html, container) {
-    const OK = new Set(['p', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'span', 'div', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'a', 'font', 'center']);
+    const OK = new Set(['p', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'span', 'div', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'a', 'font', 'center', 'sub', 'sup', 'abbr', 'cite', 'q', 'mark']);
     const ATTR = new Set(['href', 'style', 'color', 'size', 'face', 'align', 'colspan', 'rowspan']);
     const walk = (node, target) => {
       for (const c of Array.from(node.childNodes)) {
         if (c.nodeType === 3) { target.appendChild(document.createTextNode(c.textContent)); continue; }
         if (c.nodeType !== 1) continue;
         const tag = c.tagName.toLowerCase();
-        if (['script', 'style', 'meta', 'link', 'object', 'iframe', 'embed'].includes(tag)) continue;
+        if (['script', 'style', 'meta', 'link', 'object', 'iframe', 'embed', 'svg', 'math'].includes(tag)) continue;
         if (!OK.has(tag)) { walk(c, target); continue; }
         const el = document.createElement(tag);
         for (const a of Array.from(c.attributes)) {
           const n = a.name.toLowerCase(); if (!ATTR.has(n)) continue;
-          if (n === 'href') { const s = sanitizeUrl(a.value); if (s) el.setAttribute(n, s); }
-          else if (n === 'style') { el.setAttribute(n, a.value.replace(/(expression|javascript|vbscript)/gi, '')); }
+          if (n === 'href') {
+            const s = sanitizeUrl(a.value);
+            // Block data: URLs in href to prevent XSS
+            if (s && !s.toLowerCase().startsWith('data:')) el.setAttribute(n, s);
+          }
+          else if (n === 'style') {
+            // Comprehensive CSS XSS sanitization
+            const cleanStyle = a.value
+              .replace(/expression\s*\(/gi, '')
+              .replace(/javascript\s*:/gi, '')
+              .replace(/vbscript\s*:/gi, '')
+              .replace(/-moz-binding\s*:/gi, '')
+              .replace(/behavior\s*:/gi, '')
+              .replace(/url\s*\([^)]*\)/gi, '')  // Remove all url() to prevent data: exploits
+              .replace(/\\[0-9a-f]{1,6}/gi, ''); // Remove unicode escapes that could spell javascript
+            el.setAttribute(n, cleanStyle);
+          }
           else el.setAttribute(n, a.value);
         }
         walk(c, el); target.appendChild(el);

@@ -357,7 +357,8 @@ class OdtRenderer {
     return styles;
   }
 
-  _applyParaStyle(el, styleName, styles) {
+  _applyParaStyle(el, styleName, styles, depth = 0) {
+    if (depth > 20) return; // Prevent infinite recursion on circular style references
     const s = styles[styleName];
     if (!s) return;
     const p = s.props;
@@ -369,11 +370,12 @@ class OdtRenderer {
     if (p.fontWeight) el.style.fontWeight = p.fontWeight;
     if (p.fontStyle) el.style.fontStyle = p.fontStyle;
     if (p.color) el.style.color = p.color;
-    // Inherit from parent
-    if (s.parent && styles[s.parent]) this._applyParaStyle(el, s.parent, styles);
+    // Inherit from parent (with depth limit)
+    if (s.parent && styles[s.parent]) this._applyParaStyle(el, s.parent, styles, depth + 1);
   }
 
-  _applyTextStyle(el, styleName, styles) {
+  _applyTextStyle(el, styleName, styles, depth = 0) {
+    if (depth > 20) return; // Prevent infinite recursion on circular style references
     const s = styles[styleName];
     if (!s) return;
     const p = s.props;
@@ -382,7 +384,7 @@ class OdtRenderer {
     if (p.fontStyle) el.style.fontStyle = p.fontStyle;
     if (p.color) el.style.color = p.color;
     if (p.textDecoration) el.style.textDecoration = p.textDecoration;
-    if (s.parent && styles[s.parent]) this._applyTextStyle(el, s.parent, styles);
+    if (s.parent && styles[s.parent]) this._applyTextStyle(el, s.parent, styles, depth + 1);
   }
 
   // ── Media loading ──────────────────────────────────────────────────────────
