@@ -1717,8 +1717,37 @@ class EvtxRenderer {
   // ── View builder ────────────────────────────────────────────────────────
 
   _buildView(events, fileName) {
+    // ═══════════════════════════════════════════════════════════════════════
+    // CONFIGURATION
+    // ═══════════════════════════════════════════════════════════════════════
+    const ROW_HEIGHT = 32;               // Base row height in pixels
+    const DEFAULT_DETAIL_HEIGHT = 200;   // Fallback detail pane height before measurement
+    const BUFFER_ROWS = 20;              // Extra rows to render above/below viewport
+    const MAX_EVENTS = 50000;            // Maximum events to process
+
     const wrap = document.createElement('div');
     wrap.className = 'evtx-view csv-view';
+
+    // Limit events
+    const totalEvents = events.length;
+    const limitedEvents = events.slice(0, MAX_EVENTS);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // VIRTUAL SCROLL STATE
+    // ═══════════════════════════════════════════════════════════════════════
+    const state = {
+      expandedRows: new Set(),           // Set of expanded event indices
+      detailPaneCache: new Map(),        // eventIdx -> detail pane DOM element
+      detailHeightCache: new Map(),      // eventIdx -> measured height in pixels
+      filteredIndices: null,             // null = no filter, array = indices of matching events
+      renderedRange: { start: -1, end: -1 }
+    };
+
+    // Pre-compute search text for all events (for fast filtering)
+    const eventSearchText = limitedEvents.map(ev =>
+      [ev.eventId, ev.level, ev.provider, ev.channel, ev.computer, ev.timestamp, ev.eventData]
+        .join(' ').toLowerCase()
+    );
 
     // ── Summary stats bar ──────────────────────────────────────────────
     const stats = document.createElement('div');
@@ -1777,9 +1806,6 @@ class EvtxRenderer {
 
     // ── CSV action bar ─────────────────────────────────────────────────
     const bar = this._buildCsvBar(events, fileName);
-
-    let allExpanded = false;
-
     wrap.appendChild(bar);
 
     // ── Filter bar ─────────────────────────────────────────────────────
@@ -1827,7 +1853,7 @@ class EvtxRenderer {
     clearBtn.title = 'Clear all filters';
     filterBar.appendChild(clearBtn);
 
-    // Expand All / Collapse All toggle button (in filter bar)
+    // Expand All / Collapse All toggle button
     const expandToggle = document.createElement('button');
     expandToggle.className = 'tb-btn csv-export-btn evtx-expand-toggle';
     expandToggle.textContent = '↕️ Expand All';
@@ -1836,12 +1862,14 @@ class EvtxRenderer {
 
     const filterCount = document.createElement('span');
     filterCount.className = 'evtx-filter-count';
-    filterCount.textContent = `Showing ${events.length.toLocaleString()} of ${events.length.toLocaleString()}`;
+    filterCount.textContent = `Showing ${limitedEvents.length.toLocaleString()} of ${limitedEvents.length.toLocaleString()}`;
     filterBar.appendChild(filterCount);
 
     wrap.appendChild(filterBar);
 
-    // ── Table ──────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════
+    // TABLE STRUCTURE
+    // ═══════════════════════════════════════════════════════════════════════
     const scr = document.createElement('div');
     scr.className = 'csv-scroll';
     scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 260px)';
@@ -1871,20 +1899,123 @@ class EvtxRenderer {
     thead.appendChild(htr);
     tbl.appendChild(thead);
 
-    // Body
+    // Body (virtual rows will be rendered here)
     const tbody = document.createElement('tbody');
-    const limit = Math.min(events.length, 20000);
-    const rows = []; // Track { tr, detailTr, ev, visible } for filtering
+    tbl.appendChild(tbody);
 
-    for (let i = 0; i < limit; i++) {
-      const ev = events[i];
+    scr.appendChild(tbl);
+    wrap.appendChild(scr);
+
+    // Truncation warning (if needed)
+    if (totalEvents > MAX_EVENTS) {
+      const note = document.createElement('div');
+      note.className = 'csv-info';
+      note.textContent = `⚠ Showing first ${MAX_EVENTS.toLocaleString()} of ${totalEvents.toLocaleString()} events`;
+      wrap.appendChild(note);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HELPER: Get visible row count
+    // ═══════════════════════════════════════════════════════════════════════
+    const getVisibleRowCount = () => {
+      return state.filteredIndices ? state.filteredIndices.length : limitedEvents.length;
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HELPER: Get data index for virtual index
+    // ═══════════════════════════════════════════════════════════════════════
+    const getDataIndex = (virtualIdx) => {
+      return state.filteredIndices ? state.filteredIndices[virtualIdx] : virtualIdx;
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HELPER: Get virtual index for data index
+    // ═══════════════════════════════════════════════════════════════════════
+    const getVirtualIndex = (dataIdx) => {
+      if (!state.filteredIndices) return dataIdx;
+      return state.filteredIndices.indexOf(dataIdx);
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DYNAMIC HEIGHT HELPERS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // Get measured or estimated detail height for an expanded row
+    const getDetailHeight = (dataIdx) => {
+      return state.detailHeightCache.has(dataIdx)
+        ? state.detailHeightCache.get(dataIdx)
+        : DEFAULT_DETAIL_HEIGHT;
+    };
+
+    // Get total height for a row (base + detail if expanded)
+    const getRowHeight = (dataIdx) => {
+      return state.expandedRows.has(dataIdx)
+        ? ROW_HEIGHT + getDetailHeight(dataIdx)
+        : ROW_HEIGHT;
+    };
+
+    // Calculate cumulative height up to (not including) virtualIdx
+    const calculateHeightUpTo = (virtualIdx) => {
+      let height = virtualIdx * ROW_HEIGHT;
+      
+      for (const expandedDataIdx of state.expandedRows) {
+        const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
+        if (expandedVirtualIdx >= 0 && expandedVirtualIdx < virtualIdx) {
+          height += getDetailHeight(expandedDataIdx);
+        }
+      }
+      
+      return height;
+    };
+
+    // Get total scrollable height
+    const getTotalHeight = () => {
+      const rowCount = getVisibleRowCount();
+      let height = rowCount * ROW_HEIGHT;
+      
+      for (const expandedDataIdx of state.expandedRows) {
+        const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
+        if (expandedVirtualIdx >= 0 && expandedVirtualIdx < rowCount) {
+          height += getDetailHeight(expandedDataIdx);
+        }
+      }
+      
+      return height;
+    };
+
+    // Find virtual row index at a given scroll position
+    const findRowAtScrollPosition = (scrollTop) => {
+      let accumulatedHeight = 0;
+      const rowCount = getVisibleRowCount();
+      
+      for (let virtualIdx = 0; virtualIdx < rowCount; virtualIdx++) {
+        const dataIdx = getDataIndex(virtualIdx);
+        const rowHeight = getRowHeight(dataIdx);
+        
+        if (accumulatedHeight + rowHeight > scrollTop) {
+          return virtualIdx;
+        }
+        accumulatedHeight += rowHeight;
+      }
+      
+      return Math.max(0, rowCount - 1);
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // CREATE ROW ELEMENTS
+    // ═══════════════════════════════════════════════════════════════════════
+    const createRowElements = (dataIdx, virtualIdx) => {
+      const ev = limitedEvents[dataIdx];
       const tr = document.createElement('tr');
-      tr.dataset.idx = i;
+      tr.dataset.idx = dataIdx;
+      tr.dataset.vidx = virtualIdx;
+
+      const isExpanded = state.expandedRows.has(dataIdx);
 
       // # column with expand icon
       const tdRow = document.createElement('td');
       tdRow.className = 'xlsx-row-header';
-      tdRow.innerHTML = `<span class="evtx-expand-icon">▶</span> ${i + 1}`;
+      tdRow.innerHTML = `<span class="evtx-expand-icon">${isExpanded ? '▼' : '▶'}</span> ${dataIdx + 1}`;
       tr.appendChild(tdRow);
 
       // Timestamp (formatted shorter)
@@ -1936,90 +2067,302 @@ class EvtxRenderer {
       tdData.title = 'Click to expand';
       tr.appendChild(tdData);
 
-      tbody.appendChild(tr);
+      // Mark as selected if expanded
+      if (isExpanded) {
+        tr.classList.add('evtx-row-selected');
+      }
 
-      // Detail row (hidden by default)
+      // Detail row
       const detailTr = document.createElement('tr');
       detailTr.className = 'evtx-detail-row';
-      detailTr.style.display = 'none';
+      detailTr.dataset.idx = dataIdx;  // For height measurement
+      detailTr.style.display = isExpanded ? '' : 'none';
       const detailTd = document.createElement('td');
       detailTd.colSpan = cols.length;
+
+      // Use cached detail pane or build new one if expanded
+      if (isExpanded) {
+        if (!state.detailPaneCache.has(dataIdx)) {
+          const pane = document.createElement('div');
+          this._buildDetailPane(pane, ev);
+          state.detailPaneCache.set(dataIdx, pane.innerHTML);
+        }
+        detailTd.innerHTML = state.detailPaneCache.get(dataIdx);
+      }
       detailTr.appendChild(detailTd);
-      tbody.appendChild(detailTr);
 
-      rows.push({ tr, detailTr, detailTd, ev, visible: true });
-
-      // Click to expand/collapse
+      // Click handler
       tr.addEventListener('click', () => {
-        const isOpen = detailTr.style.display !== 'none';
-        if (isOpen) {
-          detailTr.style.display = 'none';
+        if (state.expandedRows.has(dataIdx)) {
+          // Collapse this row
+          state.expandedRows.delete(dataIdx);
           tr.classList.remove('evtx-row-selected');
+          const icon = tr.querySelector('.evtx-expand-icon');
+          if (icon) icon.textContent = '▶';
+          detailTr.style.display = 'none';
+          
+          // Force re-render to update spacer heights
+          state.renderedRange = { start: -1, end: -1 };
+          renderVisibleRows();
+          updateExpandToggleButton();
         } else {
-          // Build detail pane on first open
-          if (!detailTd.hasChildNodes()) {
-            this._buildDetailPane(detailTd, ev);
-          }
-          detailTr.style.display = '';
+          // Collapse any other expanded row first (only one expanded at a time)
+          state.expandedRows.clear();
+          
+          // Expand this row
+          state.expandedRows.add(dataIdx);
           tr.classList.add('evtx-row-selected');
+          const icon = tr.querySelector('.evtx-expand-icon');
+          if (icon) icon.textContent = '▼';
+
+          // Build detail pane if not cached
+          if (!state.detailPaneCache.has(dataIdx)) {
+            const pane = document.createElement('div');
+            this._buildDetailPane(pane, ev);
+            state.detailPaneCache.set(dataIdx, pane.innerHTML);
+          }
+          detailTd.innerHTML = state.detailPaneCache.get(dataIdx);
+          detailTr.style.display = '';
+
+          // Scroll to the left to show the detail pane
+          scr.scrollLeft = 0;
+          
+          // Force re-render to update DOM structure
+          state.renderedRange = { start: -1, end: -1 };
+          renderVisibleRows();
+          updateExpandToggleButton();
         }
       });
-    }
-    tbl.appendChild(tbody);
-    scr.appendChild(tbl);
-    wrap.appendChild(scr);
 
-    if (events.length > limit) {
-      const note = document.createElement('div');
-      note.className = 'csv-info';
-      note.textContent = `⚠ Showing first ${limit.toLocaleString()} of ${events.length.toLocaleString()} events`;
-      wrap.appendChild(note);
-    }
+      return { tr, detailTr, detailTd, dataIdx };
+    };
 
-    // ── Filter logic ───────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════
+    // CREATE SPACER ROW (for virtual scrolling)
+    // ═══════════════════════════════════════════════════════════════════════
+    const createSpacerRow = (height) => {
+      const tr = document.createElement('tr');
+      tr.className = 'evtx-spacer-row';
+      tr.setAttribute('aria-hidden', 'true');
+      const td = document.createElement('td');
+      td.colSpan = cols.length;
+      td.style.cssText = `height:${height}px;padding:0;border:none;background:transparent;`;
+      tr.appendChild(td);
+      return tr;
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // RENDER VISIBLE ROWS (Virtual Scrolling Core)
+    // ═══════════════════════════════════════════════════════════════════════
+    const renderVisibleRows = () => {
+      const scrollTop = scr.scrollTop;
+      const viewportHeight = scr.clientHeight || 600;
+
+      const rowCount = getVisibleRowCount();
+      if (rowCount === 0) {
+        tbody.replaceChildren();
+        state.renderedRange = { start: 0, end: 0 };
+        return;
+      }
+
+      // Find visible range using dynamic height calculations
+      const firstVisibleRow = findRowAtScrollPosition(scrollTop);
+      const startIdx = Math.max(0, firstVisibleRow - BUFFER_ROWS);
+      
+      const lastVisibleRow = findRowAtScrollPosition(scrollTop + viewportHeight);
+      const endIdx = Math.min(rowCount, lastVisibleRow + BUFFER_ROWS + 1);
+
+      // Fast path: if range hasn't changed, nothing to do
+      if (startIdx === state.renderedRange.start && endIdx === state.renderedRange.end) {
+        return;
+      }
+
+      // Auto-collapse rows that are FAR outside the visible range (use 2x buffer)
+      // This prevents premature collapse when scrolling small amounts
+      const collapseBuffer = BUFFER_ROWS * 2;
+      for (const expandedDataIdx of state.expandedRows) {
+        const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
+        if (expandedVirtualIdx < startIdx - collapseBuffer || 
+            expandedVirtualIdx >= endIdx + collapseBuffer) {
+          state.expandedRows.delete(expandedDataIdx);
+        }
+      }
+
+      // Clear tbody and build new content
+      const fragment = document.createDocumentFragment();
+
+      // Top spacer with dynamic height
+      const topSpacerHeight = calculateHeightUpTo(startIdx);
+      if (topSpacerHeight > 0) {
+        fragment.appendChild(createSpacerRow(topSpacerHeight));
+      }
+
+      // Render visible rows
+      for (let virtualIdx = startIdx; virtualIdx < endIdx; virtualIdx++) {
+        const dataIdx = getDataIndex(virtualIdx);
+        if (dataIdx === undefined || dataIdx >= limitedEvents.length) continue;
+
+        const { tr, detailTr } = createRowElements(dataIdx, virtualIdx);
+        fragment.appendChild(tr);
+        fragment.appendChild(detailTr);
+      }
+
+      // Bottom spacer with dynamic height
+      const totalHeight = getTotalHeight();
+      const heightUpToEnd = calculateHeightUpTo(endIdx);
+      const bottomSpacerHeight = Math.max(0, totalHeight - heightUpToEnd);
+      if (bottomSpacerHeight > 0) {
+        fragment.appendChild(createSpacerRow(bottomSpacerHeight));
+      }
+
+      tbody.replaceChildren(fragment);
+      state.renderedRange = { start: startIdx, end: endIdx };
+
+      // Measure heights of expanded rows after render
+      requestAnimationFrame(() => {
+        let heightChanged = false;
+        for (const expandedDataIdx of state.expandedRows) {
+          if (!state.detailHeightCache.has(expandedDataIdx)) {
+            const detailTr = tbody.querySelector(`tr.evtx-detail-row[data-idx="${expandedDataIdx}"]`);
+            if (detailTr && detailTr.offsetHeight > 0) {
+              state.detailHeightCache.set(expandedDataIdx, detailTr.offsetHeight);
+              heightChanged = true;
+            }
+          }
+        }
+        // Re-render if heights changed to fix spacers
+        if (heightChanged) {
+          state.renderedRange = { start: -1, end: -1 };
+          renderVisibleRows();
+        }
+      });
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SCROLL HANDLER (throttled with requestAnimationFrame)
+    // ═══════════════════════════════════════════════════════════════════════
+    let scrollRAF = null;
+    let isProgrammaticScroll = false;  // Flag to disable scroll handler during programmatic scroll
+
+    scr.addEventListener('scroll', () => {
+      if (scrollRAF || isProgrammaticScroll) return;
+      scrollRAF = requestAnimationFrame(() => {
+        renderVisibleRows();
+        scrollRAF = null;
+      });
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FILTER LOGIC
+    // ═══════════════════════════════════════════════════════════════════════
     const applyFilters = () => {
       const searchTerm = searchInput.value.toLowerCase().trim();
       const eidFilter = eidInput.value.trim();
       const levelFilter = levelSelect.value;
-      let shown = 0;
 
-      for (const r of rows) {
-        let match = true;
-        if (levelFilter && r.ev.level !== levelFilter) match = false;
-        if (eidFilter && String(r.ev.eventId) !== eidFilter) match = false;
-        if (searchTerm && match) {
-          const haystack = [r.ev.eventId, r.ev.level, r.ev.provider, r.ev.channel, r.ev.computer, r.ev.timestamp, r.ev.eventData].join(' ').toLowerCase();
-          if (!haystack.includes(searchTerm)) match = false;
+      // Auto-collapse all expanded rows when filter changes
+      state.expandedRows.clear();
+
+      if (!searchTerm && !eidFilter && !levelFilter) {
+        state.filteredIndices = null;
+      } else {
+        state.filteredIndices = [];
+        for (let i = 0; i < limitedEvents.length; i++) {
+          const ev = limitedEvents[i];
+          let match = true;
+          if (levelFilter && ev.level !== levelFilter) match = false;
+          if (eidFilter && String(ev.eventId) !== eidFilter) match = false;
+          if (searchTerm && match) {
+            if (!eventSearchText[i].includes(searchTerm)) match = false;
+          }
+          if (match) state.filteredIndices.push(i);
         }
-        r.tr.style.display = match ? '' : 'none';
-        // Respect current expand/collapse state
-        if (allExpanded && match) {
-          if (!r.detailTd.hasChildNodes()) this._buildDetailPane(r.detailTd, r.ev);
-          r.detailTr.style.display = '';
-          r.tr.classList.add('evtx-row-selected');
-        } else {
-          r.detailTr.style.display = 'none';
-          r.tr.classList.remove('evtx-row-selected');
-        }
-        r.visible = match;
-        if (match) shown++;
       }
-      filterCount.textContent = `Showing ${shown.toLocaleString()} of ${events.length.toLocaleString()}`;
+
+      // Reset scroll position and re-render
+      scr.scrollTop = 0;
+      state.renderedRange = { start: -1, end: -1 };
+      renderVisibleRows();
+
+      // Update filter count
+      const shown = state.filteredIndices ? state.filteredIndices.length : limitedEvents.length;
+      filterCount.textContent = `Showing ${shown.toLocaleString()} of ${limitedEvents.length.toLocaleString()}`;
     };
 
-    // Helper: expand all currently visible rows
-    const expandAllVisible = () => {
-      allExpanded = true;
-      for (const r of rows) {
-        if (!r.visible) continue;
-        if (!r.detailTd.hasChildNodes()) this._buildDetailPane(r.detailTd, r.ev);
-        r.detailTr.style.display = '';
-        r.tr.classList.add('evtx-row-selected');
+    // ═══════════════════════════════════════════════════════════════════════
+    // SCROLL TO ROW (for IOC navigation)
+    // ═══════════════════════════════════════════════════════════════════════
+    const scrollToRow = (dataIdx, highlight = true) => {
+      // Check if row is filtered out
+      let virtualIdx = getVirtualIndex(dataIdx);
+
+      if (virtualIdx === -1 && state.filteredIndices) {
+        // Row is filtered out - clear filter first
+        searchInput.value = '';
+        eidInput.value = '';
+        levelSelect.value = '';
+        state.filteredIndices = null;
+        filterCount.textContent = `Showing ${limitedEvents.length.toLocaleString()} of ${limitedEvents.length.toLocaleString()}`;
+        virtualIdx = dataIdx;
       }
-      expandToggle.textContent = '↔️ Collapse All';
-      expandToggle.title = 'Collapse all expanded event rows';
+
+      // Collapse all rows first, then expand only the target
+      state.expandedRows.clear();
+      state.expandedRows.add(dataIdx);
+
+      // Calculate scroll position to center the row (using dynamic heights)
+      const viewportHeight = scr.clientHeight || 600;
+      const targetTop = calculateHeightUpTo(virtualIdx);
+      const scrollTarget = Math.max(0, targetTop - viewportHeight / 2);
+
+      // Disable scroll handler during programmatic scroll
+      isProgrammaticScroll = true;
+
+      // Scroll with smooth animation
+      scr.scrollTo({
+        top: scrollTarget,
+        left: 0,
+        behavior: 'smooth'
+      });
+
+      // Wait for scroll animation to complete, then re-render and highlight
+      setTimeout(() => {
+        // Re-enable scroll handler
+        isProgrammaticScroll = false;
+        
+        // Force re-render at final position
+        state.renderedRange = { start: -1, end: -1 };
+        renderVisibleRows();
+
+        // Find and highlight the row
+        if (highlight) {
+          const tr = tbody.querySelector(`tr[data-idx="${dataIdx}"]`);
+          if (tr) {
+            tr.classList.add('evtx-row-highlight');
+            const cells = tr.querySelectorAll('td');
+            cells.forEach(cell => {
+              cell.style.transition = 'background 0.3s ease-out';
+              cell.style.background = 'rgba(34, 211, 238, 0.4)';
+            });
+            setTimeout(() => {
+              tr.classList.remove('evtx-row-highlight');
+              cells.forEach(cell => {
+                cell.style.background = '';
+              });
+            }, 2000);
+            setTimeout(() => {
+              cells.forEach(cell => {
+                cell.style.transition = '';
+              });
+            }, 2500);
+          }
+        }
+      }, 400);
     };
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // EVENT LISTENERS
+    // ═══════════════════════════════════════════════════════════════════════
     let filterTimeout;
     const debouncedFilter = () => {
       clearTimeout(filterTimeout);
@@ -2029,47 +2372,85 @@ class EvtxRenderer {
     eidInput.addEventListener('input', debouncedFilter);
     levelSelect.addEventListener('change', applyFilters);
 
-    // ── Clear filters button handler ───────────────────────────────────
+    // Clear filters button handler
     clearBtn.addEventListener('click', () => {
       searchInput.value = '';
       eidInput.value = '';
       levelSelect.value = '';
-      allExpanded = false;
+      state.expandedRows.clear();
       applyFilters();
-      expandToggle.textContent = '↕️ Expand All';
-      expandToggle.title = 'Expand all visible event rows';
+      updateExpandToggleButton();
     });
 
-    // ── Expose filter controls for sidebar navigation ─────────────────
+    // ═══════════════════════════════════════════════════════════════════════
+    // EXPAND ALL / COLLAPSE ALL TOGGLE
+    // ═══════════════════════════════════════════════════════════════════════
+    const updateExpandToggleButton = () => {
+      if (state.expandedRows.size > 0) {
+        expandToggle.textContent = '↕️ Collapse All';
+        expandToggle.title = 'Collapse all expanded event rows';
+      } else {
+        expandToggle.textContent = '↕️ Expand All';
+        expandToggle.title = 'Expand all visible event rows';
+      }
+    };
+
+    const expandAllVisible = () => {
+      state.expandedRows.clear();
+      const rowCount = getVisibleRowCount();
+      for (let virtualIdx = 0; virtualIdx < rowCount; virtualIdx++) {
+        const dataIdx = getDataIndex(virtualIdx);
+        if (dataIdx !== undefined) {
+          state.expandedRows.add(dataIdx);
+        }
+      }
+      state.renderedRange = { start: -1, end: -1 };
+      renderVisibleRows();
+      updateExpandToggleButton();
+    };
+
+    const collapseAllVisible = () => {
+      state.expandedRows.clear();
+      state.renderedRange = { start: -1, end: -1 };
+      renderVisibleRows();
+      updateExpandToggleButton();
+    };
+
+    // Expand toggle button click handler
+    expandToggle.addEventListener('click', () => {
+      if (state.expandedRows.size > 0) {
+        collapseAllVisible();
+      } else {
+        expandAllVisible();
+      }
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // EXPOSE API FOR EXTERNAL ACCESS (IOC navigation)
+    // ═══════════════════════════════════════════════════════════════════════
     wrap._evtxFilters = {
       searchInput,
       eidInput,
       levelSelect,
-      applyFilters: () => applyFilters(),
-      expandAll: () => expandAllVisible(),
+      applyFilters,
       scrollContainer: scr,
+      scrollToRow,
+      state,
+      getVisibleRowCount,
+      getDataIndex,
+      getVirtualIndex,
+      expandAll: expandAllVisible,
+      collapseAll: collapseAllVisible,
+      forceRender: () => {
+        state.renderedRange = { start: -1, end: -1 };
+        renderVisibleRows();
+      }
     };
 
-    // ── Expand All / Collapse All toggle handler ───────────────────────
-    expandToggle.addEventListener('click', () => {
-      allExpanded = !allExpanded;
-      for (const r of rows) {
-        if (!r.visible) continue;
-        if (allExpanded) {
-          // Build detail pane lazily on first open
-          if (!r.detailTd.hasChildNodes()) {
-            this._buildDetailPane(r.detailTd, r.ev);
-          }
-          r.detailTr.style.display = '';
-          r.tr.classList.add('evtx-row-selected');
-        } else {
-          r.detailTr.style.display = 'none';
-          r.tr.classList.remove('evtx-row-selected');
-        }
-      }
-      expandToggle.textContent = allExpanded ? '↔️ Collapse All' : '↕️ Expand All';
-      expandToggle.title = allExpanded ? 'Collapse all expanded event rows' : 'Expand all visible event rows';
-    });
+    // ═══════════════════════════════════════════════════════════════════════
+    // INITIAL RENDER
+    // ═══════════════════════════════════════════════════════════════════════
+    renderVisibleRows();
 
     return wrap;
   }

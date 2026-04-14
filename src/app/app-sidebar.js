@@ -903,8 +903,10 @@ Object.assign(App.prototype, {
           filters.eidInput.value = eidMatch[1];
           filters.levelSelect.value = '';
           filters.applyFilters();
-          // Auto-expand all filtered results
-          if (filters.expandAll) filters.expandAll();
+          // Expand ALL filtered rows for IOC navigation
+          if (filters.expandAll) {
+            filters.expandAll();
+          }
           // Scroll the EVTX table into view
           filters.scrollContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
           // Flash the filter bar to draw attention
@@ -936,8 +938,10 @@ Object.assign(App.prototype, {
         filters.searchInput.value = searchTerm;
         filters.levelSelect.value = '';
         filters.applyFilters();
-        // Auto-expand all filtered results
-        if (filters.expandAll) filters.expandAll();
+        // Expand ALL filtered rows for IOC navigation
+        if (filters.expandAll) {
+          filters.expandAll();
+        }
         filters.scrollContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
         const filterBar = evtxView.querySelector('.evtx-filter-bar');
         if (filterBar) {
@@ -961,63 +965,31 @@ Object.assign(App.prototype, {
         // Truncate very long values
         if (searchTerm.length > 80) searchTerm = searchTerm.substring(0, 80);
 
-        // Helper to scroll to row, auto-expand, and highlight
-        const scrollExpandAndHighlight = (r, term) => {
-          // Auto-expand the row if not already expanded
-          if (filters.expandRow && !r.tr.classList.contains('csv-row-selected')) {
-            filters.expandRow(r);
-          }
-
-          // Scroll to the row (smooth scroll)
-          r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-          // Apply 5-second highlight using inline styles (more reliable than CSS classes)
-          const cells = r.tr.querySelectorAll('td');
-          cells.forEach(cell => {
-            cell.style.transition = 'background 1s ease-out';
-            cell.style.background = 'rgba(34, 211, 238, 0.4)';
-          });
-          // Also highlight the detail row if expanded
-          if (r.detailTr && r.detailTr.style.display !== 'none') {
-            r.detailTr.style.transition = 'background 1s ease-out';
-            r.detailTr.style.background = 'rgba(34, 211, 238, 0.15)';
-          }
-          // Fade out after 4 seconds (leaves 1s for transition)
-          setTimeout(() => {
-            cells.forEach(cell => {
-              cell.style.background = '';
-            });
-            if (r.detailTr) {
-              r.detailTr.style.background = '';
-            }
-          }, 4000);
-          // Clean up transition style after animation completes
-          setTimeout(() => {
-            cells.forEach(cell => {
-              cell.style.transition = '';
-            });
-            if (r.detailTr) {
-              r.detailTr.style.transition = '';
-            }
-          }, 5000);
-        };
-
-        // Find and scroll to matching row
+        // Find matching row and use virtual scrolling API
         const term = searchTerm.toLowerCase();
         for (const r of filters.dataRows) {
           if (r.searchText && r.searchText.includes(term)) {
-            scrollExpandAndHighlight(r, term);
+            // Use the new scrollToRow method for virtual scrolling
+            if (filters.scrollToRow) {
+              filters.scrollToRow(r.dataIndex, true);
+            } else {
+              // Fallback for non-virtual scrolling (shouldn't happen)
+              filters.expandRow(r);
+            }
             return;
           }
         }
 
         // Fallback: if exact row match not found, try partial match on first few chars
-        // This handles cases where the IOC might be truncated or formatted differently
         const shortTerm = term.length > 20 ? term.substring(0, 20) : term;
         if (shortTerm !== term) {
           for (const r of filters.dataRows) {
             if (r.searchText && r.searchText.includes(shortTerm)) {
-              scrollExpandAndHighlight(r, shortTerm);
+              if (filters.scrollToRow) {
+                filters.scrollToRow(r.dataIndex, true);
+              } else {
+                filters.expandRow(r);
+              }
               return;
             }
           }
@@ -1373,89 +1345,93 @@ Object.assign(App.prototype, {
 
     if (!targetRow) return;
 
-    // Auto-expand the row if not already expanded
-    if (targetRow.detailTr.style.display === 'none') {
-      if (!targetRow.detailTd.hasChildNodes()) {
-        filters.buildDetailPane(targetRow.detailTd, targetRow.rowData);
-      }
-      targetRow.detailTr.style.display = '';
-      targetRow.tr.classList.add('csv-row-selected');
-    }
-
-    // Scroll the row into view
-    targetRow.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    // Add row highlight
-    targetRow.tr.classList.add('csv-yara-row-highlight');
-
-    // Calculate the match position relative to row start
-    const rowStart = targetRow.offsetStart;
     const matchText = sourceText.substring(offset, offset + length);
+    const dataIdx = targetRow.dataIndex;
 
-    // Find and highlight the match in the detail pane
-    const detailPane = targetRow.detailTd.querySelector('.csv-detail-pane');
-    if (detailPane) {
-      const detailVals = detailPane.querySelectorAll('.csv-detail-val');
-      let found = false;
-      for (const valEl of detailVals) {
-        if (found) break;
-        const cellText = valEl.textContent;
-        
-        // Try exact match first, then case-insensitive (for nocase YARA rules)
-        let matchIdx = cellText.indexOf(matchText);
-        let actualMatch = matchText;
-        if (matchIdx === -1) {
-          matchIdx = cellText.toLowerCase().indexOf(matchText.toLowerCase());
-          if (matchIdx !== -1) {
-            actualMatch = cellText.substring(matchIdx, matchIdx + matchText.length);
+    // Use virtual scrolling API to scroll to and expand the row
+    if (filters.scrollToRow) {
+      filters.scrollToRow(dataIdx, false); // Don't use default highlight, we'll do YARA-specific highlight
+
+      // Wait for virtual scroll to render, then highlight the match
+      setTimeout(() => {
+        // Find the rendered row element
+        const tbody = csvView.querySelector('tbody');
+        const tr = tbody && tbody.querySelector(`tr[data-idx="${dataIdx}"]`);
+        if (!tr) return;
+
+        // Add row highlight
+        tr.classList.add('csv-yara-row-highlight');
+
+        // Find the detail row (next sibling)
+        const detailTr = tr.nextElementSibling;
+        if (!detailTr || !detailTr.classList.contains('csv-detail-row')) return;
+
+        // Find and highlight the match in the detail pane
+        const detailPane = detailTr.querySelector('.csv-detail-pane');
+        if (detailPane) {
+          const detailVals = detailPane.querySelectorAll('.csv-detail-val');
+          let found = false;
+          for (const valEl of detailVals) {
+            if (found) break;
+            const cellText = valEl.textContent;
+            
+            // Try exact match first, then case-insensitive (for nocase YARA rules)
+            let matchIdx = cellText.indexOf(matchText);
+            let actualMatch = matchText;
+            if (matchIdx === -1) {
+              matchIdx = cellText.toLowerCase().indexOf(matchText.toLowerCase());
+              if (matchIdx !== -1) {
+                actualMatch = cellText.substring(matchIdx, matchIdx + matchText.length);
+              }
+            }
+            
+            if (matchIdx !== -1) {
+              // Found the match - highlight it
+              const before = cellText.substring(0, matchIdx);
+              const matched = cellText.substring(matchIdx, matchIdx + actualMatch.length);
+              const after = cellText.substring(matchIdx + actualMatch.length);
+
+              // Escape HTML entities
+              const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+              valEl.innerHTML = esc(before) +
+                `<mark class="csv-yara-highlight csv-yara-highlight-flash">${esc(matched)}</mark>` +
+                esc(after);
+
+              // Scroll the highlighted element into view within the detail pane
+              const mark = valEl.querySelector('.csv-yara-highlight');
+              if (mark) {
+                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+              found = true;
+            }
           }
         }
-        
-        if (matchIdx !== -1) {
-          // Found the match - highlight it
-          const before = cellText.substring(0, matchIdx);
-          const matched = cellText.substring(matchIdx, matchIdx + actualMatch.length);
-          const after = cellText.substring(matchIdx + actualMatch.length);
 
-          // Escape HTML entities
-          const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-          valEl.innerHTML = esc(before) +
-            `<mark class="csv-yara-highlight csv-yara-highlight-flash">${esc(matched)}</mark>` +
-            esc(after);
-
-          // Scroll the highlighted element into view within the detail pane
-          const mark = valEl.querySelector('.csv-yara-highlight');
-          if (mark) {
-            mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Remove highlights after animation
+        setTimeout(() => {
+          tr.classList.remove('csv-yara-row-highlight');
+          const marks = csvView.querySelectorAll('mark.csv-yara-highlight');
+          for (const mark of marks) {
+            mark.classList.remove('csv-yara-highlight-flash');
           }
-          found = true;
-        }
-      }
+        }, 3000);
+
+        // Clean up mark elements after longer delay
+        setTimeout(() => {
+          const marks = csvView.querySelectorAll('mark.csv-yara-highlight');
+          for (const mark of marks) {
+            const textNode = document.createTextNode(mark.textContent);
+            mark.parentNode.replaceChild(textNode, mark);
+          }
+          // Normalize
+          const detailVals = csvView.querySelectorAll('.csv-detail-val');
+          for (const cell of detailVals) {
+            cell.normalize();
+          }
+        }, 5000);
+      }, 400); // Wait for virtual scroll to complete
     }
-
-    // Remove highlights after animation
-    setTimeout(() => {
-      targetRow.tr.classList.remove('csv-yara-row-highlight');
-      const marks = csvView.querySelectorAll('mark.csv-yara-highlight');
-      for (const mark of marks) {
-        mark.classList.remove('csv-yara-highlight-flash');
-      }
-    }, 3000);
-
-    // Clean up mark elements after longer delay
-    setTimeout(() => {
-      const marks = csvView.querySelectorAll('mark.csv-yara-highlight');
-      for (const mark of marks) {
-        const textNode = document.createTextNode(mark.textContent);
-        mark.parentNode.replaceChild(textNode, mark);
-      }
-      // Normalize
-      const detailVals = csvView.querySelectorAll('.csv-detail-val');
-      for (const cell of detailVals) {
-        cell.normalize();
-      }
-    }, 5000);
   },
 
   // ── Update overall risk from encoded content severity ──────────────────

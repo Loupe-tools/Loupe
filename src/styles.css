@@ -2240,22 +2240,10 @@ body.dark .csv-detail-row td {
   font-size: 12px;
   line-height: 1.6;
   border-left: 3px solid #6366f1;
-  animation: csvSlideDown .15s ease-out;
 }
 
 body.dark .csv-detail-pane {
   border-left-color: #22d3ee;
-}
-
-@keyframes csvSlideDown {
-  from {
-    opacity: 0;
-    max-height: 0;
-  }
-  to {
-    opacity: 1;
-    max-height: 600px;
-  }
 }
 
 .csv-detail-pane h4 {
@@ -4370,23 +4358,10 @@ body.dark .evtx-detail-row td {
   font-size: 12px;
   line-height: 1.6;
   border-left: 3px solid #6366f1;
-  animation: evtxSlideDown .15s ease-out;
 }
 
 body.dark .evtx-detail-pane {
   border-left-color: #22d3ee;
-}
-
-@keyframes evtxSlideDown {
-  from {
-    opacity: 0;
-    max-height: 0;
-  }
-
-  to {
-    opacity: 1;
-    max-height: 600px;
-  }
 }
 
 .evtx-detail-pane h4 {

@@ -1,12 +1,22 @@
 'use strict';
 // ════════════════════════════════════════════════════════════════════════════
 // csv-renderer.js — Renders .csv and .tsv files as styled tables
-// Features: auto-detect column widths, click-to-expand detail panes (EVTX-style)
+// Features: virtual scrolling (50k rows), click-to-expand detail panes,
+//           dynamic row heights, auto-detect column widths, IOC navigation
 // No external dependencies beyond the browser DOM.
 // ════════════════════════════════════════════════════════════════════════════
 class CsvRenderer {
   render(text, fileName) {
-    const wrap = document.createElement('div'); wrap.className = 'csv-view';
+    // ═══════════════════════════════════════════════════════════════════════
+    // CONFIGURATION
+    // ═══════════════════════════════════════════════════════════════════════
+    const ROW_HEIGHT = 32;               // Base row height in pixels
+    const DEFAULT_DETAIL_HEIGHT = 200;   // Fallback detail pane height before measurement
+    const BUFFER_ROWS = 20;              // Extra rows to render above/below viewport
+    const MAX_ROWS = 50000;              // Maximum rows to process
+
+    const wrap = document.createElement('div');
+    wrap.className = 'csv-view';
     const ext = (fileName || '').split('.').pop().toLowerCase();
     const delim = ext === 'tsv' ? '\t' : this._delim(text);
     const { rows, rowOffsets } = this._parse(text, delim);
@@ -18,13 +28,32 @@ class CsvRenderer {
     // Data row offsets (skip header row offset)
     const dataRowOffsets = rowOffsets.slice(1);
 
+    // Limit data rows
+    const totalDataRows = dataRowsRaw.length;
+    const limitedDataRows = dataRowsRaw.slice(0, MAX_ROWS);
+    const limitedOffsets = dataRowOffsets.slice(0, MAX_ROWS);
+
     // Calculate reasonable column widths based on content
-    const colWidths = this._calcColumnWidths(rows);
+    const colWidths = this._calcColumnWidths([headerRow, ...limitedDataRows.slice(0, 100)]);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // VIRTUAL SCROLL STATE
+    // ═══════════════════════════════════════════════════════════════════════
+    const state = {
+      expandedRows: new Set(),           // Set of expanded row data indices (0 or 1 items)
+      detailPaneCache: new Map(),        // dataIdx -> detail pane DOM element
+      detailHeightCache: new Map(),      // dataIdx -> measured height in pixels
+      filteredIndices: null,             // null = no filter, array = indices of matching rows
+      renderedRange: { start: -1, end: -1 }
+    };
+
+    // Pre-compute search text for all rows (for filtering)
+    const rowSearchText = limitedDataRows.map(row => row.join(' ').toLowerCase());
 
     // ── Info bar ─────────────────────────────────────────────────────────
     const info = document.createElement('div'); info.className = 'csv-info';
     const dn = delim === '\t' ? 'Tab' : delim === ',' ? 'Comma' : delim === ';' ? 'Semicolon' : 'Pipe';
-    info.textContent = `${rows.length} rows × ${headerRow.length} columns · delimiter: ${dn}`;
+    info.textContent = `${rows.length.toLocaleString()} rows × ${headerRow.length} columns · delimiter: ${dn}`;
     wrap.appendChild(info);
 
     // ── Filter bar ───────────────────────────────────────────────────────
@@ -45,24 +74,21 @@ class CsvRenderer {
     const filterStatus = document.createElement('span');
     filterStatus.className = 'csv-filter-status';
 
-    // Expand All / Collapse All toggle button
-    const expandToggle = document.createElement('button');
-    expandToggle.className = 'tb-btn csv-export-btn csv-expand-toggle';
-    expandToggle.textContent = '↕️ Expand All';
-    expandToggle.title = 'Expand all visible rows';
-
     filterBar.appendChild(filterInput);
     filterBar.appendChild(clearBtn);
     filterBar.appendChild(filterStatus);
-    filterBar.appendChild(expandToggle);
     wrap.appendChild(filterBar);
 
-    // ── Table ────────────────────────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════
+    // SCROLL CONTAINER & TABLE (simple structure for virtual scrolling)
+    // ═══════════════════════════════════════════════════════════════════════
     const scr = document.createElement('div');
     scr.className = 'csv-scroll';
-    scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 200px)';
+    scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 200px);';
 
-    const tbl = document.createElement('table'); tbl.className = 'xlsx-table csv-table';
+    const tbl = document.createElement('table');
+    tbl.className = 'xlsx-table csv-table';
+    tbl.style.cssText = 'width:100%;table-layout:auto;';
 
     // ── Header row ───────────────────────────────────────────────────────
     const thead = document.createElement('thead');
@@ -91,157 +117,356 @@ class CsvRenderer {
     thead.appendChild(headerTr);
     tbl.appendChild(thead);
 
-    // ── Data rows ────────────────────────────────────────────────────────
+    // ── Table body (virtual rows will be rendered here) ──────────────────
     const tbody = document.createElement('tbody');
-    const dataRows = []; // Track { tr, detailTr, detailTd, rowData, visible }
-    let allExpanded = false;
-    const limit = Math.min(dataRowsRaw.length, 10000);
+    tbl.appendChild(tbody);
 
-    for (let ri = 0; ri < limit; ri++) {
-      const row = dataRowsRaw[ri];
+    scr.appendChild(tbl);
+    wrap.appendChild(scr);
+
+    // Truncation warning (if needed)
+    if (totalDataRows > MAX_ROWS) {
+      const note = document.createElement('div');
+      note.className = 'csv-info';
+      note.textContent = `⚠ Showing first ${MAX_ROWS.toLocaleString()} of ${totalDataRows.toLocaleString()} rows`;
+      wrap.appendChild(note);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HELPER: Get visible row count
+    // ═══════════════════════════════════════════════════════════════════════
+    const getVisibleRowCount = () => {
+      return state.filteredIndices ? state.filteredIndices.length : limitedDataRows.length;
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HELPER: Get data index for virtual index
+    // ═══════════════════════════════════════════════════════════════════════
+    const getDataIndex = (virtualIdx) => {
+      return state.filteredIndices ? state.filteredIndices[virtualIdx] : virtualIdx;
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // HELPER: Get virtual index for data index
+    // ═══════════════════════════════════════════════════════════════════════
+    const getVirtualIndex = (dataIdx) => {
+      if (!state.filteredIndices) return dataIdx;
+      return state.filteredIndices.indexOf(dataIdx);
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // DYNAMIC HEIGHT HELPERS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // Get measured or estimated detail height for an expanded row
+    const getDetailHeight = (dataIdx) => {
+      return state.detailHeightCache.has(dataIdx)
+        ? state.detailHeightCache.get(dataIdx)
+        : DEFAULT_DETAIL_HEIGHT;
+    };
+
+    // Get total height for a row (base + detail if expanded)
+    const getRowHeight = (dataIdx) => {
+      return state.expandedRows.has(dataIdx)
+        ? ROW_HEIGHT + getDetailHeight(dataIdx)
+        : ROW_HEIGHT;
+    };
+
+    // Calculate cumulative height up to (not including) virtualIdx
+    const calculateHeightUpTo = (virtualIdx) => {
+      let height = virtualIdx * ROW_HEIGHT;
+      
+      for (const expandedDataIdx of state.expandedRows) {
+        const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
+        if (expandedVirtualIdx >= 0 && expandedVirtualIdx < virtualIdx) {
+          height += getDetailHeight(expandedDataIdx);
+        }
+      }
+      
+      return height;
+    };
+
+    // Get total scrollable height
+    const getTotalHeight = () => {
+      const rowCount = getVisibleRowCount();
+      let height = rowCount * ROW_HEIGHT;
+      
+      for (const expandedDataIdx of state.expandedRows) {
+        const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
+        if (expandedVirtualIdx >= 0 && expandedVirtualIdx < rowCount) {
+          height += getDetailHeight(expandedDataIdx);
+        }
+      }
+      
+      return height;
+    };
+
+    // Find virtual row index at a given scroll position
+    const findRowAtScrollPosition = (scrollTop) => {
+      let accumulatedHeight = 0;
+      const rowCount = getVisibleRowCount();
+      
+      for (let virtualIdx = 0; virtualIdx < rowCount; virtualIdx++) {
+        const dataIdx = getDataIndex(virtualIdx);
+        const rowHeight = getRowHeight(dataIdx);
+        
+        if (accumulatedHeight + rowHeight > scrollTop) {
+          return virtualIdx;
+        }
+        accumulatedHeight += rowHeight;
+      }
+      
+      return Math.max(0, rowCount - 1);
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // CREATE ROW ELEMENTS
+    // ═══════════════════════════════════════════════════════════════════════
+    const createRowElements = (dataIdx, virtualIdx) => {
+      const row = limitedDataRows[dataIdx];
       const tr = document.createElement('tr');
-      tr.dataset.idx = ri;
+      tr.dataset.idx = dataIdx;
+      tr.dataset.vidx = virtualIdx;
+
+      const isExpanded = state.expandedRows.has(dataIdx);
 
       // Row number with expand icon
       const tdNum = document.createElement('td');
       tdNum.className = 'xlsx-row-header';
-      tdNum.innerHTML = `<span class="csv-expand-icon">▶</span> ${ri + 1}`;
+      tdNum.innerHTML = `<span class="csv-expand-icon">${isExpanded ? '▼' : '▶'}</span> ${dataIdx + 1}`;
       tr.appendChild(tdNum);
-
-      // Build search text for filtering
-      const rowText = [];
 
       // Data cells with truncation
       row.forEach((cell, ci) => {
         const td = document.createElement('td');
         td.className = 'xlsx-cell csv-cell-truncate';
 
-        // Apply calculated column width
         if (colWidths[ci]) {
           td.style.setProperty('--csv-col-width', colWidths[ci] + 'px');
         }
 
-        // Truncate display text for very long cells (show first 80 chars)
         const displayText = cell.length > 80 ? cell.substring(0, 80) + '…' : cell;
         td.textContent = displayText;
         td.title = cell.length > 80 ? 'Click row to see full content' : cell;
 
-        // Right-align numeric values
         if (cell.trim() && !isNaN(parseFloat(cell))) {
           td.style.textAlign = 'right';
         }
 
         tr.appendChild(td);
-        rowText.push(cell.toLowerCase());
       });
 
-      tbody.appendChild(tr);
+      // Mark as selected if expanded
+      if (isExpanded) {
+        tr.classList.add('csv-row-selected');
+      }
 
-      // ── Detail row (hidden by default) ─────────────────────────────────
+      // Detail row
       const detailTr = document.createElement('tr');
       detailTr.className = 'csv-detail-row';
-      detailTr.style.display = 'none';
+      detailTr.dataset.idx = dataIdx;  // For height measurement
+      detailTr.style.display = isExpanded ? '' : 'none';
       const detailTd = document.createElement('td');
-      detailTd.colSpan = headerRow.length + 1; // +1 for row number column
+      detailTd.colSpan = headerRow.length + 1;
+
+      // Use cached detail pane or build new one if expanded
+      if (isExpanded) {
+        if (!state.detailPaneCache.has(dataIdx)) {
+          const pane = this._buildDetailPaneElement(headerRow, row);
+          state.detailPaneCache.set(dataIdx, pane);
+        }
+        detailTd.appendChild(state.detailPaneCache.get(dataIdx).cloneNode(true));
+      }
       detailTr.appendChild(detailTd);
-      tbody.appendChild(detailTr);
 
-      // Store row reference for filtering, expansion, and YARA match highlighting
-      const rowObj = {
-        tr,
-        detailTr,
-        detailTd,
-        rowData: row,
-        searchText: rowText.join(' '),
-        visible: true,
-        // Store offset range for YARA match lookup (offset into raw text)
-        offsetStart: dataRowOffsets[ri] ? dataRowOffsets[ri].start : 0,
-        offsetEnd: dataRowOffsets[ri] ? dataRowOffsets[ri].end : 0
-      };
-      dataRows.push(rowObj);
-
-      // ── Click handler to expand/collapse ───────────────────────────────
+      // Click handler
       tr.addEventListener('click', () => {
-        const isOpen = detailTr.style.display !== 'none';
-        if (isOpen) {
-          detailTr.style.display = 'none';
+        if (state.expandedRows.has(dataIdx)) {
+          // Collapse this row
+          state.expandedRows.delete(dataIdx);
           tr.classList.remove('csv-row-selected');
+          const icon = tr.querySelector('.csv-expand-icon');
+          if (icon) icon.textContent = '▶';
+          detailTr.style.display = 'none';
+          
+          // Force re-render to update spacer heights
+          state.renderedRange = { start: -1, end: -1 };
+          renderVisibleRows();
         } else {
-          // Build detail pane lazily on first open
-          if (!detailTd.hasChildNodes()) {
-            this._buildDetailPane(detailTd, headerRow, row);
-          }
-          detailTr.style.display = '';
+          // Collapse any other expanded row first (only one expanded at a time)
+          state.expandedRows.clear();
+          
+          // Expand this row
+          state.expandedRows.add(dataIdx);
           tr.classList.add('csv-row-selected');
+          const icon = tr.querySelector('.csv-expand-icon');
+          if (icon) icon.textContent = '▼';
+
+          // Build detail pane if not cached
+          if (!state.detailPaneCache.has(dataIdx)) {
+            const pane = this._buildDetailPaneElement(headerRow, row);
+            state.detailPaneCache.set(dataIdx, pane);
+          }
+          detailTd.innerHTML = '';
+          detailTd.appendChild(state.detailPaneCache.get(dataIdx).cloneNode(true));
+          detailTr.style.display = '';
+
+          // Scroll to the left to show the detail pane
+          scr.scrollLeft = 0;
+          
+          // Force re-render to update DOM structure
+          state.renderedRange = { start: -1, end: -1 };
+          renderVisibleRows();
         }
       });
-    }
 
-    tbl.appendChild(tbody);
-    scr.appendChild(tbl);
-    wrap.appendChild(scr);
+      return { tr, detailTr, detailTd, dataIdx };
+    };
 
-    if (dataRowsRaw.length > limit) {
-      const note = document.createElement('div');
-      note.className = 'csv-info';
-      note.textContent = `⚠ Showing first ${limit.toLocaleString()} of ${dataRowsRaw.length.toLocaleString()} rows`;
-      wrap.appendChild(note);
-    }
+    // ═══════════════════════════════════════════════════════════════════════
+    // CREATE SPACER ROW (for virtual scrolling)
+    // ═══════════════════════════════════════════════════════════════════════
+    const createSpacerRow = (height) => {
+      const tr = document.createElement('tr');
+      tr.className = 'csv-spacer-row';
+      tr.setAttribute('aria-hidden', 'true');
+      const td = document.createElement('td');
+      td.colSpan = headerRow.length + 1;
+      td.style.cssText = `height:${height}px;padding:0;border:none;background:transparent;`;
+      tr.appendChild(td);
+      return tr;
+    };
 
-    // ── Filter logic ─────────────────────────────────────────────────────
-    const applyFilter = () => {
-      const query = filterInput.value.toLowerCase().trim();
-      let visibleCount = 0;
+    // ═══════════════════════════════════════════════════════════════════════
+    // RENDER VISIBLE ROWS (Virtual Scrolling Core)
+    // ═══════════════════════════════════════════════════════════════════════
+    const renderVisibleRows = () => {
+      const scrollTop = scr.scrollTop;
+      const viewportHeight = scr.clientHeight || 600;
 
-      if (!query) {
-        // Show all rows, respect current expand/collapse state
-        for (const r of dataRows) {
-          r.tr.style.display = '';
-          r.visible = true;
-          // Respect allExpanded state
-          if (allExpanded) {
-            if (!r.detailTd.hasChildNodes()) {
-              this._buildDetailPane(r.detailTd, headerRow, r.rowData);
-            }
-            r.detailTr.style.display = '';
-            r.tr.classList.add('csv-row-selected');
-          } else {
-            r.detailTr.style.display = 'none';
-            r.tr.classList.remove('csv-row-selected');
-          }
-          visibleCount++;
-        }
-        clearBtn.style.display = 'none';
-        filterStatus.textContent = '';
+      const rowCount = getVisibleRowCount();
+      if (rowCount === 0) {
+        tbody.replaceChildren();
+        state.renderedRange = { start: 0, end: 0 };
         return;
       }
 
-      // Filter rows
-      for (const r of dataRows) {
-        const matches = r.searchText.includes(query);
-        r.tr.style.display = matches ? '' : 'none';
-        r.visible = matches;
-        if (matches) {
-          visibleCount++;
-          // Respect allExpanded state for visible rows
-          if (allExpanded) {
-            if (!r.detailTd.hasChildNodes()) {
-              this._buildDetailPane(r.detailTd, headerRow, r.rowData);
-            }
-            r.detailTr.style.display = '';
-            r.tr.classList.add('csv-row-selected');
-          } else {
-            r.detailTr.style.display = 'none';
-            r.tr.classList.remove('csv-row-selected');
-          }
-        } else {
-          r.detailTr.style.display = 'none';
-          r.tr.classList.remove('csv-row-selected');
+      // Find visible range using dynamic height calculations
+      const firstVisibleRow = findRowAtScrollPosition(scrollTop);
+      const startIdx = Math.max(0, firstVisibleRow - BUFFER_ROWS);
+      
+      const lastVisibleRow = findRowAtScrollPosition(scrollTop + viewportHeight);
+      const endIdx = Math.min(rowCount, lastVisibleRow + BUFFER_ROWS + 1);
+
+      // Fast path: if range hasn't changed, nothing to do
+      if (startIdx === state.renderedRange.start && endIdx === state.renderedRange.end) {
+        return;
+      }
+
+      // Auto-collapse rows that are FAR outside the visible range (use 2x buffer)
+      // This prevents premature collapse when scrolling small amounts
+      const collapseBuffer = BUFFER_ROWS * 2;
+      for (const expandedDataIdx of state.expandedRows) {
+        const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
+        if (expandedVirtualIdx < startIdx - collapseBuffer || 
+            expandedVirtualIdx >= endIdx + collapseBuffer) {
+          state.expandedRows.delete(expandedDataIdx);
         }
       }
 
-      clearBtn.style.display = '';
-      filterStatus.textContent = `${visibleCount} of ${dataRows.length} rows`;
+      // Build new content in fragment
+      const fragment = document.createDocumentFragment();
+
+      // Top spacer with dynamic height
+      const topSpacerHeight = calculateHeightUpTo(startIdx);
+      if (topSpacerHeight > 0) {
+        fragment.appendChild(createSpacerRow(topSpacerHeight));
+      }
+
+      // Render visible rows
+      for (let virtualIdx = startIdx; virtualIdx < endIdx; virtualIdx++) {
+        const dataIdx = getDataIndex(virtualIdx);
+        if (dataIdx === undefined || dataIdx >= limitedDataRows.length) continue;
+
+        const { tr, detailTr } = createRowElements(dataIdx, virtualIdx);
+        fragment.appendChild(tr);
+        fragment.appendChild(detailTr);
+      }
+
+      // Bottom spacer with dynamic height
+      const totalHeight = getTotalHeight();
+      const heightUpToEnd = calculateHeightUpTo(endIdx);
+      const bottomSpacerHeight = Math.max(0, totalHeight - heightUpToEnd);
+      if (bottomSpacerHeight > 0) {
+        fragment.appendChild(createSpacerRow(bottomSpacerHeight));
+      }
+
+      // Atomic replacement - no intermediate empty state
+      tbody.replaceChildren(fragment);
+      state.renderedRange = { start: startIdx, end: endIdx };
+
+      // Measure heights of expanded rows after render
+      requestAnimationFrame(() => {
+        let heightChanged = false;
+        for (const expandedDataIdx of state.expandedRows) {
+          if (!state.detailHeightCache.has(expandedDataIdx)) {
+            const detailTr = tbody.querySelector(`tr.csv-detail-row[data-idx="${expandedDataIdx}"]`);
+            if (detailTr && detailTr.offsetHeight > 0) {
+              state.detailHeightCache.set(expandedDataIdx, detailTr.offsetHeight);
+              heightChanged = true;
+            }
+          }
+        }
+        // Re-render if heights changed to fix spacers
+        if (heightChanged) {
+          state.renderedRange = { start: -1, end: -1 };
+          renderVisibleRows();
+        }
+      });
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SCROLL HANDLER (throttled with requestAnimationFrame)
+    // ═══════════════════════════════════════════════════════════════════════
+    let scrollRAF = null;
+    let isProgrammaticScroll = false;  // Flag to disable scroll handler during programmatic scroll
+    
+    scr.addEventListener('scroll', () => {
+      if (scrollRAF || isProgrammaticScroll) return;
+      scrollRAF = requestAnimationFrame(() => {
+        renderVisibleRows();
+        scrollRAF = null;
+      });
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FILTER LOGIC
+    // ═══════════════════════════════════════════════════════════════════════
+    const applyFilter = () => {
+      const query = filterInput.value.toLowerCase().trim();
+
+      // Auto-collapse all expanded rows when filter changes
+      state.expandedRows.clear();
+
+      if (!query) {
+        state.filteredIndices = null;
+        clearBtn.style.display = 'none';
+        filterStatus.textContent = '';
+      } else {
+        state.filteredIndices = [];
+        for (let i = 0; i < limitedDataRows.length; i++) {
+          if (rowSearchText[i].includes(query)) {
+            state.filteredIndices.push(i);
+          }
+        }
+        clearBtn.style.display = '';
+        filterStatus.textContent = `${state.filteredIndices.length.toLocaleString()} of ${limitedDataRows.length.toLocaleString()} rows`;
+      }
+
+      // Reset scroll position and re-render
+      scr.scrollTop = 0;
+      state.renderedRange = { start: -1, end: -1 };
+      renderVisibleRows();
     };
 
     const clearFilter = () => {
@@ -249,60 +474,94 @@ class CsvRenderer {
       applyFilter();
     };
 
-    // ── Expand / Collapse All ────────────────────────────────────────────
-    const expandAllVisible = () => {
-      allExpanded = true;
-      for (const r of dataRows) {
-        if (!r.visible) continue;
-        if (!r.detailTd.hasChildNodes()) {
-          this._buildDetailPane(r.detailTd, headerRow, r.rowData);
+    // ═══════════════════════════════════════════════════════════════════════
+    // SCROLL TO ROW (for IOC navigation)
+    // ═══════════════════════════════════════════════════════════════════════
+    const scrollToRow = (dataIdx, highlight = true) => {
+      // Check if row is filtered out
+      let virtualIdx = getVirtualIndex(dataIdx);
+
+      if (virtualIdx === -1 && state.filteredIndices) {
+        // Row is filtered out - clear filter first
+        filterInput.value = '';
+        state.filteredIndices = null;
+        clearBtn.style.display = 'none';
+        filterStatus.textContent = '';
+        virtualIdx = dataIdx;
+      }
+
+      // Collapse all rows first, then expand only the target row
+      state.expandedRows.clear();
+      state.expandedRows.add(dataIdx);
+
+      // Calculate scroll position to center the row (using dynamic heights)
+      const viewportHeight = scr.clientHeight || 600;
+      const targetTop = calculateHeightUpTo(virtualIdx);
+      const scrollTarget = Math.max(0, targetTop - viewportHeight / 2);
+
+      // Disable scroll handler during programmatic scroll to prevent glitchy re-renders
+      isProgrammaticScroll = true;
+
+      // Scroll with smooth animation
+      scr.scrollTo({
+        top: scrollTarget,
+        left: 0,  // Scroll to the left to show detail pane
+        behavior: 'smooth'
+      });
+
+      // Wait for scroll animation to complete, then re-render and highlight
+      setTimeout(() => {
+        // Re-enable scroll handler
+        isProgrammaticScroll = false;
+        
+        // Force full re-render at final position
+        state.renderedRange = { start: -1, end: -1 };
+        renderVisibleRows();
+
+        // Find and highlight the row
+        if (highlight) {
+          const tr = tbody.querySelector(`tr[data-idx="${dataIdx}"]`);
+          if (tr) {
+            tr.classList.add('csv-row-highlight');
+            // Also apply highlight to cells for better visibility
+            const cells = tr.querySelectorAll('td');
+            cells.forEach(cell => {
+              cell.style.transition = 'background 0.3s ease-out';
+              cell.style.background = 'rgba(34, 211, 238, 0.4)';
+            });
+            setTimeout(() => {
+              tr.classList.remove('csv-row-highlight');
+              cells.forEach(cell => {
+                cell.style.background = '';
+              });
+            }, 2000);
+            setTimeout(() => {
+              cells.forEach(cell => {
+                cell.style.transition = '';
+              });
+            }, 2500);
+          }
         }
-        r.detailTr.style.display = '';
-        r.tr.classList.add('csv-row-selected');
-      }
-      expandToggle.textContent = '↔️ Collapse All';
-      expandToggle.title = 'Collapse all expanded rows';
+      }, 400);  // Slightly longer timeout to ensure smooth scroll completes
     };
 
-    const collapseAllVisible = () => {
-      allExpanded = false;
-      for (const r of dataRows) {
-        r.detailTr.style.display = 'none';
-        r.tr.classList.remove('csv-row-selected');
-      }
-      expandToggle.textContent = '↕️ Expand All';
-      expandToggle.title = 'Expand all visible rows';
-    };
-
-    expandToggle.addEventListener('click', () => {
-      if (allExpanded) {
-        collapseAllVisible();
-      } else {
-        expandAllVisible();
-      }
-    });
-
-    // ── Scroll to first match and highlight it ───────────────────────────
-    const scrollToFirstMatch = () => {
-      for (const r of dataRows) {
-        if (r.visible && r.tr.style.display !== 'none') {
-          r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          r.tr.classList.add('csv-row-highlight');
-          setTimeout(() => r.tr.classList.remove('csv-row-highlight'), 2000);
-          break;
-        }
-      }
-    };
-
-    // ── Expand a specific row (for IOC navigation) ───────────────────────
+    // ═══════════════════════════════════════════════════════════════════════
+    // EXPAND A SPECIFIC ROW (for external API)
+    // ═══════════════════════════════════════════════════════════════════════
     const expandRow = (rowObj) => {
-      if (!rowObj.detailTd.hasChildNodes()) {
-        this._buildDetailPane(rowObj.detailTd, headerRow, rowObj.rowData);
-      }
-      rowObj.detailTr.style.display = '';
-      rowObj.tr.classList.add('csv-row-selected');
+      const dataIdx = rowObj.dataIndex !== undefined ? rowObj.dataIndex : rowObj;
+      // Collapse any other expanded row first
+      state.expandedRows.clear();
+      state.expandedRows.add(dataIdx);
+      state.renderedRange = { start: -1, end: -1 };
+      renderVisibleRows();
+      // Scroll left to show detail pane
+      scr.scrollLeft = 0;
     };
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // EVENT LISTENERS
+    // ═══════════════════════════════════════════════════════════════════════
     filterInput.addEventListener('input', applyFilter);
     filterInput.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -311,28 +570,68 @@ class CsvRenderer {
     });
     clearBtn.addEventListener('click', clearFilter);
 
-    // Expose filter controls for external access (IOC navigation, YARA highlighting)
+    // ═══════════════════════════════════════════════════════════════════════
+    // EXPOSE API FOR EXTERNAL ACCESS (IOC navigation, YARA highlighting)
+    // ═══════════════════════════════════════════════════════════════════════
+    // Build dataRows array for compatibility with existing IOC navigation code
+    const dataRowsCompat = limitedDataRows.map((row, i) => ({
+      rowData: row,
+      searchText: rowSearchText[i],
+      offsetStart: limitedOffsets[i] ? limitedOffsets[i].start : 0,
+      offsetEnd: limitedOffsets[i] ? limitedOffsets[i].end : 0,
+      dataIndex: i,
+      // Legacy compatibility - these are now virtual, not real DOM refs
+      tr: null,
+      detailTr: null,
+      detailTd: null,
+      visible: true
+    }));
+
     wrap._csvFilters = {
       filterInput,
       applyFilter,
       clearFilter,
-      scrollToFirstMatch,
+      scrollToFirstMatch: () => {
+        const rowCount = getVisibleRowCount();
+        if (rowCount > 0) {
+          const dataIdx = getDataIndex(0);
+          scrollToRow(dataIdx);
+        }
+      },
       scrollContainer: scr,
-      dataRows,
+      dataRows: dataRowsCompat,
       expandRow,
-      expandAll: expandAllVisible,
-      collapseAll: collapseAllVisible,
+      scrollToRow,
       headerRow,
-      buildDetailPane: (td, row) => this._buildDetailPane(td, headerRow, row)
+      buildDetailPane: (td, row) => {
+        const pane = this._buildDetailPaneElement(headerRow, row);
+        td.appendChild(pane);
+      },
+      // Expose state for advanced use cases
+      state,
+      getVisibleRowCount,
+      getDataIndex,
+      getVirtualIndex,
+      forceRender: () => {
+        state.renderedRange = { start: -1, end: -1 };
+        renderVisibleRows();
+      }
     };
 
-    // Store raw CSV text for proper IOC extraction (avoids cell concatenation issues)
+    // Store raw CSV text for proper IOC extraction
     wrap._rawText = text;
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // INITIAL RENDER
+    // ═══════════════════════════════════════════════════════════════════════
+    renderVisibleRows();
 
     return wrap;
   }
 
-  // ── Calculate reasonable column widths ─────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════════
+  // Calculate reasonable column widths based on content
+  // ════════════════════════════════════════════════════════════════════════
   _calcColumnWidths(rows, maxSampleRows = 100) {
     if (!rows.length) return [];
     const colCount = rows[0].length;
@@ -361,8 +660,10 @@ class CsvRenderer {
     return widths;
   }
 
-  // ── Build detail pane for expanded row ─────────────────────────────────
-  _buildDetailPane(container, headerRow, rowData) {
+  // ════════════════════════════════════════════════════════════════════════
+  // Build detail pane element (only shows non-empty columns)
+  // ════════════════════════════════════════════════════════════════════════
+  _buildDetailPaneElement(headerRow, rowData) {
     const pane = document.createElement('div');
     pane.className = 'csv-detail-pane';
 
@@ -373,10 +674,17 @@ class CsvRenderer {
     const grid = document.createElement('div');
     grid.className = 'csv-detail-grid';
 
-    // Display each column as key-value pair
+    let hasContent = false;
+
+    // Display each column as key-value pair (only if value is non-empty)
     for (let i = 0; i < headerRow.length; i++) {
       const key = headerRow[i] || `Column ${i + 1}`;
       const val = rowData[i] || '';
+
+      // Skip columns with empty values
+      if (!val.trim()) continue;
+
+      hasContent = true;
 
       const keyEl = document.createElement('div');
       keyEl.className = 'csv-detail-key';
@@ -390,11 +698,27 @@ class CsvRenderer {
       grid.appendChild(valEl);
     }
 
+    // Show message if all columns are empty
+    if (!hasContent) {
+      const empty = document.createElement('p');
+      empty.style.cssText = 'color:#888;font-style:italic;margin:0;';
+      empty.textContent = 'All columns are empty for this row.';
+      grid.appendChild(empty);
+    }
+
     pane.appendChild(grid);
+    return pane;
+  }
+
+  // Legacy method for compatibility
+  _buildDetailPane(container, headerRow, rowData) {
+    const pane = this._buildDetailPaneElement(headerRow, rowData);
     container.appendChild(pane);
   }
 
-  /** Auto-detect delimiter by counting occurrences in the first line. */
+  // ════════════════════════════════════════════════════════════════════════
+  // Auto-detect delimiter by counting occurrences in the first line
+  // ════════════════════════════════════════════════════════════════════════
   _delim(text) {
     const line = (text.split('\n')[0] || '');
     const c = { ',': 0, ';': 0, '\t': 0, '|': 0 };
@@ -409,28 +733,21 @@ class CsvRenderer {
     return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
   }
 
-  /**
-   * Parse CSV text into rows. Also tracks row offset ranges for YARA match highlighting.
-   * Offsets are relative to the original text (before line ending normalization).
-   * @param {string} text - Raw CSV text
-   * @param {string} delim - Delimiter character
-   * @returns {{ rows: string[][], rowOffsets: {start: number, end: number}[] }}
-   */
+  // ════════════════════════════════════════════════════════════════════════
+  // Parse CSV text into rows with offset tracking
+  // ════════════════════════════════════════════════════════════════════════
   _parse(text, delim) {
     const rows = [];
     const rowOffsets = [];
-    // Track offsets in original text by scanning for line endings manually
     let offset = 0;
     let lineStart = 0;
     
     while (offset <= text.length) {
-      // Find the next line ending (CR, LF, or CRLF)
       let lineEnd = offset;
       while (lineEnd < text.length && text[lineEnd] !== '\r' && text[lineEnd] !== '\n') {
         lineEnd++;
       }
       
-      // Extract the line content
       const line = text.substring(lineStart, lineEnd);
       
       if (line.trim()) {
@@ -438,13 +755,10 @@ class CsvRenderer {
         rowOffsets.push({ start: lineStart, end: lineEnd });
       }
       
-      // Skip past the line ending
       if (lineEnd < text.length) {
         if (text[lineEnd] === '\r' && text[lineEnd + 1] === '\n') {
-          // CRLF
           offset = lineEnd + 2;
         } else {
-          // CR or LF
           offset = lineEnd + 1;
         }
         lineStart = offset;
@@ -456,6 +770,9 @@ class CsvRenderer {
     return { rows, rowOffsets };
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // Split a CSV line into cells
+  // ════════════════════════════════════════════════════════════════════════
   _split(line, delim) {
     const cells = [];
     let cur = '';
@@ -480,6 +797,9 @@ class CsvRenderer {
     return cells;
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // Security analysis
+  // ════════════════════════════════════════════════════════════════════════
   analyzeForSecurity(text) {
     const f = { risk: 'low', hasMacros: false, macroSize: 0, macroHash: '', autoExec: [], modules: [], externalRefs: [], metadata: {} };
     if (text.split('\n').slice(0, 1000).some(l => l.trim() && /^["']?[=+\-@]/.test(l.trim()))) {
