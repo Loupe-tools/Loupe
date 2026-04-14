@@ -1820,6 +1820,13 @@ class EvtxRenderer {
     }
     filterBar.appendChild(levelSelect);
 
+    // Clear filters button
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'tb-btn csv-export-btn evtx-clear-btn';
+    clearBtn.textContent = '🗑 Clear';
+    clearBtn.title = 'Clear all filters';
+    filterBar.appendChild(clearBtn);
+
     // Expand All / Collapse All toggle button (in filter bar)
     const expandToggle = document.createElement('button');
     expandToggle.className = 'tb-btn csv-export-btn evtx-expand-toggle';
@@ -2021,6 +2028,17 @@ class EvtxRenderer {
     searchInput.addEventListener('input', debouncedFilter);
     eidInput.addEventListener('input', debouncedFilter);
     levelSelect.addEventListener('change', applyFilters);
+
+    // ── Clear filters button handler ───────────────────────────────────
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      eidInput.value = '';
+      levelSelect.value = '';
+      allExpanded = false;
+      applyFilters();
+      expandToggle.textContent = '↕️ Expand All';
+      expandToggle.title = 'Expand all visible event rows';
+    });
 
     // ── Expose filter controls for sidebar navigation ─────────────────
     wrap._evtxFilters = {

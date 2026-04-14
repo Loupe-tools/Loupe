@@ -273,7 +273,7 @@ Object.assign(App.prototype, {
                 // Fall through to plain text
                 const r = new PlainTextRenderer();
                 this.findings = r.analyzeForSecurity(buffer, file.name);
-                docEl = r.render(buffer, file.name);
+                docEl = r.render(buffer, file.name, file.type);
               }
             }
           }
@@ -324,7 +324,7 @@ Object.assign(App.prototype, {
           // Catch-all: plain text or hex dump for any unrecognised format
           const r = new PlainTextRenderer();
           this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
+          docEl = r.render(buffer, file.name, file.type);
         }
       }
 

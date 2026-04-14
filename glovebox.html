@@ -2026,6 +2026,159 @@ body.dark .csv-row-highlight {
   100% { background: transparent; }
 }
 
+/* ── CSV expandable rows (EVTX-style) ───────────────── */
+.csv-table tbody tr {
+  cursor: pointer;
+  transition: background .1s;
+}
+
+.csv-table tbody tr:hover td {
+  background: rgba(34, 211, 238, .06) !important;
+}
+
+body.dark .csv-table tbody tr:hover td {
+  background: rgba(34, 211, 238, .08) !important;
+}
+
+.csv-table tbody tr.csv-row-selected td {
+  background: rgba(34, 211, 238, .10) !important;
+  border-bottom-color: transparent;
+}
+
+body.dark .csv-table tbody tr.csv-row-selected td {
+  background: rgba(34, 211, 238, .12) !important;
+}
+
+/* Expand indicator in row # cell */
+.csv-expand-icon {
+  display: inline-block;
+  width: 12px;
+  font-size: 10px;
+  transition: transform .15s;
+  color: #999;
+  margin-right: 4px;
+}
+
+.csv-row-selected .csv-expand-icon {
+  transform: rotate(90deg);
+  color: #22d3ee;
+}
+
+body.dark .csv-expand-icon {
+  color: rgba(255, 255, 255, .3);
+}
+
+body.dark .csv-row-selected .csv-expand-icon {
+  color: #22d3ee;
+}
+
+/* ── CSV detail row (expanded content) ─────────────── */
+.csv-detail-row td {
+  padding: 0 !important;
+  border-top: none !important;
+  background: #f8fafb !important;
+}
+
+body.dark .csv-detail-row td {
+  background: rgba(255, 255, 255, .04) !important;
+}
+
+.csv-detail-pane {
+  padding: 12px 20px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  border-left: 3px solid #6366f1;
+  animation: csvSlideDown .15s ease-out;
+}
+
+body.dark .csv-detail-pane {
+  border-left-color: #22d3ee;
+}
+
+@keyframes csvSlideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 600px;
+  }
+}
+
+.csv-detail-pane h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+body.dark .csv-detail-pane h4 {
+  color: rgba(255, 255, 255, .6);
+}
+
+.csv-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(100px, auto) 1fr;
+  gap: 2px 16px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 11.5px;
+}
+
+.csv-detail-key {
+  color: #6366f1;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  padding: 2px 0;
+}
+
+body.dark .csv-detail-key {
+  color: #818cf8;
+}
+
+.csv-detail-val {
+  color: #333;
+  word-break: break-all;
+  padding: 2px 0;
+}
+
+body.dark .csv-detail-val {
+  color: #e0e0ea;
+}
+
+.csv-detail-val:empty::after {
+  content: '(empty)';
+  color: #aaa;
+  font-style: italic;
+}
+
+body.dark .csv-detail-val:empty::after {
+  color: rgba(255, 255, 255, .2);
+}
+
+/* ── CSV Expand All/Collapse All toggle ────────────── */
+.csv-expand-toggle {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* ── CSV cell truncation styles ────────────────────── */
+.csv-table td.csv-cell-truncate {
+  max-width: var(--csv-col-width, 250px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csv-table td.csv-cell-truncate:hover {
+  position: relative;
+}
 
 
 /* ══════════════════════════════════════════════════════
@@ -3993,7 +4146,7 @@ body.dark .sqlite-filter-bar input:focus {
 }
 
 .evtx-table .evtx-col-level {
-  width: 90px;
+  width: 100px;
 }
 
 .evtx-table .evtx-col-provider {
@@ -4217,9 +4370,14 @@ body.dark .evtx-detail-desc {
   font-size: 14px;
 }
 
+/* ── Clear button in filter bar ─────────────────────── */
+.evtx-clear-btn {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 /* ── Expand/Collapse toggle in filter bar ───────────── */
 .evtx-expand-toggle {
-  margin-left: auto;
   white-space: nowrap;
   font-size: 12px;
 }
@@ -5943,7 +6101,7 @@ relevance:0}),e.C_NUMBER_MODE]}}})();hljs.registerLanguage("vbscript",e)})();
 
   <!-- ── Application ─────────────────────────────────────────────────── -->
   <script>
-const GLOVEBOX_VERSION = '20260414.1141';
+const GLOVEBOX_VERSION = '20260414.1228';
 const DEFAULT_YARA_RULES = `// ─── Default YARA Rules ───────────────────────────────────
 // Edit or replace these rules, then click "Run Scan"
 // Supports: text strings, hex strings {AA BB}, regex /pattern/
@@ -19150,6 +19308,7 @@ class MsiRenderer {
 'use strict';
 // ════════════════════════════════════════════════════════════════════════════
 // csv-renderer.js — Renders .csv and .tsv files as styled tables
+// Features: auto-detect column widths, click-to-expand detail panes (EVTX-style)
 // No external dependencies beyond the browser DOM.
 // ════════════════════════════════════════════════════════════════════════════
 class CsvRenderer {
@@ -19160,10 +19319,17 @@ class CsvRenderer {
     const rows = this._parse(text, delim);
     if (!rows.length) { wrap.textContent = 'Empty file.'; return wrap; }
 
+    // Header row (first row)
+    const headerRow = rows[0] || [];
+    const dataRowsRaw = rows.slice(1);
+
+    // Calculate reasonable column widths based on content
+    const colWidths = this._calcColumnWidths(rows);
+
     // ── Info bar ─────────────────────────────────────────────────────────
     const info = document.createElement('div'); info.className = 'csv-info';
     const dn = delim === '\t' ? 'Tab' : delim === ',' ? 'Comma' : delim === ';' ? 'Semicolon' : 'Pipe';
-    info.textContent = `${rows.length} rows × ${rows[0].length} columns · delimiter: ${dn}`;
+    info.textContent = `${rows.length} rows × ${headerRow.length} columns · delimiter: ${dn}`;
     wrap.appendChild(info);
 
     // ── Filter bar ───────────────────────────────────────────────────────
@@ -19184,9 +19350,16 @@ class CsvRenderer {
     const filterStatus = document.createElement('span');
     filterStatus.className = 'csv-filter-status';
 
+    // Expand All / Collapse All toggle button
+    const expandToggle = document.createElement('button');
+    expandToggle.className = 'tb-btn csv-export-btn csv-expand-toggle';
+    expandToggle.textContent = '↕️ Expand All';
+    expandToggle.title = 'Expand all visible rows';
+
     filterBar.appendChild(filterInput);
     filterBar.appendChild(clearBtn);
     filterBar.appendChild(filterStatus);
+    filterBar.appendChild(expandToggle);
     wrap.appendChild(filterBar);
 
     // ── Table ────────────────────────────────────────────────────────────
@@ -19196,39 +19369,126 @@ class CsvRenderer {
 
     const tbl = document.createElement('table'); tbl.className = 'xlsx-table csv-table';
 
-    // Track data rows for filtering
-    const dataRows = [];
+    // ── Header row ───────────────────────────────────────────────────────
+    const thead = document.createElement('thead');
+    const headerTr = document.createElement('tr');
 
-    rows.forEach((row, ri) => {
-      if (ri > 10000) return;
+    // Row number header
+    const thNum = document.createElement('th');
+    thNum.className = 'xlsx-row-header';
+    thNum.textContent = '#';
+    headerTr.appendChild(thNum);
+
+    // Column headers with calculated widths
+    headerRow.forEach((cell, ci) => {
+      const th = document.createElement('th');
+      th.className = 'xlsx-col-header csv-header';
+      th.textContent = cell;
+      th.title = cell;
+      if (colWidths[ci]) {
+        th.style.maxWidth = colWidths[ci] + 'px';
+        th.style.overflow = 'hidden';
+        th.style.textOverflow = 'ellipsis';
+        th.style.whiteSpace = 'nowrap';
+      }
+      headerTr.appendChild(th);
+    });
+    thead.appendChild(headerTr);
+    tbl.appendChild(thead);
+
+    // ── Data rows ────────────────────────────────────────────────────────
+    const tbody = document.createElement('tbody');
+    const dataRows = []; // Track { tr, detailTr, detailTd, rowData, visible }
+    let allExpanded = false;
+    const limit = Math.min(dataRowsRaw.length, 10000);
+
+    for (let ri = 0; ri < limit; ri++) {
+      const row = dataRowsRaw[ri];
       const tr = document.createElement('tr');
-      const rh = document.createElement(ri === 0 ? 'th' : 'td');
-      rh.className = 'xlsx-row-header';
-      rh.textContent = ri === 0 ? '#' : ri;
-      tr.appendChild(rh);
+      tr.dataset.idx = ri;
 
+      // Row number with expand icon
+      const tdNum = document.createElement('td');
+      tdNum.className = 'xlsx-row-header';
+      tdNum.innerHTML = `<span class="csv-expand-icon">▶</span> ${ri + 1}`;
+      tr.appendChild(tdNum);
+
+      // Build search text for filtering
       const rowText = [];
-      row.forEach(cell => {
-        const td = document.createElement(ri === 0 ? 'th' : 'td');
-        td.className = ri === 0 ? 'xlsx-col-header csv-header' : 'xlsx-cell';
-        td.textContent = cell;
-        if (ri > 0 && cell.trim() && !isNaN(parseFloat(cell))) td.style.textAlign = 'right';
+
+      // Data cells with truncation
+      row.forEach((cell, ci) => {
+        const td = document.createElement('td');
+        td.className = 'xlsx-cell csv-cell-truncate';
+
+        // Apply calculated column width
+        if (colWidths[ci]) {
+          td.style.setProperty('--csv-col-width', colWidths[ci] + 'px');
+        }
+
+        // Truncate display text for very long cells (show first 80 chars)
+        const displayText = cell.length > 80 ? cell.substring(0, 80) + '…' : cell;
+        td.textContent = displayText;
+        td.title = cell.length > 80 ? 'Click row to see full content' : cell;
+
+        // Right-align numeric values
+        if (cell.trim() && !isNaN(parseFloat(cell))) {
+          td.style.textAlign = 'right';
+        }
+
         tr.appendChild(td);
         rowText.push(cell.toLowerCase());
       });
-      tbl.appendChild(tr);
 
-      // Store reference for filtering (skip header row)
-      if (ri > 0) {
-        dataRows.push({
-          tr: tr,
-          searchText: rowText.join(' ')
-        });
-      }
-    });
+      tbody.appendChild(tr);
 
+      // ── Detail row (hidden by default) ─────────────────────────────────
+      const detailTr = document.createElement('tr');
+      detailTr.className = 'csv-detail-row';
+      detailTr.style.display = 'none';
+      const detailTd = document.createElement('td');
+      detailTd.colSpan = headerRow.length + 1; // +1 for row number column
+      detailTr.appendChild(detailTd);
+      tbody.appendChild(detailTr);
+
+      // Store row reference for filtering and expansion
+      const rowObj = {
+        tr,
+        detailTr,
+        detailTd,
+        rowData: row,
+        searchText: rowText.join(' '),
+        visible: true
+      };
+      dataRows.push(rowObj);
+
+      // ── Click handler to expand/collapse ───────────────────────────────
+      tr.addEventListener('click', () => {
+        const isOpen = detailTr.style.display !== 'none';
+        if (isOpen) {
+          detailTr.style.display = 'none';
+          tr.classList.remove('csv-row-selected');
+        } else {
+          // Build detail pane lazily on first open
+          if (!detailTd.hasChildNodes()) {
+            this._buildDetailPane(detailTd, headerRow, row);
+          }
+          detailTr.style.display = '';
+          tr.classList.add('csv-row-selected');
+        }
+      });
+    }
+
+    tbl.appendChild(tbody);
     scr.appendChild(tbl);
     wrap.appendChild(scr);
+
+    if (dataRowsRaw.length > limit) {
+      const note = document.createElement('div');
+      note.className = 'csv-info';
+      note.textContent = `⚠ Showing first ${limit.toLocaleString()} of ${dataRowsRaw.length.toLocaleString()} rows`;
+      wrap.appendChild(note);
+    }
 
     // ── Filter logic ─────────────────────────────────────────────────────
     const applyFilter = () => {
@@ -19236,10 +19496,22 @@ class CsvRenderer {
       let visibleCount = 0;
 
       if (!query) {
-        // Show all rows
+        // Show all rows, respect current expand/collapse state
         for (const r of dataRows) {
           r.tr.style.display = '';
-          r.tr.classList.remove('csv-row-highlight');
+          r.visible = true;
+          // Respect allExpanded state
+          if (allExpanded) {
+            if (!r.detailTd.hasChildNodes()) {
+              this._buildDetailPane(r.detailTd, headerRow, r.rowData);
+            }
+            r.detailTr.style.display = '';
+            r.tr.classList.add('csv-row-selected');
+          } else {
+            r.detailTr.style.display = 'none';
+            r.tr.classList.remove('csv-row-selected');
+          }
+          visibleCount++;
         }
         clearBtn.style.display = 'none';
         filterStatus.textContent = '';
@@ -19250,7 +19522,24 @@ class CsvRenderer {
       for (const r of dataRows) {
         const matches = r.searchText.includes(query);
         r.tr.style.display = matches ? '' : 'none';
-        if (matches) visibleCount++;
+        r.visible = matches;
+        if (matches) {
+          visibleCount++;
+          // Respect allExpanded state for visible rows
+          if (allExpanded) {
+            if (!r.detailTd.hasChildNodes()) {
+              this._buildDetailPane(r.detailTd, headerRow, r.rowData);
+            }
+            r.detailTr.style.display = '';
+            r.tr.classList.add('csv-row-selected');
+          } else {
+            r.detailTr.style.display = 'none';
+            r.tr.classList.remove('csv-row-selected');
+          }
+        } else {
+          r.detailTr.style.display = 'none';
+          r.tr.classList.remove('csv-row-selected');
+        }
       }
 
       clearBtn.style.display = '';
@@ -19262,16 +19551,58 @@ class CsvRenderer {
       applyFilter();
     };
 
-    // Scroll to first match and highlight it
+    // ── Expand / Collapse All ────────────────────────────────────────────
+    const expandAllVisible = () => {
+      allExpanded = true;
+      for (const r of dataRows) {
+        if (!r.visible) continue;
+        if (!r.detailTd.hasChildNodes()) {
+          this._buildDetailPane(r.detailTd, headerRow, r.rowData);
+        }
+        r.detailTr.style.display = '';
+        r.tr.classList.add('csv-row-selected');
+      }
+      expandToggle.textContent = '↔️ Collapse All';
+      expandToggle.title = 'Collapse all expanded rows';
+    };
+
+    const collapseAllVisible = () => {
+      allExpanded = false;
+      for (const r of dataRows) {
+        r.detailTr.style.display = 'none';
+        r.tr.classList.remove('csv-row-selected');
+      }
+      expandToggle.textContent = '↕️ Expand All';
+      expandToggle.title = 'Expand all visible rows';
+    };
+
+    expandToggle.addEventListener('click', () => {
+      if (allExpanded) {
+        collapseAllVisible();
+      } else {
+        expandAllVisible();
+      }
+    });
+
+    // ── Scroll to first match and highlight it ───────────────────────────
     const scrollToFirstMatch = () => {
       for (const r of dataRows) {
-        if (r.tr.style.display !== 'none') {
+        if (r.visible && r.tr.style.display !== 'none') {
           r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
           r.tr.classList.add('csv-row-highlight');
           setTimeout(() => r.tr.classList.remove('csv-row-highlight'), 2000);
           break;
         }
       }
+    };
+
+    // ── Expand a specific row (for IOC navigation) ───────────────────────
+    const expandRow = (rowObj) => {
+      if (!rowObj.detailTd.hasChildNodes()) {
+        this._buildDetailPane(rowObj.detailTd, headerRow, rowObj.rowData);
+      }
+      rowObj.detailTr.style.display = '';
+      rowObj.tr.classList.add('csv-row-selected');
     };
 
     filterInput.addEventListener('input', applyFilter);
@@ -19289,7 +19620,10 @@ class CsvRenderer {
       clearFilter,
       scrollToFirstMatch,
       scrollContainer: scr,
-      dataRows
+      dataRows,
+      expandRow,
+      expandAll: expandAllVisible,
+      collapseAll: collapseAllVisible
     };
 
     // Store raw CSV text for proper IOC extraction (avoids cell concatenation issues)
@@ -19298,12 +19632,115 @@ class CsvRenderer {
     return wrap;
   }
 
+  // ── Calculate reasonable column widths ─────────────────────────────────
+  _calcColumnWidths(rows, maxSampleRows = 100) {
+    if (!rows.length) return [];
+    const colCount = rows[0].length;
+    const widths = [];
+
+    for (let col = 0; col < colCount; col++) {
+      const samples = [];
+
+      // Sample header + up to maxSampleRows data rows
+      for (let row = 0; row < Math.min(rows.length, maxSampleRows + 1); row++) {
+        const cell = rows[row]?.[col] || '';
+        samples.push(cell.length);
+      }
+
+      // Sort and use 85th percentile length (avoids outlier-driven widths)
+      samples.sort((a, b) => a - b);
+      const p85Idx = Math.floor(samples.length * 0.85);
+      const typicalLen = samples[p85Idx] || samples[samples.length - 1] || 10;
+
+      // Convert to pixels: ~7.5px per char in monospace
+      // Min 60px (very short columns), max 300px (prevents super-wide columns)
+      const width = Math.min(300, Math.max(60, Math.ceil(typicalLen * 7.5)));
+      widths.push(width);
+    }
+
+    return widths;
+  }
+
+  // ── Build detail pane for expanded row ─────────────────────────────────
+  _buildDetailPane(container, headerRow, rowData) {
+    const pane = document.createElement('div');
+    pane.className = 'csv-detail-pane';
+
+    const heading = document.createElement('h4');
+    heading.textContent = 'Row Details';
+    pane.appendChild(heading);
+
+    const grid = document.createElement('div');
+    grid.className = 'csv-detail-grid';
+
+    // Display each column as key-value pair
+    for (let i = 0; i < headerRow.length; i++) {
+      const key = headerRow[i] || `Column ${i + 1}`;
+      const val = rowData[i] || '';
+
+      const keyEl = document.createElement('div');
+      keyEl.className = 'csv-detail-key';
+      keyEl.textContent = key;
+      keyEl.title = key;
+      grid.appendChild(keyEl);
+
+      const valEl = document.createElement('div');
+      valEl.className = 'csv-detail-val';
+      valEl.textContent = val;
+      grid.appendChild(valEl);
+    }
+
+    pane.appendChild(grid);
+    container.appendChild(pane);
+  }
+
   /** Auto-detect delimiter by counting occurrences in the first line. */
-  _delim(text) { const line = (text.split('\n')[0] || ''); const c = { ',': 0, ';': 0, '\t': 0, '|': 0 }; let inQ = false; for (const ch of line) { if (ch === '"') { inQ = !inQ; } else if (!inQ && c[ch] !== undefined) c[ch]++; } return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0]; }
+  _delim(text) {
+    const line = (text.split('\n')[0] || '');
+    const c = { ',': 0, ';': 0, '\t': 0, '|': 0 };
+    let inQ = false;
+    for (const ch of line) {
+      if (ch === '"') {
+        inQ = !inQ;
+      } else if (!inQ && c[ch] !== undefined) {
+        c[ch]++;
+      }
+    }
+    return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
+  }
 
-  _parse(text, delim) { const rows = []; for (const line of text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) { if (!line.trim()) continue; rows.push(this._split(line, delim)); } return rows; }
+  _parse(text, delim) {
+    const rows = [];
+    for (const line of text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
+      if (!line.trim()) continue;
+      rows.push(this._split(line, delim));
+    }
+    return rows;
+  }
 
-  _split(line, delim) { const cells = []; let cur = '', inQ = false; for (let i = 0; i < line.length; i++) { const ch = line[i]; if (ch === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; } else if (ch === delim && !inQ) { cells.push(cur); cur = ''; } else cur += ch; } cells.push(cur); return cells; }
+  _split(line, delim) {
+    const cells = [];
+    let cur = '';
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQ = !inQ;
+        }
+      } else if (ch === delim && !inQ) {
+        cells.push(cur);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    cells.push(cur);
+    return cells;
+  }
 
   analyzeForSecurity(text) {
     const f = { risk: 'low', hasMacros: false, macroSize: 0, macroHash: '', autoExec: [], modules: [], externalRefs: [], metadata: {} };
@@ -21137,6 +21574,13 @@ class EvtxRenderer {
     }
     filterBar.appendChild(levelSelect);
 
+    // Clear filters button
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'tb-btn csv-export-btn evtx-clear-btn';
+    clearBtn.textContent = '🗑 Clear';
+    clearBtn.title = 'Clear all filters';
+    filterBar.appendChild(clearBtn);
+
     // Expand All / Collapse All toggle button (in filter bar)
     const expandToggle = document.createElement('button');
     expandToggle.className = 'tb-btn csv-export-btn evtx-expand-toggle';
@@ -21338,6 +21782,17 @@ class EvtxRenderer {
     searchInput.addEventListener('input', debouncedFilter);
     eidInput.addEventListener('input', debouncedFilter);
     levelSelect.addEventListener('change', applyFilters);
+
+    // ── Clear filters button handler ───────────────────────────────────
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      eidInput.value = '';
+      levelSelect.value = '';
+      allExpanded = false;
+      applyFilters();
+      expandToggle.textContent = '↕️ Expand All';
+      expandToggle.title = 'Expand all visible event rows';
+    });
 
     // ── Expose filter controls for sidebar navigation ─────────────────
     wrap._evtxFilters = {
@@ -24826,15 +25281,78 @@ class PlainTextRenderer {
     'diff': 'diff', 'patch': 'diff',
   };
 
+  // Map MIME types to highlight.js language names (fallback when extension is unknown)
+  static MIME_TO_LANG = {
+    // JavaScript
+    'text/javascript': 'javascript',
+    'application/javascript': 'javascript',
+    'application/x-javascript': 'javascript',
+    'text/ecmascript': 'javascript',
+    'application/ecmascript': 'javascript',
+    // TypeScript
+    'text/typescript': 'typescript',
+    'application/typescript': 'typescript',
+    // JSON
+    'application/json': 'json',
+    'text/json': 'json',
+    // XML / HTML
+    'text/xml': 'xml',
+    'application/xml': 'xml',
+    'text/html': 'xml',
+    'application/xhtml+xml': 'xml',
+    'image/svg+xml': 'xml',
+    // CSS
+    'text/css': 'css',
+    // Python
+    'text/x-python': 'python',
+    'application/x-python': 'python',
+    'text/x-python-script': 'python',
+    // Shell / Bash
+    'text/x-sh': 'bash',
+    'application/x-sh': 'bash',
+    'text/x-shellscript': 'bash',
+    // PHP
+    'text/x-php': 'php',
+    'application/x-php': 'php',
+    // Ruby
+    'text/x-ruby': 'ruby',
+    'application/x-ruby': 'ruby',
+    // Perl
+    'text/x-perl': 'perl',
+    'application/x-perl': 'perl',
+    // C / C++
+    'text/x-c': 'c',
+    'text/x-csrc': 'c',
+    'text/x-c++': 'cpp',
+    'text/x-c++src': 'cpp',
+    // Java
+    'text/x-java': 'java',
+    'text/x-java-source': 'java',
+    // C#
+    'text/x-csharp': 'csharp',
+    // YAML
+    'text/yaml': 'yaml',
+    'text/x-yaml': 'yaml',
+    'application/x-yaml': 'yaml',
+    // SQL
+    'text/x-sql': 'sql',
+    'application/sql': 'sql',
+    // Markdown
+    'text/markdown': 'markdown',
+    'text/x-markdown': 'markdown',
+  };
+
   // Size limit for syntax highlighting (100 KB)
   static HIGHLIGHT_SIZE_LIMIT = 100 * 1024;
 
   // ── Render ──────────────────────────────────────────────────────────────
 
-  render(buffer, fileName) {
+  render(buffer, fileName, mimeType) {
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const detected = this._detectEncoding(bytes);
     const isTextByDefault = detected.isText;
+    // Store mimeType for language detection
+    this._mimeType = mimeType || '';
 
     // Build wrapper that holds both views + controls
     const wrap = document.createElement('div');
@@ -24892,7 +25410,7 @@ class PlainTextRenderer {
     contentArea.className = 'plaintext-content-area';
 
     // Build both views
-    const textPane = this._buildTextPane(decodedText, fileName);
+    const textPane = this._buildTextPane(decodedText, fileName, this._mimeType);
     const hexPane = this._buildHexPane(bytes, fileName);
 
     // Show the correct one by default
@@ -24940,7 +25458,7 @@ class PlainTextRenderer {
       currentEncoding = encSelect.value;
       const newText = this._decodeAs(bytes, currentEncoding);
       const oldTextPane = contentArea._textPane;
-      const newTextPane = this._buildTextPane(newText, fileName);
+      const newTextPane = this._buildTextPane(newText, fileName, this._mimeType);
       newTextPane.style.display = oldTextPane.style.display;
       contentArea.replaceChild(newTextPane, oldTextPane);
       contentArea._textPane = newTextPane;
@@ -25051,12 +25569,16 @@ class PlainTextRenderer {
 
   // ── Build text pane (line-numbered view with syntax highlighting) ────────
 
-  _buildTextPane(text, fileName) {
+  _buildTextPane(text, fileName, mimeType) {
     const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 
     // Get file extension and determine language
     const ext = (fileName || '').split('.').pop().toLowerCase();
-    const lang = PlainTextRenderer.LANG_MAP[ext];
+    // Try extension first, then fall back to MIME type
+    let lang = PlainTextRenderer.LANG_MAP[ext];
+    if (!lang && mimeType) {
+      lang = PlainTextRenderer.MIME_TO_LANG[mimeType];
+    }
 
     // Determine if we should highlight (check availability and size limit)
     const shouldHighlight = typeof hljs !== 'undefined' &&
@@ -25797,7 +26319,7 @@ Object.assign(App.prototype, {
                 // Fall through to plain text
                 const r = new PlainTextRenderer();
                 this.findings = r.analyzeForSecurity(buffer, file.name);
-                docEl = r.render(buffer, file.name);
+                docEl = r.render(buffer, file.name, file.type);
               }
             }
           }
@@ -25848,7 +26370,7 @@ Object.assign(App.prototype, {
           // Catch-all: plain text or hex dump for any unrecognised format
           const r = new PlainTextRenderer();
           this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
+          docEl = r.render(buffer, file.name, file.type);
         }
       }
 
@@ -27184,7 +27706,7 @@ Object.assign(App.prototype, {
       }
     }
 
-    // Check if we have a CSV view — scroll to matching row without filtering
+    // Check if we have a CSV view — scroll to matching row and auto-expand
     const csvView = pc && pc.querySelector('.csv-view');
     if (csvView && csvView._csvFilters) {
       const filters = csvView._csvFilters;
@@ -27197,49 +27719,52 @@ Object.assign(App.prototype, {
         // Truncate very long values
         if (searchTerm.length > 80) searchTerm = searchTerm.substring(0, 80);
 
-        // Helper to scroll to row and highlight, with horizontal scroll for wide CSVs
-        const scrollAndHighlight = (r, term) => {
-          // Find the specific cell containing the match for horizontal scroll on wide CSVs
-          const cells = r.tr.querySelectorAll('td');
-          let matchingCell = null;
-          for (const cell of cells) {
-            if (cell.textContent.toLowerCase().includes(term)) {
-              matchingCell = cell;
-              break;
-            }
+        // Helper to scroll to row, auto-expand, and highlight
+        const scrollExpandAndHighlight = (r, term) => {
+          // Auto-expand the row if not already expanded
+          if (filters.expandRow && !r.tr.classList.contains('csv-row-selected')) {
+            filters.expandRow(r);
           }
 
-          // Scroll to matching cell (handles both vertical and horizontal)
-          if (matchingCell) {
-            matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-          } else {
-            r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
+          // Scroll to the row (smooth scroll)
+          r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
           // Apply 5-second highlight using inline styles (more reliable than CSS classes)
+          const cells = r.tr.querySelectorAll('td');
           cells.forEach(cell => {
             cell.style.transition = 'background 1s ease-out';
             cell.style.background = 'rgba(34, 211, 238, 0.4)';
           });
+          // Also highlight the detail row if expanded
+          if (r.detailTr && r.detailTr.style.display !== 'none') {
+            r.detailTr.style.transition = 'background 1s ease-out';
+            r.detailTr.style.background = 'rgba(34, 211, 238, 0.15)';
+          }
           // Fade out after 4 seconds (leaves 1s for transition)
           setTimeout(() => {
             cells.forEach(cell => {
               cell.style.background = '';
             });
+            if (r.detailTr) {
+              r.detailTr.style.background = '';
+            }
           }, 4000);
           // Clean up transition style after animation completes
           setTimeout(() => {
             cells.forEach(cell => {
               cell.style.transition = '';
             });
+            if (r.detailTr) {
+              r.detailTr.style.transition = '';
+            }
           }, 5000);
         };
 
-        // Find and scroll to matching row (no filtering, just highlight)
+        // Find and scroll to matching row
         const term = searchTerm.toLowerCase();
         for (const r of filters.dataRows) {
           if (r.searchText && r.searchText.includes(term)) {
-            scrollAndHighlight(r, term);
+            scrollExpandAndHighlight(r, term);
             return;
           }
         }
@@ -27250,7 +27775,7 @@ Object.assign(App.prototype, {
         if (shortTerm !== term) {
           for (const r of filters.dataRows) {
             if (r.searchText && r.searchText.includes(shortTerm)) {
-              scrollAndHighlight(r, shortTerm);
+              scrollExpandAndHighlight(r, shortTerm);
               return;
             }
           }

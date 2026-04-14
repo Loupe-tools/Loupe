@@ -785,7 +785,7 @@ Object.assign(App.prototype, {
       }
     }
 
-    // Check if we have a CSV view — scroll to matching row without filtering
+    // Check if we have a CSV view — scroll to matching row and auto-expand
     const csvView = pc && pc.querySelector('.csv-view');
     if (csvView && csvView._csvFilters) {
       const filters = csvView._csvFilters;
@@ -798,49 +798,52 @@ Object.assign(App.prototype, {
         // Truncate very long values
         if (searchTerm.length > 80) searchTerm = searchTerm.substring(0, 80);
 
-        // Helper to scroll to row and highlight, with horizontal scroll for wide CSVs
-        const scrollAndHighlight = (r, term) => {
-          // Find the specific cell containing the match for horizontal scroll on wide CSVs
-          const cells = r.tr.querySelectorAll('td');
-          let matchingCell = null;
-          for (const cell of cells) {
-            if (cell.textContent.toLowerCase().includes(term)) {
-              matchingCell = cell;
-              break;
-            }
+        // Helper to scroll to row, auto-expand, and highlight
+        const scrollExpandAndHighlight = (r, term) => {
+          // Auto-expand the row if not already expanded
+          if (filters.expandRow && !r.tr.classList.contains('csv-row-selected')) {
+            filters.expandRow(r);
           }
 
-          // Scroll to matching cell (handles both vertical and horizontal)
-          if (matchingCell) {
-            matchingCell.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-          } else {
-            r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
+          // Scroll to the row (smooth scroll)
+          r.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
           // Apply 5-second highlight using inline styles (more reliable than CSS classes)
+          const cells = r.tr.querySelectorAll('td');
           cells.forEach(cell => {
             cell.style.transition = 'background 1s ease-out';
             cell.style.background = 'rgba(34, 211, 238, 0.4)';
           });
+          // Also highlight the detail row if expanded
+          if (r.detailTr && r.detailTr.style.display !== 'none') {
+            r.detailTr.style.transition = 'background 1s ease-out';
+            r.detailTr.style.background = 'rgba(34, 211, 238, 0.15)';
+          }
           // Fade out after 4 seconds (leaves 1s for transition)
           setTimeout(() => {
             cells.forEach(cell => {
               cell.style.background = '';
             });
+            if (r.detailTr) {
+              r.detailTr.style.background = '';
+            }
           }, 4000);
           // Clean up transition style after animation completes
           setTimeout(() => {
             cells.forEach(cell => {
               cell.style.transition = '';
             });
+            if (r.detailTr) {
+              r.detailTr.style.transition = '';
+            }
           }, 5000);
         };
 
-        // Find and scroll to matching row (no filtering, just highlight)
+        // Find and scroll to matching row
         const term = searchTerm.toLowerCase();
         for (const r of filters.dataRows) {
           if (r.searchText && r.searchText.includes(term)) {
-            scrollAndHighlight(r, term);
+            scrollExpandAndHighlight(r, term);
             return;
           }
         }
@@ -851,7 +854,7 @@ Object.assign(App.prototype, {
         if (shortTerm !== term) {
           for (const r of filters.dataRows) {
             if (r.searchText && r.searchText.includes(shortTerm)) {
-              scrollAndHighlight(r, shortTerm);
+              scrollExpandAndHighlight(r, shortTerm);
               return;
             }
           }

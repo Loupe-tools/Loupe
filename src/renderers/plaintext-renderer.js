@@ -81,15 +81,78 @@ class PlainTextRenderer {
     'diff': 'diff', 'patch': 'diff',
   };
 
+  // Map MIME types to highlight.js language names (fallback when extension is unknown)
+  static MIME_TO_LANG = {
+    // JavaScript
+    'text/javascript': 'javascript',
+    'application/javascript': 'javascript',
+    'application/x-javascript': 'javascript',
+    'text/ecmascript': 'javascript',
+    'application/ecmascript': 'javascript',
+    // TypeScript
+    'text/typescript': 'typescript',
+    'application/typescript': 'typescript',
+    // JSON
+    'application/json': 'json',
+    'text/json': 'json',
+    // XML / HTML
+    'text/xml': 'xml',
+    'application/xml': 'xml',
+    'text/html': 'xml',
+    'application/xhtml+xml': 'xml',
+    'image/svg+xml': 'xml',
+    // CSS
+    'text/css': 'css',
+    // Python
+    'text/x-python': 'python',
+    'application/x-python': 'python',
+    'text/x-python-script': 'python',
+    // Shell / Bash
+    'text/x-sh': 'bash',
+    'application/x-sh': 'bash',
+    'text/x-shellscript': 'bash',
+    // PHP
+    'text/x-php': 'php',
+    'application/x-php': 'php',
+    // Ruby
+    'text/x-ruby': 'ruby',
+    'application/x-ruby': 'ruby',
+    // Perl
+    'text/x-perl': 'perl',
+    'application/x-perl': 'perl',
+    // C / C++
+    'text/x-c': 'c',
+    'text/x-csrc': 'c',
+    'text/x-c++': 'cpp',
+    'text/x-c++src': 'cpp',
+    // Java
+    'text/x-java': 'java',
+    'text/x-java-source': 'java',
+    // C#
+    'text/x-csharp': 'csharp',
+    // YAML
+    'text/yaml': 'yaml',
+    'text/x-yaml': 'yaml',
+    'application/x-yaml': 'yaml',
+    // SQL
+    'text/x-sql': 'sql',
+    'application/sql': 'sql',
+    // Markdown
+    'text/markdown': 'markdown',
+    'text/x-markdown': 'markdown',
+  };
+
   // Size limit for syntax highlighting (100 KB)
   static HIGHLIGHT_SIZE_LIMIT = 100 * 1024;
 
   // ── Render ──────────────────────────────────────────────────────────────
 
-  render(buffer, fileName) {
+  render(buffer, fileName, mimeType) {
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const detected = this._detectEncoding(bytes);
     const isTextByDefault = detected.isText;
+    // Store mimeType for language detection
+    this._mimeType = mimeType || '';
 
     // Build wrapper that holds both views + controls
     const wrap = document.createElement('div');
@@ -147,7 +210,7 @@ class PlainTextRenderer {
     contentArea.className = 'plaintext-content-area';
 
     // Build both views
-    const textPane = this._buildTextPane(decodedText, fileName);
+    const textPane = this._buildTextPane(decodedText, fileName, this._mimeType);
     const hexPane = this._buildHexPane(bytes, fileName);
 
     // Show the correct one by default
@@ -195,7 +258,7 @@ class PlainTextRenderer {
       currentEncoding = encSelect.value;
       const newText = this._decodeAs(bytes, currentEncoding);
       const oldTextPane = contentArea._textPane;
-      const newTextPane = this._buildTextPane(newText, fileName);
+      const newTextPane = this._buildTextPane(newText, fileName, this._mimeType);
       newTextPane.style.display = oldTextPane.style.display;
       contentArea.replaceChild(newTextPane, oldTextPane);
       contentArea._textPane = newTextPane;
@@ -306,12 +369,16 @@ class PlainTextRenderer {
 
   // ── Build text pane (line-numbered view with syntax highlighting) ────────
 
-  _buildTextPane(text, fileName) {
+  _buildTextPane(text, fileName, mimeType) {
     const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 
     // Get file extension and determine language
     const ext = (fileName || '').split('.').pop().toLowerCase();
-    const lang = PlainTextRenderer.LANG_MAP[ext];
+    // Try extension first, then fall back to MIME type
+    let lang = PlainTextRenderer.LANG_MAP[ext];
+    if (!lang && mimeType) {
+      lang = PlainTextRenderer.MIME_TO_LANG[mimeType];
+    }
 
     // Determine if we should highlight (check availability and size limit)
     const shouldHighlight = typeof hljs !== 'undefined' &&

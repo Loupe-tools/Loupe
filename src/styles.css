@@ -2016,6 +2016,159 @@ body.dark .csv-row-highlight {
   100% { background: transparent; }
 }
 
+/* ── CSV expandable rows (EVTX-style) ───────────────── */
+.csv-table tbody tr {
+  cursor: pointer;
+  transition: background .1s;
+}
+
+.csv-table tbody tr:hover td {
+  background: rgba(34, 211, 238, .06) !important;
+}
+
+body.dark .csv-table tbody tr:hover td {
+  background: rgba(34, 211, 238, .08) !important;
+}
+
+.csv-table tbody tr.csv-row-selected td {
+  background: rgba(34, 211, 238, .10) !important;
+  border-bottom-color: transparent;
+}
+
+body.dark .csv-table tbody tr.csv-row-selected td {
+  background: rgba(34, 211, 238, .12) !important;
+}
+
+/* Expand indicator in row # cell */
+.csv-expand-icon {
+  display: inline-block;
+  width: 12px;
+  font-size: 10px;
+  transition: transform .15s;
+  color: #999;
+  margin-right: 4px;
+}
+
+.csv-row-selected .csv-expand-icon {
+  transform: rotate(90deg);
+  color: #22d3ee;
+}
+
+body.dark .csv-expand-icon {
+  color: rgba(255, 255, 255, .3);
+}
+
+body.dark .csv-row-selected .csv-expand-icon {
+  color: #22d3ee;
+}
+
+/* ── CSV detail row (expanded content) ─────────────── */
+.csv-detail-row td {
+  padding: 0 !important;
+  border-top: none !important;
+  background: #f8fafb !important;
+}
+
+body.dark .csv-detail-row td {
+  background: rgba(255, 255, 255, .04) !important;
+}
+
+.csv-detail-pane {
+  padding: 12px 20px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  border-left: 3px solid #6366f1;
+  animation: csvSlideDown .15s ease-out;
+}
+
+body.dark .csv-detail-pane {
+  border-left-color: #22d3ee;
+}
+
+@keyframes csvSlideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 600px;
+  }
+}
+
+.csv-detail-pane h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+body.dark .csv-detail-pane h4 {
+  color: rgba(255, 255, 255, .6);
+}
+
+.csv-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(100px, auto) 1fr;
+  gap: 2px 16px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 11.5px;
+}
+
+.csv-detail-key {
+  color: #6366f1;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  padding: 2px 0;
+}
+
+body.dark .csv-detail-key {
+  color: #818cf8;
+}
+
+.csv-detail-val {
+  color: #333;
+  word-break: break-all;
+  padding: 2px 0;
+}
+
+body.dark .csv-detail-val {
+  color: #e0e0ea;
+}
+
+.csv-detail-val:empty::after {
+  content: '(empty)';
+  color: #aaa;
+  font-style: italic;
+}
+
+body.dark .csv-detail-val:empty::after {
+  color: rgba(255, 255, 255, .2);
+}
+
+/* ── CSV Expand All/Collapse All toggle ────────────── */
+.csv-expand-toggle {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* ── CSV cell truncation styles ────────────────────── */
+.csv-table td.csv-cell-truncate {
+  max-width: var(--csv-col-width, 250px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csv-table td.csv-cell-truncate:hover {
+  position: relative;
+}
 
 
 /* ══════════════════════════════════════════════════════
@@ -3983,7 +4136,7 @@ body.dark .sqlite-filter-bar input:focus {
 }
 
 .evtx-table .evtx-col-level {
-  width: 90px;
+  width: 100px;
 }
 
 .evtx-table .evtx-col-provider {
@@ -4207,9 +4360,14 @@ body.dark .evtx-detail-desc {
   font-size: 14px;
 }
 
+/* ── Clear button in filter bar ─────────────────────── */
+.evtx-clear-btn {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 /* ── Expand/Collapse toggle in filter bar ───────────── */
 .evtx-expand-toggle {
-  margin-left: auto;
   white-space: nowrap;
   font-size: 12px;
 }
