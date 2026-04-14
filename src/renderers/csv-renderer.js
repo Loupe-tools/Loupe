@@ -10,7 +10,7 @@ class CsvRenderer {
     // ═══════════════════════════════════════════════════════════════════════
     // CONFIGURATION
     // ═══════════════════════════════════════════════════════════════════════
-    const ROW_HEIGHT = 32;               // Base row height in pixels
+    let rowHeight = 32;                  // Base row height in pixels (measured dynamically after DOM insertion)
     const DEFAULT_DETAIL_HEIGHT = 200;   // Fallback detail pane height before measurement
     const BUFFER_ROWS = 20;              // Extra rows to render above/below viewport
     const MAX_ROWS = 50000;              // Maximum rows to process
@@ -84,7 +84,7 @@ class CsvRenderer {
     // ═══════════════════════════════════════════════════════════════════════
     const scr = document.createElement('div');
     scr.className = 'csv-scroll';
-    scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 200px);';
+    scr.style.cssText = 'overflow:auto;';
 
     const tbl = document.createElement('table');
     tbl.className = 'xlsx-table csv-table';
@@ -168,13 +168,13 @@ class CsvRenderer {
     // Get total height for a row (base + detail if expanded)
     const getRowHeight = (dataIdx) => {
       return state.expandedRows.has(dataIdx)
-        ? ROW_HEIGHT + getDetailHeight(dataIdx)
-        : ROW_HEIGHT;
+        ? rowHeight + getDetailHeight(dataIdx)
+        : rowHeight;
     };
 
     // Calculate cumulative height up to (not including) virtualIdx
     const calculateHeightUpTo = (virtualIdx) => {
-      let height = virtualIdx * ROW_HEIGHT;
+      let height = virtualIdx * rowHeight;
       
       for (const expandedDataIdx of state.expandedRows) {
         const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
@@ -189,7 +189,7 @@ class CsvRenderer {
     // Get total scrollable height
     const getTotalHeight = () => {
       const rowCount = getVisibleRowCount();
-      let height = rowCount * ROW_HEIGHT;
+      let height = rowCount * rowHeight;
       
       for (const expandedDataIdx of state.expandedRows) {
         const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
@@ -208,12 +208,12 @@ class CsvRenderer {
       
       for (let virtualIdx = 0; virtualIdx < rowCount; virtualIdx++) {
         const dataIdx = getDataIndex(virtualIdx);
-        const rowHeight = getRowHeight(dataIdx);
+        const rh = getRowHeight(dataIdx);
         
-        if (accumulatedHeight + rowHeight > scrollTop) {
+        if (accumulatedHeight + rh > scrollTop) {
           return virtualIdx;
         }
-        accumulatedHeight += rowHeight;
+        accumulatedHeight += rh;
       }
       
       return Math.max(0, rowCount - 1);
@@ -625,6 +625,18 @@ class CsvRenderer {
     // INITIAL RENDER
     // ═══════════════════════════════════════════════════════════════════════
     renderVisibleRows();
+
+    // Re-render when scroll container gets its actual dimensions after DOM insertion
+    const resizeObs = new ResizeObserver(() => {
+      // Measure actual row height from a rendered data row
+      const sampleRow = tbody.querySelector('tr[data-idx]');
+      if (sampleRow && sampleRow.offsetHeight > 0) {
+        rowHeight = sampleRow.offsetHeight;
+      }
+      state.renderedRange = { start: -1, end: -1 };
+      renderVisibleRows();
+    });
+    resizeObs.observe(scr);
 
     return wrap;
   }
