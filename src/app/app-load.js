@@ -426,13 +426,39 @@ Object.assign(App.prototype, {
         // Store raw bytes reference on compressed findings for lazy decompression
         for (const ef of encodedFindings) {
           if (ef.needsDecompression) ef._rawBytes = new Uint8Array(buffer);
-          // Merge IOCs from decoded content into main findings
+          // Merge IOCs from decoded content into main findings.
+          // Attach source location metadata so clicking an IOC from a nested
+          // decoded layer will smooth-scroll and highlight the *encoded blob*
+          // in the original document from which this IOC was extracted.
           if (ef.iocs && ef.iocs.length) {
             const existingUrls = new Set((this.findings.interestingStrings || []).map(r => r.url));
             for (const ioc of ef.iocs) {
               if (!existingUrls.has(ioc.url)) {
+                // Point back to the parent encoded blob's location in the source text
+                if (ef.offset !== undefined && ef.length) {
+                  ioc._sourceOffset = ef.offset;
+                  ioc._sourceLength = ef.length;
+                  ioc._highlightText = ef.snippet || (analysisText ? analysisText.substring(ef.offset, ef.offset + Math.min(ef.length, 200)) : '');
+                }
+                // Note which decode chain produced this IOC
+                if (ef.chain && ef.chain.length) {
+                  ioc._decodedFrom = ef.chain.join(' → ');
+                }
+                // Back-reference to parent encoded finding for cross-flash linking
+                ioc._encodedFinding = ef;
                 this.findings.interestingStrings.push(ioc);
                 existingUrls.add(ioc.url);
+              } else {
+                // IOC already exists from plaintext extraction — set back-reference
+                // on the existing entry so cross-flash linking from Encoded Content
+                // "IOCs" badge scrolls to the correct Signatures & IOCs row
+                const existing = this.findings.interestingStrings.find(r => r.url === ioc.url);
+                if (existing && !existing._encodedFinding) {
+                  existing._encodedFinding = ef;
+                  if (ef.chain && ef.chain.length) {
+                    existing._decodedFrom = ef.chain.join(' → ');
+                  }
+                }
               }
             }
           }

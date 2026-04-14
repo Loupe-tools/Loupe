@@ -21,6 +21,66 @@ rule Office_Macro_Project_Present
         any of them
 }
 
+rule PS_Whitespace_Token_Obfuscation
+{
+    meta:
+        description = "Detects PowerShell token obfuscation via excessive whitespace between characters"
+        severity = "medium"
+        category = "obfuscation"
+    strings:
+        $ws_pattern = /[A-Za-z]\s{2,}[A-Za-z]\s{2,}[A-Za-z]\s{2,}[A-Za-z]\s{2,}[A-Za-z]/ nocase
+        $ws_cmdlet = /[Ww]\s{2,}[Rr]\s{2,}[Ii]\s{2,}[Tt]\s{2,}[Ee]/ nocase
+        $ws_iex = /[Ii]\s{2,}[Ee]\s{2,}[Xx]/ nocase
+    condition:
+        any of them
+}
+
+rule PS_ScriptBlock_Reflection_Create
+{
+    meta:
+        description = "Detects PowerShell ScriptBlock creation via .NET reflection"
+        severity = "high"
+        category = "obfuscation"
+    strings:
+        $sb_reflect = "ScriptBlock].GetMethod" nocase
+        $sb_create = /ScriptBlock\].*Create/ nocase
+        $invoke = ".Invoke(" nocase
+        $automation = "System.Management.Automation" nocase
+    condition:
+        ($sb_reflect or $sb_create) and ($invoke or $automation)
+}
+
+rule Python_Dynamic_Import_Getattr
+{
+    meta:
+        description = "Detects Python dynamic import with getattr/getattribute for obfuscated access"
+        severity = "medium"
+        category = "obfuscation"
+    strings:
+        $import_builtins = "__import__('builtins')" nocase
+        $import_os = "__import__('os')" nocase
+        $import_sys = "__import__('sys')" nocase
+        $import_sub = "__import__('subprocess')" nocase
+        $getattr1 = "__getattribute__(" nocase
+        $getattr2 = "getattr(" nocase
+    condition:
+        any of ($import_*) and any of ($getattr*)
+}
+
+rule JS_Comment_Injection_Obfuscation
+{
+    meta:
+        description = "Detects JavaScript comment injection between object property access chains"
+        severity = "medium"
+        category = "obfuscation"
+    strings:
+        $comment_dot = /\w+\s*\/\*[^*]*\*\/\s*\.\s*\/\*[^*]*\*\/\s*\w+/ nocase
+        $comment_bracket = /\w+\s*\/\*[^*]*\*\/\s*\[\s*\/\*[^*]*\*\/\s*['"]/ nocase
+        $comment_call = /\w+\s*\/\*[^*]*\*\/\s*\(\s*\/\*[^*]*\*\/\s*['"]/ nocase
+    condition:
+        any of them
+}
+
 rule VBA_AutoExec_Trigger
 {
     meta:
@@ -4756,4 +4816,616 @@ rule MSI_Service_Install
 
     condition:
         $ole at 0 and any of ($svc*)
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Command Obfuscation Detection Rules
+   ══════════════════════════════════════════════════════════════════════════ */
+
+rule CMD_Caret_Obfuscation
+{
+    meta:
+        description = "CMD command uses caret (^) insertion to break up keywords and evade detection"
+        severity    = "high"
+
+    strings:
+        $c1 = /[pP]\^[oO]\^[wW]\^[eE]\^[rR]\^[sS]\^[hH]\^[eE]\^[lL]\^[lL]/ ascii
+        $c2 = /[cC]\^[mM]\^[dD]/ ascii
+        $c3 = /[wW]\^[sS]\^[cC]\^[rR]\^[iI]\^[pP]\^[tT]/ ascii
+        $c4 = /[nN]\^[eE]\^[tT]\.\^[wW]\^[eE]\^[bB]\^[cC]\^[lL]\^[iI]\^[eE]\^[nN]\^[tT]/ ascii
+        $c5 = /[rR]\^[eE]\^[gG]\^[sS]\^[vV]\^[rR]\^3\^2/ ascii
+        $c6 = /[mM]\^[sS]\^[hH]\^[tT]\^[aA]/ ascii
+        $c7 = /[bB]\^[iI]\^[tT]\^[sS]\^[aA]\^[dD]\^[mM]\^[iI]\^[nN]/ ascii
+        $c8 = /[cC]\^[eE]\^[rR]\^[tT]\^[uU]\^[tT]\^[iI]\^[lL]/ ascii
+        $generic = /\w\^\w\^\w\^\w\^\w\^\w/ ascii
+
+    condition:
+        any of them
+}
+
+rule CMD_Set_Variable_Obfuscation
+{
+    meta:
+        description = "CMD script uses SET variable concatenation to build commands from fragments"
+        severity    = "high"
+
+    strings:
+        $set_pattern = /[sS][eE][tT]\s+\w{1,3}=\S{1,20}/ ascii
+        $concat = /(%\w{1,3}%){3,}/ ascii
+        $call = /[cC][aA][lL][lL]\s+(%\w{1,3}%){2,}/ ascii
+
+    condition:
+        (#set_pattern > 3 and $concat) or $call
+}
+
+rule CMD_Environment_Substring_Abuse
+{
+    meta:
+        description = "CMD script extracts substrings from environment variables to build commands"
+        severity    = "high"
+
+    strings:
+        $substr = /(%\w+:~\d{1,3},\d{1,3}%){3,}/ ascii
+        $comspec = "%comspec:~" nocase
+        $path_sub = "%path:~" nocase
+
+    condition:
+        $substr or (#comspec > 2) or (#path_sub > 2)
+}
+
+rule PS_String_Concatenation_Obfuscation
+{
+    meta:
+        description = "PowerShell uses excessive string concatenation to evade keyword detection"
+        severity    = "medium"
+
+    strings:
+        $concat_single = /('[a-zA-Z]{1,4}'\s*\+\s*){4,}'[a-zA-Z]{1,4}'/ ascii
+        $concat_double = /("[a-zA-Z]{1,4}"\s*\+\s*){4,}"[a-zA-Z]{1,4}"/ ascii
+        $iex_concat = /[iI][eE][xX]\s*\(\s*['"][a-zA-Z]{1,3}['"]\s*\+/ ascii
+
+    condition:
+        any of them
+}
+
+rule PS_Backtick_Obfuscation
+{
+    meta:
+        description = "PowerShell uses backtick escape characters to break up keywords"
+        severity    = "medium"
+
+    strings:
+        $bt1 = "In`v`o`k`e" ascii
+        $bt2 = "Ne`w`-O`b`j" ascii
+        $bt3 = "Do`wn`lo`ad" ascii
+        $bt4 = "We`b`Cl`ie`nt" ascii
+        $bt5 = "Sy`st`em" ascii
+        $bt6 = "Ne`t." ascii
+        $bt7 = /\w`\w`\w`\w`\w`\w/ ascii
+
+    condition:
+        any of them
+}
+
+rule PS_Format_Operator_Obfuscation
+{
+    meta:
+        description = "PowerShell uses -f format operator to reconstruct strings from fragments"
+        severity    = "medium"
+
+    strings:
+        $fmt = /'\{0\}\{1\}\{2\}(\{3\})?(\{4\})?(\{5\})?' *-[fF] *'[^']{1,12}',\s*'[^']{1,12}',\s*'[^']{1,12}'/ ascii
+
+    condition:
+        $fmt
+}
+
+rule PS_Char_Casting_Obfuscation
+{
+    meta:
+        description = "PowerShell uses [char] type casting to build strings from ASCII codes"
+        severity    = "high"
+
+    strings:
+        $char = /(\[char\]\d{2,3}\s*\+\s*){4,}/ nocase
+        $char_join = /\-join\s*\(\s*(\d{2,3}\s*,\s*){4,}/ nocase
+        $char_arr = /\[char\[\]\]\s*\(\s*(\d{2,3}\s*,\s*){4,}/ nocase
+
+    condition:
+        any of them
+}
+
+rule PS_String_Reversal_Obfuscation
+{
+    meta:
+        description = "PowerShell reverses strings to hide commands"
+        severity    = "medium"
+
+    strings:
+        $rev1 = /\[array\]::reverse\s*\(/ nocase
+        $rev2 = /-join\s*\[regex\]::matches\([^)]+,\s*'\.'\s*,\s*'RightToLeft'\)/ nocase
+        $rev3 = /\$[a-zA-Z]+\[-1\.\.-?\d+\]/ ascii
+
+    condition:
+        any of them
+}
+
+rule PS_Replace_Chain_Obfuscation
+{
+    meta:
+        description = "PowerShell uses chained -replace operators to transform encoded strings"
+        severity    = "medium"
+
+    strings:
+        $rep = /(-replace\s*'[^']{1,20}'\s*,\s*'[^']{0,20}'\s*){3,}/ nocase
+        $creplace = /(\.\s*replace\s*\(\s*'[^']{1,20}'\s*,\s*'[^']{0,20}'\s*\)\s*){3,}/ nocase
+
+    condition:
+        any of them
+}
+
+rule URL_Encoded_Command
+{
+    meta:
+        description = "File contains URL-encoded sequences that decode to suspicious commands"
+        severity    = "medium"
+
+    strings:
+        $ps = "%70%6f%77%65%72%73%68%65%6c%6c" nocase
+        $cmd = "%63%6d%64%2e%65%78%65" nocase
+        $wscript = "%77%73%63%72%69%70%74" nocase
+        $http = "%68%74%74%70%3a%2f%2f" nocase
+        $https = "%68%74%74%70%73%3a%2f%2f" nocase
+
+    condition:
+        any of them
+}
+
+rule HTML_Entity_Obfuscated_Script
+{
+    meta:
+        description = "HTML file uses numeric character entities to hide script content"
+        severity    = "high"
+
+    strings:
+        $entity_chain = /(&#x?[0-9a-fA-F]{2,4};){10,}/ ascii
+        $script_tag = "<script" nocase
+        $eval = "eval" nocase
+
+    condition:
+        $entity_chain and ($script_tag or $eval)
+}
+
+rule Unicode_Escape_Obfuscation
+{
+    meta:
+        description = "File uses Unicode escape sequences to hide content"
+        severity    = "medium"
+
+    strings:
+        $uesc = /(\\u[0-9a-fA-F]{4}){8,}/ ascii
+
+    condition:
+        $uesc
+}
+
+rule VBScript_Chr_Concatenation
+{
+    meta:
+        description = "VBScript uses Chr() function concatenation to build strings"
+        severity    = "high"
+
+    strings:
+        $chr = /([Cc][Hh][Rr]\s*\(\s*\d{2,3}\s*\)\s*(&|&amp;)\s*){5,}/ ascii
+        $chrw = /([Cc][Hh][Rr][Ww]\s*\(\s*\d{2,5}\s*\)\s*(&|&amp;)\s*){5,}/ ascii
+
+    condition:
+        any of them
+}
+
+rule JScript_Encoded_Script
+{
+    meta:
+        description = "File contains Microsoft JScript.Encode encoded script"
+        severity    = "high"
+
+    strings:
+        $marker = "#@~^" ascii
+        $end = "^#~@" ascii
+        $lang1 = "JScript.Encode" nocase
+        $lang2 = "VBScript.Encode" nocase
+
+    condition:
+        ($marker and $end) or any of ($lang*)
+}
+
+rule Obfuscated_IEX_Invocation
+{
+    meta:
+        description = "PowerShell uses obfuscated Invoke-Expression (IEX) patterns"
+        severity    = "high"
+
+    strings:
+        $iex1 = /\.\s*\(\s*\$[a-zA-Z]*[eE][nN][vV]:[a-zA-Z]+\[/ ascii
+        $iex2 = /[iI][eE][xX]\s*\(/ ascii
+        $iex3 = /[Ii]nvoke-[Ee]xpression/ ascii
+        $iex4 = /\.\(\s*'[iI]'\s*\+\s*'[eE]'\s*\+\s*'[xX]'\s*\)/ ascii
+        $iex5 = /\$\w+\s*=\s*\[type\]\s*\(\s*'[^']+'\s*\)/ ascii
+        $sal = /[sS][aA][lL]\s+\w{1,5}\s+[iI][eE][xX]/ ascii
+
+    condition:
+        any of them
+}
+
+rule Obfuscated_Download_Cradle
+{
+    meta:
+        description = "File contains obfuscated download cradle patterns"
+        severity    = "high"
+
+    strings:
+        $dl1 = "DownloadString" nocase
+        $dl2 = "DownloadFile" nocase
+        $dl3 = "DownloadData" nocase
+        $dl4 = "Invoke-WebRequest" nocase
+        $dl5 = "Start-BitsTransfer" nocase
+        $dl6 = "Net.WebClient" nocase
+        $dl7 = "wget " nocase
+        $dl8 = "curl " nocase
+        $obf1 = "FromBase64String" nocase
+        $obf2 = "-EncodedCommand" nocase
+        $obf3 = "-enc " nocase
+        $obf4 = "hidden" nocase
+        $obf5 = "-w hidden" nocase
+        $obf6 = "-nop" nocase
+
+    condition:
+        any of ($dl*) and any of ($obf*)
+}
+
+// ============================================================================
+// Python Obfuscation Rules
+// ============================================================================
+
+rule Python_Exec_Base64_Obfuscation
+{
+    meta:
+        description = "Detects Python code using exec() with base64-decoded payloads"
+        severity = "high"
+        category = "obfuscation"
+        reference = "Python exec + base64 payload delivery"
+
+    strings:
+        $exec_b64_1 = "exec(base64.b64decode(" nocase
+        $exec_b64_2 = "exec(__import__('base64').b64decode(" nocase
+        $exec_b64_3 = "exec(compile(base64" nocase
+        $exec_b64_4 = "exec(marshal.loads(" nocase
+        $exec_b64_5 = "exec(zlib.decompress(base64" nocase
+        $import_os = "__import__('os')" nocase
+        $import_subprocess = "__import__('subprocess')" nocase
+        $import_socket = "__import__('socket')" nocase
+        $exec_compile = "exec(compile(" nocase
+
+    condition:
+        any of ($exec_b64_*) or ($exec_compile and any of ($import_*))
+}
+
+rule Python_Eval_Codec_Obfuscation
+{
+    meta:
+        description = "Detects Python eval/exec with codec or marshal-based obfuscation"
+        severity = "high"
+        category = "obfuscation"
+        reference = "Python eval with codec/zlib/marshal deobfuscation"
+
+    strings:
+        $eval = "eval(" nocase
+        $exec = "exec(" nocase
+        $codecs_decode = "codecs.decode(" nocase
+        $rot13 = "'rot_13'" nocase
+        $rot13b = "'rot13'" nocase
+        $zlib_decompress = "zlib.decompress(" nocase
+        $marshal_loads = "marshal.loads(" nocase
+        $bytearray = "bytearray(" nocase
+        $chr_join = /chr\s*\(\s*\w+\s*\)\s*for\s+\w+\s+in/
+
+    condition:
+        ($eval or $exec) and (any of ($codecs_decode, $rot13, $rot13b, $zlib_decompress, $marshal_loads) or ($bytearray and $chr_join))
+}
+
+rule Python_Char_Construction
+{
+    meta:
+        description = "Detects Python string construction via chr() calls to evade static analysis"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "Python chr() string building"
+
+    strings:
+        $chr_chain = /chr\(\d+\)\s*\+\s*chr\(\d+\)\s*\+\s*chr\(\d+\)/ 
+        $chr_join = /join\s*\(\s*\[?\s*chr\s*\(\s*\d+\s*\)/ nocase
+        $chr_map = /map\s*\(\s*chr\s*,\s*\[/ nocase
+        $exec = "exec(" nocase
+        $eval = "eval(" nocase
+
+    condition:
+        any of ($chr_chain, $chr_join, $chr_map) and ($exec or $eval)
+}
+
+// ============================================================================
+// ROT13 / Caesar Cipher Rules
+// ============================================================================
+
+rule JS_ROT13_Cipher_Implementation
+{
+    meta:
+        description = "Detects JavaScript ROT13/Caesar cipher implementations used for obfuscation"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "ROT13 character rotation in JavaScript"
+
+    strings:
+        $charcode_13 = /charCodeAt\s*\(\s*\w*\s*\)\s*[\+\-]\s*13/ nocase
+        $replace_alpha = /replace\s*\(\s*\/\[a-zA-Z\]\// nocase
+        $fromcharcode_shift = /String\.fromCharCode\s*\([^)]*[\+\-]\s*13\s*\)/ nocase
+        $rot13_func = /function\s+rot13\s*\(/ nocase
+        $rot13_name = "rot13" nocase
+        $caesar_shift = /charCodeAt\s*\([^)]*\)\s*[\+\-]\s*\d{1,2}\s*\)\s*%\s*26/ nocase
+
+    condition:
+        ($charcode_13 and $replace_alpha) or $fromcharcode_shift or ($rot13_func) or $caesar_shift
+}
+
+// ============================================================================
+// PowerShell Call Operator Obfuscation
+// ============================================================================
+
+rule PS_Call_Operator_Obfuscation
+{
+    meta:
+        description = "Detects PowerShell call operator (&) with string concatenation to invoke commands dynamically"
+        severity = "high"
+        category = "obfuscation"
+        reference = "PowerShell & operator with dynamic command construction"
+
+    strings:
+        $call_concat_1 = /&\s*\(\s*['"][a-zA-Z]+['"]\s*\+\s*['"][a-zA-Z]+['"]/ nocase
+        $call_concat_2 = /&\s*\(\s*\$[a-zA-Z]+\s*\+\s*\$[a-zA-Z]+\s*\)/ nocase
+        $call_var = /&\s*\(\s*\$\w+\s*\)/ nocase
+        $call_iex = /&\s*\(\s*['"]i['"\s]*\+\s*['"]e['"\s]*\+\s*['"]x['"]\s*\)/ nocase
+        $call_icm = /&\s*\(\s*['"]Invoke-/ nocase
+        $dot_invoke = /\.\s*\(\s*['"][a-zA-Z]+['"]\s*\+/ nocase
+
+    condition:
+        any of them
+}
+
+// ============================================================================
+// PowerShell Environment Variable Payload
+// ============================================================================
+
+rule PS_EnvVar_Payload_Execution
+{
+    meta:
+        description = "Detects PowerShell using environment variables as payload containers with IEX"
+        severity = "high"
+        category = "obfuscation"
+        reference = "PowerShell $env: variable payload + IEX execution"
+
+    strings:
+        $env_set = /\$env:\w+\s*=\s*['"]/ nocase
+        $env_set2 = /\[Environment\]::SetEnvironmentVariable\s*\(/ nocase
+        $env_get = /\$env:\w+/ nocase
+        $iex = "iex" nocase
+        $invoke_expr = "Invoke-Expression" nocase
+        $env_iex_combo = /iex\s*\(?\s*\$env:\w+/ nocase
+        $env_iex_combo2 = /Invoke-Expression\s*\(?\s*\$env:\w+/ nocase
+
+    condition:
+        any of ($env_iex_combo*) or (any of ($env_set*) and any of ($iex, $invoke_expr) and $env_get)
+}
+
+// ============================================================================
+// PowerShell Split/Join Reassembly
+// ============================================================================
+
+rule PS_Split_Join_Reassembly
+{
+    meta:
+        description = "Detects PowerShell -split/-join operators used for string reassembly obfuscation"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "PowerShell -split + -join pattern for payload reassembly"
+
+    strings:
+        $split_join_1 = /\-split\s*['"][^'"]+['"]\s*\-join\s*['"][^'"]*['"]/ nocase
+        $split_join_2 = /\.Split\s*\(\s*['"][^'"]+['"]\s*\)\s*[-\.]join/ nocase
+        $string_join = /\[string\]::Join\s*\(/ nocase
+        $split_iex = /\-split\s*['"][^'"]+['"].*iex/ nocase
+        $join_iex = /\-join\s*['"][^'"]*['"].*iex/ nocase
+        $split_invoke = /\-split\s*['"][^'"]+['"].*Invoke-Expression/ nocase
+
+    condition:
+        any of them
+}
+
+// ============================================================================
+// PowerShell Hashtable Command Construction
+// ============================================================================
+
+rule PS_Hashtable_Command_Construction
+{
+    meta:
+        description = "Detects PowerShell hashtable-based command construction and invocation"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "PowerShell @{} hashtable with call operator execution"
+
+    strings:
+        $hashtable = /\$\w+\s*=\s*@\{/ nocase
+        $call_key = /&\s*\(?\s*\$\w+\.\w+\s*\)?/ nocase
+        $call_index = /&\s*\(?\s*\$\w+\[\s*['"]/ nocase
+        $dot_key = /\.\s*\(?\s*\$\w+\.\w+\s*\)?/ nocase
+
+    condition:
+        $hashtable and any of ($call_key, $call_index, $dot_key)
+}
+
+// ============================================================================
+// JavaScript Split/Join Deobfuscation
+// ============================================================================
+
+rule JS_Split_Join_Deobfuscation
+{
+    meta:
+        description = "Detects JavaScript split/join pattern used for character removal deobfuscation"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "JavaScript .split('x').join('') character stripping"
+
+    strings:
+        $split_join_empty = /\.split\s*\(\s*['"][^'"]+['"]\s*\)\s*\.join\s*\(\s*['"]['"]/ nocase
+        $split_join_replace = /\.split\s*\(\s*['"][^'"]+['"]\s*\)\s*\.join\s*\(\s*['"][^'"]+['"]/ nocase
+        $eval = "eval(" nocase
+        $func = "Function(" nocase
+        $document_write = "document.write(" nocase
+        $innerhtml = "innerHTML" nocase
+
+    condition:
+        any of ($split_join_*) and any of ($eval, $func, $document_write, $innerhtml)
+}
+
+// ============================================================================
+// JavaScript Proxy-Based Function Hiding
+// ============================================================================
+
+rule JS_Proxy_Function_Hiding
+{
+    meta:
+        description = "Detects JavaScript Proxy objects used to wrap or hide function calls"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "JavaScript Proxy handler wrapping suspicious invocations"
+
+    strings:
+        $proxy = "new Proxy(" nocase
+        $handler_apply = /handler\s*[=:]\s*\{[^}]*apply\s*:/ nocase
+        $handler_get = /handler\s*[=:]\s*\{[^}]*get\s*:/ nocase
+        $inline_get = /\{\s*get\s*\(\s*\w+\s*,\s*\w+\s*\)\s*\{/ nocase
+        $inline_apply = /\{\s*apply\s*\(\s*\w+/ nocase
+
+    condition:
+        $proxy and any of ($handler_apply, $handler_get, $inline_get, $inline_apply)
+}
+
+// ============================================================================
+// JavaScript Bracket Property / Hex Escape Execution
+// ============================================================================
+
+rule JS_Bracket_Hex_Property_Execution
+{
+    meta:
+        description = "Detects JavaScript bracket notation with hex/unicode escapes to invoke functions"
+        severity = "high"
+        category = "obfuscation"
+        reference = "window['\\x65\\x76\\x61\\x6c'] style property access"
+
+    strings:
+        $hex_bracket_1 = /\w+\s*\[\s*['"]\\x[0-9a-fA-F]{2}(\\x[0-9a-fA-F]{2})+['"]\s*\]/ nocase
+        $hex_bracket_2 = /\w+\s*\[\s*['"]\\u[0-9a-fA-F]{4}(\\u[0-9a-fA-F]{4})+['"]\s*\]/ nocase
+        $window_hex = /window\s*\[\s*['"]\\[xu]/ nocase
+        $document_hex = /document\s*\[\s*['"]\\[xu]/ nocase
+        $this_hex = /this\s*\[\s*['"]\\[xu]/ nocase
+        $global_hex = /globalThis\s*\[\s*['"]\\[xu]/ nocase
+
+    condition:
+        any of them
+}
+
+// ============================================================================
+// Space / Colon / Dash Delimited Hex Strings
+// ============================================================================
+
+rule Space_Delimited_Hex_Payload
+{
+    meta:
+        description = "Detects space, colon, or dash delimited hex byte strings that may encode payloads"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "Hex bytes like '4d 5a 90 00' or '4d:5a:90:00' encoding executables or scripts"
+
+    strings:
+        $hex_space = /([0-9a-fA-F]{2}\s){15,}[0-9a-fA-F]{2}/
+        $hex_colon = /([0-9a-fA-F]{2}:){15,}[0-9a-fA-F]{2}/
+        $hex_dash = /([0-9a-fA-F]{2}-){15,}[0-9a-fA-F]{2}/
+
+    condition:
+        any of them
+}
+
+// ============================================================================
+// Bash / Shell Obfuscation Rules
+// ============================================================================
+
+rule Bash_Base64_Execution
+{
+    meta:
+        description = "Detects bash/shell commands that decode and execute base64-encoded payloads"
+        severity = "high"
+        category = "obfuscation"
+        reference = "eval $(echo ... | base64 -d) and similar patterns"
+
+    strings:
+        $eval_b64_1 = /eval\s+\$\(\s*echo\s+[A-Za-z0-9\+\/=]+\s*\|\s*base64\s+-(d|decode)\s*\)/ nocase
+        $eval_b64_2 = /eval\s+['"`]\$\(\s*base64\s+-(d|decode)/ nocase
+        $bash_b64_1 = /bash\s+-(c|i)\s+['"]*\$\(\s*echo\s+[^\)]*base64\s+-(d|decode)/ nocase
+        $bash_b64_2 = /bash\s+-(c|i)\s+['"]*\$\(\s*base64\s+-(d|decode)/ nocase
+        $sh_b64 = /\/bin\/sh\s+-(c|i)\s+['"]*\$\(\s*.*base64\s+-(d|decode)/ nocase
+        $pipe_b64_bash = /base64\s+-(d|decode)\s*\|\s*(ba)?sh/ nocase
+        $printf_eval = /eval\s+\$\(\s*printf\s+/ nocase
+
+    condition:
+        any of them
+}
+
+rule Bash_Variable_Obfuscation
+{
+    meta:
+        description = "Detects bash variable expansion and string manipulation obfuscation techniques"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "Bash ${var} abuse, IFS manipulation, and heredoc payloads"
+
+    strings:
+        $ifs_manip = /IFS\s*=\s*['"][^'"]*['"]\s*;/ nocase
+        $var_concat = /\$\{?\w+\}?\$\{?\w+\}?\$\{?\w+\}?/ nocase
+        $eval_var = /eval\s+['"]*\$\{?\w+\}?/ nocase
+        $heredoc_exec = /<<\s*['"]*\w+['"]*\s*\n.*\n\s*\w+/
+        $rev_pipe = /rev\s*<<<\s*['"]/ nocase
+        $xxd_pipe = /xxd\s+-(r|revert)\s*.*\|\s*(ba)?sh/ nocase
+        $printf_slash = /\$\(printf\s+['"]\\[0-9x]/ nocase
+        $bracket_cmd = /\$\{\w+:[\d]+:[\d]+\}/ nocase
+
+    condition:
+        any of ($ifs_manip, $rev_pipe, $xxd_pipe) or ($eval_var and any of ($var_concat, $printf_slash, $bracket_cmd)) or ($heredoc_exec and $eval_var)
+}
+
+rule Shell_Curl_Wget_Pipe_Exec
+{
+    meta:
+        description = "Detects shell commands that download and directly execute scripts via pipe"
+        severity = "high"
+        category = "obfuscation"
+        reference = "curl/wget piped to bash/sh for remote code execution"
+
+    strings:
+        $curl_bash = /curl\s+[^\|]*\|\s*(ba)?sh/ nocase
+        $wget_bash = /wget\s+[^\|]*\|\s*(ba)?sh/ nocase
+        $curl_eval = /eval\s+\$\(\s*curl\s+/ nocase
+        $wget_eval = /eval\s+\$\(\s*wget\s+/ nocase
+        $curl_source = /source\s+<\(\s*curl\s+/ nocase
+        $wget_source = /source\s+<\(\s*wget\s+/ nocase
+
+    condition:
+        any of them
 }

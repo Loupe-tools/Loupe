@@ -188,6 +188,20 @@ class EncodedContentDetector {
     const hexCandidates = this._findHexCandidates(textContent, context);
     const b32Candidates = this._findBase32Candidates(textContent, context);
 
+    // Phase 1c: Additional encoding candidates
+    const urlEncCandidates = this._findUrlEncodedCandidates(textContent, context);
+    const htmlEntCandidates = this._findHtmlEntityCandidates(textContent, context);
+    const unicodeEscCandidates = this._findUnicodeEscapeCandidates(textContent, context);
+    const charArrayCandidates = this._findCharArrayCandidates(textContent, context);
+    const octalCandidates = this._findOctalEscapeCandidates(textContent, context);
+    const scriptEncCandidates = this._findScriptEncodedCandidates(textContent, context);
+    const spaceHexCandidates = this._findSpaceDelimitedHexCandidates(textContent, context);
+    const rot13Candidates = this._findRot13Candidates(textContent, context);
+    const splitJoinCandidates = this._findSplitJoinCandidates(textContent, context);
+
+    // Phase 1d: Command obfuscation candidates
+    const cmdObfCandidates = this._findCommandObfuscationCandidates(textContent, context);
+
     // Phase 1b: Find compressed blob candidates in raw bytes
     const compressedCandidates = this._findCompressedBlobCandidates(rawBytes, context);
 
@@ -202,6 +216,46 @@ class EncodedContentDetector {
     }
     for (const cand of b32Candidates) {
       const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of urlEncCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of htmlEntCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of unicodeEscCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of charArrayCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of octalCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of scriptEncCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of spaceHexCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of rot13Candidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of splitJoinCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of cmdObfCandidates) {
+      const result = await this._processCommandObfuscation(cand);
       if (result) findings.push(result);
     }
     for (const cand of compressedCandidates) {
@@ -246,7 +300,22 @@ class EncodedContentDetector {
       }
 
       // Reject if purely alphanumeric (no +, /, =, -, _) — likely an identifier
-      if (/^[A-Za-z0-9]+$/.test(raw) && raw.length < 200 && !highConf && !psContext) continue;
+      // Exception: strings inside quotes (variable assignments in scripts) are
+      // likely intentional encoded payloads, not identifiers
+      if (/^[A-Za-z0-9]+$/.test(raw) && raw.length < 200 && !highConf && !psContext) {
+        const prevChar = offset > 0 ? text[offset - 1] : '';
+        const afterEnd = offset + raw.length < text.length ? text[offset + raw.length] : '';
+        const inQuotes = (prevChar === '"' || prevChar === "'") && (afterEnd === '"' || afterEnd === "'");
+        if (!inQuotes) {
+          // Also try speculative decode — if decoded content is printable text
+          // (e.g. hex digits, another base64 layer), it's real encoded content
+          const specDec = this._decodeBase64(raw);
+          const specText = specDec && this._tryDecodeUTF8(specDec);
+          const looksTextual = specText && specText.length > 16 &&
+            /^[\x20-\x7E\r\n\t]{16,}$/.test(specText.substring(0, Math.min(64, specText.length)));
+          if (!looksTextual) continue;
+        }
+      }
 
       candidates.push({
         type: 'Base64',
@@ -410,9 +479,6 @@ class EncodedContentDetector {
         }
         if (!match) continue;
 
-        // Skip if this is at offset 0 (the file itself is this format — already handled)
-        if (i === 0) continue;
-
         // For PDF files, skip content stream compressed blobs (handled by PdfRenderer)
         if (fileType === 'pdf') continue;
 
@@ -462,16 +528,65 @@ class EncodedContentDetector {
     // Build decode chain
     const chain = [candidate.type];
 
-    // If decoded content is compressed (gzip or zlib), try to decompress
+    // If decoded content is compressed (gzip or zlib), try to decompress.
+    // Instead of replacing decoded in-place (which loses the intermediate
+    // compressed layer), keep decoded as the compressed bytes and store the
+    // decompressed result as a synthetic inner finding.  This lets the sidebar
+    // offer "Load for analysis" (one layer deep — the compressed blob) and
+    // "All the way" (deepest layer — the decompressed payload) separately.
+    let syntheticDecompFinding = null;
     const cType = (classification.type || '').toLowerCase();
     if (cType.includes('gzip') || cType.includes('zlib') || classification.ext === '.gz' || classification.ext === '.zlib') {
       try {
         const decompResult = await Decompressor.tryAll(decoded, 0);
         if (decompResult && decompResult.data && decompResult.data.length > 0) {
-          chain.push(decompResult.format || 'decompressed');
-          decoded = decompResult.data;
-          const innerClass = this._classify(decoded);
-          Object.assign(classification, innerClass);
+          const decompData = decompResult.data;
+          const innerClass = this._classify(decompData);
+          const decompEntropy = this._shannonEntropyBytes(decompData);
+          const decompIocs = this._extractIOCsFromDecoded(decompData);
+          const decompSev = this._assessSeverity(innerClass, decompIocs, decompData);
+          const decompExt = innerClass.ext || (this._isValidUTF8(decompData) ? '.txt' : '.bin');
+          const decompChain = [decompResult.format || 'decompressed'];
+          if (innerClass.type) decompChain.push(innerClass.type);
+          else if (this._isValidUTF8(decompData)) decompChain.push('text');
+          else decompChain.push('binary data');
+
+          // Recursively scan decompressed content for further encoding layers
+          let decompInner = [];
+          if (depth < this.maxRecursionDepth && decompData.length > 32) {
+            const decompText = this._tryDecodeUTF8(decompData);
+            if (decompText && decompText.length > 32) {
+              const innerDet = new EncodedContentDetector({
+                maxRecursionDepth: this.maxRecursionDepth,
+                maxCandidatesPerType: this.maxCandidatesPerType,
+              });
+              decompInner = await innerDet.scan(decompText, decompData, { fileType: '' });
+              for (const f of decompInner) {
+                f.chain = [...decompChain, ...f.chain];
+                f.depth = (f.depth || 0) + 1;
+              }
+            }
+          }
+
+          syntheticDecompFinding = {
+            type: 'encoded-content',
+            severity: decompSev,
+            encoding: decompResult.format || 'decompressed',
+            offset: 0,
+            length: decompData.length,
+            decodedSize: decompData.length,
+            decodedBytes: decompData,
+            chain: decompChain,
+            classification: innerClass,
+            entropy: decompEntropy,
+            hint: `Decompressed from ${classification.type || 'compressed data'} (${decompData.length.toLocaleString()} bytes)`,
+            iocs: decompIocs,
+            innerFindings: decompInner,
+            autoDecoded: true,
+            canLoad: !!(innerClass.type || this._isValidUTF8(decompData)),
+            ext: decompExt,
+            snippet: '',
+          };
         }
       } catch (_) { /* decompression failed, continue with raw decoded */ }
     }
@@ -522,6 +637,12 @@ class EncodedContentDetector {
           f.depth = (f.depth || 0) + 1;
         }
       }
+    }
+
+    // If we created a synthetic decompressed finding, prepend it to innerFindings
+    // so it appears as the primary "deeper layer" for the sidebar's "All the way" button
+    if (syntheticDecompFinding) {
+      innerFindings.unshift(syntheticDecompFinding);
     }
 
     // Propagate severity and IOCs from inner findings — if nested content is
@@ -725,19 +846,8 @@ class EncodedContentDetector {
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // DECODERS
+  // DECODERS (primary switch is in ADDITIONAL DECODERS section below)
   // ════════════════════════════════════════════════════════════════════════
-
-  _decodeCandidate(candidate) {
-    switch (candidate.type) {
-      case 'Base64': return this._decodeBase64(candidate.raw);
-      case 'Hex':
-      case 'Hex (escaped)':
-      case 'Hex (PS byte array)': return this._decodeHex(candidate.raw);
-      case 'Base32': return this._decodeBase32(candidate.raw);
-      default: return null;
-    }
-  }
 
   _decodeBase64(str) {
     try {
@@ -1031,5 +1141,940 @@ class EncodedContentDetector {
     } catch (_) {
       return null;
     }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ADDITIONAL ENCODING CANDIDATE FINDERS
+  // ════════════════════════════════════════════════════════════════════════
+
+  /**
+   * URL-encoded strings: %70%6F%77%65%72%73%68%65%6C%6C
+   * Requires ≥10 consecutive %XX sequences to avoid false positives.
+   */
+  _findUrlEncodedCandidates(text, context) {
+    if (!text || text.length < 30) return [];
+    const candidates = [];
+    // Match 10+ consecutive %XX sequences (may have non-encoded chars between)
+    const re = /(?:%[0-9a-fA-F]{2}){10,}/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const raw = m[0];
+      const offset = m.index;
+      // Skip if inside a URL that's already a normal parameter
+      const lookback = text.substring(Math.max(0, offset - 10), offset);
+      if (/[?&=]$/.test(lookback)) continue;
+      candidates.push({
+        type: 'URL Encoding',
+        raw,
+        offset,
+        length: raw.length,
+        entropy: this._shannonEntropyString(raw),
+        confidence: 'high',
+        hint: 'URL percent-encoded data',
+        autoDecoded: true,
+      });
+    }
+    return candidates;
+  }
+
+  /**
+   * HTML entity encoded sequences: &#112;&#111;&#119; or &#x70;&#x6f;&#x77;
+   * Requires ≥8 consecutive entities.
+   */
+  _findHtmlEntityCandidates(text, context) {
+    if (!text || text.length < 30) return [];
+    const candidates = [];
+    // Decimal entities: &#NNN; sequences
+    const decRe = /(?:&#\d{1,5};){8,}/g;
+    let m;
+    while ((m = decRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'HTML Entities',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'HTML decimal entity encoded',
+        autoDecoded: true,
+        _subtype: 'decimal',
+      });
+    }
+    // Hex entities: &#xHH; sequences
+    const hexRe = /(?:&#x[0-9a-fA-F]{1,4};){8,}/g;
+    while ((m = hexRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'HTML Entities',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'HTML hex entity encoded',
+        autoDecoded: true,
+        _subtype: 'hex',
+      });
+    }
+    return candidates;
+  }
+
+  /**
+   * Unicode escape sequences: \u0070\u006f\u0077\u0065 (8+ sequences)
+   */
+  _findUnicodeEscapeCandidates(text, context) {
+    if (!text || text.length < 40) return [];
+    const candidates = [];
+    const re = /(?:\\u[0-9a-fA-F]{4}){8,}/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'Unicode Escape',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'Unicode escape sequence',
+        autoDecoded: true,
+      });
+    }
+    return candidates;
+  }
+
+  /**
+   * Decimal character arrays: [112,111,119,101,114] or Chr(112)&Chr(111)&...
+   * Also matches: String.fromCharCode(72,101,108,...) and [char]72+[char]101+...
+   */
+  _findCharArrayCandidates(text, context) {
+    if (!text || text.length < 20) return [];
+    const candidates = [];
+    let m;
+
+    // JavaScript-style: [NNN,NNN,...] with 10+ entries of printable ASCII range
+    const jsArrayRe = /\[(\d{1,3}(?:\s*,\s*\d{1,3}){9,})\]/g;
+    while ((m = jsArrayRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const nums = m[1].split(',').map(s => parseInt(s.trim(), 10));
+      // Verify most values are in printable ASCII range
+      const printable = nums.filter(n => n >= 32 && n <= 126).length;
+      if (printable < nums.length * 0.6) continue;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[1],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'Decimal character array',
+        autoDecoded: true,
+        _subtype: 'js-array',
+      });
+    }
+
+    // String.fromCharCode(N,N,N,...)
+    const sfccRe = /String\.fromCharCode\s*\(\s*(\d{1,3}(?:\s*,\s*\d{1,3}){4,})\s*\)/gi;
+    while ((m = sfccRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[1],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'String.fromCharCode()',
+        autoDecoded: true,
+        _subtype: 'fromCharCode',
+      });
+    }
+
+    // VBScript-style: Chr(N)&Chr(N)&... or ChrW(N)&ChrW(N)&...
+    const chrRe = /(?:ChrW?\(\d{1,5}\)\s*[&+]\s*){5,}ChrW?\(\d{1,5}\)/gi;
+    while ((m = chrRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'VBScript Chr()/ChrW() concatenation',
+        autoDecoded: true,
+        _subtype: 'vbs-chr',
+      });
+    }
+
+    // PowerShell-style: [char]72+[char]101+[char]108+...
+    const psCharRe = /(?:\[char\]\d{1,5}\s*\+\s*){4,}\[char\]\d{1,5}/gi;
+    while ((m = psCharRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'PowerShell [char] casting',
+        autoDecoded: true,
+        _subtype: 'ps-char',
+      });
+    }
+
+    // PowerShell @(N,N,N,...) array syntax with 10+ entries
+    const psArrayRe = /@\((\d{1,3}(?:\s*,\s*\d{1,3}){9,})\)/g;
+    while ((m = psArrayRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const nums = m[1].split(',').map(s => parseInt(s.trim(), 10));
+      const printable = nums.filter(n => n >= 32 && n <= 126).length;
+      if (printable < nums.length * 0.6) continue;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[1],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'PowerShell @() array',
+        autoDecoded: true,
+        _subtype: 'js-array',  // decoded the same way as JS arrays
+      });
+    }
+
+    // Bare comma-separated integers assigned to a variable (PowerShell allows $x = 1,2,3)
+    // Match: = N,N,N,N,N,... with 10+ entries in printable ASCII range
+    const bareArrayRe = /=\s*(\d{1,3}(?:\s*,\s*\d{1,3}){9,})\s*$/gm;
+    while ((m = bareArrayRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const nums = m[1].split(',').map(s => parseInt(s.trim(), 10));
+      const printable = nums.filter(n => n >= 32 && n <= 126).length;
+      if (printable < nums.length * 0.6) continue;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[1],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'Bare integer array assignment',
+        autoDecoded: true,
+        _subtype: 'js-array',
+      });
+    }
+
+    // Python-style: chr(104)+chr(116)+chr(116)+chr(112)+...
+    const pyChrRe = /(?:chr\(\d{1,5}\)\s*\+\s*){5,}chr\(\d{1,5}\)/gi;
+    while ((m = pyChrRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'Python chr() concatenation',
+        autoDecoded: true,
+        _subtype: 'py-chr',
+      });
+    }
+
+    // Perl-style: chr(104).chr(116).chr(116).chr(112)....
+    const perlChrRe = /(?:chr\(\d{1,5}\)\s*\.\s*){5,}chr\(\d{1,5}\)/gi;
+    while ((m = perlChrRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'Perl chr() concatenation',
+        autoDecoded: true,
+        _subtype: 'perl-chr',
+      });
+    }
+
+    // Python bytes([N,N,N,...]) constructor
+    const pyBytesRe = /bytes\s*\(\s*\[(\d{1,3}(?:\s*,\s*\d{1,3}){9,})\]\s*\)/gi;
+    while ((m = pyBytesRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'Char Array',
+        raw: m[1],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'Python bytes() constructor',
+        autoDecoded: true,
+        _subtype: 'js-array',
+      });
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Octal escape sequences: \160\157\167\145\162 (8+ sequences)
+   */
+  _findOctalEscapeCandidates(text, context) {
+    if (!text || text.length < 24) return [];
+    const candidates = [];
+    // Octal: \NNN where NNN is 1-3 octal digits, no 'x' or 'u' after backslash
+    const re = /(?:\\[0-3]?[0-7]{2}){8,}/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      // Ensure these aren't hex escapes (\x..) accidentally matched
+      if (/\\x/i.test(m[0])) continue;
+      candidates.push({
+        type: 'Octal Escape',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'normal',
+        hint: 'Octal escape sequence',
+        autoDecoded: true,
+      });
+    }
+    return candidates;
+  }
+
+  /**
+   * JScript.Encode / VBScript.Encode: #@~^ marker
+   */
+  _findScriptEncodedCandidates(text, context) {
+    if (!text || text.length < 12) return [];
+    const candidates = [];
+    // The Microsoft Script Encoder format: #@~^XXXXXX==^#~@
+    const re = /#@~\^[A-Za-z0-9+\/=]{6,}[=]*\^#~@/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      candidates.push({
+        type: 'Script.Encode',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'Microsoft Script Encoder (JSE/VBE)',
+        autoDecoded: true,
+      });
+    }
+    return candidates;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ADDITIONAL DECODERS (extended _decodeCandidate)
+  // ════════════════════════════════════════════════════════════════════════
+
+  // Override _decodeCandidate to handle new types
+  _decodeCandidate(candidate) {
+    switch (candidate.type) {
+      case 'Base64': return this._decodeBase64(candidate.raw);
+      case 'Hex':
+      case 'Hex (escaped)':
+      case 'Hex (PS byte array)': return this._decodeHex(candidate.raw);
+      case 'Base32': return this._decodeBase32(candidate.raw);
+      case 'URL Encoding': return this._decodeUrlEncoded(candidate.raw);
+      case 'HTML Entities': return this._decodeHtmlEntities(candidate.raw, candidate._subtype);
+      case 'Unicode Escape': return this._decodeUnicodeEscapes(candidate.raw);
+      case 'Char Array': return this._decodeCharArray(candidate.raw, candidate._subtype);
+      case 'Octal Escape': return this._decodeOctalEscapes(candidate.raw);
+      case 'Script.Encode': return this._decodeScriptEncoded(candidate.raw);
+      case 'Hex (space-delimited)': return this._decodeSpaceDelimitedHex(candidate.raw);
+      case 'ROT13': return this._decodeRot13(candidate.raw);
+      case 'Split-Join': return this._decodeSplitJoin(candidate.raw, candidate._separator);
+      default: return null;
+    }
+  }
+
+  _decodeUrlEncoded(str) {
+    try {
+      const decoded = decodeURIComponent(str);
+      return new TextEncoder().encode(decoded);
+    } catch (_) {
+      try {
+        // Fallback: manual decode for malformed sequences
+        const decoded = str.replace(/%([0-9a-fA-F]{2})/g, (_, hex) =>
+          String.fromCharCode(parseInt(hex, 16))
+        );
+        return new TextEncoder().encode(decoded);
+      } catch (_2) { return null; }
+    }
+  }
+
+  _decodeHtmlEntities(str, subtype) {
+    try {
+      let decoded;
+      if (subtype === 'hex') {
+        decoded = str.replace(/&#x([0-9a-fA-F]{1,4});/gi, (_, hex) =>
+          String.fromCharCode(parseInt(hex, 16))
+        );
+      } else {
+        decoded = str.replace(/&#(\d{1,5});/g, (_, dec) =>
+          String.fromCharCode(parseInt(dec, 10))
+        );
+      }
+      return new TextEncoder().encode(decoded);
+    } catch (_) { return null; }
+  }
+
+  _decodeUnicodeEscapes(str) {
+    try {
+      const decoded = str.replace(/\\u([0-9a-fA-F]{4})/gi, (_, hex) =>
+        String.fromCharCode(parseInt(hex, 16))
+      );
+      return new TextEncoder().encode(decoded);
+    } catch (_) { return null; }
+  }
+
+  _decodeCharArray(raw, subtype) {
+    try {
+      let nums;
+      if (subtype === 'vbs-chr') {
+        nums = [...raw.matchAll(/ChrW?\((\d{1,5})\)/gi)].map(m => parseInt(m[1], 10));
+      } else if (subtype === 'ps-char') {
+        nums = [...raw.matchAll(/\[char\](\d{1,5})/gi)].map(m => parseInt(m[1], 10));
+      } else if (subtype === 'py-chr' || subtype === 'perl-chr') {
+        nums = [...raw.matchAll(/chr\((\d{1,5})\)/gi)].map(m => parseInt(m[1], 10));
+      } else {
+        // js-array, fromCharCode, ps-array, bare assignment, bytes()
+        nums = raw.split(',').map(s => parseInt(s.trim(), 10));
+      }
+      if (!nums.length) return null;
+      const decoded = nums.map(n => String.fromCharCode(n)).join('');
+      return new TextEncoder().encode(decoded);
+    } catch (_) { return null; }
+  }
+
+  _decodeOctalEscapes(str) {
+    try {
+      const decoded = str.replace(/\\([0-3]?[0-7]{1,2})/g, (_, oct) =>
+        String.fromCharCode(parseInt(oct, 8))
+      );
+      return new TextEncoder().encode(decoded);
+    } catch (_) { return null; }
+  }
+
+  /**
+   * Microsoft Script Encoder decoder (#@~^...^#~@)
+   * Implements the substitution cipher used by screnc.exe / JScript.Encode / VBScript.Encode.
+   */
+  _decodeScriptEncoded(str) {
+    try {
+      // Strip the #@~^ prefix and ^#~@ suffix
+      let payload = str;
+      if (payload.startsWith('#@~^')) payload = payload.substring(4);
+      if (payload.endsWith('^#~@')) payload = payload.substring(0, payload.length - 4);
+      // The encoded payload has a 6-char length prefix and 6-char checksum suffix separated by ==
+      // Format: LEN==ENCODED_DATA==CHECKSUM
+      // For simplicity, try to decode the middle section
+      const eqIdx = payload.indexOf('==');
+      if (eqIdx >= 0) payload = payload.substring(eqIdx + 2);
+      const eqIdx2 = payload.lastIndexOf('==');
+      if (eqIdx2 >= 0) payload = payload.substring(0, eqIdx2);
+
+      // Microsoft Script Encoder substitution tables
+      const decTable = [
+        0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x57,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,
+        0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,
+        0x2E,0x47,0x7A,0x56,0x42,0x6A,0x2F,0x26,0x49,0x41,0x34,0x32,0x5B,0x76,0x72,0x43,
+        0x38,0x39,0x70,0x45,0x68,0x71,0x51,0x73,0x74,0x75,0x09,0x02,0x28,0x29,0x2A,0x3F,
+        0x40,0x5A,0x2B,0x5E,0x7D,0x29,0x2C,0x22,0x50,0x6F,0x4E,0x53,0x6E,0x67,0x2D,0x30,
+        0x65,0x3D,0x61,0x53,0x55,0x40,0x37,0x24,0x48,0x23,0x36,0x7C,0x5D,0x7E,0x5C,0x21,
+        0x60,0x69,0x54,0x27,0x46,0x25,0x33,0x35,0x44,0x6D,0x4C,0x2E,0x66,0x63,0x3E,0x58,
+        0x31,0x52,0x6B,0x4F,0x59,0x4D,0x77,0x5F,0x64,0x62,0x7B,0x78,0x79,0x3B,0x3A,0x20,
+      ];
+
+      const pickEnc = [1, 2, 0, 1, 2, 0, 2, 0, 0, 2, 0, 2, 1, 0, 2, 0, 1, 0, 2, 0, 1, 1, 2, 0, 0, 2, 1, 0, 2, 0, 0, 2,
+        1, 1, 0, 2, 0, 2, 0, 1, 0, 1, 1, 2, 0, 1, 0, 2, 1, 0, 2, 0, 1, 1, 2, 0, 0, 1, 1, 2, 0, 1, 0, 2];
+
+      const dec3 = [
+        [0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x7B,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,
+         0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,
+         0x32,0x30,0x21,0x29,0x5B,0x38,0x33,0x3D,0x58,0x3A,0x35,0x65,0x39,0x5C,0x56,0x73,
+         0x66,0x4E,0x45,0x6B,0x62,0x59,0x78,0x5E,0x7D,0x4A,0x6D,0x71,0x00,0x60,0x00,0x53,
+         0x00,0x42,0x27,0x48,0x72,0x75,0x31,0x37,0x4D,0x52,0x22,0x54,0x6C,0x70,0x3E,0x34,
+         0x67,0x55,0x63,0x24,0x76,0x43,0x79,0x28,0x23,0x41,0x7E,0x4B,0x26,0x2E,0x25,0x2D,
+         0x2A,0x2F,0x49,0x6F,0x36,0x6E,0x5F,0x47,0x7C,0x57,0x51,0x3F,0x4F,0x5D,0x5A,0x7A,
+         0x2B,0x44,0x2C,0x46,0x69,0x68,0x40,0x7F,0x6A,0x61,0x50,0x77,0x3B,0x4C,0x64,0x74],
+        [0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x57,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,
+         0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,
+         0x2E,0x47,0x7A,0x56,0x42,0x6A,0x2F,0x26,0x49,0x41,0x34,0x32,0x5B,0x76,0x72,0x43,
+         0x38,0x39,0x70,0x45,0x68,0x71,0x51,0x73,0x74,0x75,0x09,0x02,0x28,0x29,0x2A,0x3F,
+         0x40,0x5A,0x2B,0x5E,0x7D,0x29,0x2C,0x22,0x50,0x6F,0x4E,0x53,0x6E,0x67,0x2D,0x30,
+         0x65,0x3D,0x61,0x53,0x55,0x40,0x37,0x24,0x48,0x23,0x36,0x7C,0x5D,0x7E,0x5C,0x21,
+         0x60,0x69,0x54,0x27,0x46,0x25,0x33,0x35,0x44,0x6D,0x4C,0x2E,0x66,0x63,0x3E,0x58,
+         0x31,0x52,0x6B,0x4F,0x59,0x4D,0x77,0x5F,0x64,0x62,0x7B,0x78,0x79,0x3B,0x3A,0x20],
+        [0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x6E,0x0A,0x0B,0x0C,0x06,0x0E,0x0F,
+         0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,
+         0x2D,0x75,0x52,0x60,0x71,0x5E,0x49,0x5C,0x62,0x7D,0x29,0x36,0x20,0x7C,0x7A,0x7F,
+         0x6B,0x63,0x33,0x2B,0x68,0x51,0x66,0x76,0x31,0x64,0x54,0x43,0x3C,0x3A,0x00,0x7E,
+         0x00,0x45,0x2C,0x2A,0x74,0x27,0x37,0x44,0x79,0x59,0x2F,0x6F,0x26,0x72,0x6A,0x39,
+         0x7B,0x3F,0x38,0x77,0x67,0x53,0x47,0x34,0x78,0x5D,0x30,0x23,0x5A,0x5B,0x6C,0x48,
+         0x55,0x70,0x69,0x2E,0x4C,0x21,0x24,0x4E,0x50,0x09,0x56,0x73,0x35,0x61,0x4B,0x58,
+         0x3B,0x57,0x22,0x6D,0x4D,0x25,0x28,0x46,0x4A,0x32,0x41,0x3D,0x5F,0x4F,0x42,0x65],
+      ];
+
+      let result = '';
+      let idx = 0;
+      for (let i = 0; i < payload.length; i++) {
+        const ch = payload.charCodeAt(i);
+        if (ch === 1 && i + 1 < payload.length) {
+          // Escape byte — next char is literal
+          i++;
+          result += payload[i];
+        } else if (ch < 128) {
+          const tableIdx = pickEnc[idx % 64];
+          result += String.fromCharCode(dec3[tableIdx][ch]);
+          idx++;
+        } else {
+          result += payload[i];
+        }
+      }
+      if (!result || result.length < 4) return null;
+      return new TextEncoder().encode(result);
+    } catch (_) { return null; }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // COMMAND OBFUSCATION DETECTION & DEOBFUSCATION
+  // ════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Find command obfuscation patterns (CMD and PowerShell).
+   * Each candidate includes the obfuscated text and the technique detected.
+   */
+  _findCommandObfuscationCandidates(text, context) {
+    if (!text || text.length < 10) return [];
+    const candidates = [];
+
+    // ── CMD caret insertion: p^o^w^e^r^s^h^e^l^l ──
+    // Match words with 3+ carets interspersed
+    const caretRe = /\b[a-zA-Z]\^[a-zA-Z](?:\^?[a-zA-Z]){3,}\b/g;
+    let m;
+    while ((m = caretRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const deobfuscated = m[0].replace(/\^/g, '');
+      if (deobfuscated.length < 3) continue;
+      candidates.push({
+        type: 'cmd-obfuscation',
+        technique: 'CMD Caret Insertion',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        deobfuscated,
+      });
+    }
+
+    // ── CMD set variable concatenation ──
+    // Pattern: multiple "set X=..." followed by %X%%Y%%Z% or !X!!Y!!Z!
+    const setRe = /(?:^|\n)\s*set\s+["']?(\w+)["']?\s*=\s*([^\r\n]*)/gim;
+    const vars = {};
+    while ((m = setRe.exec(text)) !== null) {
+      vars[m[1].toLowerCase()] = { value: m[2].trim(), offset: m.index };
+    }
+    if (Object.keys(vars).length >= 2) {
+      // Look for variable concatenation: %var1%%var2% or !var1!!var2! or %var1:~N,M%
+      const concatRe = /(?:%(\w+)%|!(\w+)!){2,}/g;
+      while ((m = concatRe.exec(text)) !== null) {
+        if (candidates.length >= this.maxCandidatesPerType) break;
+        let resolved = m[0];
+        let anyResolved = false;
+        // Resolve %var% references
+        resolved = resolved.replace(/%(\w+)%/gi, (full, vname) => {
+          const v = vars[vname.toLowerCase()];
+          if (v) { anyResolved = true; return v.value; }
+          return full;
+        });
+        // Resolve !var! references (delayed expansion)
+        resolved = resolved.replace(/!(\w+)!/gi, (full, vname) => {
+          const v = vars[vname.toLowerCase()];
+          if (v) { anyResolved = true; return v.value; }
+          return full;
+        });
+        if (anyResolved && resolved !== m[0] && resolved.length >= 3) {
+          candidates.push({
+            type: 'cmd-obfuscation',
+            technique: 'CMD Variable Concatenation',
+            raw: m[0],
+            offset: m.index,
+            length: m[0].length,
+            deobfuscated: resolved,
+            _vars: vars,
+          });
+        }
+      }
+    }
+
+    // ── CMD environment variable substring abuse: %COMSPEC:~-7,1% ──
+    const envSubRe = /%\w+:~-?\d+(?:,\d+)?%/g;
+    const envSubMatches = [];
+    while ((m = envSubRe.exec(text)) !== null) {
+      envSubMatches.push({ match: m[0], offset: m.index });
+    }
+    if (envSubMatches.length >= 3) {
+      // Find the line(s) containing these, treat entire line as obfuscated command
+      const lineRe = /^.*%\w+:~-?\d+(?:,\d+)?%.*$/gm;
+      while ((m = lineRe.exec(text)) !== null) {
+        if (candidates.length >= this.maxCandidatesPerType) break;
+        const subCount = (m[0].match(/%\w+:~-?\d+(?:,\d+)?%/g) || []).length;
+        if (subCount < 3) continue;
+        candidates.push({
+          type: 'cmd-obfuscation',
+          technique: 'CMD Env Var Substring',
+          raw: m[0],
+          offset: m.index,
+          length: m[0].length,
+          deobfuscated: `[${subCount} env var substring operations — partial decode not reliable without runtime]`,
+        });
+      }
+    }
+
+    // ── PowerShell string concatenation: ('Down'+'loadStr'+'ing') ──
+    const psConcat = /\(\s*'[^']{1,40}'\s*(?:\+\s*'[^']{1,40}'\s*){2,}\)/g;
+    while ((m = psConcat.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const parts = [...m[0].matchAll(/'([^']*)'/g)].map(p => p[1]);
+      const joined = parts.join('');
+      if (joined.length < 4) continue;
+      candidates.push({
+        type: 'cmd-obfuscation',
+        technique: 'PowerShell String Concatenation',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        deobfuscated: joined,
+      });
+    }
+    // Also match with double quotes
+    const psConcatDQ = /\(\s*"[^"]{1,40}"\s*(?:\+\s*"[^"]{1,40}"\s*){2,}\)/g;
+    while ((m = psConcatDQ.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const parts = [...m[0].matchAll(/"([^"]*)"/g)].map(p => p[1]);
+      const joined = parts.join('');
+      if (joined.length < 4) continue;
+      candidates.push({
+        type: 'cmd-obfuscation',
+        technique: 'PowerShell String Concatenation',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        deobfuscated: joined,
+      });
+    }
+
+    // ── PowerShell -replace chain: 'XYZ'.replace('X','a').replace('Y','b') ──
+    const psReplace = /'[^']{2,80}'(?:\s*\.\s*replace\s*\(\s*'[^']*'\s*,\s*'[^']*'\s*\)){2,}/gi;
+    while ((m = psReplace.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      let result = m[0].match(/^'([^']*)'/)[1];
+      const replacements = [...m[0].matchAll(/\.replace\s*\(\s*'([^']*)'\s*,\s*'([^']*)'\s*\)/gi)];
+      for (const rep of replacements) {
+        result = result.split(rep[1]).join(rep[2]);
+      }
+      if (result.length < 3 || result === m[0]) continue;
+      candidates.push({
+        type: 'cmd-obfuscation',
+        technique: 'PowerShell -replace Chain',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        deobfuscated: result,
+      });
+    }
+
+    // ── PowerShell backtick escape: I`nv`o`ke-`E`xp`ression ──
+    // Match words with 2+ backticks that form known cmdlets/keywords
+    const backtickRe = /[a-zA-Z`]{4,}(?:-[a-zA-Z`]{3,})?/g;
+    while ((m = backtickRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const raw = m[0];
+      if ((raw.match(/`/g) || []).length < 2) continue;
+      const cleaned = raw.replace(/`/g, '');
+      // Must resolve to a known suspicious keyword
+      const suspiciousKeywords = /^(invoke-expression|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile|start-process|new-object|set-executionpolicy|invoke-command|get-credential|convertto-securestring|frombase64string|encodedcommand|invoke-mimikatz|invoke-shellcode|powershell|cmd|wscript|cscript|mshta|certutil|bitsadmin|regsvr32|rundll32)$/i;
+      if (!suspiciousKeywords.test(cleaned)) continue;
+      candidates.push({
+        type: 'cmd-obfuscation',
+        technique: 'PowerShell Backtick Escape',
+        raw,
+        offset: m.index,
+        length: raw.length,
+        deobfuscated: cleaned,
+      });
+    }
+
+    // ── PowerShell format operator: '{0}{1}' -f 'Inv','oke-Expression' ──
+    const fmtRe = /'(\{[0-9]\}[^']{0,60})'\s*-f\s*'([^']+)'(?:\s*,\s*'([^']+)')*(?:\s*,\s*'([^']+)')*/gi;
+    while ((m = fmtRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      // Capture the full expression including all arguments
+      const fullExpr = m[0];
+      const template = m[1];
+      const args = [...fullExpr.matchAll(/-f\s+((?:'[^']*'(?:\s*,\s*)?)+)/gi)];
+      if (!args.length) continue;
+      const argValues = [...args[0][1].matchAll(/'([^']*)'/g)].map(a => a[1]);
+      let result = template;
+      for (let i = 0; i < argValues.length; i++) {
+        result = result.replace(new RegExp('\\{' + i + '\\}', 'g'), argValues[i]);
+      }
+      if (result.length < 3 || result === template) continue;
+      candidates.push({
+        type: 'cmd-obfuscation',
+        technique: 'PowerShell Format Operator (-f)',
+        raw: fullExpr,
+        offset: m.index,
+        length: fullExpr.length,
+        deobfuscated: result,
+      });
+    }
+
+    // ── PowerShell reverse string: 'sserpxE-ekovnI'[-1..-100] -join '' ──
+    const revRe = /'([^']{4,80})'\s*\[\s*-1\s*\.\.\s*-\d+\s*\]\s*-join\s*['"]['"]['"]/gi;
+    while ((m = revRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const reversed = m[1].split('').reverse().join('');
+      candidates.push({
+        type: 'cmd-obfuscation',
+        technique: 'PowerShell String Reversal',
+        raw: m[0],
+        offset: m.index,
+        length: m[0].length,
+        deobfuscated: reversed,
+      });
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Process a command obfuscation candidate into a finding.
+   */
+  async _processCommandObfuscation(candidate) {
+    const deobf = candidate.deobfuscated;
+    if (!deobf || deobf.length < 3) return null;
+
+    const deobfBytes = new TextEncoder().encode(deobf);
+    const iocs = this._extractIOCsFromDecoded(deobfBytes);
+
+    // Check for dangerous patterns in deobfuscated output
+    const dangerousPatterns = [
+      /powershell/i, /cmd\.exe/i, /wscript/i, /cscript/i, /mshta/i,
+      /certutil/i, /bitsadmin/i, /regsvr32/i, /rundll32/i,
+      /invoke-expression/i, /invoke-webrequest/i, /downloadstring/i,
+      /downloadfile/i, /new-object/i, /start-process/i,
+      /net\.webclient/i, /frombase64string/i, /encodedcommand/i,
+      /shellexecute/i, /wscript\.shell/i, /MSXML2\.XMLHTTP/i,
+      /http:\/\//i, /https:\/\//i, /\\\\/,
+    ];
+    const matchedPatterns = dangerousPatterns.filter(p => p.test(deobf));
+    let severity = 'medium';
+    if (matchedPatterns.length >= 2) severity = 'high';
+    if (matchedPatterns.length >= 3) severity = 'critical';
+    if (iocs.length > 0) severity = severity === 'critical' ? 'critical' : 'high';
+
+    return {
+      type: 'encoded-content',
+      severity,
+      encoding: candidate.technique,
+      offset: candidate.offset,
+      length: candidate.length,
+      decodedSize: deobf.length,
+      decodedBytes: deobfBytes,
+      chain: [candidate.technique, 'Deobfuscated Command'],
+      classification: { type: 'Deobfuscated Command', ext: '.txt' },
+      entropy: this._shannonEntropyBytes(deobfBytes),
+      hint: candidate.technique,
+      iocs,
+      innerFindings: [],
+      autoDecoded: true,
+      canLoad: true,
+      ext: '.txt',
+      snippet: candidate.raw.substring(0, 120),
+      _deobfuscatedText: deobf,
+      _obfuscatedText: candidate.raw,
+    };
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // NEW ENCODING FINDERS & DECODERS
+  // ════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Space/colon/dash-delimited hex strings: "57 72 69 74 65 2D 4F 75 74 70 75 74"
+   * Requires ≥10 hex byte values, most in printable ASCII range.
+   */
+  _findSpaceDelimitedHexCandidates(text, context) {
+    if (!text || text.length < 29) return [];
+    const candidates = [];
+    // Match 10+ two-digit hex bytes separated by spaces, colons, or dashes
+    const re = /(?:[0-9a-fA-F]{2}[\s:\-]){9,}[0-9a-fA-F]{2}/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const raw = m[0];
+      const offset = m.index;
+      // Extract just the hex values
+      const hexBytes = raw.match(/[0-9a-fA-F]{2}/g);
+      if (!hexBytes || hexBytes.length < 10) continue;
+      // Verify most decode to printable ASCII
+      const printable = hexBytes.filter(h => {
+        const v = parseInt(h, 16);
+        return v >= 32 && v <= 126;
+      }).length;
+      if (printable < hexBytes.length * 0.6) continue;
+      // Skip if this looks like a hash or GUID
+      const hexOnly = hexBytes.join('');
+      if (this._isHashLength(hexOnly)) continue;
+      candidates.push({
+        type: 'Hex (space-delimited)',
+        raw,
+        offset,
+        length: raw.length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'Space/colon/dash-delimited hex bytes',
+        autoDecoded: true,
+      });
+    }
+    return candidates;
+  }
+
+  _decodeSpaceDelimitedHex(str) {
+    try {
+      const hexBytes = str.match(/[0-9a-fA-F]{2}/g);
+      if (!hexBytes || hexBytes.length < 4) return null;
+      const bytes = new Uint8Array(hexBytes.length);
+      for (let i = 0; i < hexBytes.length; i++) {
+        bytes[i] = parseInt(hexBytes[i], 16);
+      }
+      return bytes;
+    } catch (_) { return null; }
+  }
+
+  /**
+   * ROT13 detection: strings inside quotes that when ROT13-decoded produce
+   * recognizable commands/code, especially near eval() or execution context.
+   */
+  _findRot13Candidates(text, context) {
+    if (!text || text.length < 20) return [];
+    const candidates = [];
+    // Match: ROT13 implementation pattern near a quoted string
+    // Look for the classic JS ROT13 pattern: .replace(/[a-zA-Z]/g, function(c){...charCodeAt(0)+13...})
+    const rot13PatternRe = /["']([a-zA-Z][a-zA-Z0-9\s.()\\/"'!@#$%^&*\-_+=:;,<>?{}[\]|~`]{10,})["']\s*[;,)]/g;
+    let m;
+    while ((m = rot13PatternRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const raw = m[1];
+      const offset = m.index;
+      // Check if nearby context mentions ROT13 or charCodeAt+13
+      const region = text.substring(Math.max(0, offset - 200), Math.min(text.length, offset + raw.length + 200));
+      const hasRot13Context = /charCodeAt\s*\(\s*0?\s*\)\s*\+\s*13/i.test(region) ||
+                              /rot13/i.test(region) ||
+                              /charCode.*\+\s*13/i.test(region);
+      if (!hasRot13Context) continue;
+      // Verify the ROT13-decoded result contains recognizable words
+      const decoded = raw.replace(/[a-zA-Z]/g, c => {
+        const base = c <= 'Z' ? 65 : 97;
+        return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
+      });
+      // Check if decoded has recognizable patterns
+      const hasKeywords = /(console|alert|document|window|eval|exec|function|write|log|http|shell|script|import|require)/i.test(decoded);
+      if (!hasKeywords) continue;
+      candidates.push({
+        type: 'ROT13',
+        raw,
+        offset,
+        length: raw.length,
+        entropy: 0,
+        confidence: 'high',
+        hint: 'ROT13-encoded string',
+        autoDecoded: true,
+      });
+    }
+    return candidates;
+  }
+
+  _decodeRot13(str) {
+    try {
+      const decoded = str.replace(/[a-zA-Z]/g, c => {
+        const base = c <= 'Z' ? 65 : 97;
+        return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
+      });
+      return new TextEncoder().encode(decoded);
+    } catch (_) { return null; }
+  }
+
+  /**
+   * Split-Join deobfuscation: "c o n s o l e . l o g".split(' ').join('')
+   * Detects spaced-out strings that are reassembled via split/join or -split/-join.
+   */
+  _findSplitJoinCandidates(text, context) {
+    if (!text || text.length < 20) return [];
+    const candidates = [];
+    let m;
+    // JS: "spaced string".split('X').join('') or .split("X").join("")
+    const jsSplitJoinRe = /["']([^"']{10,})["']\s*\.\s*split\s*\(\s*["'](.{1,3})["']\s*\)\s*\.\s*join\s*\(\s*["']['"]?\s*\)/g;
+    while ((m = jsSplitJoinRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const raw = m[1];
+      const sep = m[2];
+      // Verify removing separator produces something meaningful
+      const decoded = raw.split(sep).join('');
+      if (decoded.length < 6) continue;
+      // Check decoded is mostly printable
+      if (!/^[\x20-\x7E]{6,}$/.test(decoded)) continue;
+      candidates.push({
+        type: 'Split-Join',
+        raw,
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: `Split-Join deobfuscation (separator: "${sep}")`,
+        autoDecoded: true,
+        _separator: sep,
+      });
+    }
+    // PowerShell: "spaced" -split 'X' -join ''
+    const psSplitJoinRe = /["']([^"']{10,})["']\s*-split\s*["'](.{1,3})["']\s*-join\s*["']['"]?/gi;
+    while ((m = psSplitJoinRe.exec(text)) !== null) {
+      if (candidates.length >= this.maxCandidatesPerType) break;
+      const raw = m[1];
+      const sep = m[2];
+      const decoded = raw.split(sep).join('');
+      if (decoded.length < 6 || !/^[\x20-\x7E]{6,}$/.test(decoded)) continue;
+      candidates.push({
+        type: 'Split-Join',
+        raw,
+        offset: m.index,
+        length: m[0].length,
+        entropy: 0,
+        confidence: 'high',
+        hint: `PowerShell Split-Join deobfuscation (separator: "${sep}")`,
+        autoDecoded: true,
+        _separator: sep,
+      });
+    }
+    return candidates;
+  }
+
+  _decodeSplitJoin(str, separator) {
+    try {
+      if (!separator) separator = ' ';
+      const decoded = str.split(separator).join('');
+      return new TextEncoder().encode(decoded);
+    } catch (_) { return null; }
   }
 }

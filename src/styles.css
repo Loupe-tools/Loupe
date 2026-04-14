@@ -889,6 +889,19 @@ body.dark .ext-search {
   word-break: break-all;
 }
 
+/* ── Decoded-from note under IOC values ── */
+.ioc-decoded-from {
+  font-size: 9px;
+  color: #888;
+  font-style: italic;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+body.dark .ioc-decoded-from {
+  color: rgba(255, 255, 255, .38);
+}
+
 /* ── Per-type IOC visual accents ──────────────────────── */
 .ext-table td.ioc-type {
   white-space: nowrap;
@@ -1096,6 +1109,9 @@ body.dark .badge-info {
   transition: border-color .2s;
 }
 
+.enc-finding-card.hidden {
+  display: none;
+}
 .enc-finding-card:hover {
   border-color: #bbb;
 }
@@ -1200,8 +1216,25 @@ body.dark .enc-finding-note {
   font-weight: 600;
 }
 
+.enc-finding-iocs[data-clickable] {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 5px;
+  margin: -2px -5px;
+  transition: background .2s, color .2s;
+}
+
+.enc-finding-iocs[data-clickable]:hover {
+  background: rgba(12, 84, 96, .1);
+  text-decoration: underline;
+}
+
 body.dark .enc-finding-iocs {
   color: #22d3ee;
+}
+
+body.dark .enc-finding-iocs[data-clickable]:hover {
+  background: rgba(34, 211, 238, .12);
 }
 
 .enc-finding-actions {
@@ -1360,6 +1393,54 @@ body.dark .plaintext-table tr.enc-highlight-line > td {
 @keyframes enc-flash {
   0%   { background: rgba(34, 211, 238, .35) !important; }
   100% { background: rgba(34, 211, 238, .08) !important; }
+}
+
+/* ── Encoded content card flash (bidirectional cross-link) ── */
+.enc-finding-card.enc-card-flash {
+  animation: enc-card-flash-anim 1.5s ease-out;
+}
+
+@keyframes enc-card-flash-anim {
+  0%   { box-shadow: 0 0 0 3px rgba(34, 211, 238, .6), 0 0 18px rgba(34, 211, 238, .3); border-color: #22d3ee; }
+  50%  { box-shadow: 0 0 0 2px rgba(34, 211, 238, .35), 0 0 10px rgba(34, 211, 238, .15); border-color: rgba(34, 211, 238, .5); }
+  100% { box-shadow: none; border-color: rgba(34, 211, 238, .15); }
+}
+
+/* ── IOC row flash triggered from encoded content card ── */
+.ext-table tr.ioc-encoded-flash td {
+  animation: ioc-encoded-flash-anim 1.5s ease-out;
+}
+
+@keyframes ioc-encoded-flash-anim {
+  0%   { background: rgba(34, 211, 238, .4); }
+  50%  { background: rgba(34, 211, 238, .2); }
+  100% { background: transparent; }
+}
+
+/* ── "All the way" deep decode button ── */
+.enc-btn-alltheway {
+  font-size: 10px !important;
+  padding: 4px 10px !important;
+  background: rgba(124, 58, 237, .1) !important;
+  border-color: rgba(124, 58, 237, .25) !important;
+  color: #7c3aed !important;
+  font-weight: 600 !important;
+}
+
+.enc-btn-alltheway:hover {
+  background: rgba(124, 58, 237, .2) !important;
+  border-color: rgba(124, 58, 237, .4) !important;
+}
+
+body.dark .enc-btn-alltheway {
+  background: rgba(167, 139, 250, .1) !important;
+  border-color: rgba(167, 139, 250, .2) !important;
+  color: #a78bfa !important;
+}
+
+body.dark .enc-btn-alltheway:hover {
+  background: rgba(167, 139, 250, .2) !important;
+  border-color: rgba(167, 139, 250, .35) !important;
 }
 
 /* ── IOC click-to-highlight in plaintext view ── */

@@ -13,7 +13,7 @@ class CsvRenderer {
     let rowHeight = 32;                  // Base row height in pixels (measured dynamically after DOM insertion)
     const DEFAULT_DETAIL_HEIGHT = 200;   // Fallback detail pane height before measurement
     const BUFFER_ROWS = 20;              // Extra rows to render above/below viewport
-    const MAX_ROWS = 50000;              // Maximum rows to process
+    const MAX_ROWS = 150000;             // Maximum rows to process
 
     const wrap = document.createElement('div');
     wrap.className = 'csv-view';
@@ -157,7 +157,7 @@ class CsvRenderer {
     // ═══════════════════════════════════════════════════════════════════════
     // DYNAMIC HEIGHT HELPERS
     // ═══════════════════════════════════════════════════════════════════════
-    
+
     // Get measured or estimated detail height for an expanded row
     const getDetailHeight = (dataIdx) => {
       return state.detailHeightCache.has(dataIdx)
@@ -175,14 +175,14 @@ class CsvRenderer {
     // Calculate cumulative height up to (not including) virtualIdx
     const calculateHeightUpTo = (virtualIdx) => {
       let height = virtualIdx * rowHeight;
-      
+
       for (const expandedDataIdx of state.expandedRows) {
         const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
         if (expandedVirtualIdx >= 0 && expandedVirtualIdx < virtualIdx) {
           height += getDetailHeight(expandedDataIdx);
         }
       }
-      
+
       return height;
     };
 
@@ -190,14 +190,14 @@ class CsvRenderer {
     const getTotalHeight = () => {
       const rowCount = getVisibleRowCount();
       let height = rowCount * rowHeight;
-      
+
       for (const expandedDataIdx of state.expandedRows) {
         const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
         if (expandedVirtualIdx >= 0 && expandedVirtualIdx < rowCount) {
           height += getDetailHeight(expandedDataIdx);
         }
       }
-      
+
       return height;
     };
 
@@ -205,17 +205,17 @@ class CsvRenderer {
     const findRowAtScrollPosition = (scrollTop) => {
       let accumulatedHeight = 0;
       const rowCount = getVisibleRowCount();
-      
+
       for (let virtualIdx = 0; virtualIdx < rowCount; virtualIdx++) {
         const dataIdx = getDataIndex(virtualIdx);
         const rh = getRowHeight(dataIdx);
-        
+
         if (accumulatedHeight + rh > scrollTop) {
           return virtualIdx;
         }
         accumulatedHeight += rh;
       }
-      
+
       return Math.max(0, rowCount - 1);
     };
 
@@ -288,14 +288,14 @@ class CsvRenderer {
           const icon = tr.querySelector('.csv-expand-icon');
           if (icon) icon.textContent = '▶';
           detailTr.style.display = 'none';
-          
+
           // Force re-render to update spacer heights
           state.renderedRange = { start: -1, end: -1 };
           renderVisibleRows();
         } else {
           // Collapse any other expanded row first (only one expanded at a time)
           state.expandedRows.clear();
-          
+
           // Expand this row
           state.expandedRows.add(dataIdx);
           tr.classList.add('csv-row-selected');
@@ -313,7 +313,7 @@ class CsvRenderer {
 
           // Scroll to the left to show the detail pane
           scr.scrollLeft = 0;
-          
+
           // Force re-render to update DOM structure
           state.renderedRange = { start: -1, end: -1 };
           renderVisibleRows();
@@ -354,7 +354,7 @@ class CsvRenderer {
       // Find visible range using dynamic height calculations
       const firstVisibleRow = findRowAtScrollPosition(scrollTop);
       const startIdx = Math.max(0, firstVisibleRow - BUFFER_ROWS);
-      
+
       const lastVisibleRow = findRowAtScrollPosition(scrollTop + viewportHeight);
       const endIdx = Math.min(rowCount, lastVisibleRow + BUFFER_ROWS + 1);
 
@@ -368,8 +368,8 @@ class CsvRenderer {
       const collapseBuffer = BUFFER_ROWS * 2;
       for (const expandedDataIdx of state.expandedRows) {
         const expandedVirtualIdx = getVirtualIndex(expandedDataIdx);
-        if (expandedVirtualIdx < startIdx - collapseBuffer || 
-            expandedVirtualIdx >= endIdx + collapseBuffer) {
+        if (expandedVirtualIdx < startIdx - collapseBuffer ||
+          expandedVirtualIdx >= endIdx + collapseBuffer) {
           state.expandedRows.delete(expandedDataIdx);
         }
       }
@@ -430,7 +430,7 @@ class CsvRenderer {
     // ═══════════════════════════════════════════════════════════════════════
     let scrollRAF = null;
     let isProgrammaticScroll = false;  // Flag to disable scroll handler during programmatic scroll
-    
+
     scr.addEventListener('scroll', () => {
       if (scrollRAF || isProgrammaticScroll) return;
       scrollRAF = requestAnimationFrame(() => {
@@ -513,7 +513,7 @@ class CsvRenderer {
       setTimeout(() => {
         // Re-enable scroll handler
         isProgrammaticScroll = false;
-        
+
         // Force full re-render at final position
         state.renderedRange = { start: -1, end: -1 };
         renderVisibleRows();
@@ -753,20 +753,20 @@ class CsvRenderer {
     const rowOffsets = [];
     let offset = 0;
     let lineStart = 0;
-    
+
     while (offset <= text.length) {
       let lineEnd = offset;
       while (lineEnd < text.length && text[lineEnd] !== '\r' && text[lineEnd] !== '\n') {
         lineEnd++;
       }
-      
+
       const line = text.substring(lineStart, lineEnd);
-      
+
       if (line.trim()) {
         rows.push(this._split(line, delim));
         rowOffsets.push({ start: lineStart, end: lineEnd });
       }
-      
+
       if (lineEnd < text.length) {
         if (text[lineEnd] === '\r' && text[lineEnd + 1] === '\n') {
           offset = lineEnd + 2;
@@ -778,7 +778,7 @@ class CsvRenderer {
         break;
       }
     }
-    
+
     return { rows, rowOffsets };
   }
 

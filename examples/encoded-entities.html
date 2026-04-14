@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>GloveBox Test: Encoded Entities & Obfuscation</title>
+</head>
+<body>
+<h1>Encoding Obfuscation Test File</h1>
+<p>This file contains various encoding obfuscation techniques for GloveBox detection testing.</p>
+<p>WARNING: This is a HARMLESS test file. No actual malicious actions are performed.</p>
+
+<!-- ── Technique 1: HTML Numeric Entity Encoding ── -->
+<!-- The entities below spell out: <script>alert('XSS test')</script> -->
+<h2>HTML Numeric Entities (decimal)</h2>
+<pre>
+&#60;&#115;&#99;&#114;&#105;&#112;&#116;&#62;&#97;&#108;&#101;&#114;&#116;&#40;&#39;&#88;&#83;&#83;&#32;&#116;&#101;&#115;&#116;&#39;&#41;&#60;&#47;&#115;&#99;&#114;&#105;&#112;&#116;&#62;
+</pre>
+
+<!-- ── Technique 2: HTML Hex Entity Encoding ── -->
+<!-- Hex entities spelling: document.cookie -->
+<h2>HTML Hex Entities</h2>
+<pre>
+&#x64;&#x6f;&#x63;&#x75;&#x6d;&#x65;&#x6e;&#x74;&#x2e;&#x63;&#x6f;&#x6f;&#x6b;&#x69;&#x65;
+</pre>
+
+<!-- ── Technique 3: URL Encoding ── -->
+<h2>URL-Encoded Content</h2>
+<pre>
+%70%6f%77%65%72%73%68%65%6c%6c%20%2d%63%20%22%57%72%69%74%65%2d%48%6f%73%74%20%27%74%65%73%74%27%22
+%68%74%74%70%3a%2f%2f%65%76%69%6c%2e%65%78%61%6d%70%6c%65%2e%63%6f%6d%2f%70%61%79%6c%6f%61%64%2e%65%78%65
+%63%6d%64%2e%65%78%65%20%2f%63%20%77%68%6f%61%6d%69
+</pre>
+
+<!-- ── Technique 4: Unicode Escape Sequences ── -->
+<h2>Unicode Escapes</h2>
+<pre>
+\u0064\u006f\u0063\u0075\u006d\u0065\u006e\u0074\u002e\u0063\u006f\u006f\u006b\u0069\u0065
+\u0077\u0069\u006e\u0064\u006f\u0077\u002e\u006c\u006f\u0063\u0061\u0074\u0069\u006f\u006e
+\u0065\u0076\u0061\u006c\u0028\u0061\u0074\u006f\u0062\u0028
+</pre>
+
+<!-- ── Technique 5: Octal Escape Sequences ── -->
+<h2>Octal Escapes</h2>
+<pre>
+\160\157\167\145\162\163\150\145\154\154
+\143\155\144\056\145\170\145
+\150\164\164\160\072\057\057\145\166\151\154\056\143\157\155
+</pre>
+
+<!-- ── Technique 6: JavaScript Char Array ── -->
+<h2>JavaScript Character Array</h2>
+<pre>
+String.fromCharCode(112,111,119,101,114,115,104,101,108,108)
+String.fromCharCode(100,111,99,117,109,101,110,116,46,99,111,111,107,105,101)
+var x=[104,116,116,112,58,47,47,101,118,105,108,46,99,111,109]; String.fromCharCode.apply(null,x);
+</pre>
+
+<!-- ── Technique 7: VBScript Chr() Concatenation ── -->
+<h2>VBScript Chr() Concatenation</h2>
+<pre>
+Chr(112) & Chr(111) & Chr(119) & Chr(101) & Chr(114) & Chr(115) & Chr(104) & Chr(101) & Chr(108) & Chr(108)
+Chr(87) & Chr(83) & Chr(99) & Chr(114) & Chr(105) & Chr(112) & Chr(116) & Chr(46) & Chr(83) & Chr(104) & Chr(101) & Chr(108) & Chr(108)
+</pre>
+
+<!-- ── Technique 8: Mixed encoding with script context ── -->
+<h2>Entity-Encoded Script Tag</h2>
+<script language="text/plain">
+// This script block is intentionally set to text/plain so it won't execute.
+// It demonstrates what an attacker might use with HTML entity obfuscation:
+// eval(&#x61;&#x74;&#x6f;&#x62;&#x28;&#x27;base64payload&#x27;&#x29;)
+var harmless = "This is just a display test";
+</script>
+
+<!-- ── Technique 9: Base64 in data URI (display only) ── -->
+<h2>Base64 Data URI (not rendered)</h2>
+<pre>
+data:text/html;base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=
+</pre>
+
+</body>
+</html>

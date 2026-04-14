@@ -1,0 +1,135 @@
+$cmd = [System.Convert]::FromBase64String("VwByAGkAdABlAC0ATwB1AHQAcAB1AHQAIABIAEUAbABsAG8AIABXAG8AcgBsAGQA"); iex ([System.Text.Encoding]::Unicode.GetString($cmd))
+
+#Base64 + Gzip compression (layered)
+
+$bytes = [Convert]::FromBase64String("H4sIAAAAAAAEAO3BMQEAAADCoPVPbQ8vAAAAAAAAAAAAAAAAAAAAAAMAAAAA"); $ms = New-Object IO.MemoryStream(,$bytes); $gz = New-Object IO.Compression.GzipStream($ms,[IO.Compression.CompressionMode]::Decompress); $sr = New-Object IO.StreamReader($gz); iex $sr.ReadToEnd()
+
+#XOR + Base64 + aliases
+
+$enc = [Convert]::FromBase64String("VwByAGkAdABlAC0ATwB1AHQAcAB1AHQAIABIAEUAbABsAG8AIABXAG8AcgBsAGQA"); $xor = 0x42; $dec = $enc | % { [char]($_ -bxor $xor) }; &('i'+'ex') ([string]::Join('', $dec))
+
+#Character array + join + iex
+
+$chars = 87,114,105,116,101,45,79,117,116,112,117,116,32,72,101,108,108,111,32,87,111,114,108,100; iex ([string]::Join('', [char[]]$chars))
+
+#String concatenation + variable substitution + aliases
+
+$a="Wr"; $b="ite"; $c="-O"; $d="utput"; $e=" He"; $f="llo"; $g=" Wo"; $h="rld"; &($a+$b+$c+$d) ($e+$f+$g+$h)
+
+#Reversed string + reverse + iex
+
+$s = "dlroW olleH tuptuO-etirW"; iex ($s[-1..-$s.Length] -join '')
+
+#Environment variable + split + iex
+
+$env:obf = "Write-Output|Hello|World"; $parts = $env:obf -split '\|'; &($parts[0]) "$($parts[1]) $($parts[2])"
+
+#Multiple base64 layers + compression
+
+$b64 = "H4sIAAAAAAAAA+3BMQEAAADCoPVPbQ8vAAAAAAAAAAAAAAAAAAAAAAMAAAAA"; $b64_2 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($b64)); $dec = [Convert]::FromBase64String($b64_2); ... (full gzip chain omitted for brevity; expands to same Write-Output)
+
+#Hex string + [char] cast + join
+
+$hex = "57 72 69 74 65 2D 4F 75 74 70 75 74 20 48 65 6C 6C 6F 20 57 6F 72 6C 64"; iex ($hex -split ' ' | % { [char][int]"0x$_" } -join '')
+
+#Reflection + GetMethod + Invoke (advanced)
+
+$method = [System.Management.Automation.ScriptBlock].GetMethod("Create", [Type[]]@([string])); $sb = $method.Invoke($null, @("Write-Output 'Hello World'")); $sb.Invoke()
+
+#Combination: Base64 + XOR + Reverse + iex
+
+$enc = "SGVsbG8gV29ybGQ="; $xor = 0xAA; $dec = [Convert]::FromBase64String($enc) | % { $_ -bxor $xor }; $rev = [string]::Join('', [char[]]$dec[-1..0]); iex $rev
+
+#Token obfuscation + random whitespace + aliases
+
+W  r  i  t  e   -  O  u  t  p  u  t     ' H e l l o     W o r l d '
+
+
+$dict = @{c="Write"; a="-Output"; v="Hello World"}; &($dict.c + $dict.a) $dict.v
+
+ DSC-style + embedded scriptblock
+
+&{param($s) Write-Output $s} "Hello World"
+
+
+#Base64 + atob + eval
+
+eval(atob("Y29uc29sZS5sb2coIkhlbGxvIFdvcmxkIik="));
+
+#Unicode escapes + eval
+
+eval("\u0063\u006F\u006E\u0073\u006F\u006C\u0065\u002E\u006C\u006F\u0067\u0028\u0022\u0048\u0065\u006C\u006C\u006F\u0020\u0057\u006F\u0072\u006C\u0064\u0022\u0029");
+
+#Hex escapes + string concat
+
+eval("\x63\x6F\x6E\x73\x6F\x6C\x65\x2E\x6C\x6F\x67\x28\x22\x48\x65\x6C\x6C\x6F\x20\x57\x6F\x72\x6C\x64\x22\x29");
+
+#Rot13 + replace + eval
+
+var s = "pbafbyr.ybt(\"Uryyb Jbeyq\")"; eval(s.replace(/[a-zA-Z]/g, function(c){return String.fromCharCode((c<="Z"?90:122)>=(c=c.charCodeAt(0)+13)?c:c-26);} ));
+
+#Array of char codes + join + eval
+
+eval(String.fromCharCode(99,111,110,115,111,108,101,46,108,111,103,40,34,72,101,108,108,111,32,87,111,114,108,100,34,41));
+
+#Split + join + eval
+
+eval("c o n s o l e . l o g ( ' H e l l o   W o r l d ' )".split(' ').join(''));
+
+Template literal + obfuscated function name
+
+window["\x63\x6F\x6E\x73\x6F\x6C\x65"]["\x6C\x6F\x67"]`Hello World`;
+
+XOR cipher + fromCharCode
+
+var enc = [106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122]; var key=7; var dec = enc.map(c=>String.fromCharCode(c^key)).join(''); eval(dec);
+
+Multiple layers: Base64 → Unicode → eval
+eval(atob("Y29uc29sZS5sb2coIlx1MDA0OEVsXGwwMDQ4bG9cMDA0OG8gV29ybGQ=\x22\x29"));
+
+#Self-executing function with obfuscated args
+(function(a,b){a[b]("Hello World")}) (console,"log");
+
+#String.fromCharCode + reverse + concat
+eval(String.fromCharCode.apply(null,[100,108,114,111,119,32,111,108,108,101,72].reverse().concat(32,41,34)).concat("console.log"));
+
+new Proxy(console,{get(t,p){return t[p]}}).log("Hello World");
+
+#Obfuscated with comments and whitespace
+/* */ console /* obfuscation */ . /* layer */ log /* test */ ("Hello World")
+
+# exec() wrapper
+exec('print("Hello, World!")')
+
+# Base64 decode + exec
+import base64; exec(base64.b64decode('cHJpbnQoIkhlbGxvLCBXb3JsZCEiKQ==').decode())
+
+#JSON + eval trick
+eval('('+JSON.stringify({c:"console.log('Hello World')"}).replace(/"c":/,"") + ')');
+
+chr() generator expression
+print(''.join(chr(x) for x in [72,101,108,108,111,44,32,87,111,114,108,100,33]))
+
+# zlib compression + Base64 + exec
+import zlib, base64; exec(zlib.decompress(base64.b64decode('eJwrKMrMK9FQ8kjNycnXUQjPL8pJUVTSBABZLgcs')).decode())
+
+# bytes.fromhex + decode
+print(bytes.fromhex('48 65 6c 6c 6f 2c 20 57 6f 72 6c 64 21').decode())
+
+#Combination: Base64 + XOR + split + eval
+var b = atob("..."); var x = b.split('').map(c=>String.fromCharCode(c.charCodeAt(0)^0xAA)).join(''); eval(x);
+
+# Dynamic import + getattr
+__import__('builtins').__getattribute__('print')("Hello, World!")
+
+# Reversed string + join
+print(''.join(reversed("!dlroW ,olleH")))
+
+# Python Obfuscation
+import base64; exec(base64.b64decode(b"cHJpbnQoIkhlbGxvIFdvcmxkIik="))
+
+# Multi-layer: zlib + Base64 + exec (byte string variant)
+import base64, zlib; code = zlib.decompress(base64.b64decode(b'eJwrKMrMK9FQ8kjNycnXUQjPL8pJUVTSBABZLgcs')); exec(code.decode())
+
+# String concatenation + eval/exec
+exec("pri" + "nt" + "('Hello, World!')")

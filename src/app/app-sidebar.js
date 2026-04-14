@@ -288,10 +288,11 @@ Object.assign(App.prototype, {
 
     const det = document.createElement('details');
     det.className = 'sb-details';
-    // Auto-open if any high-severity findings or any decoded content
+    // Auto-open if any high-severity findings, decoded content, or IOCs extracted
     const hasHigh = encodedFindings.some(f => f.severity === 'high' || f.severity === 'critical');
     const hasDecoded = encodedFindings.some(f => f.decodedBytes);
-    det.open = hasHigh || hasDecoded;
+    const hasIOCs = encodedFindings.some(f => f.iocs && f.iocs.length);
+    det.open = hasHigh || hasDecoded || hasIOCs;
 
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
@@ -308,24 +309,60 @@ Object.assign(App.prototype, {
     const body = document.createElement('div');
     body.className = 'sb-details-body';
 
-    // Severity summary bar
+    // ── Filter state ──────────────────────────────────────────────────────
+    const activeSeverities = new Set();
+
+    // ── Severity config ───────────────────────────────────────────────────
+    const sevConfig = {
+      critical: { icon: '🟣', color: '#4a1a7a' },
+      high:     { icon: '🔴', color: '#721c24' },
+      medium:   { icon: '🟡', color: '#856404' },
+      info:     { icon: '🔵', color: '#666' },
+    };
+
+    // ── Store references ──────────────────────────────────────────────────
+    const sevFilterElements = new Map();
+    const cardElements = [];
+
+    // ── Severity filter bar (clickable) ───────────────────────────────────
     const sevOrder = { critical: 0, high: 1, medium: 2, info: 3 };
-    const high = encodedFindings.filter(f => f.severity === 'high').length;
-    const med = encodedFindings.filter(f => f.severity === 'medium').length;
-    const inf = encodedFindings.filter(f => f.severity === 'info').length;
-    if (high || med || inf) {
-      const bar = document.createElement('div'); bar.className = 'sev-bar';
-      if (high) { const s = document.createElement('span'); s.style.color = '#721c24'; s.textContent = `🔴 ${high} high`; bar.appendChild(s); }
-      if (med) { const s = document.createElement('span'); s.style.color = '#856404'; s.textContent = `🟡 ${med} medium`; bar.appendChild(s); }
-      if (inf) { const s = document.createElement('span'); s.style.color = '#666'; s.textContent = `🔵 ${inf} info`; bar.appendChild(s); }
-      body.appendChild(bar);
+    const sevBar = document.createElement('div'); sevBar.className = 'sev-bar';
+
+    for (const sev of ['critical', 'high', 'medium', 'info']) {
+      const count = encodedFindings.filter(f => f.severity === sev).length;
+      if (!count) continue;
+
+      const { icon, color } = sevConfig[sev];
+      const s = document.createElement('span');
+      s.className = 'sev-filter';
+      s.dataset.severity = sev;
+      s.style.color = color;
+      s.textContent = `${icon} ${count} ${sev}`;
+      s.title = `Click to filter by ${sev} severity`;
+      s.addEventListener('click', () => {
+        if (activeSeverities.has(sev)) {
+          activeSeverities.delete(sev);
+          s.classList.remove('sev-filter-active');
+        } else {
+          activeSeverities.add(sev);
+          s.classList.add('sev-filter-active');
+        }
+        applyEncFilters();
+      });
+      sevBar.appendChild(s);
+      sevFilterElements.set(sev, s);
     }
+    if (sevBar.children.length) body.appendChild(sevBar);
 
     // Render each finding as a card
     const sorted = [...encodedFindings].sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9));
     for (const finding of sorted) {
       const card = document.createElement('div');
       card.className = `enc-finding-card enc-sev-${finding.severity}`;
+
+      // Store DOM reference for bidirectional cross-flash linking
+      finding._cardEl = card;
+      finding._iocRows = [];
 
       // Header line: severity badge + encoding type
       const header = document.createElement('div');
@@ -426,13 +463,19 @@ Object.assign(App.prototype, {
         details.appendChild(entLine);
       }
 
-      // IOCs found in decoded content
+      // IOCs found in decoded content — clickable to flash IOC rows
       if (finding.iocs && finding.iocs.length) {
         const iocLine = document.createElement('div');
         iocLine.className = 'enc-finding-iocs';
+        iocLine.setAttribute('data-clickable', '');
         const counts = {};
         for (const ioc of finding.iocs) counts[ioc.type] = (counts[ioc.type] || 0) + 1;
         iocLine.textContent = 'IOCs: ' + Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ');
+        iocLine.title = 'Click to highlight IOC rows in Signatures & IOCs';
+        iocLine.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._flashIocRows(finding);
+        });
         details.appendChild(iocLine);
       }
 
@@ -551,6 +594,46 @@ Object.assign(App.prototype, {
         actions.appendChild(decompBtn);
       }
 
+      // "All the way" — deep decode to innermost layer (for multi-layer encoding)
+      if (finding.innerFindings && finding.innerFindings.length > 0) {
+        const deepest = this._getDeepestFinding(finding);
+        if (deepest && deepest !== finding && (deepest.decodedBytes || deepest.rawCandidate)) {
+          const atwBtn = document.createElement('button');
+          atwBtn.className = 'tb-btn enc-btn-alltheway';
+          atwBtn.textContent = 'All the way ⏩';
+          atwBtn.title = 'Follow encoding chain to deepest decoded content';
+          atwBtn.addEventListener('click', async () => {
+            atwBtn.disabled = true;
+            atwBtn.textContent = '⏳ Decoding…';
+            try {
+              // Lazy decode the deepest finding if needed
+              if (!deepest.decodedBytes && deepest.rawCandidate) {
+                const detector = new EncodedContentDetector();
+                await detector.lazyDecode(deepest);
+              }
+              if (deepest.decodedBytes) {
+                const ext = deepest.ext || '.bin';
+                const chainLabel = deepest.chain ? deepest.chain.join('_').replace(/[^a-z0-9_]/gi, '') : 'deep';
+                const synName = `deep_decoded_${chainLabel}_offset${finding.offset}${ext}`;
+                const blob = new Blob([deepest.decodedBytes], { type: 'application/octet-stream' });
+                const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
+                this._pushNavState(fileName);
+                this._loadFile(syntheticFile);
+              } else {
+                this._toast('Deep decode produced no bytes', 'error');
+                atwBtn.disabled = false;
+                atwBtn.textContent = 'All the way ⏩';
+              }
+            } catch (err) {
+              this._toast('Deep decode failed: ' + err.message, 'error');
+              atwBtn.disabled = false;
+              atwBtn.textContent = 'All the way ⏩';
+            }
+          });
+          actions.appendChild(atwBtn);
+        }
+      }
+
       if (actions.children.length > 0) card.appendChild(actions);
 
       // Inner findings (recursive)
@@ -581,7 +664,36 @@ Object.assign(App.prototype, {
       }
 
       body.appendChild(card);
+      cardElements.push({ el: card, severity: finding.severity });
     }
+
+    // ── Encoded content severity filter function ──────────────────────────
+    const applyEncFilters = () => {
+      let visibleCount = 0;
+      for (const { el, severity } of cardElements) {
+        const visible = activeSeverities.size === 0 || activeSeverities.has(severity);
+        el.classList.toggle('hidden', !visible);
+        if (visible) visibleCount++;
+      }
+
+      // Update severity bar counts based on visible items
+      for (const [sev, el] of sevFilterElements) {
+        const count = cardElements.filter(c => c.severity === sev).length;
+        if (count > 0) {
+          el.style.display = '';
+          el.textContent = `${sevConfig[sev].icon} ${count} ${sev}`;
+        } else {
+          el.style.display = 'none';
+        }
+      }
+
+      // Update summary count
+      if (activeSeverities.size > 0) {
+        sum.textContent = `🔓 Encoded Content (${visibleCount}/${encodedFindings.length})`;
+      } else {
+        sum.textContent = `🔓 Encoded Content (${encodedFindings.length})`;
+      }
+    };
 
     det.appendChild(body);
     container.appendChild(det);
@@ -719,7 +831,39 @@ Object.assign(App.prototype, {
       const td1 = document.createElement('td'); td1.textContent = ref.type;
       td1.className = 'ioc-type ioc-type-' + ref.type.toLowerCase().replace(/\s+/g, '-');
       const td2 = document.createElement('td'); td2.className = 'ext-val';
-      const sp = document.createElement('span'); sp.textContent = ref.url; td2.appendChild(sp);
+      if (ref._yaraRuleName) {
+        // YARA match: bold humanised rule name + description
+        const strong = document.createElement('strong');
+        strong.textContent = ref._yaraRuleName.replace(/_/g, ' ');
+        td2.appendChild(strong);
+        if (ref.url) {
+          const rest = document.createElement('span');
+          rest.textContent = ' — ' + ref.url;
+          td2.appendChild(rest);
+        }
+      } else {
+        const sp = document.createElement('span'); sp.textContent = ref.url; td2.appendChild(sp);
+      }
+      // Show decode chain note for IOCs extracted from encoded/obfuscated layers
+      if (ref._decodedFrom) {
+        const noteEl = document.createElement('div');
+        noteEl.className = 'ioc-decoded-from';
+        noteEl.textContent = '↳ Decoded from: ' + ref._decodedFrom;
+        if (ref._encodedFinding && ref._encodedFinding._cardEl) {
+          noteEl.style.cursor = 'pointer';
+          noteEl.title = 'Click to locate parent encoded content finding';
+          noteEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._flashEncodedCard(ref._encodedFinding);
+          });
+        }
+        td2.appendChild(noteEl);
+      } else if (ref.note) {
+        const noteEl = document.createElement('div');
+        noteEl.className = 'ioc-decoded-from';
+        noteEl.textContent = '↳ ' + ref.note;
+        td2.appendChild(noteEl);
+      }
       if (IOC_COPYABLE.has(ref.type)) {
         const cb = document.createElement('button'); cb.className = 'copy-url-btn';
         cb.textContent = '📋'; cb.title = 'Copy';
@@ -737,6 +881,11 @@ Object.assign(App.prototype, {
 
       // Click-to-navigate: apply filter in EVTX view or scroll to match in content
       tr.addEventListener('click', () => this._navigateToFinding(ref, tr));
+
+      // Register IOC row back to parent encoded finding for cross-flash
+      if (ref._encodedFinding && ref._encodedFinding._iocRows) {
+        ref._encodedFinding._iocRows.push(tr);
+      }
 
       tbody.appendChild(tr);
     }
@@ -1489,6 +1638,52 @@ Object.assign(App.prototype, {
     for (const el of highlighted) {
       el.classList.remove('enc-highlight-line', 'enc-highlight-flash');
     }
+  },
+
+  // ── Flash encoded content card ──────────────────────────────────────────
+  _flashEncodedCard(finding) {
+    const card = finding._cardEl;
+    if (!card) return;
+    // Ensure the Encoded Content section is open
+    const encDetails = card.closest('.sb-details');
+    if (encDetails && !encDetails.open) encDetails.open = true;
+    card.classList.remove('enc-card-flash');
+    void card.offsetWidth; // force reflow to restart animation
+    card.classList.add('enc-card-flash');
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    setTimeout(() => card.classList.remove('enc-card-flash'), 1500);
+  },
+
+  // ── Flash IOC rows linked to an encoded finding ─────────────────────────
+  _flashIocRows(finding) {
+    const rows = finding._iocRows;
+    if (!rows || !rows.length) return;
+    // Ensure Signatures & IOCs section is open
+    const sigDetails = rows[0].closest('.sb-details');
+    if (sigDetails && !sigDetails.open) sigDetails.open = true;
+    // Small delay to let section expand before scrolling
+    setTimeout(() => {
+      for (const tr of rows) {
+        tr.classList.remove('ioc-encoded-flash');
+        void tr.offsetWidth;
+        tr.classList.add('ioc-encoded-flash');
+      }
+      rows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => { for (const tr of rows) tr.classList.remove('ioc-encoded-flash'); }, 1500);
+    }, 50);
+  },
+
+  // ── Get deepest decoded finding in innerFindings tree ───────────────────
+  _getDeepestFinding(finding) {
+    if (!finding.innerFindings || !finding.innerFindings.length) return finding;
+    const sevRank = { critical: 4, high: 3, medium: 2, info: 1 };
+    const best = finding.innerFindings.reduce((a, b) =>
+      (sevRank[b.severity] || 0) > (sevRank[a.severity] || 0) ? b : a
+    );
+    if (best.decodedBytes || best.rawCandidate || (best.innerFindings && best.innerFindings.length)) {
+      return this._getDeepestFinding(best);
+    }
+    return (best.decodedBytes || best.rawCandidate) ? best : finding;
   },
 
 });
