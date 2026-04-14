@@ -9,12 +9,14 @@ class CsvRenderer {
     const wrap = document.createElement('div'); wrap.className = 'csv-view';
     const ext = (fileName || '').split('.').pop().toLowerCase();
     const delim = ext === 'tsv' ? '\t' : this._delim(text);
-    const rows = this._parse(text, delim);
+    const { rows, rowOffsets } = this._parse(text, delim);
     if (!rows.length) { wrap.textContent = 'Empty file.'; return wrap; }
 
     // Header row (first row)
     const headerRow = rows[0] || [];
     const dataRowsRaw = rows.slice(1);
+    // Data row offsets (skip header row offset)
+    const dataRowOffsets = rowOffsets.slice(1);
 
     // Calculate reasonable column widths based on content
     const colWidths = this._calcColumnWidths(rows);
@@ -144,14 +146,17 @@ class CsvRenderer {
       detailTr.appendChild(detailTd);
       tbody.appendChild(detailTr);
 
-      // Store row reference for filtering and expansion
+      // Store row reference for filtering, expansion, and YARA match highlighting
       const rowObj = {
         tr,
         detailTr,
         detailTd,
         rowData: row,
         searchText: rowText.join(' '),
-        visible: true
+        visible: true,
+        // Store offset range for YARA match lookup (offset into raw text)
+        offsetStart: dataRowOffsets[ri] ? dataRowOffsets[ri].start : 0,
+        offsetEnd: dataRowOffsets[ri] ? dataRowOffsets[ri].end : 0
       };
       dataRows.push(rowObj);
 
@@ -306,7 +311,7 @@ class CsvRenderer {
     });
     clearBtn.addEventListener('click', clearFilter);
 
-    // Expose filter controls for external access (IOC navigation)
+    // Expose filter controls for external access (IOC navigation, YARA highlighting)
     wrap._csvFilters = {
       filterInput,
       applyFilter,
@@ -316,7 +321,9 @@ class CsvRenderer {
       dataRows,
       expandRow,
       expandAll: expandAllVisible,
-      collapseAll: collapseAllVisible
+      collapseAll: collapseAllVisible,
+      headerRow,
+      buildDetailPane: (td, row) => this._buildDetailPane(td, headerRow, row)
     };
 
     // Store raw CSV text for proper IOC extraction (avoids cell concatenation issues)
@@ -402,13 +409,51 @@ class CsvRenderer {
     return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
   }
 
+  /**
+   * Parse CSV text into rows. Also tracks row offset ranges for YARA match highlighting.
+   * Offsets are relative to the original text (before line ending normalization).
+   * @param {string} text - Raw CSV text
+   * @param {string} delim - Delimiter character
+   * @returns {{ rows: string[][], rowOffsets: {start: number, end: number}[] }}
+   */
   _parse(text, delim) {
     const rows = [];
-    for (const line of text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
-      if (!line.trim()) continue;
-      rows.push(this._split(line, delim));
+    const rowOffsets = [];
+    // Track offsets in original text by scanning for line endings manually
+    let offset = 0;
+    let lineStart = 0;
+    
+    while (offset <= text.length) {
+      // Find the next line ending (CR, LF, or CRLF)
+      let lineEnd = offset;
+      while (lineEnd < text.length && text[lineEnd] !== '\r' && text[lineEnd] !== '\n') {
+        lineEnd++;
+      }
+      
+      // Extract the line content
+      const line = text.substring(lineStart, lineEnd);
+      
+      if (line.trim()) {
+        rows.push(this._split(line, delim));
+        rowOffsets.push({ start: lineStart, end: lineEnd });
+      }
+      
+      // Skip past the line ending
+      if (lineEnd < text.length) {
+        if (text[lineEnd] === '\r' && text[lineEnd + 1] === '\n') {
+          // CRLF
+          offset = lineEnd + 2;
+        } else {
+          // CR or LF
+          offset = lineEnd + 1;
+        }
+        lineStart = offset;
+      } else {
+        break;
+      }
     }
-    return rows;
+    
+    return { rows, rowOffsets };
   }
 
   _split(line, delim) {

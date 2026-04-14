@@ -710,12 +710,131 @@ body.dark .meta-table td:first-child {
 
 .sev-bar {
   display: flex;
-  gap: 14px;
-  padding: 2px 0 10px;
+  gap: 10px;
+  padding: 2px 0 8px;
   font-size: 11px;
   font-weight: 600;
   flex-wrap: wrap;
 }
+
+/* ── Clickable severity filter pills ── */
+.sev-filter {
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+  transition: all .15s ease;
+  user-select: none;
+}
+
+.sev-filter:hover {
+  background: rgba(0, 0, 0, .06);
+}
+
+.sev-filter-active {
+  background: rgba(0, 0, 0, .1) !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15);
+}
+
+body.dark .sev-filter:hover {
+  background: rgba(255, 255, 255, .08);
+}
+
+body.dark .sev-filter-active {
+  background: rgba(255, 255, 255, .12) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2);
+}
+
+/* ── Type filter bar ── */
+.type-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 0 10px;
+  font-size: 10px;
+}
+
+/* ── Type filter base styling ── */
+.type-filter {
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+  transition: all .15s ease;
+  user-select: none;
+  border-left: 3px solid currentColor;
+}
+
+.type-filter:hover {
+  filter: brightness(0.92);
+}
+
+.type-filter-active {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+/* ── Type-specific colors (light mode) ── */
+.type-filter-yara-match    { color: #7c3aed; background: rgba(124, 58, 237, .1); }
+.type-filter-url           { color: #2563eb; background: rgba(37, 99, 235, .1); }
+.type-filter-ip-address    { color: #dc2626; background: rgba(220, 38, 38, .1); }
+.type-filter-email         { color: #ea580c; background: rgba(234, 88, 12, .1); }
+.type-filter-file-path     { color: #16a34a; background: rgba(22, 163, 74, .1); }
+.type-filter-unc-path      { color: #16a34a; background: rgba(22, 163, 74, .1); }
+.type-filter-hash          { color: #475569; background: rgba(71, 85, 105, .1); }
+.type-filter-command-line  { color: #be123c; background: rgba(190, 18, 60, .1); }
+.type-filter-process       { color: #be123c; background: rgba(190, 18, 60, .1); }
+.type-filter-hostname      { color: #0891b2; background: rgba(8, 145, 178, .1); }
+.type-filter-username      { color: #0891b2; background: rgba(8, 145, 178, .1); }
+.type-filter-attachment    { color: #d97706; background: rgba(217, 119, 6, .1); }
+.type-filter-pattern       { color: #64748b; background: rgba(100, 116, 139, .1); }
+.type-filter-info          { color: #94a3b8; background: rgba(148, 163, 184, .1); }
+
+/* Active state - stronger background */
+.type-filter-yara-match.type-filter-active    { background: rgba(124, 58, 237, .25); }
+.type-filter-url.type-filter-active           { background: rgba(37, 99, 235, .25); }
+.type-filter-ip-address.type-filter-active    { background: rgba(220, 38, 38, .25); }
+.type-filter-email.type-filter-active         { background: rgba(234, 88, 12, .25); }
+.type-filter-file-path.type-filter-active     { background: rgba(22, 163, 74, .25); }
+.type-filter-unc-path.type-filter-active      { background: rgba(22, 163, 74, .25); }
+.type-filter-hash.type-filter-active          { background: rgba(71, 85, 105, .25); }
+.type-filter-command-line.type-filter-active  { background: rgba(190, 18, 60, .25); }
+.type-filter-process.type-filter-active       { background: rgba(190, 18, 60, .25); }
+.type-filter-hostname.type-filter-active      { background: rgba(8, 145, 178, .25); }
+.type-filter-username.type-filter-active      { background: rgba(8, 145, 178, .25); }
+.type-filter-attachment.type-filter-active    { background: rgba(217, 119, 6, .25); }
+.type-filter-pattern.type-filter-active       { background: rgba(100, 116, 139, .25); }
+.type-filter-info.type-filter-active          { background: rgba(148, 163, 184, .25); }
+
+/* ── Type-specific colors (dark mode) ── */
+body.dark .type-filter-yara-match    { color: #a78bfa; background: rgba(167, 139, 250, .15); }
+body.dark .type-filter-url           { color: #60a5fa; background: rgba(96, 165, 250, .15); }
+body.dark .type-filter-ip-address    { color: #f87171; background: rgba(248, 113, 113, .15); }
+body.dark .type-filter-email         { color: #fb923c; background: rgba(251, 146, 60, .15); }
+body.dark .type-filter-file-path     { color: #4ade80; background: rgba(74, 222, 128, .15); }
+body.dark .type-filter-unc-path      { color: #4ade80; background: rgba(74, 222, 128, .15); }
+body.dark .type-filter-hash          { color: #94a3b8; background: rgba(148, 163, 184, .15); }
+body.dark .type-filter-command-line  { color: #fb7185; background: rgba(251, 113, 133, .15); }
+body.dark .type-filter-process       { color: #fb7185; background: rgba(251, 113, 133, .15); }
+body.dark .type-filter-hostname      { color: #22d3ee; background: rgba(34, 211, 238, .15); }
+body.dark .type-filter-username      { color: #22d3ee; background: rgba(34, 211, 238, .15); }
+body.dark .type-filter-attachment    { color: #fbbf24; background: rgba(251, 191, 36, .15); }
+body.dark .type-filter-pattern       { color: #94a3b8; background: rgba(148, 163, 184, .15); }
+body.dark .type-filter-info          { color: #64748b; background: rgba(100, 116, 139, .15); }
+
+/* Dark mode active states */
+body.dark .type-filter-yara-match.type-filter-active    { background: rgba(167, 139, 250, .3); }
+body.dark .type-filter-url.type-filter-active           { background: rgba(96, 165, 250, .3); }
+body.dark .type-filter-ip-address.type-filter-active    { background: rgba(248, 113, 113, .3); }
+body.dark .type-filter-email.type-filter-active         { background: rgba(251, 146, 60, .3); }
+body.dark .type-filter-file-path.type-filter-active     { background: rgba(74, 222, 128, .3); }
+body.dark .type-filter-unc-path.type-filter-active      { background: rgba(74, 222, 128, .3); }
+body.dark .type-filter-hash.type-filter-active          { background: rgba(148, 163, 184, .3); }
+body.dark .type-filter-command-line.type-filter-active  { background: rgba(251, 113, 133, .3); }
+body.dark .type-filter-process.type-filter-active       { background: rgba(251, 113, 133, .3); }
+body.dark .type-filter-hostname.type-filter-active      { background: rgba(34, 211, 238, .3); }
+body.dark .type-filter-username.type-filter-active      { background: rgba(34, 211, 238, .3); }
+body.dark .type-filter-attachment.type-filter-active    { background: rgba(251, 191, 36, .3); }
+body.dark .type-filter-pattern.type-filter-active       { background: rgba(148, 163, 184, .3); }
+body.dark .type-filter-info.type-filter-active          { background: rgba(100, 116, 139, .3); }
 
 .ext-search {
   width: 100%;
@@ -1303,6 +1422,49 @@ body.dark mark.yara-highlight-flash {
 
 body.dark .plaintext-table tr.yara-line-highlight > td {
   background: rgba(34, 211, 238, .06) !important;
+  box-shadow: inset 3px 0 0 rgba(34, 211, 238, .4);
+}
+
+/* ── CSV YARA match highlight ── */
+mark.csv-yara-highlight {
+  background: rgba(34, 211, 238, .4);
+  border-radius: 2px;
+  padding: 1px 3px;
+  color: inherit;
+}
+
+mark.csv-yara-highlight-flash {
+  animation: csv-yara-highlight-pulse 2.5s ease-out forwards;
+}
+
+@keyframes csv-yara-highlight-pulse {
+  0%   { background: rgba(34, 211, 238, .7); box-shadow: 0 0 10px rgba(34, 211, 238, .6); }
+  30%  { background: rgba(34, 211, 238, .5); box-shadow: 0 0 6px rgba(34, 211, 238, .4); }
+  100% { background: rgba(34, 211, 238, .25); box-shadow: none; }
+}
+
+body.dark mark.csv-yara-highlight {
+  background: rgba(34, 211, 238, .3);
+}
+
+body.dark mark.csv-yara-highlight-flash {
+  animation: csv-yara-highlight-pulse-dark 2.5s ease-out forwards;
+}
+
+@keyframes csv-yara-highlight-pulse-dark {
+  0%   { background: rgba(34, 211, 238, .6); box-shadow: 0 0 10px rgba(34, 211, 238, .5); }
+  30%  { background: rgba(34, 211, 238, .4); box-shadow: 0 0 6px rgba(34, 211, 238, .3); }
+  100% { background: rgba(34, 211, 238, .2); box-shadow: none; }
+}
+
+.csv-table tr.csv-yara-row-highlight > td {
+  background: rgba(34, 211, 238, .12) !important;
+  box-shadow: inset 3px 0 0 rgba(34, 211, 238, .5);
+  transition: background .3s ease;
+}
+
+body.dark .csv-table tr.csv-yara-row-highlight > td {
+  background: rgba(34, 211, 238, .08) !important;
   box-shadow: inset 3px 0 0 rgba(34, 211, 238, .4);
 }
 

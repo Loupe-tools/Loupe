@@ -617,31 +617,89 @@ Object.assign(App.prototype, {
     const sevOrder = { critical: 0, high: 1, medium: 2, info: 3 };
     refs.sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9));
 
-    // Severity summary bar
-    const crit = refs.filter(r => r.severity === 'critical').length;
-    const high = refs.filter(r => r.severity === 'high').length;
-    const med = refs.filter(r => r.severity === 'medium').length;
-    const inf = refs.filter(r => r.severity === 'info').length;
-    const bar = document.createElement('div'); bar.className = 'sev-bar';
-    if (crit) { const s = document.createElement('span'); s.style.color = '#4a1a7a'; s.textContent = `🟣 ${crit} critical`; bar.appendChild(s); }
-    if (high) { const s = document.createElement('span'); s.style.color = '#721c24'; s.textContent = `🔴 ${high} high`; bar.appendChild(s); }
-    if (med) { const s = document.createElement('span'); s.style.color = '#856404'; s.textContent = `🟡 ${med} medium`; bar.appendChild(s); }
-    if (inf) { const s = document.createElement('span'); s.style.color = '#666'; s.textContent = `🔵 ${inf} info`; bar.appendChild(s); }
-    body.appendChild(bar);
+    // ── Filter state ─────────────────────────────────────────────────────
+    const activeSeverities = new Set();
+    const activeTypes = new Set();
 
-    // Filter search
+    // ── Severity config ──────────────────────────────────────────────────
+    const sevConfig = {
+      critical: { icon: '🟣', color: '#4a1a7a' },
+      high:     { icon: '🔴', color: '#721c24' },
+      medium:   { icon: '🟡', color: '#856404' },
+      info:     { icon: '🔵', color: '#666' },
+    };
+
+    // ── Store references to filter elements ──────────────────────────────
+    const sevFilterElements = new Map();  // severity -> element
+    const typeFilterElements = new Map(); // type -> element
+
+    // ── Severity filter bar (clickable) ──────────────────────────────────
+    const sevBar = document.createElement('div'); sevBar.className = 'sev-bar';
+
+    for (const sev of ['critical', 'high', 'medium', 'info']) {
+      const count = refs.filter(r => r.severity === sev).length;
+      if (!count) continue;
+
+      const { icon, color } = sevConfig[sev];
+      const s = document.createElement('span');
+      s.className = 'sev-filter';
+      s.dataset.severity = sev;
+      s.style.color = color;
+      s.textContent = `${icon} ${count} ${sev}`;
+      s.title = `Click to filter by ${sev} severity`;
+      s.addEventListener('click', () => {
+        if (activeSeverities.has(sev)) {
+          activeSeverities.delete(sev);
+          s.classList.remove('sev-filter-active');
+        } else {
+          activeSeverities.add(sev);
+          s.classList.add('sev-filter-active');
+        }
+        applyFilters();
+      });
+      sevBar.appendChild(s);
+      sevFilterElements.set(sev, s);
+    }
+    body.appendChild(sevBar);
+
+    // ── Type filter bar (clickable pills with type-specific colors) ──────
+    const typeCounts = {};
+    for (const r of refs) {
+      typeCounts[r.type] = (typeCounts[r.type] || 0) + 1;
+    }
+    // Sort types by count descending, then alphabetically
+    const sortedTypes = Object.entries(typeCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+    const typeBar = document.createElement('div'); typeBar.className = 'type-bar';
+    for (const [type, count] of sortedTypes) {
+      const typeKey = type.toLowerCase().replace(/\s+/g, '-');
+      const pill = document.createElement('span');
+      pill.className = `type-filter type-filter-${typeKey}`;
+      pill.dataset.type = type;
+      pill.textContent = `${type} (${count})`;
+      pill.title = `Click to filter by ${type}`;
+      pill.addEventListener('click', () => {
+        if (activeTypes.has(type)) {
+          activeTypes.delete(type);
+          pill.classList.remove('type-filter-active');
+        } else {
+          activeTypes.add(type);
+          pill.classList.add('type-filter-active');
+        }
+        applyFilters();
+      });
+      typeBar.appendChild(pill);
+      typeFilterElements.set(type, pill);
+    }
+    body.appendChild(typeBar);
+
+    // ── Text search input ────────────────────────────────────────────────
     const srch = document.createElement('input');
     srch.type = 'text'; srch.placeholder = 'Filter findings…'; srch.className = 'ext-search';
     body.appendChild(srch);
 
-    // Download all
-    const dl = document.createElement('button'); dl.className = 'tb-btn';
-    dl.style.cssText = 'font-size:11px;margin-bottom:8px;width:100%;display:block;';
-    dl.textContent = '⬇ Download All (.txt)';
-    dl.addEventListener('click', () => this._downloadExtracted(refs, fileName));
-    body.appendChild(dl);
-
-    // Table
+    // ── Table ────────────────────────────────────────────────────────────
     const tbl = document.createElement('table'); tbl.className = 'ext-table';
     const thead = document.createElement('thead');
     const htr = document.createElement('tr');
@@ -655,6 +713,9 @@ Object.assign(App.prototype, {
       const tr = document.createElement('tr');
       tr.className = 'ioc-clickable';
       tr.dataset.search = (ref.type + ' ' + ref.url).toLowerCase();
+      tr.dataset.severity = ref.severity;
+      tr.dataset.type = ref.type;
+
       const td1 = document.createElement('td'); td1.textContent = ref.type;
       td1.className = 'ioc-type ioc-type-' + ref.type.toLowerCase().replace(/\s+/g, '-');
       const td2 = document.createElement('td'); td2.className = 'ext-val';
@@ -681,11 +742,92 @@ Object.assign(App.prototype, {
     }
     tbl.appendChild(tbody); body.appendChild(tbl);
 
-    // Filter handler
-    srch.addEventListener('input', () => {
+    // ── Unified filter function with dynamic cross-filtering ─────────────
+    const applyFilters = () => {
       const q = srch.value.toLowerCase();
-      for (const tr of tbody.rows) tr.classList.toggle('hidden', !!q && !tr.dataset.search.includes(q));
-    });
+
+      // Step 1: Find all rows matching text search
+      const textMatchingRows = [];
+      for (const tr of tbody.rows) {
+        if (!q || tr.dataset.search.includes(q)) {
+          textMatchingRows.push(tr);
+        }
+      }
+
+      // Step 2: Compute available severities (considering active type filters)
+      // These are severities that would show results if selected
+      const availableSevCounts = {};
+      for (const tr of textMatchingRows) {
+        if (activeTypes.size === 0 || activeTypes.has(tr.dataset.type)) {
+          const sev = tr.dataset.severity;
+          availableSevCounts[sev] = (availableSevCounts[sev] || 0) + 1;
+        }
+      }
+
+      // Step 3: Compute available types (considering active severity filters)
+      const availableTypeCounts = {};
+      for (const tr of textMatchingRows) {
+        if (activeSeverities.size === 0 || activeSeverities.has(tr.dataset.severity)) {
+          const t = tr.dataset.type;
+          availableTypeCounts[t] = (availableTypeCounts[t] || 0) + 1;
+        }
+      }
+
+      // Step 4: Update severity bar - show/hide and update counts
+      for (const [sev, el] of sevFilterElements) {
+        const count = availableSevCounts[sev] || 0;
+        if (count > 0) {
+          el.style.display = '';
+          el.textContent = `${sevConfig[sev].icon} ${count} ${sev}`;
+        } else {
+          el.style.display = 'none';
+          // Auto-deselect if it was active but now has no matches
+          if (activeSeverities.has(sev)) {
+            activeSeverities.delete(sev);
+            el.classList.remove('sev-filter-active');
+          }
+        }
+      }
+
+      // Step 5: Update type bar - show/hide and update counts
+      for (const [type, el] of typeFilterElements) {
+        const count = availableTypeCounts[type] || 0;
+        if (count > 0) {
+          el.style.display = '';
+          el.textContent = `${type} (${count})`;
+        } else {
+          el.style.display = 'none';
+          // Auto-deselect if it was active but now has no matches
+          if (activeTypes.has(type)) {
+            activeTypes.delete(type);
+            el.classList.remove('type-filter-active');
+          }
+        }
+      }
+
+      // Step 6: Filter table rows using all three filters
+      let visibleCount = 0;
+      for (const tr of tbody.rows) {
+        const matchesText = !q || tr.dataset.search.includes(q);
+        const matchesSev = activeSeverities.size === 0 || activeSeverities.has(tr.dataset.severity);
+        const matchesType = activeTypes.size === 0 || activeTypes.has(tr.dataset.type);
+
+        const visible = matchesText && matchesSev && matchesType;
+        tr.classList.toggle('hidden', !visible);
+        if (visible) visibleCount++;
+      }
+
+      // Update summary count if filters are active
+      const hasActiveFilters = activeSeverities.size > 0 || activeTypes.size > 0 || q;
+      if (hasActiveFilters) {
+        sum.textContent = `🔍 Signatures & IOCs (${visibleCount}/${refs.length})`;
+      } else {
+        sum.textContent = `🔍 Signatures & IOCs (${refs.length})`;
+      }
+    };
+
+    // ── Event listeners ──────────────────────────────────────────────────
+    srch.addEventListener('input', applyFilters);
 
     det.appendChild(body);
     container.appendChild(det);
@@ -721,6 +863,27 @@ Object.assign(App.prototype, {
 
         // Highlight the match inline
         this._highlightYaraMatchInline(plaintextTable, sourceText, match.offset, match.length);
+        return;
+      }
+
+      // ── YARA match in CSV view: highlight in detail pane ──────────────────
+      const csvView = pc && pc.querySelector('.csv-view');
+      if (csvView && csvView._csvFilters && sourceText) {
+        const matches = ref._yaraMatches;
+
+        // Track current match index on the ref object for cycling
+        if (ref._currentMatchIndex === undefined) ref._currentMatchIndex = 0;
+        else ref._currentMatchIndex = (ref._currentMatchIndex + 1) % matches.length;
+
+        const match = matches[ref._currentMatchIndex];
+        const totalMatches = matches.length;
+        const currentNum = ref._currentMatchIndex + 1;
+
+        // Show match counter toast
+        this._toast(`Match ${currentNum}/${totalMatches}: ${match.stringId}`);
+
+        // Highlight the match in the CSV detail pane
+        this._highlightYaraMatchInCsv(csvView, sourceText, match.offset, match.length);
         return;
       }
     }
@@ -1177,6 +1340,122 @@ Object.assign(App.prototype, {
     for (const cell of codesCells) {
       cell.normalize();
     }
+
+    // Also clear CSV detail pane highlights
+    const csvMarks = pc.querySelectorAll('mark.csv-yara-highlight');
+    for (const mark of csvMarks) {
+      const textNode = document.createTextNode(mark.textContent);
+      mark.parentNode.replaceChild(textNode, mark);
+    }
+    // Normalize detail value cells
+    const detailVals = pc.querySelectorAll('.csv-detail-val');
+    for (const cell of detailVals) {
+      cell.normalize();
+    }
+  },
+
+  // ── Highlight YARA match in CSV detail pane ─────────────────────────────
+  _highlightYaraMatchInCsv(csvView, sourceText, offset, length) {
+    // Clear any existing highlights first
+    this._clearYaraHighlight();
+
+    const filters = csvView._csvFilters;
+    if (!filters || !filters.dataRows) return;
+
+    // Find which row contains this offset
+    let targetRow = null;
+    for (const r of filters.dataRows) {
+      if (offset >= r.offsetStart && offset < r.offsetEnd) {
+        targetRow = r;
+        break;
+      }
+    }
+
+    if (!targetRow) return;
+
+    // Auto-expand the row if not already expanded
+    if (targetRow.detailTr.style.display === 'none') {
+      if (!targetRow.detailTd.hasChildNodes()) {
+        filters.buildDetailPane(targetRow.detailTd, targetRow.rowData);
+      }
+      targetRow.detailTr.style.display = '';
+      targetRow.tr.classList.add('csv-row-selected');
+    }
+
+    // Scroll the row into view
+    targetRow.tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Add row highlight
+    targetRow.tr.classList.add('csv-yara-row-highlight');
+
+    // Calculate the match position relative to row start
+    const rowStart = targetRow.offsetStart;
+    const matchText = sourceText.substring(offset, offset + length);
+
+    // Find and highlight the match in the detail pane
+    const detailPane = targetRow.detailTd.querySelector('.csv-detail-pane');
+    if (detailPane) {
+      const detailVals = detailPane.querySelectorAll('.csv-detail-val');
+      let found = false;
+      for (const valEl of detailVals) {
+        if (found) break;
+        const cellText = valEl.textContent;
+        
+        // Try exact match first, then case-insensitive (for nocase YARA rules)
+        let matchIdx = cellText.indexOf(matchText);
+        let actualMatch = matchText;
+        if (matchIdx === -1) {
+          matchIdx = cellText.toLowerCase().indexOf(matchText.toLowerCase());
+          if (matchIdx !== -1) {
+            actualMatch = cellText.substring(matchIdx, matchIdx + matchText.length);
+          }
+        }
+        
+        if (matchIdx !== -1) {
+          // Found the match - highlight it
+          const before = cellText.substring(0, matchIdx);
+          const matched = cellText.substring(matchIdx, matchIdx + actualMatch.length);
+          const after = cellText.substring(matchIdx + actualMatch.length);
+
+          // Escape HTML entities
+          const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+          valEl.innerHTML = esc(before) +
+            `<mark class="csv-yara-highlight csv-yara-highlight-flash">${esc(matched)}</mark>` +
+            esc(after);
+
+          // Scroll the highlighted element into view within the detail pane
+          const mark = valEl.querySelector('.csv-yara-highlight');
+          if (mark) {
+            mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          found = true;
+        }
+      }
+    }
+
+    // Remove highlights after animation
+    setTimeout(() => {
+      targetRow.tr.classList.remove('csv-yara-row-highlight');
+      const marks = csvView.querySelectorAll('mark.csv-yara-highlight');
+      for (const mark of marks) {
+        mark.classList.remove('csv-yara-highlight-flash');
+      }
+    }, 3000);
+
+    // Clean up mark elements after longer delay
+    setTimeout(() => {
+      const marks = csvView.querySelectorAll('mark.csv-yara-highlight');
+      for (const mark of marks) {
+        const textNode = document.createTextNode(mark.textContent);
+        mark.parentNode.replaceChild(textNode, mark);
+      }
+      // Normalize
+      const detailVals = csvView.querySelectorAll('.csv-detail-val');
+      for (const cell of detailVals) {
+        cell.normalize();
+      }
+    }, 5000);
   },
 
   // ── Update overall risk from encoded content severity ──────────────────
