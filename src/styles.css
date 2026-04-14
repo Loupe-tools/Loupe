@@ -1831,14 +1831,16 @@ body.dark .xlsx-cap-notice {
 
 /* Left-align CSV view in page container with padding */
 #page-container:has(.csv-view) {
-  align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+  align-items: stretch;
   padding-left: 20px;
   padding-right: 20px;
 }
 
 .csv-view {
   width: auto;
-  max-width: calc(100vw - 40px);
+  max-width: 100%;
   background: white;
   box-shadow: 0 2px 16px rgba(0, 0, 0, .25);
   border-radius: 6px;
@@ -1894,9 +1896,6 @@ body.dark .csv-info {
   border: 1px solid #e0e0e0;
   padding: 3px 10px;
   white-space: pre;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .csv-table tr:nth-child(even) td {
