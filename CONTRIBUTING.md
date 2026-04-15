@@ -1,7 +1,7 @@
 # Contributing to GloveBox
 
 > Developer guide for GloveBox. See [README.md](README.md) for end-user documentation.
-> For AI coding agents, see [`.clinerules`](.clinerules) and [`CODEMAP.md`](CODEMAP.md).
+> For AI coding agents see [`CODEMAP.md`](CODEMAP.md).
 
 ---
 
