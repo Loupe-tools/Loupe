@@ -337,6 +337,10 @@ Object.assign(App.prototype, {
             <a href="https://sam-dowling.github.io/GloveBox/" target="_blank" rel="noopener">Live Demo</a>
           </p>
 
+          <div style="text-align:center;margin-top:12px;">
+            <a class="help-update-btn" href="https://sam-dowling.github.io/GloveBox/?v=v${version}" target="_blank" rel="noopener">🔄 Check for Updates</a>
+          </div>
+
           <p style="margin-top:1.2em;opacity:0.5;font-size:0.85em;">Licensed under the GNU General Public License v3.0</p>
         </div>
       </div>`;
@@ -359,6 +363,61 @@ Object.assign(App.prototype, {
       document.removeEventListener('keydown', this._helpEscHandler);
       this._helpEscHandler = null;
     }
+  },
+
+  // ── Version check (from ?v= query parameter) ─────────────────────────────
+  _checkVersionParam() {
+    const params = new URLSearchParams(window.location.search);
+    const incoming = params.get('v');
+    if (!incoming) return;
+
+    // Strip leading 'v' prefix if present
+    const remoteVersion = incoming.replace(/^v/, '');
+    const localVersion = typeof GLOVEBOX_VERSION !== 'undefined' ? GLOVEBOX_VERSION : 'dev';
+
+    // Clean the URL so the popup doesn't reappear on refresh
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState(null, '', cleanUrl);
+
+    // Compare versions (YYYYMMDD.HHMM format — numeric comparison works)
+    const remoteNum = parseFloat(remoteVersion) || 0;
+    const localNum = parseFloat(localVersion) || 0;
+    const isUpToDate = localVersion !== 'dev' && remoteNum >= localNum;
+
+    // Build popup
+    const overlay = document.createElement('div');
+    overlay.className = 'help-overlay update-check-overlay';
+
+    if (isUpToDate) {
+      overlay.innerHTML = `
+        <div class="update-dialog">
+          <div class="update-icon update-icon-ok">✅</div>
+          <h2 class="update-title">You're up to date!</h2>
+          <p class="update-detail">Your version <strong>v${remoteVersion}</strong> matches the latest release.</p>
+          <button class="update-btn update-btn-close">Close</button>
+        </div>`;
+    } else {
+      const dlUrl = 'https://github.com/Sam-Dowling/GloveBox/releases/latest/download/glovebox.html';
+      overlay.innerHTML = `
+        <div class="update-dialog">
+          <div class="update-icon update-icon-new">🔄</div>
+          <h2 class="update-title">New update available!</h2>
+          <p class="update-detail">You have <strong>v${remoteVersion}</strong> — the latest version is <strong>v${localVersion}</strong>.</p>
+          <div class="update-actions">
+            <a class="update-btn update-btn-download" href="${dlUrl}" target="_blank" rel="noopener">⬇️ Download Latest</a>
+            <button class="update-btn update-btn-close">Close</button>
+          </div>
+        </div>`;
+    }
+
+    document.body.appendChild(overlay);
+
+    // Close handlers
+    const close = () => { if (overlay.parentNode) overlay.remove(); };
+    overlay.querySelector('.update-btn-close').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    const escHandler = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
   },
 
 });

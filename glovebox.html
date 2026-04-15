@@ -4862,6 +4862,148 @@ body.dark .help-tagline {
   border-color: rgba(255, 255, 255, .06);
 }
 
+/* ── Check for Updates button (in help dialog) ── */
+.help-update-btn {
+  display: inline-block;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  color: #1a73e8;
+  background: rgba(26, 115, 232, .08);
+  border: 1px solid rgba(26, 115, 232, .2);
+  transition: all .2s;
+}
+
+.help-update-btn:hover {
+  background: rgba(26, 115, 232, .16);
+  border-color: rgba(26, 115, 232, .35);
+  text-decoration: none;
+}
+
+body.dark .help-update-btn {
+  color: #22d3ee;
+  background: rgba(34, 211, 238, .08);
+  border-color: rgba(34, 211, 238, .2);
+}
+
+body.dark .help-update-btn:hover {
+  background: rgba(34, 211, 238, .16);
+  border-color: rgba(34, 211, 238, .35);
+}
+
+/* ══════════════════════════════════════════════════
+   UPDATE CHECK DIALOG
+   ══════════════════════════════════════════════════ */
+.update-check-overlay {
+  z-index: 1600;
+}
+
+.update-dialog {
+  width: 400px;
+  max-width: 90vw;
+  padding: 32px 28px 24px;
+  background: #f8f9fa;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 8px 48px rgba(0, 0, 0, .35), 0 0 0 1px rgba(0, 0, 0, .08);
+}
+
+body.dark .update-dialog {
+  background: rgba(18, 19, 28, .96);
+  border: 1px solid rgba(255, 255, 255, .08);
+  box-shadow: 0 8px 48px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.update-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+
+.update-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: #222;
+}
+
+body.dark .update-title {
+  color: #e0e0e8;
+}
+
+.update-detail {
+  font-size: 13px;
+  color: #555;
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+body.dark .update-detail {
+  color: rgba(255, 255, 255, .6);
+}
+
+.update-detail strong {
+  color: #333;
+  font-weight: 600;
+}
+
+body.dark .update-detail strong {
+  color: #e0e0e8;
+}
+
+.update-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.update-btn {
+  display: inline-block;
+  padding: 9px 22px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  transition: all .2s;
+}
+
+.update-btn-download {
+  background: linear-gradient(135deg, #22d3ee, #06b6d4);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(34, 211, 238, .3);
+}
+
+.update-btn-download:hover {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  box-shadow: 0 4px 16px rgba(34, 211, 238, .4);
+  text-decoration: none;
+}
+
+.update-btn-close {
+  background: rgba(0, 0, 0, .06);
+  color: #555;
+  border: 1px solid rgba(0, 0, 0, .1);
+}
+
+.update-btn-close:hover {
+  background: rgba(0, 0, 0, .1);
+}
+
+body.dark .update-btn-close {
+  background: rgba(255, 255, 255, .06);
+  color: rgba(255, 255, 255, .7);
+  border-color: rgba(255, 255, 255, .1);
+}
+
+body.dark .update-btn-close:hover {
+  background: rgba(255, 255, 255, .1);
+}
+
 /* noscript fallback */
 .noscript-msg {
   padding: 40px;
@@ -6327,7 +6469,7 @@ relevance:0}),e.C_NUMBER_MODE]}}})();hljs.registerLanguage("vbscript",e)})();
 
   <!-- ── Application ─────────────────────────────────────────────────── -->
   <script>
-const GLOVEBOX_VERSION = '20260415.1711';
+const GLOVEBOX_VERSION = '20260415.1750';
 const DEFAULT_YARA_RULES = `// ─── Default YARA Rules ───────────────────────────────────
 // Edit or replace these rules, then click "Run Scan"
 // Supports: text strings, hex strings {AA BB}, regex /pattern/
@@ -28614,6 +28756,7 @@ class App {
     this._setupSidebarResize();
     this._setupViewerPan();
     this._setupSearch();
+    this._checkVersionParam();
     // Keyboard shortcuts: S=toggle sidebar, Y=YARA dialog, Ctrl+F=search
     document.addEventListener('keydown', e => {
       // Ctrl+F / Cmd+F: focus document search
@@ -32325,6 +32468,10 @@ Object.assign(App.prototype, {
             <a href="https://sam-dowling.github.io/GloveBox/" target="_blank" rel="noopener">Live Demo</a>
           </p>
 
+          <div style="text-align:center;margin-top:12px;">
+            <a class="help-update-btn" href="https://sam-dowling.github.io/GloveBox/?v=v${version}" target="_blank" rel="noopener">🔄 Check for Updates</a>
+          </div>
+
           <p style="margin-top:1.2em;opacity:0.5;font-size:0.85em;">Licensed under the GNU General Public License v3.0</p>
         </div>
       </div>`;
@@ -32347,6 +32494,61 @@ Object.assign(App.prototype, {
       document.removeEventListener('keydown', this._helpEscHandler);
       this._helpEscHandler = null;
     }
+  },
+
+  // ── Version check (from ?v= query parameter) ─────────────────────────────
+  _checkVersionParam() {
+    const params = new URLSearchParams(window.location.search);
+    const incoming = params.get('v');
+    if (!incoming) return;
+
+    // Strip leading 'v' prefix if present
+    const remoteVersion = incoming.replace(/^v/, '');
+    const localVersion = typeof GLOVEBOX_VERSION !== 'undefined' ? GLOVEBOX_VERSION : 'dev';
+
+    // Clean the URL so the popup doesn't reappear on refresh
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState(null, '', cleanUrl);
+
+    // Compare versions (YYYYMMDD.HHMM format — numeric comparison works)
+    const remoteNum = parseFloat(remoteVersion) || 0;
+    const localNum = parseFloat(localVersion) || 0;
+    const isUpToDate = localVersion !== 'dev' && remoteNum >= localNum;
+
+    // Build popup
+    const overlay = document.createElement('div');
+    overlay.className = 'help-overlay update-check-overlay';
+
+    if (isUpToDate) {
+      overlay.innerHTML = `
+        <div class="update-dialog">
+          <div class="update-icon update-icon-ok">✅</div>
+          <h2 class="update-title">You're up to date!</h2>
+          <p class="update-detail">Your version <strong>v${remoteVersion}</strong> matches the latest release.</p>
+          <button class="update-btn update-btn-close">Close</button>
+        </div>`;
+    } else {
+      const dlUrl = 'https://github.com/Sam-Dowling/GloveBox/releases/latest/download/glovebox.html';
+      overlay.innerHTML = `
+        <div class="update-dialog">
+          <div class="update-icon update-icon-new">🔄</div>
+          <h2 class="update-title">New update available!</h2>
+          <p class="update-detail">You have <strong>v${remoteVersion}</strong> — the latest version is <strong>v${localVersion}</strong>.</p>
+          <div class="update-actions">
+            <a class="update-btn update-btn-download" href="${dlUrl}" target="_blank" rel="noopener">⬇️ Download Latest</a>
+            <button class="update-btn update-btn-close">Close</button>
+          </div>
+        </div>`;
+    }
+
+    document.body.appendChild(overlay);
+
+    // Close handlers
+    const close = () => { if (overlay.parentNode) overlay.remove(); };
+    overlay.querySelector('.update-btn-close').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    const escHandler = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
   },
 
 });

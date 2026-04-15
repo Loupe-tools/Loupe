@@ -16,6 +16,7 @@ class App {
     this._setupSidebarResize();
     this._setupViewerPan();
     this._setupSearch();
+    this._checkVersionParam();
     // Keyboard shortcuts: S=toggle sidebar, Y=YARA dialog, Ctrl+F=search
     document.addEventListener('keydown', e => {
       // Ctrl+F / Cmd+F: focus document search
