@@ -101,7 +101,6 @@ Vendor libraries (`vendor/jszip.min.js`, `vendor/xlsx.full.min.js`, `vendor/pdf.
 GloveBox/
 ├── build.py                        # Build script — reads src/, writes docs/index.html
 ├── generate-codemap.py             # Generates CODEMAP.md (AI agent navigation map)
-├── .clinerules                     # AI coding agent instructions
 ├── CODEMAP.md                      # Auto-generated code map with line-level symbol index
 ├── README.md
 ├── CONTRIBUTING.md
@@ -181,7 +180,6 @@ GloveBox/
 
 GloveBox is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, etc.):
 
-- **`.clinerules`** — Instructions for AI agents: architecture overview, patterns to follow, files to avoid, and context budget tips.
 - **`CODEMAP.md`** — Auto-generated code map with precise line numbers for every class, method, CSS section, and YARA rule. Agents can read this file first (~24K tokens) and then use `read_file(path, start_line=X, end_line=Y)` for surgical edits without consuming their entire context window.
 - **`generate-codemap.py`** — Regenerate `CODEMAP.md` after any code changes: `python generate-codemap.py`
 - **Split CSS/YARA** — CSS and YARA rules are split into multiple files by category, keeping each file under 3,300 lines. No single file dominates the context budget.
