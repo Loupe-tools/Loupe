@@ -122,8 +122,8 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 
 GloveBox automatically peels back layers of encoding to reveal hidden threats. In this demo a double Base64-encoded PowerShell download cradle is loaded — GloveBox decodes both layers, reconstructs the original command, and extracts the embedded C2 IP address as an IOC, all entirely in the browser.
 
-<p>
-  <video src="screenshots/usage.mp4" controls width="800" alt="GloveBox in action — 100% offline static analysis"></video>
+<p align="center">
+<img src="screenshots/usage.gif" alt="GloveBox in action — nested Base64 decoding and C2 IP extraction" width="800">
 </p>
 
 ### Try It Yourself
