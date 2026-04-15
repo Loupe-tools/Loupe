@@ -16,10 +16,27 @@ xlsx_js      = read('vendor/xlsx.full.min.js')
 pdf_js       = read('vendor/pdf.min.js')
 pdf_wrk_js   = read('vendor/pdf.worker.min.js')
 highlight_js = read('vendor/highlight.min.js')
-css          = read('src/styles.css')
 
-# Default YARA rules — injected as a JS constant
-yar_rules  = read('src/default-rules.yar')
+# CSS files — concatenated in order
+CSS_FILES = [
+    'src/styles/core.css',
+    'src/styles/viewers.css',
+]
+css = ''.join(read(f) for f in CSS_FILES)
+
+# Default YARA rules — split by category, concatenated and injected as a JS constant
+YARA_FILES = [
+    'src/rules/office-macros.yar',
+    'src/rules/script-threats.yar',
+    'src/rules/document-threats.yar',
+    'src/rules/windows-threats.yar',
+    'src/rules/archive-threats.yar',
+    'src/rules/encoding-threats.yar',
+    'src/rules/network-indicators.yar',
+    'src/rules/suspicious-patterns.yar',
+    'src/rules/file-analysis.yar',
+]
+yar_rules = '\n'.join(read(f) for f in YARA_FILES)
 # Escape backticks and backslashes for JS template literal
 yar_rules_escaped = yar_rules.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
 default_yara_js = f'const DEFAULT_YARA_RULES = `{yar_rules_escaped}`;\n'

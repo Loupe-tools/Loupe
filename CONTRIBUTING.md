@@ -1,6 +1,7 @@
 # Contributing to GloveBox
 
 > Developer guide for GloveBox. See [README.md](README.md) for end-user documentation.
+> For AI coding agents, see [`.clinerules`](.clinerules) and [`CODEMAP.md`](CODEMAP.md).
 
 ---
 
@@ -9,14 +10,36 @@
 Requires **Python 3.8+** (standard library only — no `pip install` needed).
 
 ```bash
-python build.py
+python build.py                  # Concatenates src/ → docs/index.html
+python generate-codemap.py       # Regenerates CODEMAP.md (run after code changes)
 ```
 
-The build script reads `src/styles.css` and the JS source files listed below, inlines all CSS and JavaScript (including vendor libraries) into a single self-contained HTML document:
+The build script reads CSS files from `src/styles/`, YARA rules from `src/rules/`, and JS source files, inlining all CSS and JavaScript (including vendor libraries) into a single self-contained HTML document:
 
 | Output | Purpose |
 |---|---|
 | `docs/index.html` | GitHub Pages deployment (sole build output) |
+
+### CSS Concatenation Order
+
+```
+src/styles/core.css                    # Base theme, toolbar, sidebar, dialogs ("Midnight Glass")
+src/styles/viewers.css                 # All format-specific viewer styles
+```
+
+### YARA Rule Files
+
+```
+src/rules/office-macros.yar            # Office/VBA macro detection (33 rules)
+src/rules/script-threats.yar           # Script threats: PS, JS, VBS, CMD, Python (64 rules)
+src/rules/document-threats.yar         # PDF, RTF, OLE, HTML, SVG, OneNote (39 rules)
+src/rules/windows-threats.yar          # LNK, HTA, MSI, registry, LOLBins (126 rules)
+src/rules/archive-threats.yar          # Archive format threats (11 rules)
+src/rules/encoding-threats.yar         # Base64, hex, obfuscation patterns (28 rules)
+src/rules/network-indicators.yar       # UNC, WebDAV, credential theft (3 rules)
+src/rules/suspicious-patterns.yar      # General suspicious patterns (7 rules)
+src/rules/file-analysis.yar            # PE, image, forensic analysis (5 rules)
+```
 
 ### JS Concatenation Order
 
@@ -41,7 +64,7 @@ src/renderers/odp-renderer.js          # OdpRenderer — OpenDocument presentati
 src/renderers/ppt-renderer.js          # PptRenderer — legacy .ppt slide extraction
 src/renderers/rtf-renderer.js          # RtfRenderer — RTF text + OLE/exploit analysis
 src/renderers/zip-renderer.js          # ZipRenderer — archive listing + threat flagging
-src/renderers/iso-renderer.js         # IsoRenderer — ISO 9660 filesystem listing
+src/renderers/iso-renderer.js          # IsoRenderer — ISO 9660 filesystem listing
 src/renderers/url-renderer.js          # UrlRenderer — .url / .webloc shortcut parser
 src/renderers/onenote-renderer.js      # OneNoteRenderer — .one embedded object extraction
 src/renderers/iqy-slk-renderer.js      # IqySlkRenderer — Internet Query + Symbolic Link files
@@ -68,9 +91,7 @@ src/app/app-yara.js                    # YARA rule editor dialog, scanning, resu
 src/app/app-ui.js                      # UI helpers (zoom, theme, pan, toast) + bootstrap
 ```
 
-Default YARA rules (`src/default-rules.yar`) are escaped and injected as a JS constant before the application code.
-
-Vendor libraries (`vendor/jszip.min.js`, `vendor/xlsx.full.min.js`, `vendor/pdf.min.js`, `vendor/pdf.worker.min.js`) are inlined into separate `<script>` blocks before the application code.
+Vendor libraries (`vendor/jszip.min.js`, `vendor/xlsx.full.min.js`, `vendor/pdf.min.js`, `vendor/pdf.worker.min.js`, `vendor/highlight.min.js`) are inlined into separate `<script>` blocks before the application code.
 
 ---
 
@@ -78,65 +99,92 @@ Vendor libraries (`vendor/jszip.min.js`, `vendor/xlsx.full.min.js`, `vendor/pdf.
 
 ```
 GloveBox/
-├── build.py                       # Build script — reads src/, writes docs/index.html
+├── build.py                        # Build script — reads src/, writes docs/index.html
+├── generate-codemap.py             # Generates CODEMAP.md (AI agent navigation map)
+├── .clinerules                     # AI coding agent instructions
+├── CODEMAP.md                      # Auto-generated code map with line-level symbol index
 ├── README.md
+├── CONTRIBUTING.md
 ├── docs/
-│   └── index.html                 # Built output (GitHub Pages)
+│   └── index.html                  # Built output (GitHub Pages) — DO NOT EDIT
 ├── vendor/
-│   ├── jszip.min.js               # JSZip — ZIP parsing for DOCX/XLSX/PPTX
-│   ├── xlsx.full.min.js           # SheetJS — spreadsheet parsing
-│   ├── pdf.min.js                 # pdf.js — PDF rendering (Mozilla)
-│   └── pdf.worker.min.js          # pdf.js worker — PDF parsing backend
+│   ├── jszip.min.js                # JSZip — ZIP parsing for DOCX/XLSX/PPTX
+│   ├── xlsx.full.min.js            # SheetJS — spreadsheet parsing
+│   ├── pdf.min.js                  # pdf.js — PDF rendering (Mozilla)
+│   ├── pdf.worker.min.js           # pdf.js worker — PDF parsing backend
+│   └── highlight.min.js            # highlight.js — syntax highlighting
 ├── src/
-│   ├── styles.css                 # All UI CSS (Midnight Glass theme, toolbar, sidebar, views)
-│   ├── constants.js               # Shared constants, DOM helpers, unit converters, sanitizers
-│   ├── vba-utils.js               # Shared VBA binary decoder + auto-exec pattern scanner
-│   ├── yara-engine.js             # YaraEngine — in-browser YARA rule parser + matcher
-│   ├── decompressor.js            # Decompressor — gzip/deflate/raw via DecompressionStream
+│   ├── styles/                     # CSS (split for manageable file sizes)
+│   │   ├── core.css                # Base theme, toolbar, sidebar, dialogs (1,729 lines)
+│   │   └── viewers.css             # Format-specific viewer styles (3,274 lines)
+│   ├── rules/                      # YARA rules (split by threat category)
+│   │   ├── office-macros.yar       # Office/VBA macro detection
+│   │   ├── script-threats.yar      # PS, JS, VBS, CMD, Python threats
+│   │   ├── document-threats.yar    # PDF, RTF, OLE, HTML, SVG threats
+│   │   ├── windows-threats.yar     # LNK, HTA, MSI, registry, LOLBins
+│   │   ├── archive-threats.yar     # Archive format threats
+│   │   ├── encoding-threats.yar    # Encoding/obfuscation patterns
+│   │   ├── network-indicators.yar  # UNC, WebDAV, credential theft
+│   │   ├── suspicious-patterns.yar # General suspicious patterns
+│   │   └── file-analysis.yar       # PE, image, forensic analysis
+│   ├── constants.js                # Shared constants, DOM helpers, unit converters, sanitizers
+│   ├── vba-utils.js                # Shared VBA binary decoder + auto-exec pattern scanner
+│   ├── yara-engine.js              # YaraEngine — in-browser YARA rule parser + matcher
+│   ├── decompressor.js             # Decompressor — gzip/deflate/raw via DecompressionStream
 │   ├── encoded-content-detector.js # EncodedContentDetector — encoded blob scanner
-│   ├── default-rules.yar          # Default YARA detection rules (auto-loaded)
-│   ├── docx-parser.js             # DocxParser class
-│   ├── style-resolver.js          # StyleResolver class
-│   ├── numbering-resolver.js      # NumberingResolver class
-│   ├── content-renderer.js        # ContentRenderer class
-│   ├── security-analyzer.js       # SecurityAnalyzer class
+│   ├── docx-parser.js              # DocxParser class
+│   ├── style-resolver.js           # StyleResolver class
+│   ├── numbering-resolver.js       # NumberingResolver class
+│   ├── content-renderer.js         # ContentRenderer class
+│   ├── security-analyzer.js        # SecurityAnalyzer class
 │   ├── renderers/
-│   │   ├── ole-cfb-parser.js      # OleCfbParser — CFB compound file parser
-│   │   ├── xlsx-renderer.js       # XlsxRenderer
-│   │   ├── pptx-renderer.js       # PptxRenderer
-│   │   ├── odt-renderer.js        # OdtRenderer — OpenDocument text
-│   │   ├── odp-renderer.js        # OdpRenderer — OpenDocument presentation
-│   │   ├── ppt-renderer.js        # PptRenderer — legacy .ppt
-│   │   ├── rtf-renderer.js        # RtfRenderer — RTF + OLE analysis
-│   │   ├── zip-renderer.js        # ZipRenderer — archive listing
-│   │   ├── iso-renderer.js        # IsoRenderer — ISO 9660 filesystem
-│   │   ├── url-renderer.js        # UrlRenderer — .url / .webloc shortcuts
-│   │   ├── onenote-renderer.js    # OneNoteRenderer — .one files
-│   │   ├── iqy-slk-renderer.js    # IqySlkRenderer — .iqy / .slk files
-│   │   ├── wsf-renderer.js        # WsfRenderer — Windows Script Files
-│   │   ├── reg-renderer.js        # RegRenderer — .reg registry files
-│   │   ├── inf-renderer.js        # InfSctRenderer — .inf / .sct files
-│   │   ├── msi-renderer.js        # MsiRenderer — .msi installer packages
-│   │   ├── csv-renderer.js        # CsvRenderer
-│   │   ├── evtx-renderer.js       # EvtxRenderer — .evtx parser
-│   │   ├── sqlite-renderer.js     # SqliteRenderer — SQLite + browser history
-│   │   ├── doc-renderer.js        # DocBinaryRenderer
-│   │   ├── msg-renderer.js        # MsgRenderer
-│   │   ├── eml-renderer.js        # EmlRenderer
-│   │   ├── lnk-renderer.js        # LnkRenderer
-│   │   ├── hta-renderer.js        # HtaRenderer
-│   │   ├── html-renderer.js       # HtmlRenderer — sandboxed HTML preview
-│   │   ├── pdf-renderer.js        # PdfRenderer
-│   │   ├── image-renderer.js      # ImageRenderer — image preview + stego detection
-│   │   └── plaintext-renderer.js  # PlainTextRenderer
+│   │   ├── ole-cfb-parser.js       # OleCfbParser — CFB compound file parser
+│   │   ├── xlsx-renderer.js        # XlsxRenderer
+│   │   ├── pptx-renderer.js        # PptxRenderer
+│   │   ├── odt-renderer.js         # OdtRenderer — OpenDocument text
+│   │   ├── odp-renderer.js         # OdpRenderer — OpenDocument presentation
+│   │   ├── ppt-renderer.js         # PptRenderer — legacy .ppt
+│   │   ├── rtf-renderer.js         # RtfRenderer — RTF + OLE analysis
+│   │   ├── zip-renderer.js         # ZipRenderer — archive listing
+│   │   ├── iso-renderer.js         # IsoRenderer — ISO 9660 filesystem
+│   │   ├── url-renderer.js         # UrlRenderer — .url / .webloc shortcuts
+│   │   ├── onenote-renderer.js     # OneNoteRenderer — .one files
+│   │   ├── iqy-slk-renderer.js     # IqySlkRenderer — .iqy / .slk files
+│   │   ├── wsf-renderer.js         # WsfRenderer — Windows Script Files
+│   │   ├── reg-renderer.js         # RegRenderer — .reg registry files
+│   │   ├── inf-renderer.js         # InfSctRenderer — .inf / .sct files
+│   │   ├── msi-renderer.js         # MsiRenderer — .msi installer packages
+│   │   ├── csv-renderer.js         # CsvRenderer
+│   │   ├── evtx-renderer.js        # EvtxRenderer — .evtx parser (2,852 lines)
+│   │   ├── sqlite-renderer.js      # SqliteRenderer — SQLite + browser history
+│   │   ├── doc-renderer.js         # DocBinaryRenderer
+│   │   ├── msg-renderer.js         # MsgRenderer
+│   │   ├── eml-renderer.js         # EmlRenderer
+│   │   ├── lnk-renderer.js         # LnkRenderer
+│   │   ├── hta-renderer.js         # HtaRenderer
+│   │   ├── html-renderer.js        # HtmlRenderer — sandboxed HTML preview
+│   │   ├── pdf-renderer.js         # PdfRenderer
+│   │   ├── image-renderer.js       # ImageRenderer — image preview + stego detection
+│   │   └── plaintext-renderer.js   # PlainTextRenderer
 │   └── app/
-│       ├── app-core.js            # App class definition + setup methods
-│       ├── app-load.js            # File loading, hashing, IOC extraction
-│       ├── app-sidebar.js         # Sidebar rendering (risk bar + collapsible panes)
-│       ├── app-yara.js            # YARA rule editor, scanning, result display
-│       └── app-ui.js              # UI helpers + DOMContentLoaded bootstrap
-└── examples/                      # Sample files for testing various formats
+│       ├── app-core.js             # App class definition + setup methods
+│       ├── app-load.js             # File loading, hashing, IOC extraction
+│       ├── app-sidebar.js          # Sidebar rendering (risk bar + collapsible panes)
+│       ├── app-yara.js             # YARA rule editor, scanning, result display
+│       └── app-ui.js               # UI helpers + DOMContentLoaded bootstrap
+└── examples/                       # Sample files for testing various formats
 ```
+
+---
+
+## AI Agent Support
+
+GloveBox is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, etc.):
+
+- **`.clinerules`** — Instructions for AI agents: architecture overview, patterns to follow, files to avoid, and context budget tips.
+- **`CODEMAP.md`** — Auto-generated code map with precise line numbers for every class, method, CSS section, and YARA rule. Agents can read this file first (~24K tokens) and then use `read_file(path, start_line=X, end_line=Y)` for surgical edits without consuming their entire context window.
+- **`generate-codemap.py`** — Regenerate `CODEMAP.md` after any code changes: `python generate-codemap.py`
+- **Split CSS/YARA** — CSS and YARA rules are split into multiple files by category, keeping each file under 3,300 lines. No single file dominates the context budget.
 
 ---
 
@@ -145,7 +193,7 @@ GloveBox/
 - **Single output file** — `build.py` inlines all CSS and JavaScript so the viewer works by opening one `.html` file with zero external dependencies.
 - **No eval, no network** — the Content-Security-Policy (`default-src 'none'`) blocks all external fetches; images are rendered only from `data:` and `blob:` URLs.
 - **App class split** — `App` is defined in `app-core.js`; additional methods are attached via `Object.assign(App.prototype, {...})` in `app-load.js`, `app-sidebar.js`, `app-yara.js`, and `app-ui.js`, keeping each file focused.
-- **YARA-based detection** — all threat detection is driven by YARA rules. A set of default rules (`src/default-rules.yar`) ships with the tool and is auto-scanned on file load. Users can edit, load, and save custom rules via the built-in YARA editor (`Y` key).
+- **YARA-based detection** — all threat detection is driven by YARA rules. Default rules are split across `src/rules/*.yar` by threat category and auto-scanned on file load. Users can edit, load, and save custom rules via the built-in YARA editor (`Y` key).
 - **Shared VBA helpers** — `parseVBAText()` and `autoExecPatterns` live in `vba-utils.js` and are reused by `DocxParser`, `XlsxRenderer`, and `PptxRenderer`.
 - **OLE/CFB parser** — `OleCfbParser` is shared by `DocBinaryRenderer` (`.doc`), `MsgRenderer` (`.msg`), and `PptRenderer` (`.ppt`) for reading compound binary files.
 - **PDF rendering** — `PdfRenderer` uses Mozilla's pdf.js for canvas rendering plus raw-byte scanning for dangerous PDF operators. Hidden text layers enable IOC extraction from rendered pages.
@@ -166,7 +214,8 @@ GloveBox/
 2. Make your changes in `src/`
 3. Run `python build.py` to rebuild
 4. Test by opening `docs/index.html` in a browser
-5. Submit a pull request
+5. Run `python generate-codemap.py` to update the code map
+6. Submit a pull request
 
 YARA rule submissions, new format parsers, and build-process improvements are especially welcome.
 

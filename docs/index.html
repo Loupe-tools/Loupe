@@ -6469,12 +6469,9 @@ relevance:0}),e.C_NUMBER_MODE]}}})();hljs.registerLanguage("vbscript",e)})();
 
   <!-- ── Application ─────────────────────────────────────────────────── -->
   <script>
-const GLOVEBOX_VERSION = '20260415.1843';
-const DEFAULT_YARA_RULES = `// ─── Default YARA Rules ───────────────────────────────────
-// Edit or replace these rules, then click "Run Scan"
-// Supports: text strings, hex strings {AA BB}, regex /pattern/
-// Modifiers: nocase, wide, fullword
-// Conditions: any of them, all of them, N of them, $a and $b
+const GLOVEBOX_VERSION = '20260415.2108';
+const DEFAULT_YARA_RULES = `// ─── Office Macros ───
+// 33 rules
 
 rule Office_Macro_Project_Present
 {
@@ -6489,66 +6486,6 @@ rule Office_Macro_Project_Present
         $d = "vbaProject.bin"
         $e = "vbaData.xml"
 
-    condition:
-        any of them
-}
-
-rule PS_Whitespace_Token_Obfuscation
-{
-    meta:
-        description = "Detects PowerShell token obfuscation via excessive whitespace between characters"
-        severity = "medium"
-        category = "obfuscation"
-    strings:
-        $ws_pattern = /[A-Za-z]\\s{2,}[A-Za-z]\\s{2,}[A-Za-z]\\s{2,}[A-Za-z]\\s{2,}[A-Za-z]/ nocase
-        $ws_cmdlet = /[Ww]\\s{2,}[Rr]\\s{2,}[Ii]\\s{2,}[Tt]\\s{2,}[Ee]/ nocase
-        $ws_iex = /[Ii]\\s{2,}[Ee]\\s{2,}[Xx]/ nocase
-    condition:
-        any of them
-}
-
-rule PS_ScriptBlock_Reflection_Create
-{
-    meta:
-        description = "Detects PowerShell ScriptBlock creation via .NET reflection"
-        severity = "high"
-        category = "obfuscation"
-    strings:
-        $sb_reflect = "ScriptBlock].GetMethod" nocase
-        $sb_create = /ScriptBlock\\].*Create/ nocase
-        $invoke = ".Invoke(" nocase
-        $automation = "System.Management.Automation" nocase
-    condition:
-        ($sb_reflect or $sb_create) and ($invoke or $automation)
-}
-
-rule Python_Dynamic_Import_Getattr
-{
-    meta:
-        description = "Detects Python dynamic import with getattr/getattribute for obfuscated access"
-        severity = "medium"
-        category = "obfuscation"
-    strings:
-        $import_builtins = "__import__('builtins')" nocase
-        $import_os = "__import__('os')" nocase
-        $import_sys = "__import__('sys')" nocase
-        $import_sub = "__import__('subprocess')" nocase
-        $getattr1 = "__getattribute__(" nocase
-        $getattr2 = "getattr(" nocase
-    condition:
-        any of ($import_*) and any of ($getattr*)
-}
-
-rule JS_Comment_Injection_Obfuscation
-{
-    meta:
-        description = "Detects JavaScript comment injection between object property access chains"
-        severity = "medium"
-        category = "obfuscation"
-    strings:
-        $comment_dot = /\\w+\\s*\\/\\*[^*]*\\*\\/\\s*\\.\\s*\\/\\*[^*]*\\*\\/\\s*\\w+/ nocase
-        $comment_bracket = /\\w+\\s*\\/\\*[^*]*\\*\\/\\s*\\[\\s*\\/\\*[^*]*\\*\\/\\s*['"]/ nocase
-        $comment_call = /\\w+\\s*\\/\\*[^*]*\\*\\/\\s*\\(\\s*\\/\\*[^*]*\\*\\/\\s*['"]/ nocase
     condition:
         any of them
 }
@@ -6986,6 +6923,1279 @@ rule Office_VBA_Stomping
         $a and not $b and ($c or $d)
 }
 
+rule AddIn_XLL_File
+{
+    meta:
+        description = "Excel Add-In (XLL) file — executes native code when loaded, bypasses macro policy"
+        severity    = "critical"
+
+    strings:
+        $mz = { 4D 5A }
+        $a = "xlAutoOpen" nocase
+        $b = "xlAutoClose" nocase
+        $c = "xlAutoAdd" nocase
+
+    condition:
+        $mz and any of ($a, $b, $c)
+}
+
+rule PPAM_PPTM_AddIn
+{
+    meta:
+        description = "PowerPoint Add-In (.ppam) or macro-enabled file — less scrutinized than docm/xlsm"
+        severity    = "high"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = "ppt/vbaProject.bin"
+        $b = "vbaProject.bin"
+        $c = "macroEnabled" nocase
+
+    condition:
+        $pk and any of ($a, $b, $c)
+}
+
+rule VBA_GetObject_WMI
+{
+    meta:
+        description = "VBA uses GetObject to access WMI or remote resources"
+        severity    = "high"
+
+    strings:
+        $get   = "GetObject" nocase
+        $a     = "winmgmts" nocase
+        $b     = "Win32_Process" nocase
+        $vba   = "Sub " nocase
+
+    condition:
+        $vba and $get and any of ($a, $b, $c)
+}
+
+rule VBA_Shell_Application_Abuse
+{
+    meta:
+        description = "VBA creates Shell.Application object — can execute programs and browse namespace"
+        severity    = "high"
+
+    strings:
+        $a     = "Shell.Application" nocase
+        $b     = "ShellExecute" nocase
+        $c     = "CreateObject" nocase
+        $vba   = "Sub " nocase
+
+    condition:
+        $vba and $a and ($b or $c)
+}
+
+rule VBA_DDE_Field_Injection
+{
+    meta:
+        description = "VBA or document content uses DDE field codes for code execution"
+        severity    = "critical"
+
+    strings:
+        $a     = "DDE" nocase fullword
+        $b     = "DDEAUTO" nocase
+        $c     = "cmd.exe" nocase
+        $d     = "powershell" nocase
+        $e     = "mshta" nocase
+
+    condition:
+        ($a or $b) and any of ($c, $d, $e)
+}
+
+rule VBA_NewObject_PowerShell
+{
+    meta:
+        description = "VBA passes New-Object to PowerShell — .NET object instantiation from macro"
+        severity    = "critical"
+
+    strings:
+        $ps    = "powershell" nocase
+        $no    = "New-Object" nocase
+        $vba1  = "Sub " nocase
+        $vba2  = "Shell" nocase
+
+    condition:
+        $ps and $no and ($vba1 or $vba2)
+}
+
+rule VBA_WbemDisp_WMI
+{
+    meta:
+        description = "VBA references wbemdisp.dll — WMI scripting library for process creation"
+        severity    = "high"
+
+    strings:
+        $a     = "wbemdisp.dll" nocase
+        $b     = "SWbemLocator" nocase
+        $c     = "WbemScripting" nocase
+        $vba   = "Sub " nocase
+
+    condition:
+        $vba and any of ($a, $b, $c)
+}
+
+
+// ─── Script Threats ───
+// 64 rules
+
+rule PS_Whitespace_Token_Obfuscation
+{
+    meta:
+        description = "Detects PowerShell token obfuscation via excessive whitespace between characters"
+        severity = "medium"
+        category = "obfuscation"
+    strings:
+        $ws_pattern = /[A-Za-z]\\s{2,}[A-Za-z]\\s{2,}[A-Za-z]\\s{2,}[A-Za-z]\\s{2,}[A-Za-z]/ nocase
+        $ws_cmdlet = /[Ww]\\s{2,}[Rr]\\s{2,}[Ii]\\s{2,}[Tt]\\s{2,}[Ee]/ nocase
+        $ws_iex = /[Ii]\\s{2,}[Ee]\\s{2,}[Xx]/ nocase
+    condition:
+        any of them
+}
+
+rule PS_ScriptBlock_Reflection_Create
+{
+    meta:
+        description = "Detects PowerShell ScriptBlock creation via .NET reflection"
+        severity = "high"
+        category = "obfuscation"
+    strings:
+        $sb_reflect = "ScriptBlock].GetMethod" nocase
+        $sb_create = /ScriptBlock\\].*Create/ nocase
+        $invoke = ".Invoke(" nocase
+        $automation = "System.Management.Automation" nocase
+    condition:
+        ($sb_reflect or $sb_create) and ($invoke or $automation)
+}
+
+rule Python_Dynamic_Import_Getattr
+{
+    meta:
+        description = "Detects Python dynamic import with getattr/getattribute for obfuscated access"
+        severity = "medium"
+        category = "obfuscation"
+    strings:
+        $import_builtins = "__import__('builtins')" nocase
+        $import_os = "__import__('os')" nocase
+        $import_sys = "__import__('sys')" nocase
+        $import_sub = "__import__('subprocess')" nocase
+        $getattr1 = "__getattribute__(" nocase
+        $getattr2 = "getattr(" nocase
+    condition:
+        any of ($import_*) and any of ($getattr*)
+}
+
+rule JS_Comment_Injection_Obfuscation
+{
+    meta:
+        description = "Detects JavaScript comment injection between object property access chains"
+        severity = "medium"
+        category = "obfuscation"
+    strings:
+        $comment_dot = /\\w+\\s*\\/\\*[^*]*\\*\\/\\s*\\.\\s*\\/\\*[^*]*\\*\\/\\s*\\w+/ nocase
+        $comment_bracket = /\\w+\\s*\\/\\*[^*]*\\*\\/\\s*\\[\\s*\\/\\*[^*]*\\*\\/\\s*['"]/ nocase
+        $comment_call = /\\w+\\s*\\/\\*[^*]*\\*\\/\\s*\\(\\s*\\/\\*[^*]*\\*\\/\\s*['"]/ nocase
+    condition:
+        any of them
+}
+
+rule JS_WSH_Dropper
+{
+    meta:
+        description = "JavaScript uses Windows Script Host objects with execution capability"
+        severity    = "critical"
+
+    strings:
+        $wsh1 = "WScript.Shell" nocase
+        $wsh2 = "WScript.CreateObject" nocase
+        $wsh3 = "Scripting.FileSystemObject" nocase
+        $wsh4 = "MSXML2.XMLHTTP" nocase
+        $wsh5 = "ADODB.Stream" nocase
+        $wsh6 = "Shell.Application" nocase
+        $wsh7 = "ActiveXObject" nocase
+        $act1 = ".Run(" nocase
+        $act2 = ".Exec(" nocase
+        $act3 = ".ShellExecute" nocase
+        $act4 = "SaveToFile" nocase
+
+    condition:
+        2 of ($wsh1, $wsh2, $wsh3, $wsh4, $wsh5, $wsh6, $wsh7) and ($act1 or $act2 or $act3 or $act4)
+}
+
+rule JS_Obfuscated_Payload
+{
+    meta:
+        description = "Heavily obfuscated JavaScript — charCode loops, eval, or large encoded arrays"
+        severity    = "high"
+
+    strings:
+        $cc1 = "fromCharCode" nocase
+        $cc2 = "String.fromCharCode" nocase
+        $cc3 = "charCodeAt" nocase
+        $eval = "eval("
+        $func = "Function("
+        $arr = /\\[\\d{2,3}(,\\d{2,3}){20,}\\]/
+        $split = /\\"[^\\"]{50,}\\"\\.split\\(/
+
+    condition:
+        (($cc1 or $cc2 or $cc3) and ($eval or $func)) or $arr or $split
+}
+
+rule JS_Encoded_Script_JSE
+{
+    meta:
+        description = "JScript.Encode encoded script file (JSE format marker)"
+        severity    = "high"
+
+    strings:
+        $jse = "#@~^"
+
+    condition:
+        $jse
+}
+
+rule JS_WMI_Execution
+{
+    meta:
+        description = "JavaScript uses WMI to execute processes — evasion of direct Shell calls"
+        severity    = "critical"
+
+    strings:
+        $a = "GetObject" nocase
+        $b = "winmgmts" nocase
+        $c = "Win32_Process" nocase
+        $d = "Create(" nocase
+
+    condition:
+        $a and $b and ($c or $d)
+}
+
+rule JS_Clipboard_Paste_Lure
+{
+    meta:
+        description = "JavaScript or HTML uses clipboard manipulation — paste-jacking attack"
+        severity    = "high"
+
+    strings:
+        $a = "navigator.clipboard" nocase
+        $b = "document.execCommand" nocase
+        $c = "clipboardData" nocase
+        $d = "writeText" nocase
+
+    condition:
+        2 of them
+}
+
+rule JS_Deobfuscation_Heavy
+{
+    meta:
+        description = "JavaScript uses multiple layers of encoding — base64, unescape, decode chains"
+        severity    = "high"
+
+    strings:
+        $a = "atob(" nocase
+        $b = "btoa(" nocase
+        $c = "unescape(" nocase
+        $d = "decodeURIComponent(" nocase
+        $e = "String.fromCharCode" nocase
+        $f = "eval(" nocase
+        $g = "Function(" nocase
+
+    condition:
+        3 of them
+}
+
+rule VBS_Download_Execute
+{
+    meta:
+        description = "VBScript downloads remote content and executes or saves it"
+        severity    = "critical"
+
+    strings:
+        $http1 = "MSXML2.XMLHTTP" nocase
+        $http2 = "WinHttp.WinHttpRequest" nocase
+        $http3 = "Microsoft.XMLHTTP" nocase
+        $save1 = "ADODB.Stream" nocase
+        $save2 = "SaveToFile" nocase
+        $save3 = "ResponseBody" nocase
+        $exec1 = "WScript.Shell" nocase
+        $exec2 = ".Run " nocase
+
+    condition:
+        ($http1 or $http2 or $http3) and ($save1 or $save2 or $save3 or $exec1 or $exec2)
+}
+
+rule VBS_Registry_Persistence
+{
+    meta:
+        description = "VBScript writes registry Run keys for persistence"
+        severity    = "critical"
+
+    strings:
+        $a = "RegWrite" nocase
+        $b = "CurrentVersion\\\\Run" nocase
+        $c = "WScript.Shell" nocase
+
+    condition:
+        $a and ($b or $c)
+}
+
+rule VBS_Scheduled_Task
+{
+    meta:
+        description = "VBScript creates scheduled tasks for persistence or delayed execution"
+        severity    = "critical"
+
+    strings:
+        $a = "Schedule.Service" nocase
+        $b = "schtasks" nocase
+        $c = "RegisterTaskDefinition" nocase
+        $d = "WScript.Shell" nocase
+
+    condition:
+        ($a or $b or $c) and $d
+}
+
+rule VBS_Encoded_VBE
+{
+    meta:
+        description = "VBScript.Encode encoded file (VBE format marker)"
+        severity    = "high"
+
+    strings:
+        $a = "#@~^"
+        $b = "VBScript.Encode" nocase
+
+    condition:
+        any of them
+}
+
+rule VBS_Obfuscation_ChrW
+{
+    meta:
+        description = "VBScript uses heavy ChrW/Chr obfuscation to build strings dynamically"
+        severity    = "high"
+
+    strings:
+        $a = "ChrW(" nocase
+        $b = "Chr(" nocase
+        $c = "Execute(" nocase
+        $d = "ExecuteGlobal(" nocase
+
+    condition:
+        ($a or $b) and ($c or $d)
+}
+
+rule PowerShell_Encoded_Command
+{
+    meta:
+        description = "PowerShell invoked with encoded command flag — hides base64 payload"
+        severity    = "critical"
+
+    strings:
+        $ps = "powershell" nocase
+        $a = "-EncodedCommand" nocase
+        $b = "-enc " nocase
+        $c = "-ec " nocase
+
+    condition:
+        $ps and ($a or $b or $c)
+}
+
+rule PowerShell_Download_Cradle
+{
+    meta:
+        description = "PowerShell download cradle — fetches and executes remote code"
+        severity    = "critical"
+
+    strings:
+        $iex1 = "Invoke-Expression" nocase
+        $iex2 = "IEX"
+        $iex3 = "iex " nocase
+        $dl1 = "DownloadString" nocase
+        $dl2 = "DownloadFile" nocase
+        $dl3 = "Invoke-WebRequest" nocase
+        $dl4 = "Net.WebClient" nocase
+        $dl5 = "Start-BitsTransfer" nocase
+        $dl6 = "Invoke-RestMethod" nocase
+
+    condition:
+        ($iex1 or $iex2 or $iex3) and ($dl1 or $dl2 or $dl3 or $dl4 or $dl5 or $dl6)
+}
+
+rule PowerShell_AMSI_Bypass
+{
+    meta:
+        description = "PowerShell attempts to bypass AMSI (Antimalware Scan Interface)"
+        severity    = "critical"
+
+    strings:
+        $a = "AmsiUtils" nocase
+        $b = "amsiInitFailed" nocase
+        $c = "AmsiScanBuffer" nocase
+
+    condition:
+        any of them
+}
+
+rule PowerShell_Reflective_Load
+{
+    meta:
+        description = "PowerShell reflectively loads .NET assembly or PE — fileless attack"
+        severity    = "critical"
+
+    strings:
+        $a = "Reflection.Assembly" nocase
+        $b = "Assembly]::Load" nocase
+        $c = "LoadWithPartialName" nocase
+        $d = "FromBase64String" nocase
+        $e = "MemoryStream" nocase
+        $f = "GZipStream" nocase
+
+    condition:
+        2 of them
+}
+
+rule PowerShell_Execution_Policy_Bypass
+{
+    meta:
+        description = "PowerShell bypasses execution policy — allows unsigned scripts to run"
+        severity    = "high"
+
+    strings:
+        $a = "-ExecutionPolicy" nocase
+        $b = "Bypass" nocase
+        $c = "Unrestricted" nocase
+        $d = "-ep " nocase
+        $e = "Set-ExecutionPolicy" nocase
+
+    condition:
+        ($a and ($b or $c)) or ($d and ($b or $c)) or $e
+}
+
+rule PowerShell_Hidden_Window
+{
+    meta:
+        description = "PowerShell runs with hidden window — user won't see execution"
+        severity    = "high"
+
+    strings:
+        $a = "-WindowStyle" nocase
+        $b = "Hidden" nocase
+        $c = "-w hidden" nocase
+        $d = "-win hidden" nocase
+        $e = "-nop" nocase
+
+    condition:
+        ($a and $b) or $c or $d
+}
+
+rule PowerShell_Credential_Theft
+{
+    meta:
+        description = "PowerShell accesses stored credentials or prompts for credentials"
+        severity    = "critical"
+
+    strings:
+        $a = "Get-Credential" nocase
+        $b = "CredentialCache" nocase
+        $c = "SecureString" nocase
+        $d = "ConvertTo-SecureString" nocase
+        $e = "NetworkCredential" nocase
+
+    condition:
+        2 of them
+}
+
+rule PowerShell_Certutil_Combo
+{
+    meta:
+        description = "PowerShell combined with certutil — decode and execute pattern"
+        severity    = "critical"
+
+    strings:
+        $a = "certutil" nocase
+        $b = "-decode" nocase
+        $c = "powershell" nocase
+
+    condition:
+        $a and $b and $c
+}
+
+rule BAT_Download_Execute
+{
+    meta:
+        description = "Batch file downloads and executes a remote payload"
+        severity    = "critical"
+
+    strings:
+        $a = "certutil" nocase
+        $b = "bitsadmin" nocase
+        $c = "powershell" nocase
+        $d = "curl " nocase
+        $e = "wget " nocase
+        $f = "-decode" nocase
+        $g = "/transfer" nocase
+        $h = "start " nocase
+        $i = "call " nocase
+
+    condition:
+        any of ($a, $b, $c, $d, $e) and any of ($f, $g, $h, $i)
+}
+
+rule BAT_Obfuscated_Variables
+{
+    meta:
+        description = "Batch file uses variable obfuscation — environment variable substring abuse"
+        severity    = "high"
+
+    strings:
+        $a = /\\%[a-zA-Z]+:~\\d+,\\d+\\%/
+        $b = "set " nocase
+        $c = "call " nocase
+
+    condition:
+        $a and ($b or $c)
+}
+
+rule BAT_Recursive_Copy_Drop
+{
+    meta:
+        description = "Batch file copies or moves files from temp paths — payload staging"
+        severity    = "high"
+
+    strings:
+        $a = "copy " nocase
+        $b = "move " nocase
+        $c = "xcopy" nocase
+        $d = "%TEMP%" nocase
+        $e = "%APPDATA%" nocase
+        $f = "%USERPROFILE%" nocase
+        $g = "%PUBLIC%" nocase
+
+    condition:
+        any of ($a, $b, $c) and any of ($d, $e, $f, $g)
+}
+
+rule BAT_Registry_Persistence
+{
+    meta:
+        description = "Batch file modifies registry Run keys for persistence"
+        severity    = "critical"
+
+    strings:
+        $a = "reg add" nocase
+        $b = "CurrentVersion\\\\Run" nocase
+        $c = "reg.exe" nocase
+
+    condition:
+        ($a or $c) and $b
+}
+
+rule JS_DocumentWrite_With_Obfuscation
+{
+    meta:
+        description = "JavaScript uses document.write with encoding/decoding — DOM-based payload injection"
+        severity    = "high"
+
+    strings:
+        $dw    = "document.write" nocase
+        $a     = "unescape" nocase
+        $b     = "atob" nocase
+        $c     = "fromCharCode" nocase
+        $d     = "decodeURIComponent" nocase
+        $e     = "eval(" nocase
+
+    condition:
+        $dw and any of ($a, $b, $c, $d, $e)
+}
+
+rule JS_Location_Redirect_Obfuscated
+{
+    meta:
+        description = "JavaScript redirects via window.location with encoding — phishing redirect"
+        severity    = "high"
+
+    strings:
+        $loc1  = "window.location" nocase
+        $loc2  = "document.location" nocase
+        $loc3  = "location.href" nocase
+        $loc4  = "location.replace" nocase
+        $a     = "atob(" nocase
+        $b     = "fromCharCode" nocase
+        $c     = "unescape" nocase
+        $d     = "decodeURIComponent" nocase
+
+    condition:
+        any of ($loc1, $loc2, $loc3, $loc4) and any of ($a, $b, $c, $d)
+}
+
+rule JS_ActiveX_With_XMLHttp
+{
+    meta:
+        description = "JavaScript creates ActiveXObject for HTTP requests — classic dropper pattern"
+        severity    = "critical"
+
+    strings:
+        $ax    = "ActiveXObject" nocase
+        $a     = "MSXML2.XMLHTTP" nocase
+        $b     = "Microsoft.XMLHTTP" nocase
+        $c     = "WScript.Shell" nocase
+
+    condition:
+        $ax and any of ($a, $b, $c)
+}
+
+rule PowerShell_AddType_Inline_CSharp
+{
+    meta:
+        description = "PowerShell compiles inline C# via Add-Type — used for API access and evasion"
+        severity    = "critical"
+
+    strings:
+        $a     = "Add-Type" nocase
+        $b     = "-TypeDefinition" nocase
+        $c     = "-MemberDefinition" nocase
+        $d     = "DllImport" nocase
+        $e     = "System.Runtime.InteropServices" nocase
+
+    condition:
+        $a and any of ($b, $c, $d, $e)
+}
+
+rule PowerShell_Invoke_Command_Remote
+{
+    meta:
+        description = "PowerShell uses Invoke-Command for lateral movement"
+        severity    = "critical"
+
+    strings:
+        $a     = "Invoke-Command" nocase
+        $b     = "-ComputerName" nocase
+        $c     = "-ScriptBlock" nocase
+        $d     = "-Session" nocase
+
+    condition:
+        $a and any of ($b, $c, $d)
+}
+
+rule PowerShell_Stealth_Flags_Combo
+{
+    meta:
+        description = "PowerShell uses multiple stealth flags together (hidden, noprofile, noninteractive)"
+        severity    = "critical"
+
+    strings:
+        $ps    = "powershell" nocase
+        $a     = "-nop" nocase
+        $b     = "-noni" nocase
+        $c     = "-w hidden" nocase
+        $d     = "-win hidden" nocase
+        $e     = "-ep bypass" nocase
+        $f     = "-ExecutionPolicy Bypass" nocase
+
+    condition:
+        $ps and 2 of ($a, $b, $c, $d, $e, $f)
+}
+
+rule PowerShell_Reflection_Assembly_Load
+{
+    meta:
+        description = "PowerShell loads .NET assembly via reflection — fileless PE execution"
+        severity    = "critical"
+
+    strings:
+        $a     = "System.Reflection.Assembly" nocase
+        $b     = "[Reflection.Assembly]::Load" nocase
+        $c     = "FromBase64String" nocase
+        $d     = "Add-Type" nocase
+
+    condition:
+        ($a or $b) and ($c or $d)
+}
+
+rule PowerShell_IEX_Env_Variable
+{
+    meta:
+        description = "PowerShell IEX via environment variable — obfuscated execution"
+        severity    = "critical"
+
+    strings:
+        $a     = "IEX $env:" nocase
+        $b     = "iex $env:" nocase
+        $c     = "Invoke-Expression $env:" nocase
+
+    condition:
+        any of them
+}
+
+rule WMIC_Process_Create
+{
+    meta:
+        description = "WMIC used to create remote processes — lateral movement technique"
+        severity    = "critical"
+
+    strings:
+        $a     = "wmic" nocase
+        $b     = "process" nocase fullword
+        $c     = "call" nocase fullword
+        $d     = "create" nocase fullword
+
+    condition:
+        $a and $b and $c and $d
+}
+
+rule PowerShell_WMI_Event_Persistence
+{
+    meta:
+        description = "PowerShell creates WMI event subscription — fileless persistence"
+        severity    = "critical"
+
+    strings:
+        $a     = "__EventFilter" nocase
+        $b     = "CommandLineEventConsumer" nocase
+        $c     = "__FilterToConsumerBinding" nocase
+        $d     = "Register-WmiEvent" nocase
+        $e     = "Set-WmiInstance" nocase
+
+    condition:
+        2 of them
+}
+
+rule AMSI_ETW_Bypass_Patterns
+{
+    meta:
+        description = "File attempts to patch AMSI or disable ETW tracing"
+        severity    = "critical"
+
+    strings:
+        $a     = "AmsiScanBuffer" nocase
+        $b     = "amsiInitFailed" nocase
+        $c     = "EtwEventWrite" nocase
+        $d     = "ntdll" nocase
+        $e     = { C3 }
+        $f     = "VirtualProtect" nocase
+        $g     = "patch" nocase
+
+    condition:
+        ($a or $b or $c) and ($f or $g)
+}
+
+rule PowerShell_EncodedCommand
+{
+    meta:
+        description = "PowerShell -EncodedCommand with Base64 payload"
+        severity    = "high"
+
+    strings:
+        $enc1 = /-[Ee]nc\\s+[A-Za-z0-9+\\/]{20,}/
+        $enc2 = /-[Ee]ncodedcommand\\s+[A-Za-z0-9+\\/]{20,}/ nocase
+        $enc3 = /-[Ee][Cc]\\s+[A-Za-z0-9+\\/]{20,}/
+        $from = "FromBase64String" nocase fullword
+
+    condition:
+        any of them
+}
+
+rule CMD_Caret_Obfuscation
+{
+    meta:
+        description = "CMD command uses caret (^) insertion to break up keywords and evade detection"
+        severity    = "high"
+
+    strings:
+        $c1 = /[pP]\\^[oO]\\^[wW]\\^[eE]\\^[rR]\\^[sS]\\^[hH]\\^[eE]\\^[lL]\\^[lL]/ ascii
+        $c2 = /[cC]\\^[mM]\\^[dD]/ ascii
+        $c3 = /[wW]\\^[sS]\\^[cC]\\^[rR]\\^[iI]\\^[pP]\\^[tT]/ ascii
+        $c4 = /[nN]\\^[eE]\\^[tT]\\.\\^[wW]\\^[eE]\\^[bB]\\^[cC]\\^[lL]\\^[iI]\\^[eE]\\^[nN]\\^[tT]/ ascii
+        $c5 = /[rR]\\^[eE]\\^[gG]\\^[sS]\\^[vV]\\^[rR]\\^3\\^2/ ascii
+        $c6 = /[mM]\\^[sS]\\^[hH]\\^[tT]\\^[aA]/ ascii
+        $c7 = /[bB]\\^[iI]\\^[tT]\\^[sS]\\^[aA]\\^[dD]\\^[mM]\\^[iI]\\^[nN]/ ascii
+        $c8 = /[cC]\\^[eE]\\^[rR]\\^[tT]\\^[uU]\\^[tT]\\^[iI]\\^[lL]/ ascii
+        $generic = /\\w\\^\\w\\^\\w\\^\\w\\^\\w\\^\\w/ ascii
+
+    condition:
+        any of them
+}
+
+rule CMD_Set_Variable_Obfuscation
+{
+    meta:
+        description = "CMD script uses SET variable concatenation to build commands from fragments"
+        severity    = "high"
+
+    strings:
+        $set_pattern = /[sS][eE][tT]\\s+\\w{1,3}=\\S{1,20}/ ascii
+        $concat = /(%\\w{1,3}%){3,}/ ascii
+        $call = /[cC][aA][lL][lL]\\s+(%\\w{1,3}%){2,}/ ascii
+
+    condition:
+        (#set_pattern > 3 and $concat) or $call
+}
+
+rule CMD_Environment_Substring_Abuse
+{
+    meta:
+        description = "CMD script extracts substrings from environment variables to build commands"
+        severity    = "high"
+
+    strings:
+        $substr = /(%\\w+:~\\d{1,3},\\d{1,3}%){3,}/ ascii
+        $comspec = "%comspec:~" nocase
+        $path_sub = "%path:~" nocase
+
+    condition:
+        $substr or (#comspec > 2) or (#path_sub > 2)
+}
+
+rule PS_String_Concatenation_Obfuscation
+{
+    meta:
+        description = "PowerShell uses excessive string concatenation to evade keyword detection"
+        severity    = "medium"
+
+    strings:
+        $concat_single = /('[a-zA-Z]{1,4}'\\s*\\+\\s*){4,}'[a-zA-Z]{1,4}'/ ascii
+        $concat_double = /("[a-zA-Z]{1,4}"\\s*\\+\\s*){4,}"[a-zA-Z]{1,4}"/ ascii
+        $iex_concat = /[iI][eE][xX]\\s*\\(\\s*['"][a-zA-Z]{1,3}['"]\\s*\\+/ ascii
+
+    condition:
+        any of them
+}
+
+rule PS_Backtick_Obfuscation
+{
+    meta:
+        description = "PowerShell uses backtick escape characters to break up keywords"
+        severity    = "medium"
+
+    strings:
+        $bt1 = "In\`v\`o\`k\`e" ascii
+        $bt2 = "Ne\`w\`-O\`b\`j" ascii
+        $bt3 = "Do\`wn\`lo\`ad" ascii
+        $bt4 = "We\`b\`Cl\`ie\`nt" ascii
+        $bt5 = "Sy\`st\`em" ascii
+        $bt6 = "Ne\`t." ascii
+        $bt7 = /\\w\`\\w\`\\w\`\\w\`\\w\`\\w/ ascii
+
+    condition:
+        any of them
+}
+
+rule PS_Format_Operator_Obfuscation
+{
+    meta:
+        description = "PowerShell uses -f format operator to reconstruct strings from fragments"
+        severity    = "medium"
+
+    strings:
+        $fmt = /'\\{0\\}\\{1\\}\\{2\\}(\\{3\\})?(\\{4\\})?(\\{5\\})?' *-[fF] *'[^']{1,12}',\\s*'[^']{1,12}',\\s*'[^']{1,12}'/ ascii
+
+    condition:
+        $fmt
+}
+
+rule PS_Char_Casting_Obfuscation
+{
+    meta:
+        description = "PowerShell uses [char] type casting to build strings from ASCII codes"
+        severity    = "high"
+
+    strings:
+        $char = /(\\[char\\]\\d{2,3}\\s*\\+\\s*){4,}/ nocase
+        $char_join = /\\-join\\s*\\(\\s*(\\d{2,3}\\s*,\\s*){4,}/ nocase
+        $char_arr = /\\[char\\[\\]\\]\\s*\\(\\s*(\\d{2,3}\\s*,\\s*){4,}/ nocase
+
+    condition:
+        any of them
+}
+
+rule PS_String_Reversal_Obfuscation
+{
+    meta:
+        description = "PowerShell reverses strings to hide commands"
+        severity    = "medium"
+
+    strings:
+        $rev1 = /\\[array\\]::reverse\\s*\\(/ nocase
+        $rev2 = /-join\\s*\\[regex\\]::matches\\([^)]+,\\s*'\\.'\\s*,\\s*'RightToLeft'\\)/ nocase
+        $rev3 = /\\$[a-zA-Z]+\\[-1\\.\\.-?\\d+\\]/ ascii
+
+    condition:
+        any of them
+}
+
+rule PS_Replace_Chain_Obfuscation
+{
+    meta:
+        description = "PowerShell uses chained -replace operators to transform encoded strings"
+        severity    = "medium"
+
+    strings:
+        $rep = /(-replace\\s*'[^']{1,20}'\\s*,\\s*'[^']{0,20}'\\s*){3,}/ nocase
+        $creplace = /(\\.\\s*replace\\s*\\(\\s*'[^']{1,20}'\\s*,\\s*'[^']{0,20}'\\s*\\)\\s*){3,}/ nocase
+
+    condition:
+        any of them
+}
+
+rule VBScript_Chr_Concatenation
+{
+    meta:
+        description = "VBScript uses Chr() function concatenation to build strings"
+        severity    = "high"
+
+    strings:
+        $chr = /([Cc][Hh][Rr]\\s*\\(\\s*\\d{2,3}\\s*\\)\\s*(&|&amp;)\\s*){5,}/ ascii
+        $chrw = /([Cc][Hh][Rr][Ww]\\s*\\(\\s*\\d{2,5}\\s*\\)\\s*(&|&amp;)\\s*){5,}/ ascii
+
+    condition:
+        any of them
+}
+
+rule JScript_Encoded_Script
+{
+    meta:
+        description = "File contains Microsoft JScript.Encode encoded script"
+        severity    = "high"
+
+    strings:
+        $marker = "#@~^" ascii
+        $end = "^#~@" ascii
+        $lang1 = "JScript.Encode" nocase
+        $lang2 = "VBScript.Encode" nocase
+
+    condition:
+        ($marker and $end) or any of ($lang*)
+}
+
+rule Python_Exec_Base64_Obfuscation
+{
+    meta:
+        description = "Detects Python code using exec() with base64-decoded payloads"
+        severity = "high"
+        category = "obfuscation"
+        reference = "Python exec + base64 payload delivery"
+
+    strings:
+        $exec_b64_1 = "exec(base64.b64decode(" nocase
+        $exec_b64_2 = "exec(__import__('base64').b64decode(" nocase
+        $exec_b64_3 = "exec(compile(base64" nocase
+        $exec_b64_4 = "exec(marshal.loads(" nocase
+        $exec_b64_5 = "exec(zlib.decompress(base64" nocase
+        $import_os = "__import__('os')" nocase
+        $import_subprocess = "__import__('subprocess')" nocase
+        $import_socket = "__import__('socket')" nocase
+        $exec_compile = "exec(compile(" nocase
+
+    condition:
+        any of ($exec_b64_*) or ($exec_compile and any of ($import_*))
+}
+
+rule Python_Eval_Codec_Obfuscation
+{
+    meta:
+        description = "Detects Python eval/exec with codec or marshal-based obfuscation"
+        severity = "high"
+        category = "obfuscation"
+        reference = "Python eval with codec/zlib/marshal deobfuscation"
+
+    strings:
+        $eval = "eval(" nocase
+        $exec = "exec(" nocase
+        $codecs_decode = "codecs.decode(" nocase
+        $rot13 = "'rot_13'" nocase
+        $rot13b = "'rot13'" nocase
+        $zlib_decompress = "zlib.decompress(" nocase
+        $marshal_loads = "marshal.loads(" nocase
+        $bytearray = "bytearray(" nocase
+        $chr_join = /chr\\s*\\(\\s*\\w+\\s*\\)\\s*for\\s+\\w+\\s+in/
+
+    condition:
+        ($eval or $exec) and (any of ($codecs_decode, $rot13, $rot13b, $zlib_decompress, $marshal_loads) or ($bytearray and $chr_join))
+}
+
+rule Python_Char_Construction
+{
+    meta:
+        description = "Detects Python string construction via chr() calls to evade static analysis"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "Python chr() string building"
+
+    strings:
+        $chr_chain = /chr\\(\\d+\\)\\s*\\+\\s*chr\\(\\d+\\)\\s*\\+\\s*chr\\(\\d+\\)/ 
+        $chr_join = /join\\s*\\(\\s*\\[?\\s*chr\\s*\\(\\s*\\d+\\s*\\)/ nocase
+        $chr_map = /map\\s*\\(\\s*chr\\s*,\\s*\\[/ nocase
+        $exec = "exec(" nocase
+        $eval = "eval(" nocase
+
+    condition:
+        any of ($chr_chain, $chr_join, $chr_map) and ($exec or $eval)
+}
+
+// ============================================================================
+// ROT13 / Caesar Cipher Rules
+// ============================================================================
+
+rule JS_ROT13_Cipher_Implementation
+{
+    meta:
+        description = "Detects JavaScript ROT13/Caesar cipher implementations used for obfuscation"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "ROT13 character rotation in JavaScript"
+
+    strings:
+        $charcode_13 = /charCodeAt\\s*\\(\\s*\\w*\\s*\\)\\s*[\\+\\-]\\s*13/ nocase
+        $replace_alpha = /replace\\s*\\(\\s*\\/\\[a-zA-Z\\]\\// nocase
+        $fromcharcode_shift = /String\\.fromCharCode\\s*\\([^)]*[\\+\\-]\\s*13\\s*\\)/ nocase
+        $rot13_func = /function\\s+rot13\\s*\\(/ nocase
+        $rot13_name = "rot13" nocase
+        $caesar_shift = /charCodeAt\\s*\\([^)]*\\)\\s*[\\+\\-]\\s*\\d{1,2}\\s*\\)\\s*%\\s*26/ nocase
+
+    condition:
+        ($charcode_13 and $replace_alpha) or $fromcharcode_shift or ($rot13_func) or $caesar_shift
+}
+
+// ============================================================================
+// PowerShell Call Operator Obfuscation
+// ============================================================================
+
+rule PS_Call_Operator_Obfuscation
+{
+    meta:
+        description = "Detects PowerShell call operator (&) with string concatenation to invoke commands dynamically"
+        severity = "high"
+        category = "obfuscation"
+        reference = "PowerShell & operator with dynamic command construction"
+
+    strings:
+        $call_concat_1 = /&\\s*\\(\\s*['"][a-zA-Z]+['"]\\s*\\+\\s*['"][a-zA-Z]+['"]/ nocase
+        $call_concat_2 = /&\\s*\\(\\s*\\$[a-zA-Z]+\\s*\\+\\s*\\$[a-zA-Z]+\\s*\\)/ nocase
+        $call_var = /&\\s*\\(\\s*\\$\\w+\\s*\\)/ nocase
+        $call_iex = /&\\s*\\(\\s*['"]i['"\\s]*\\+\\s*['"]e['"\\s]*\\+\\s*['"]x['"]\\s*\\)/ nocase
+        $call_icm = /&\\s*\\(\\s*['"]Invoke-/ nocase
+        $dot_invoke = /\\.\\s*\\(\\s*['"][a-zA-Z]+['"]\\s*\\+/ nocase
+
+    condition:
+        any of them
+}
+
+// ============================================================================
+// PowerShell Environment Variable Payload
+// ============================================================================
+
+rule PS_EnvVar_Payload_Execution
+{
+    meta:
+        description = "Detects PowerShell using environment variables as payload containers with IEX"
+        severity = "high"
+        category = "obfuscation"
+        reference = "PowerShell $env: variable payload + IEX execution"
+
+    strings:
+        $env_set = /\\$env:\\w+\\s*=\\s*['"]/ nocase
+        $env_set2 = /\\[Environment\\]::SetEnvironmentVariable\\s*\\(/ nocase
+        $env_get = /\\$env:\\w+/ nocase
+        $iex = "iex" nocase
+        $invoke_expr = "Invoke-Expression" nocase
+        $env_iex_combo = /iex\\s*\\(?\\s*\\$env:\\w+/ nocase
+        $env_iex_combo2 = /Invoke-Expression\\s*\\(?\\s*\\$env:\\w+/ nocase
+
+    condition:
+        any of ($env_iex_combo*) or (any of ($env_set*) and any of ($iex, $invoke_expr) and $env_get)
+}
+
+// ============================================================================
+// PowerShell Split/Join Reassembly
+// ============================================================================
+
+rule PS_Split_Join_Reassembly
+{
+    meta:
+        description = "Detects PowerShell -split/-join operators used for string reassembly obfuscation"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "PowerShell -split + -join pattern for payload reassembly"
+
+    strings:
+        $split_join_1 = /\\-split\\s*['"][^'"]+['"]\\s*\\-join\\s*['"][^'"]*['"]/ nocase
+        $split_join_2 = /\\.Split\\s*\\(\\s*['"][^'"]+['"]\\s*\\)\\s*[-\\.]join/ nocase
+        $string_join = /\\[string\\]::Join\\s*\\(/ nocase
+        $split_iex = /\\-split\\s*['"][^'"]+['"].*iex/ nocase
+        $join_iex = /\\-join\\s*['"][^'"]*['"].*iex/ nocase
+        $split_invoke = /\\-split\\s*['"][^'"]+['"].*Invoke-Expression/ nocase
+
+    condition:
+        any of them
+}
+
+// ============================================================================
+// PowerShell Hashtable Command Construction
+// ============================================================================
+
+rule PS_Hashtable_Command_Construction
+{
+    meta:
+        description = "Detects PowerShell hashtable-based command construction and invocation"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "PowerShell @{} hashtable with call operator execution"
+
+    strings:
+        $hashtable = /\\$\\w+\\s*=\\s*@\\{/ nocase
+        $call_key = /&\\s*\\(?\\s*\\$\\w+\\.\\w+\\s*\\)?/ nocase
+        $call_index = /&\\s*\\(?\\s*\\$\\w+\\[\\s*['"]/ nocase
+        $dot_key = /\\.\\s*\\(?\\s*\\$\\w+\\.\\w+\\s*\\)?/ nocase
+
+    condition:
+        $hashtable and any of ($call_key, $call_index, $dot_key)
+}
+
+// ============================================================================
+// JavaScript Split/Join Deobfuscation
+// ============================================================================
+
+rule JS_Split_Join_Deobfuscation
+{
+    meta:
+        description = "Detects JavaScript split/join pattern used for character removal deobfuscation"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "JavaScript .split('x').join('') character stripping"
+
+    strings:
+        $split_join_empty = /\\.split\\s*\\(\\s*['"][^'"]+['"]\\s*\\)\\s*\\.join\\s*\\(\\s*['"]['"]/ nocase
+        $split_join_replace = /\\.split\\s*\\(\\s*['"][^'"]+['"]\\s*\\)\\s*\\.join\\s*\\(\\s*['"][^'"]+['"]/ nocase
+        $eval = "eval(" nocase
+        $func = "Function(" nocase
+        $document_write = "document.write(" nocase
+        $innerhtml = "innerHTML" nocase
+
+    condition:
+        any of ($split_join_*) and any of ($eval, $func, $document_write, $innerhtml)
+}
+
+// ============================================================================
+// JavaScript Proxy-Based Function Hiding
+// ============================================================================
+
+rule JS_Proxy_Function_Hiding
+{
+    meta:
+        description = "Detects JavaScript Proxy objects used to wrap or hide function calls"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "JavaScript Proxy handler wrapping suspicious invocations"
+
+    strings:
+        $proxy = "new Proxy(" nocase
+        $handler_apply = /handler\\s*[=:]\\s*\\{[^}]*apply\\s*:/ nocase
+        $handler_get = /handler\\s*[=:]\\s*\\{[^}]*get\\s*:/ nocase
+        $inline_get = /\\{\\s*get\\s*\\(\\s*\\w+\\s*,\\s*\\w+\\s*\\)\\s*\\{/ nocase
+        $inline_apply = /\\{\\s*apply\\s*\\(\\s*\\w+/ nocase
+
+    condition:
+        $proxy and any of ($handler_apply, $handler_get, $inline_get, $inline_apply)
+}
+
+// ============================================================================
+// JavaScript Bracket Property / Hex Escape Execution
+// ============================================================================
+
+rule JS_Bracket_Hex_Property_Execution
+{
+    meta:
+        description = "Detects JavaScript bracket notation with hex/unicode escapes to invoke functions"
+        severity = "high"
+        category = "obfuscation"
+        reference = "window['\\\\x65\\\\x76\\\\x61\\\\x6c'] style property access"
+
+    strings:
+        $hex_bracket_1 = /\\w+\\s*\\[\\s*['"]\\\\x[0-9a-fA-F]{2}(\\\\x[0-9a-fA-F]{2})+['"]\\s*\\]/ nocase
+        $hex_bracket_2 = /\\w+\\s*\\[\\s*['"]\\\\u[0-9a-fA-F]{4}(\\\\u[0-9a-fA-F]{4})+['"]\\s*\\]/ nocase
+        $window_hex = /window\\s*\\[\\s*['"]\\\\[xu]/ nocase
+        $document_hex = /document\\s*\\[\\s*['"]\\\\[xu]/ nocase
+        $this_hex = /this\\s*\\[\\s*['"]\\\\[xu]/ nocase
+        $global_hex = /globalThis\\s*\\[\\s*['"]\\\\[xu]/ nocase
+
+    condition:
+        any of them
+}
+
+// ============================================================================
+// Space / Colon / Dash Delimited Hex Strings
+// ============================================================================
+
+rule Bash_Base64_Execution
+{
+    meta:
+        description = "Detects bash/shell commands that decode and execute base64-encoded payloads"
+        severity = "high"
+        category = "obfuscation"
+        reference = "eval $(echo ... | base64 -d) and similar patterns"
+
+    strings:
+        $eval_b64_1 = /eval\\s+\\$\\(\\s*echo\\s+[A-Za-z0-9\\+\\/=]+\\s*\\|\\s*base64\\s+-(d|decode)\\s*\\)/ nocase
+        $eval_b64_2 = /eval\\s+['"\`]\\$\\(\\s*base64\\s+-(d|decode)/ nocase
+        $bash_b64_1 = /bash\\s+-(c|i)\\s+['"]*\\$\\(\\s*echo\\s+[^\\)]*base64\\s+-(d|decode)/ nocase
+        $bash_b64_2 = /bash\\s+-(c|i)\\s+['"]*\\$\\(\\s*base64\\s+-(d|decode)/ nocase
+        $sh_b64 = /\\/bin\\/sh\\s+-(c|i)\\s+['"]*\\$\\(\\s*.*base64\\s+-(d|decode)/ nocase
+        $pipe_b64_bash = /base64\\s+-(d|decode)\\s*\\|\\s*(ba)?sh/ nocase
+        $printf_eval = /eval\\s+\\$\\(\\s*printf\\s+/ nocase
+
+    condition:
+        any of them
+}
+
+rule Bash_Variable_Obfuscation
+{
+    meta:
+        description = "Detects bash variable expansion and string manipulation obfuscation techniques"
+        severity = "medium"
+        category = "obfuscation"
+        reference = "Bash \${var} abuse, IFS manipulation, and heredoc payloads"
+
+    strings:
+        $ifs_manip = /IFS\\s*=\\s*['"][^'"]*['"]\\s*;/ nocase
+        $var_concat = /\\$\\{?\\w+\\}?\\$\\{?\\w+\\}?\\$\\{?\\w+\\}?/ nocase
+        $eval_var = /eval\\s+['"]*\\$\\{?\\w+\\}?/ nocase
+        $heredoc_exec = /<<\\s*['"]*\\w+['"]*\\s*\\n.*\\n\\s*\\w+/
+        $rev_pipe = /rev\\s*<<<\\s*['"]/ nocase
+        $xxd_pipe = /xxd\\s+-(r|revert)\\s*.*\\|\\s*(ba)?sh/ nocase
+        $printf_slash = /\\$\\(printf\\s+['"]\\\\[0-9x]/ nocase
+        $bracket_cmd = /\\$\\{\\w+:[\\d]+:[\\d]+\\}/ nocase
+
+    condition:
+        any of ($ifs_manip, $rev_pipe, $xxd_pipe) or ($eval_var and any of ($var_concat, $printf_slash, $bracket_cmd)) or ($heredoc_exec and $eval_var)
+}
+
+rule Shell_Curl_Wget_Pipe_Exec
+{
+    meta:
+        description = "Detects shell commands that download and directly execute scripts via pipe"
+        severity = "high"
+        category = "obfuscation"
+        reference = "curl/wget piped to bash/sh for remote code execution"
+
+    strings:
+        $curl_bash = /curl\\s+[^\\|]*\\|\\s*(ba)?sh/ nocase
+        $wget_bash = /wget\\s+[^\\|]*\\|\\s*(ba)?sh/ nocase
+        $curl_eval = /eval\\s+\\$\\(\\s*curl\\s+/ nocase
+        $wget_eval = /eval\\s+\\$\\(\\s*wget\\s+/ nocase
+        $curl_source = /source\\s+<\\(\\s*curl\\s+/ nocase
+        $wget_source = /source\\s+<\\(\\s*wget\\s+/ nocase
+
+    condition:
+        any of them
+}
+
+
+// ─── Document Threats ───
+// 39 rules
+
 rule PDF_JavaScript_Execution
 {
     meta:
@@ -7227,784 +8437,6 @@ rule RTF_Package_Object
 
     condition:
         $rtf and 2 of ($a, $b, $c)
-}
-
-rule HTA_File_With_Script
-{
-    meta:
-        description = "HTA file with script block and execution capability"
-        severity    = "critical"
-
-    strings:
-        $hta = "<HTA:APPLICATION" nocase
-        $script = "<script" nocase
-        $vbs = "VBScript" nocase
-        $js = "JScript" nocase
-        $ps = "powershell" nocase
-        $shell = "WScript.Shell" nocase
-        $exec = "Run(" nocase
-
-    condition:
-        $hta and ($script or $vbs or $js) and ($ps or $shell or $exec)
-}
-
-rule HTA_Download_Execute
-{
-    meta:
-        description = "HTA downloads and executes a remote payload"
-        severity    = "critical"
-
-    strings:
-        $hta = "<HTA:APPLICATION" nocase
-        $dl1 = "MSXML2.XMLHTTP" nocase
-        $dl2 = "Microsoft.XMLHTTP" nocase
-        $dl3 = "WinHttp" nocase
-        $dl4 = "URLDownloadToFile" nocase
-        $dl5 = "Net.WebClient" nocase
-        $save = "SaveToFile" nocase
-        $stream = "ADODB.Stream" nocase
-
-    condition:
-        $hta and ($dl1 or $dl2 or $dl3 or $dl4 or $dl5 or ($save and $stream))
-}
-
-rule HTA_Any_Presence
-{
-    meta:
-        description = "File contains HTA application tag — always suspicious as email attachment"
-        severity    = "high"
-
-    strings:
-        $a = "<HTA:APPLICATION" nocase
-
-    condition:
-        $a
-}
-
-rule HTA_MSHTA_Inline_Script
-{
-    meta:
-        description = "HTA invoked with mshta inline vbscript or javascript — fileless delivery"
-        severity    = "critical"
-
-    strings:
-        $a = "mshta" nocase
-        $b = "vbscript:Execute" nocase
-        $c = "javascript:" nocase
-        $d = "vbscript:Close" nocase
-
-    condition:
-        $a and any of ($b, $c, $d)
-}
-
-rule URL_Shortcut_Suspicious
-{
-    meta:
-        description = "Windows .url shortcut with SMB reference or remote icon (credential theft)"
-        severity    = "high"
-
-    strings:
-        $header = "[InternetShortcut]"
-        $url = "URL="
-        $icon = "IconFile="
-
-    condition:
-        $header and $url and ($smb or $icon)
-}
-
-rule URL_Shortcut_UNC_Icon
-{
-    meta:
-        description = "URL shortcut with UNC path icon reference — NTLM hash theft via SMB"
-        severity    = "critical"
-
-    strings:
-        $header = "[InternetShortcut]"
-        $icon = /IconFile=\\\\\\\\[^\\r\\n]+/
-
-    condition:
-        $header and $icon
-}
-
-rule URL_Shortcut_Any_Presence
-{
-    meta:
-        description = "Any .url internet shortcut file — uncommon as legitimate email attachment"
-        severity    = "medium"
-
-    strings:
-        $a = "[InternetShortcut]"
-        $b = "URL="
-
-    condition:
-        $a and $b
-}
-
-rule URL_Shortcut_To_Script_Handler
-{
-    meta:
-        description = "URL shortcut pointing to script protocol handler (javascript/vbscript/mshta)"
-        severity    = "critical"
-
-    strings:
-        $header = "[InternetShortcut]"
-        $a = "URL=javascript:" nocase
-        $b = "URL=vbscript:" nocase
-        $c = "URL=mshta" nocase
-        $d = "URL=file:" nocase
-
-    condition:
-        $header and any of ($a, $b, $c, $d)
-}
-
-rule LNK_Suspicious_CommandLine
-{
-    meta:
-        description = "LNK shortcut with references to suspicious LOLBins (PowerShell, cmd, mshta, etc.)"
-        severity    = "critical"
-
-    strings:
-        $lnk = { 4C 00 00 00 }
-        $a = "cmd" nocase wide
-        $b = "powershell" nocase wide
-        $c = "mshta" nocase wide
-        $d = "wscript" nocase wide
-        $e = "cscript" nocase wide
-        $f = "rundll32" nocase wide
-        $g = "regsvr32" nocase wide
-        $h = "certutil" nocase wide
-        $i = "bitsadmin" nocase wide
-        $j = "msiexec" nocase wide
-
-    condition:
-        $lnk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j)
-}
-
-rule LNK_Double_Extension
-{
-    meta:
-        description = "LNK file containing a double-extension string — file masquerade technique"
-        severity    = "high"
-
-    strings:
-        $lnk = { 4C 00 00 00 }
-        $a = ".pdf.lnk" nocase wide
-        $b = ".doc.lnk" nocase wide
-        $c = ".xlsx.lnk" nocase wide
-        $d = ".jpg.lnk" nocase wide
-        $e = ".png.lnk" nocase wide
-        $f = ".txt.lnk" nocase wide
-
-    condition:
-        $lnk and any of ($a, $b, $c, $d, $e, $f)
-}
-
-rule LNK_Extended_LOLBins
-{
-    meta:
-        description = "LNK shortcut references less common LOLBins — forfiles, pcalua, explorer abuse"
-        severity    = "critical"
-
-    strings:
-        $lnk = { 4C 00 00 00 }
-        $a = "forfiles" nocase wide
-        $b = "pcalua" nocase wide
-        $c = "explorer.exe" nocase wide
-        $d = "control.exe" nocase wide
-        $e = "msconfig" nocase wide
-        $f = "fodhelper" nocase wide
-        $g = "SyncAppvPublishingServer" nocase wide
-        $h = "InstallUtil" nocase wide
-        $i = "MSBuild" nocase wide
-        $j = "xwizard" nocase wide
-
-    condition:
-        $lnk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j)
-}
-
-rule LNK_Script_Target
-{
-    meta:
-        description = "LNK shortcut targets a script file directly (.js, .vbs, .hta, .bat, .ps1)"
-        severity    = "critical"
-
-    strings:
-        $lnk = { 4C 00 00 00 }
-        $a = ".js" nocase wide
-        $b = ".jse" nocase wide
-        $c = ".vbs" nocase wide
-        $d = ".vbe" nocase wide
-        $e = ".hta" nocase wide
-        $f = ".bat" nocase wide
-        $g = ".cmd" nocase wide
-        $h = ".ps1" nocase wide
-        $i = ".wsf" nocase wide
-
-    condition:
-        $lnk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i)
-}
-
-rule LNK_Environment_Variable_Abuse
-{
-    meta:
-        description = "LNK shortcut uses environment variable paths — evasion of static path analysis"
-        severity    = "high"
-
-    strings:
-        $lnk = { 4C 00 00 00 }
-        $a = "%APPDATA%" nocase wide
-        $b = "%TEMP%" nocase wide
-        $c = "%USERPROFILE%" nocase wide
-        $d = "%PUBLIC%" nocase wide
-        $e = "%COMSPEC%" nocase wide
-        $f = "%SYSTEMROOT%" nocase wide
-
-    condition:
-        $lnk and any of ($a, $b, $c, $d, $e, $f)
-}
-
-rule JS_WSH_Dropper
-{
-    meta:
-        description = "JavaScript uses Windows Script Host objects with execution capability"
-        severity    = "critical"
-
-    strings:
-        $wsh1 = "WScript.Shell" nocase
-        $wsh2 = "WScript.CreateObject" nocase
-        $wsh3 = "Scripting.FileSystemObject" nocase
-        $wsh4 = "MSXML2.XMLHTTP" nocase
-        $wsh5 = "ADODB.Stream" nocase
-        $wsh6 = "Shell.Application" nocase
-        $wsh7 = "ActiveXObject" nocase
-        $act1 = ".Run(" nocase
-        $act2 = ".Exec(" nocase
-        $act3 = ".ShellExecute" nocase
-        $act4 = "SaveToFile" nocase
-
-    condition:
-        2 of ($wsh1, $wsh2, $wsh3, $wsh4, $wsh5, $wsh6, $wsh7) and ($act1 or $act2 or $act3 or $act4)
-}
-
-rule JS_Obfuscated_Payload
-{
-    meta:
-        description = "Heavily obfuscated JavaScript — charCode loops, eval, or large encoded arrays"
-        severity    = "high"
-
-    strings:
-        $cc1 = "fromCharCode" nocase
-        $cc2 = "String.fromCharCode" nocase
-        $cc3 = "charCodeAt" nocase
-        $eval = "eval("
-        $func = "Function("
-        $arr = /\\[\\d{2,3}(,\\d{2,3}){20,}\\]/
-        $split = /\\"[^\\"]{50,}\\"\\.split\\(/
-
-    condition:
-        (($cc1 or $cc2 or $cc3) and ($eval or $func)) or $arr or $split
-}
-
-rule JS_Encoded_Script_JSE
-{
-    meta:
-        description = "JScript.Encode encoded script file (JSE format marker)"
-        severity    = "high"
-
-    strings:
-        $jse = "#@~^"
-
-    condition:
-        $jse
-}
-
-rule JS_WMI_Execution
-{
-    meta:
-        description = "JavaScript uses WMI to execute processes — evasion of direct Shell calls"
-        severity    = "critical"
-
-    strings:
-        $a = "GetObject" nocase
-        $b = "winmgmts" nocase
-        $c = "Win32_Process" nocase
-        $d = "Create(" nocase
-
-    condition:
-        $a and $b and ($c or $d)
-}
-
-rule JS_Clipboard_Paste_Lure
-{
-    meta:
-        description = "JavaScript or HTML uses clipboard manipulation — paste-jacking attack"
-        severity    = "high"
-
-    strings:
-        $a = "navigator.clipboard" nocase
-        $b = "document.execCommand" nocase
-        $c = "clipboardData" nocase
-        $d = "writeText" nocase
-
-    condition:
-        2 of them
-}
-
-rule JS_Deobfuscation_Heavy
-{
-    meta:
-        description = "JavaScript uses multiple layers of encoding — base64, unescape, decode chains"
-        severity    = "high"
-
-    strings:
-        $a = "atob(" nocase
-        $b = "btoa(" nocase
-        $c = "unescape(" nocase
-        $d = "decodeURIComponent(" nocase
-        $e = "String.fromCharCode" nocase
-        $f = "eval(" nocase
-        $g = "Function(" nocase
-
-    condition:
-        3 of them
-}
-
-rule VBS_Download_Execute
-{
-    meta:
-        description = "VBScript downloads remote content and executes or saves it"
-        severity    = "critical"
-
-    strings:
-        $http1 = "MSXML2.XMLHTTP" nocase
-        $http2 = "WinHttp.WinHttpRequest" nocase
-        $http3 = "Microsoft.XMLHTTP" nocase
-        $save1 = "ADODB.Stream" nocase
-        $save2 = "SaveToFile" nocase
-        $save3 = "ResponseBody" nocase
-        $exec1 = "WScript.Shell" nocase
-        $exec2 = ".Run " nocase
-
-    condition:
-        ($http1 or $http2 or $http3) and ($save1 or $save2 or $save3 or $exec1 or $exec2)
-}
-
-rule WSF_MultiEngine_Script
-{
-    meta:
-        description = "Windows Script File (.wsf) with embedded script — bypasses script policy"
-        severity    = "high"
-
-    strings:
-        $a = "<job" nocase
-        $b = "<script" nocase
-        $c = "language=" nocase
-        $d = "WScript" nocase
-
-    condition:
-        $a and $b and ($c or $d)
-}
-
-rule VBS_Registry_Persistence
-{
-    meta:
-        description = "VBScript writes registry Run keys for persistence"
-        severity    = "critical"
-
-    strings:
-        $a = "RegWrite" nocase
-        $b = "CurrentVersion\\\\Run" nocase
-        $c = "WScript.Shell" nocase
-
-    condition:
-        $a and ($b or $c)
-}
-
-rule VBS_Scheduled_Task
-{
-    meta:
-        description = "VBScript creates scheduled tasks for persistence or delayed execution"
-        severity    = "critical"
-
-    strings:
-        $a = "Schedule.Service" nocase
-        $b = "schtasks" nocase
-        $c = "RegisterTaskDefinition" nocase
-        $d = "WScript.Shell" nocase
-
-    condition:
-        ($a or $b or $c) and $d
-}
-
-rule VBS_Encoded_VBE
-{
-    meta:
-        description = "VBScript.Encode encoded file (VBE format marker)"
-        severity    = "high"
-
-    strings:
-        $a = "#@~^"
-        $b = "VBScript.Encode" nocase
-
-    condition:
-        any of them
-}
-
-rule VBS_Obfuscation_ChrW
-{
-    meta:
-        description = "VBScript uses heavy ChrW/Chr obfuscation to build strings dynamically"
-        severity    = "high"
-
-    strings:
-        $a = "ChrW(" nocase
-        $b = "Chr(" nocase
-        $c = "Execute(" nocase
-        $d = "ExecuteGlobal(" nocase
-
-    condition:
-        ($a or $b) and ($c or $d)
-}
-
-rule ZIP_Contains_Script_File
-{
-    meta:
-        description = "ZIP archive contains scripting files (.js/.vbs/.wsf/.hta/.bat/.cmd/.ps1)"
-        severity    = "critical"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = ".js" fullword
-        $b = ".jse" fullword
-        $c = ".vbs" fullword
-        $d = ".vbe" fullword
-        $e = ".wsf" fullword
-        $f = ".hta" fullword
-        $g = ".bat" fullword
-        $h = ".cmd" fullword
-        $i = ".ps1" fullword
-
-    condition:
-        $pk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i)
-}
-
-rule ZIP_Contains_LNK
-{
-    meta:
-        description = "ZIP archive contains Windows shortcut (.lnk) — masquerade delivery"
-        severity    = "critical"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = ".lnk" fullword
-
-    condition:
-        $pk and $a
-}
-
-rule ZIP_Contains_URL_Shortcut
-{
-    meta:
-        description = "ZIP archive contains .url shortcut file — uncommon, likely phishing"
-        severity    = "critical"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = ".url" fullword
-
-    condition:
-        $pk and $a
-}
-
-rule ZIP_Contains_ISO_IMG
-{
-    meta:
-        description = "ZIP archive contains disk image (.iso/.img/.vhd/.vhdx) — MotW bypass nesting"
-        severity    = "critical"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = ".iso" fullword
-        $b = ".img" fullword
-        $c = ".vhd" fullword
-        $d = ".vhdx" fullword
-
-    condition:
-        $pk and any of ($a, $b, $c, $d)
-}
-
-rule ZIP_Contains_Office_Macro_File
-{
-    meta:
-        description = "ZIP contains macro-enabled Office document (.docm/.xlsm/.pptm/.xlsb)"
-        severity    = "high"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = ".docm" fullword
-        $b = ".xlsm" fullword
-        $c = ".pptm" fullword
-        $d = ".xlsb" fullword
-        $e = ".dotm" fullword
-
-    condition:
-        $pk and any of ($a, $b, $c, $d, $e)
-}
-
-rule ZIP_Contains_HTA
-{
-    meta:
-        description = "ZIP archive contains an HTA file — strong phishing indicator"
-        severity    = "critical"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = ".hta" fullword
-
-    condition:
-        $pk and $a
-}
-
-rule ZIP_Contains_MSI
-{
-    meta:
-        description = "ZIP archive contains an MSI installer — uncommon as email attachment"
-        severity    = "high"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = ".msi" fullword
-
-    condition:
-        $pk and $a
-}
-
-rule RAR_Archive_Header
-{
-    meta:
-        description = "RAR archive detected — commonly used phishing delivery wrapper"
-        severity    = "medium"
-
-    strings:
-        $rar4 = { 52 61 72 21 1A 07 00 }
-        $rar5 = { 52 61 72 21 1A 07 01 00 }
-
-    condition:
-        $rar4 or $rar5
-}
-
-rule SevenZip_Archive_Header
-{
-    meta:
-        description = "7-Zip archive detected — sometimes used to bypass gateway extension filters"
-        severity    = "medium"
-
-    strings:
-        $a = { 37 7A BC AF 27 1C }
-
-    condition:
-        $a
-}
-
-rule Archive_Double_Extension
-{
-    meta:
-        description = "Archive file contains a double-extension filename — masquerade attempt"
-        severity    = "critical"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = ".pdf.js" nocase
-        $b = ".doc.vbs" nocase
-        $c = ".xlsx.js" nocase
-        $d = ".pdf.bat" nocase
-        $e = ".doc.hta" nocase
-        $f = ".jpg.js" nocase
-        $g = ".pdf.vbs" nocase
-        $h = ".doc.bat" nocase
-        $i = ".pdf.ps1" nocase
-        $j = ".txt.js" nocase
-        $k = ".pdf.wsf" nocase
-        $l = ".xls.hta" nocase
-
-    condition:
-        $pk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j, $k, $l)
-}
-
-rule PowerShell_Encoded_Command
-{
-    meta:
-        description = "PowerShell invoked with encoded command flag — hides base64 payload"
-        severity    = "critical"
-
-    strings:
-        $ps = "powershell" nocase
-        $a = "-EncodedCommand" nocase
-        $b = "-enc " nocase
-        $c = "-ec " nocase
-
-    condition:
-        $ps and ($a or $b or $c)
-}
-
-rule PowerShell_Download_Cradle
-{
-    meta:
-        description = "PowerShell download cradle — fetches and executes remote code"
-        severity    = "critical"
-
-    strings:
-        $iex1 = "Invoke-Expression" nocase
-        $iex2 = "IEX"
-        $iex3 = "iex " nocase
-        $dl1 = "DownloadString" nocase
-        $dl2 = "DownloadFile" nocase
-        $dl3 = "Invoke-WebRequest" nocase
-        $dl4 = "Net.WebClient" nocase
-        $dl5 = "Start-BitsTransfer" nocase
-        $dl6 = "Invoke-RestMethod" nocase
-
-    condition:
-        ($iex1 or $iex2 or $iex3) and ($dl1 or $dl2 or $dl3 or $dl4 or $dl5 or $dl6)
-}
-
-rule PowerShell_AMSI_Bypass
-{
-    meta:
-        description = "PowerShell attempts to bypass AMSI (Antimalware Scan Interface)"
-        severity    = "critical"
-
-    strings:
-        $a = "AmsiUtils" nocase
-        $b = "amsiInitFailed" nocase
-        $c = "AmsiScanBuffer" nocase
-
-    condition:
-        any of them
-}
-
-rule PowerShell_Reflective_Load
-{
-    meta:
-        description = "PowerShell reflectively loads .NET assembly or PE — fileless attack"
-        severity    = "critical"
-
-    strings:
-        $a = "Reflection.Assembly" nocase
-        $b = "Assembly]::Load" nocase
-        $c = "LoadWithPartialName" nocase
-        $d = "FromBase64String" nocase
-        $e = "MemoryStream" nocase
-        $f = "GZipStream" nocase
-
-    condition:
-        2 of them
-}
-
-rule PowerShell_Execution_Policy_Bypass
-{
-    meta:
-        description = "PowerShell bypasses execution policy — allows unsigned scripts to run"
-        severity    = "high"
-
-    strings:
-        $a = "-ExecutionPolicy" nocase
-        $b = "Bypass" nocase
-        $c = "Unrestricted" nocase
-        $d = "-ep " nocase
-        $e = "Set-ExecutionPolicy" nocase
-
-    condition:
-        ($a and ($b or $c)) or ($d and ($b or $c)) or $e
-}
-
-rule PowerShell_Hidden_Window
-{
-    meta:
-        description = "PowerShell runs with hidden window — user won't see execution"
-        severity    = "high"
-
-    strings:
-        $a = "-WindowStyle" nocase
-        $b = "Hidden" nocase
-        $c = "-w hidden" nocase
-        $d = "-win hidden" nocase
-        $e = "-nop" nocase
-
-    condition:
-        ($a and $b) or $c or $d
-}
-
-rule PowerShell_Credential_Theft
-{
-    meta:
-        description = "PowerShell accesses stored credentials or prompts for credentials"
-        severity    = "critical"
-
-    strings:
-        $a = "Get-Credential" nocase
-        $b = "CredentialCache" nocase
-        $c = "SecureString" nocase
-        $d = "ConvertTo-SecureString" nocase
-        $e = "NetworkCredential" nocase
-
-    condition:
-        2 of them
-}
-
-rule PowerShell_Certutil_Combo
-{
-    meta:
-        description = "PowerShell combined with certutil — decode and execute pattern"
-        severity    = "critical"
-
-    strings:
-        $a = "certutil" nocase
-        $b = "-decode" nocase
-        $c = "powershell" nocase
-
-    condition:
-        $a and $b and $c
-}
-
-rule Embedded_PE_Header
-{
-    meta:
-        description = "File contains an embedded MZ PE header — hidden executable inside document"
-        severity    = "critical"
-
-    strings:
-        $mz = { 4D 5A 90 00 }
-
-    condition:
-        $mz
-}
-
-rule ISO_IMG_Disk_Image
-{
-    meta:
-        description = "ISO 9660 disk image — used to bypass Mark-of-the-Web protections"
-        severity    = "high"
-
-    strings:
-        $iso = "CD001"
-
-    condition:
-        $iso
-}
-
-rule VHD_Disk_Image
-{
-    meta:
-        description = "VHD/VHDX virtual disk image — MotW bypass, mounts as drive on double-click"
-        severity    = "high"
-
-    strings:
-        $a = "conectix"
-        $b = "vhdxfile"
-
-    condition:
-        any of them
 }
 
 rule OneNote_Embedded_Script
@@ -8271,38 +8703,6 @@ rule HTML_WebSocket_Exfil
         ($a or $b or $c) and $d
 }
 
-rule MSI_Installer_Suspicious
-{
-    meta:
-        description = "MSI Windows Installer — uncommon as legitimate email attachment"
-        severity    = "high"
-
-    strings:
-        $ole = { D0 CF 11 E0 A1 B1 1A E1 }
-        $a = "SummaryInformation" wide
-        $b = "InstallExecuteSequence" wide
-        $c = "CustomAction" wide
-
-    condition:
-        $ole and any of ($a, $b, $c)
-}
-
-rule MSIX_APPX_Installer
-{
-    meta:
-        description = "MSIX/APPX package — abused for sideloading malware via ms-appinstaller"
-        severity    = "high"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = "AppxManifest.xml" nocase
-        $b = "AppxBlockMap.xml" nocase
-        $c = "AppxSignature" nocase
-
-    condition:
-        $pk and any of ($a, $b, $c)
-}
-
 rule IQY_Web_Query_File
 {
     meta:
@@ -8351,141 +8751,384 @@ rule CSV_Formula_Injection
         any of ($a, $b, $c, $e, $f) or ($d and ($g or $h))
 }
 
-rule BAT_Download_Execute
+rule PDF_AcroForm_With_JavaScript
 {
     meta:
-        description = "Batch file downloads and executes a remote payload"
+        description = "PDF has AcroForm combined with JavaScript — interactive form exploitation"
+        severity    = "high"
+
+    strings:
+        $pdf   = { 25 50 44 46 }
+        $acro  = "/AcroForm"
+        $js1   = "/JavaScript"
+        $js2   = "/JS"
+
+    condition:
+        $pdf and $acro and ($js1 or $js2)
+}
+
+rule PDF_RichMedia_Content
+{
+    meta:
+        description = "PDF contains RichMedia (Flash/multimedia) — historically exploited attack surface"
+        severity    = "high"
+
+    strings:
+        $pdf   = { 25 50 44 46 }
+        $a     = "/RichMedia"
+
+    condition:
+        $pdf and $a
+}
+
+rule PDF_ObjectStream_With_Action
+{
+    meta:
+        description = "PDF uses object streams with auto-action — can hide malicious objects"
+        severity    = "high"
+
+    strings:
+        $pdf   = { 25 50 44 46 }
+        $obj   = "/ObjStm"
+        $a     = "/OpenAction"
+        $b     = "/AA"
+        $c     = "/JavaScript"
+
+    condition:
+        $pdf and $obj and any of ($a, $b, $c)
+}
+
+rule PDF_Eval_Obfuscation
+{
+    meta:
+        description = "PDF contains JavaScript eval or encoding functions — obfuscated exploit code"
         severity    = "critical"
 
     strings:
-        $a = "certutil" nocase
-        $b = "bitsadmin" nocase
-        $c = "powershell" nocase
-        $d = "curl " nocase
-        $e = "wget " nocase
-        $f = "-decode" nocase
-        $g = "/transfer" nocase
-        $h = "start " nocase
-        $i = "call " nocase
+        $pdf   = { 25 50 44 46 }
+        $js    = "/JavaScript"
+        $a     = "eval" nocase
+        $b     = "String.fromCharCode" nocase
+        $c     = "unescape" nocase
+        $d     = "atob" nocase
 
     condition:
-        any of ($a, $b, $c, $d, $e) and any of ($f, $g, $h, $i)
+        $pdf and $js and 2 of ($a, $b, $c, $d)
 }
 
-rule BAT_Obfuscated_Variables
+rule HTML_Entity_Obfuscated_Script
 {
     meta:
-        description = "Batch file uses variable obfuscation — environment variable substring abuse"
+        description = "HTML file uses numeric character entities to hide script content"
         severity    = "high"
 
     strings:
-        $a = /\\%[a-zA-Z]+:~\\d+,\\d+\\%/
-        $b = "set " nocase
-        $c = "call " nocase
+        $entity_chain = /(&#x?[0-9a-fA-F]{2,4};){10,}/ ascii
+        $script_tag = "<script" nocase
+        $eval = "eval" nocase
 
     condition:
-        $a and ($b or $c)
+        $entity_chain and ($script_tag or $eval)
 }
 
-rule BAT_Recursive_Copy_Drop
+
+// ─── Windows Threats ───
+// 126 rules
+
+rule HTA_File_With_Script
 {
     meta:
-        description = "Batch file copies or moves files from temp paths — payload staging"
-        severity    = "high"
-
-    strings:
-        $a = "copy " nocase
-        $b = "move " nocase
-        $c = "xcopy" nocase
-        $d = "%TEMP%" nocase
-        $e = "%APPDATA%" nocase
-        $f = "%USERPROFILE%" nocase
-        $g = "%PUBLIC%" nocase
-
-    condition:
-        any of ($a, $b, $c) and any of ($d, $e, $f, $g)
-}
-
-rule BAT_Registry_Persistence
-{
-    meta:
-        description = "Batch file modifies registry Run keys for persistence"
+        description = "HTA file with script block and execution capability"
         severity    = "critical"
 
     strings:
-        $a = "reg add" nocase
-        $b = "CurrentVersion\\\\Run" nocase
-        $c = "reg.exe" nocase
+        $hta = "<HTA:APPLICATION" nocase
+        $script = "<script" nocase
+        $vbs = "VBScript" nocase
+        $js = "JScript" nocase
+        $ps = "powershell" nocase
+        $shell = "WScript.Shell" nocase
+        $exec = "Run(" nocase
 
     condition:
-        ($a or $c) and $b
+        $hta and ($script or $vbs or $js) and ($ps or $shell or $exec)
 }
 
-rule UNC_Path_NTLM_Theft
+rule HTA_Download_Execute
 {
     meta:
-        description = "File contains UNC path reference — may trigger NTLM authentication to attacker"
-        severity    = "high"
-
-    strings:
-        $a = /\\\\\\\\[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\\\/
-        $b = /\\\\\\\\[a-zA-Z0-9\\-]+\\.[a-z]{2,4}\\\\/
-
-    condition:
-        any of them
-}
-
-rule WebDAV_Reference
-{
-    meta:
-        description = "File references WebDAV path — can fetch remote payloads or steal NTLM hashes"
-        severity    = "high"
-
-    strings:
-        $a = "\\\\\\\\DavWWWRoot\\\\" nocase
-        $b = "\\\\DavWWWRoot\\\\" nocase
-        $c = "@SSL\\\\DavWWWRoot" nocase
-
-    condition:
-        any of them
-}
-
-rule Double_Extension_Any_File
-{
-    meta:
-        description = "File with double extension pattern in its content — masquerade attempt"
-        severity    = "high"
-
-    strings:
-        $a = ".pdf.hta" nocase
-        $b = ".doc.js" nocase
-        $c = ".xls.vbs" nocase
-        $d = ".jpg.js" nocase
-        $e = ".png.bat" nocase
-        $f = ".txt.cmd" nocase
-        $g = ".pdf.wsf" nocase
-        $h = ".doc.cmd" nocase
-        $i = ".xls.hta" nocase
-        $j = ".jpg.vbs" nocase
-        $k = ".pdf.bat" nocase
-        $l = ".doc.ps1" nocase
-
-    condition:
-        any of them
-}
-
-rule Right_To_Left_Override
-{
-    meta:
-        description = "File contains Right-to-Left Override character — filename spoofing technique"
+        description = "HTA downloads and executes a remote payload"
         severity    = "critical"
 
     strings:
-        $a = { E2 80 AE }
-        $b = { FE FF 20 2E }
+        $hta = "<HTA:APPLICATION" nocase
+        $dl1 = "MSXML2.XMLHTTP" nocase
+        $dl2 = "Microsoft.XMLHTTP" nocase
+        $dl3 = "WinHttp" nocase
+        $dl4 = "URLDownloadToFile" nocase
+        $dl5 = "Net.WebClient" nocase
+        $save = "SaveToFile" nocase
+        $stream = "ADODB.Stream" nocase
+
+    condition:
+        $hta and ($dl1 or $dl2 or $dl3 or $dl4 or $dl5 or ($save and $stream))
+}
+
+rule HTA_Any_Presence
+{
+    meta:
+        description = "File contains HTA application tag — always suspicious as email attachment"
+        severity    = "high"
+
+    strings:
+        $a = "<HTA:APPLICATION" nocase
+
+    condition:
+        $a
+}
+
+rule HTA_MSHTA_Inline_Script
+{
+    meta:
+        description = "HTA invoked with mshta inline vbscript or javascript — fileless delivery"
+        severity    = "critical"
+
+    strings:
+        $a = "mshta" nocase
+        $b = "vbscript:Execute" nocase
+        $c = "javascript:" nocase
+        $d = "vbscript:Close" nocase
+
+    condition:
+        $a and any of ($b, $c, $d)
+}
+
+rule URL_Shortcut_Suspicious
+{
+    meta:
+        description = "Windows .url shortcut with SMB reference or remote icon (credential theft)"
+        severity    = "high"
+
+    strings:
+        $header = "[InternetShortcut]"
+        $url = "URL="
+        $icon = "IconFile="
+
+    condition:
+        $header and $url and ($smb or $icon)
+}
+
+rule URL_Shortcut_UNC_Icon
+{
+    meta:
+        description = "URL shortcut with UNC path icon reference — NTLM hash theft via SMB"
+        severity    = "critical"
+
+    strings:
+        $header = "[InternetShortcut]"
+        $icon = /IconFile=\\\\\\\\[^\\r\\n]+/
+
+    condition:
+        $header and $icon
+}
+
+rule URL_Shortcut_Any_Presence
+{
+    meta:
+        description = "Any .url internet shortcut file — uncommon as legitimate email attachment"
+        severity    = "medium"
+
+    strings:
+        $a = "[InternetShortcut]"
+        $b = "URL="
+
+    condition:
+        $a and $b
+}
+
+rule URL_Shortcut_To_Script_Handler
+{
+    meta:
+        description = "URL shortcut pointing to script protocol handler (javascript/vbscript/mshta)"
+        severity    = "critical"
+
+    strings:
+        $header = "[InternetShortcut]"
+        $a = "URL=javascript:" nocase
+        $b = "URL=vbscript:" nocase
+        $c = "URL=mshta" nocase
+        $d = "URL=file:" nocase
+
+    condition:
+        $header and any of ($a, $b, $c, $d)
+}
+
+rule LNK_Suspicious_CommandLine
+{
+    meta:
+        description = "LNK shortcut with references to suspicious LOLBins (PowerShell, cmd, mshta, etc.)"
+        severity    = "critical"
+
+    strings:
+        $lnk = { 4C 00 00 00 }
+        $a = "cmd" nocase wide
+        $b = "powershell" nocase wide
+        $c = "mshta" nocase wide
+        $d = "wscript" nocase wide
+        $e = "cscript" nocase wide
+        $f = "rundll32" nocase wide
+        $g = "regsvr32" nocase wide
+        $h = "certutil" nocase wide
+        $i = "bitsadmin" nocase wide
+        $j = "msiexec" nocase wide
+
+    condition:
+        $lnk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j)
+}
+
+rule LNK_Double_Extension
+{
+    meta:
+        description = "LNK file containing a double-extension string — file masquerade technique"
+        severity    = "high"
+
+    strings:
+        $lnk = { 4C 00 00 00 }
+        $a = ".pdf.lnk" nocase wide
+        $b = ".doc.lnk" nocase wide
+        $c = ".xlsx.lnk" nocase wide
+        $d = ".jpg.lnk" nocase wide
+        $e = ".png.lnk" nocase wide
+        $f = ".txt.lnk" nocase wide
+
+    condition:
+        $lnk and any of ($a, $b, $c, $d, $e, $f)
+}
+
+rule LNK_Extended_LOLBins
+{
+    meta:
+        description = "LNK shortcut references less common LOLBins — forfiles, pcalua, explorer abuse"
+        severity    = "critical"
+
+    strings:
+        $lnk = { 4C 00 00 00 }
+        $a = "forfiles" nocase wide
+        $b = "pcalua" nocase wide
+        $c = "explorer.exe" nocase wide
+        $d = "control.exe" nocase wide
+        $e = "msconfig" nocase wide
+        $f = "fodhelper" nocase wide
+        $g = "SyncAppvPublishingServer" nocase wide
+        $h = "InstallUtil" nocase wide
+        $i = "MSBuild" nocase wide
+        $j = "xwizard" nocase wide
+
+    condition:
+        $lnk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j)
+}
+
+rule LNK_Script_Target
+{
+    meta:
+        description = "LNK shortcut targets a script file directly (.js, .vbs, .hta, .bat, .ps1)"
+        severity    = "critical"
+
+    strings:
+        $lnk = { 4C 00 00 00 }
+        $a = ".js" nocase wide
+        $b = ".jse" nocase wide
+        $c = ".vbs" nocase wide
+        $d = ".vbe" nocase wide
+        $e = ".hta" nocase wide
+        $f = ".bat" nocase wide
+        $g = ".cmd" nocase wide
+        $h = ".ps1" nocase wide
+        $i = ".wsf" nocase wide
+
+    condition:
+        $lnk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i)
+}
+
+rule LNK_Environment_Variable_Abuse
+{
+    meta:
+        description = "LNK shortcut uses environment variable paths — evasion of static path analysis"
+        severity    = "high"
+
+    strings:
+        $lnk = { 4C 00 00 00 }
+        $a = "%APPDATA%" nocase wide
+        $b = "%TEMP%" nocase wide
+        $c = "%USERPROFILE%" nocase wide
+        $d = "%PUBLIC%" nocase wide
+        $e = "%COMSPEC%" nocase wide
+        $f = "%SYSTEMROOT%" nocase wide
+
+    condition:
+        $lnk and any of ($a, $b, $c, $d, $e, $f)
+}
+
+rule WSF_MultiEngine_Script
+{
+    meta:
+        description = "Windows Script File (.wsf) with embedded script — bypasses script policy"
+        severity    = "high"
+
+    strings:
+        $a = "<job" nocase
+        $b = "<script" nocase
+        $c = "language=" nocase
+        $d = "WScript" nocase
+
+    condition:
+        $a and $b and ($c or $d)
+}
+
+rule VHD_Disk_Image
+{
+    meta:
+        description = "VHD/VHDX virtual disk image — MotW bypass, mounts as drive on double-click"
+        severity    = "high"
+
+    strings:
+        $a = "conectix"
+        $b = "vhdxfile"
 
     condition:
         any of them
+}
+
+rule MSI_Installer_Suspicious
+{
+    meta:
+        description = "MSI Windows Installer — uncommon as legitimate email attachment"
+        severity    = "high"
+
+    strings:
+        $ole = { D0 CF 11 E0 A1 B1 1A E1 }
+        $a = "SummaryInformation" wide
+        $b = "InstallExecuteSequence" wide
+        $c = "CustomAction" wide
+
+    condition:
+        $ole and any of ($a, $b, $c)
+}
+
+rule MSIX_APPX_Installer
+{
+    meta:
+        description = "MSIX/APPX package — abused for sideloading malware via ms-appinstaller"
+        severity    = "high"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = "AppxManifest.xml" nocase
+        $b = "AppxBlockMap.xml" nocase
+        $c = "AppxSignature" nocase
+
+    condition:
+        $pk and any of ($a, $b, $c)
 }
 
 rule CMSTP_INF_Bypass
@@ -8503,38 +9146,6 @@ rule CMSTP_INF_Bypass
 
     condition:
         $a and ($b or $c or $d or $e)
-}
-
-rule AddIn_XLL_File
-{
-    meta:
-        description = "Excel Add-In (XLL) file — executes native code when loaded, bypasses macro policy"
-        severity    = "critical"
-
-    strings:
-        $mz = { 4D 5A }
-        $a = "xlAutoOpen" nocase
-        $b = "xlAutoClose" nocase
-        $c = "xlAutoAdd" nocase
-
-    condition:
-        $mz and any of ($a, $b, $c)
-}
-
-rule PPAM_PPTM_AddIn
-{
-    meta:
-        description = "PowerPoint Add-In (.ppam) or macro-enabled file — less scrutinized than docm/xlsm"
-        severity    = "high"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-        $a = "ppt/vbaProject.bin"
-        $b = "vbaProject.bin"
-        $c = "macroEnabled" nocase
-
-    condition:
-        $pk and any of ($a, $b, $c)
 }
 
 rule Info_Contains_MachO_Binary
@@ -8848,22 +9459,6 @@ rule Info_WMI_Event_Subscription
 
     condition:
         any of them
-}
-
-rule Suspicious_COM_Hijack_CLSID
-{
-    meta:
-        description = "File references COM object CLSIDs commonly abused for hijacking persistence"
-        severity    = "medium"
-
-    strings:
-        $clsid_mmcfx   = "{49CBB1C7-97D1-485A-9EC1-A26065633066}" nocase
-        $inproc         = "InprocServer32" nocase
-        $treatAs        = "TreatAs" nocase
-        $clsid_generic  = /CLSID\\\\{[0-9A-Fa-f\\-]{36}}/ nocase
-
-    condition:
-        ($inproc or $treatAs) and $clsid_generic
 }
 
 rule Info_Service_Installation
@@ -9697,459 +10292,6 @@ rule Info_UAC_Bypass_Indicators
         2 of them
 }
 
-rule PE_Process_Injection_APIs
-{
-    meta:
-        description = "PE binary imports classic process injection APIs (alloc + write + thread)"
-        severity    = "critical"
-
-    strings:
-        $mz       = { 4D 5A }
-        $alloc    = "VirtualAlloc" nocase
-        $allocex  = "VirtualAllocEx" nocase
-        $write    = "WriteProcessMemory" nocase
-        $thread   = "CreateRemoteThread" nocase
-        $protect  = "VirtualProtect" nocase
-        $move     = "RtlMoveMemory" nocase
-
-    condition:
-        $mz at 0 and (
-            ($alloc or $allocex) and ($write or $move) and $thread
-        )
-}
-
-rule PE_Shellcode_Loader_Pattern
-{
-    meta:
-        description = "PE imports memory manipulation APIs commonly used for shellcode loading"
-        severity    = "high"
-
-    strings:
-        $mz       = { 4D 5A }
-        $alloc    = "VirtualAlloc" nocase
-        $protect  = "VirtualProtect" nocase
-        $move     = "RtlMoveMemory" nocase
-        $load     = "LoadLibraryA" nocase
-
-    condition:
-        $mz at 0 and 3 of ($alloc, $protect, $move, $load)
-}
-
-rule PE_Download_Execute
-{
-    meta:
-        description = "PE binary downloads remote content and executes it"
-        severity    = "critical"
-
-    strings:
-        $mz      = { 4D 5A }
-        $dl1     = "InternetConnectA" nocase
-        $dl2     = "URLDownloadToFile" nocase
-        $dl3     = "URLDownloadToFileA" nocase
-        $dl4     = "InternetOpenA" nocase
-        $dl5     = "InternetReadFile" nocase
-        $exec1   = "WinExec" nocase
-        $exec2   = "CreateProcessA" nocase
-        $exec3   = "CreateProcessW" nocase
-        $exec4   = "ShellExecuteA" nocase
-
-    condition:
-        $mz at 0 and any of ($dl1, $dl2, $dl3, $dl4, $dl5) and any of ($exec1, $exec2, $exec3, $exec4)
-}
-
-rule PE_Suspicious_Imports_Cluster
-{
-    meta:
-        description = "PE binary imports 3+ suspicious APIs (injection, download, execution)"
-        severity    = "high"
-
-    strings:
-        $mz   = { 4D 5A }
-        $a    = "VirtualAlloc" nocase
-        $b    = "WriteProcessMemory" nocase
-        $c    = "CreateRemoteThread" nocase
-        $d    = "InternetConnectA" nocase
-        $e    = "URLDownloadToFile" nocase
-        $f    = "WinExec" nocase
-        $g    = "CreateProcessA" nocase
-        $h    = "VirtualProtect" nocase
-        $i    = "RtlMoveMemory" nocase
-        $j    = "LoadLibraryA" nocase
-        $k    = "NtUnmapViewOfSection" nocase
-
-    condition:
-        $mz at 0 and 3 of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j, $k)
-}
-
-rule PE_Process_Hollowing
-{
-    meta:
-        description = "PE imports APIs consistent with process hollowing technique"
-        severity    = "critical"
-
-    strings:
-        $mz     = { 4D 5A }
-        $a      = "NtUnmapViewOfSection" nocase
-        $b      = "ZwUnmapViewOfSection" nocase
-        $c      = "WriteProcessMemory" nocase
-        $d      = "CreateProcessA" nocase
-        $e      = "CreateProcessW" nocase
-        $f      = "ResumeThread" nocase
-
-    condition:
-        $mz at 0 and ($a or $b) and $c and ($d or $e) and $f
-}
-
-rule JS_DocumentWrite_With_Obfuscation
-{
-    meta:
-        description = "JavaScript uses document.write with encoding/decoding — DOM-based payload injection"
-        severity    = "high"
-
-    strings:
-        $dw    = "document.write" nocase
-        $a     = "unescape" nocase
-        $b     = "atob" nocase
-        $c     = "fromCharCode" nocase
-        $d     = "decodeURIComponent" nocase
-        $e     = "eval(" nocase
-
-    condition:
-        $dw and any of ($a, $b, $c, $d, $e)
-}
-
-rule JS_Location_Redirect_Obfuscated
-{
-    meta:
-        description = "JavaScript redirects via window.location with encoding — phishing redirect"
-        severity    = "high"
-
-    strings:
-        $loc1  = "window.location" nocase
-        $loc2  = "document.location" nocase
-        $loc3  = "location.href" nocase
-        $loc4  = "location.replace" nocase
-        $a     = "atob(" nocase
-        $b     = "fromCharCode" nocase
-        $c     = "unescape" nocase
-        $d     = "decodeURIComponent" nocase
-
-    condition:
-        any of ($loc1, $loc2, $loc3, $loc4) and any of ($a, $b, $c, $d)
-}
-
-rule JS_ActiveX_With_XMLHttp
-{
-    meta:
-        description = "JavaScript creates ActiveXObject for HTTP requests — classic dropper pattern"
-        severity    = "critical"
-
-    strings:
-        $ax    = "ActiveXObject" nocase
-        $a     = "MSXML2.XMLHTTP" nocase
-        $b     = "Microsoft.XMLHTTP" nocase
-        $c     = "WScript.Shell" nocase
-
-    condition:
-        $ax and any of ($a, $b, $c)
-}
-
-rule PowerShell_AddType_Inline_CSharp
-{
-    meta:
-        description = "PowerShell compiles inline C# via Add-Type — used for API access and evasion"
-        severity    = "critical"
-
-    strings:
-        $a     = "Add-Type" nocase
-        $b     = "-TypeDefinition" nocase
-        $c     = "-MemberDefinition" nocase
-        $d     = "DllImport" nocase
-        $e     = "System.Runtime.InteropServices" nocase
-
-    condition:
-        $a and any of ($b, $c, $d, $e)
-}
-
-rule PowerShell_Invoke_Command_Remote
-{
-    meta:
-        description = "PowerShell uses Invoke-Command for lateral movement"
-        severity    = "critical"
-
-    strings:
-        $a     = "Invoke-Command" nocase
-        $b     = "-ComputerName" nocase
-        $c     = "-ScriptBlock" nocase
-        $d     = "-Session" nocase
-
-    condition:
-        $a and any of ($b, $c, $d)
-}
-
-rule PowerShell_Stealth_Flags_Combo
-{
-    meta:
-        description = "PowerShell uses multiple stealth flags together (hidden, noprofile, noninteractive)"
-        severity    = "critical"
-
-    strings:
-        $ps    = "powershell" nocase
-        $a     = "-nop" nocase
-        $b     = "-noni" nocase
-        $c     = "-w hidden" nocase
-        $d     = "-win hidden" nocase
-        $e     = "-ep bypass" nocase
-        $f     = "-ExecutionPolicy Bypass" nocase
-
-    condition:
-        $ps and 2 of ($a, $b, $c, $d, $e, $f)
-}
-
-rule PowerShell_Reflection_Assembly_Load
-{
-    meta:
-        description = "PowerShell loads .NET assembly via reflection — fileless PE execution"
-        severity    = "critical"
-
-    strings:
-        $a     = "System.Reflection.Assembly" nocase
-        $b     = "[Reflection.Assembly]::Load" nocase
-        $c     = "FromBase64String" nocase
-        $d     = "Add-Type" nocase
-
-    condition:
-        ($a or $b) and ($c or $d)
-}
-
-rule PowerShell_IEX_Env_Variable
-{
-    meta:
-        description = "PowerShell IEX via environment variable — obfuscated execution"
-        severity    = "critical"
-
-    strings:
-        $a     = "IEX $env:" nocase
-        $b     = "iex $env:" nocase
-        $c     = "Invoke-Expression $env:" nocase
-
-    condition:
-        any of them
-}
-
-rule VBA_GetObject_WMI
-{
-    meta:
-        description = "VBA uses GetObject to access WMI or remote resources"
-        severity    = "high"
-
-    strings:
-        $get   = "GetObject" nocase
-        $a     = "winmgmts" nocase
-        $b     = "Win32_Process" nocase
-        $vba   = "Sub " nocase
-
-    condition:
-        $vba and $get and any of ($a, $b, $c)
-}
-
-rule VBA_Shell_Application_Abuse
-{
-    meta:
-        description = "VBA creates Shell.Application object — can execute programs and browse namespace"
-        severity    = "high"
-
-    strings:
-        $a     = "Shell.Application" nocase
-        $b     = "ShellExecute" nocase
-        $c     = "CreateObject" nocase
-        $vba   = "Sub " nocase
-
-    condition:
-        $vba and $a and ($b or $c)
-}
-
-rule VBA_DDE_Field_Injection
-{
-    meta:
-        description = "VBA or document content uses DDE field codes for code execution"
-        severity    = "critical"
-
-    strings:
-        $a     = "DDE" nocase fullword
-        $b     = "DDEAUTO" nocase
-        $c     = "cmd.exe" nocase
-        $d     = "powershell" nocase
-        $e     = "mshta" nocase
-
-    condition:
-        ($a or $b) and any of ($c, $d, $e)
-}
-
-rule VBA_NewObject_PowerShell
-{
-    meta:
-        description = "VBA passes New-Object to PowerShell — .NET object instantiation from macro"
-        severity    = "critical"
-
-    strings:
-        $ps    = "powershell" nocase
-        $no    = "New-Object" nocase
-        $vba1  = "Sub " nocase
-        $vba2  = "Shell" nocase
-
-    condition:
-        $ps and $no and ($vba1 or $vba2)
-}
-
-rule VBA_WbemDisp_WMI
-{
-    meta:
-        description = "VBA references wbemdisp.dll — WMI scripting library for process creation"
-        severity    = "high"
-
-    strings:
-        $a     = "wbemdisp.dll" nocase
-        $b     = "SWbemLocator" nocase
-        $c     = "WbemScripting" nocase
-        $vba   = "Sub " nocase
-
-    condition:
-        $vba and any of ($a, $b, $c)
-}
-
-rule PDF_AcroForm_With_JavaScript
-{
-    meta:
-        description = "PDF has AcroForm combined with JavaScript — interactive form exploitation"
-        severity    = "high"
-
-    strings:
-        $pdf   = { 25 50 44 46 }
-        $acro  = "/AcroForm"
-        $js1   = "/JavaScript"
-        $js2   = "/JS"
-
-    condition:
-        $pdf and $acro and ($js1 or $js2)
-}
-
-rule PDF_RichMedia_Content
-{
-    meta:
-        description = "PDF contains RichMedia (Flash/multimedia) — historically exploited attack surface"
-        severity    = "high"
-
-    strings:
-        $pdf   = { 25 50 44 46 }
-        $a     = "/RichMedia"
-
-    condition:
-        $pdf and $a
-}
-
-rule PDF_ObjectStream_With_Action
-{
-    meta:
-        description = "PDF uses object streams with auto-action — can hide malicious objects"
-        severity    = "high"
-
-    strings:
-        $pdf   = { 25 50 44 46 }
-        $obj   = "/ObjStm"
-        $a     = "/OpenAction"
-        $b     = "/AA"
-        $c     = "/JavaScript"
-
-    condition:
-        $pdf and $obj and any of ($a, $b, $c)
-}
-
-rule PDF_Eval_Obfuscation
-{
-    meta:
-        description = "PDF contains JavaScript eval or encoding functions — obfuscated exploit code"
-        severity    = "critical"
-
-    strings:
-        $pdf   = { 25 50 44 46 }
-        $js    = "/JavaScript"
-        $a     = "eval" nocase
-        $b     = "String.fromCharCode" nocase
-        $c     = "unescape" nocase
-        $d     = "atob" nocase
-
-    condition:
-        $pdf and $js and 2 of ($a, $b, $c, $d)
-}
-
-rule General_XOR_Decode_Loop
-{
-    meta:
-        description = "File contains XOR decoding patterns — common payload deobfuscation"
-        severity    = "medium"
-
-    strings:
-        $a     = "xor" nocase fullword
-        $b     = "fromCharCode" nocase
-        $c     = "charCodeAt" nocase
-        $d     = "Chr(" nocase
-
-    condition:
-        $a and any of ($b, $c, $d)
-}
-
-rule General_Base64_With_Execution
-{
-    meta:
-        description = "File decodes base64 and passes result to execution function"
-        severity    = "high"
-
-    strings:
-        $b64_1 = "base64" nocase
-        $b64_2 = "FromBase64String" nocase
-        $b64_3 = "atob(" nocase
-        $exec1 = "eval(" nocase
-        $exec2 = "Invoke-Expression" nocase
-        $exec3 = "iex " nocase
-        $exec4 = "Execute(" nocase
-        $exec5 = "ExecuteGlobal(" nocase
-        $exec6 = "Function(" nocase
-
-    condition:
-        any of ($b64_1, $b64_2, $b64_3) and any of ($exec1, $exec2, $exec3, $exec4, $exec5, $exec6)
-}
-
-rule General_Hex_Encoded_Shellcode
-{
-    meta:
-        description = "File contains patterns consistent with hex-encoded shellcode blobs"
-        severity    = "high"
-
-    strings:
-        $hex_prefix = /\\\\x[0-9a-fA-F]{2}(\\\\x[0-9a-fA-F]{2}){15,}/
-        $hex_comma  = /0x[0-9a-fA-F]{2}(,\\s*0x[0-9a-fA-F]{2}){15,}/
-
-    condition:
-        any of them
-}
-
-rule WMIC_Process_Create
-{
-    meta:
-        description = "WMIC used to create remote processes — lateral movement technique"
-        severity    = "critical"
-
-    strings:
-        $a     = "wmic" nocase
-        $b     = "process" nocase fullword
-        $c     = "call" nocase fullword
-        $d     = "create" nocase fullword
-
-    condition:
-        $a and $b and $c and $d
-}
-
 rule BITSAdmin_Download
 {
     meta:
@@ -10253,506 +10395,6 @@ rule Rundll32_Script_Proxy
     condition:
         $a and any of ($b, $c, $d, $e, $f, $g)
 }
-
-rule PowerShell_WMI_Event_Persistence
-{
-    meta:
-        description = "PowerShell creates WMI event subscription — fileless persistence"
-        severity    = "critical"
-
-    strings:
-        $a     = "__EventFilter" nocase
-        $b     = "CommandLineEventConsumer" nocase
-        $c     = "__FilterToConsumerBinding" nocase
-        $d     = "Register-WmiEvent" nocase
-        $e     = "Set-WmiInstance" nocase
-
-    condition:
-        2 of them
-}
-
-rule Credential_Dumping_Commands
-{
-    meta:
-        description = "File references credential dumping tools or techniques beyond mimikatz"
-        severity    = "critical"
-
-    strings:
-        $a     = "procdump" nocase
-        $b     = "lsass" nocase
-        $c     = "comsvcs.dll" nocase
-        $d     = "MiniDump" nocase
-        $e     = "ntdsutil" nocase
-        $f     = "vssadmin" nocase
-        $g     = "ntds.dit" nocase
-
-    condition:
-        ($a and $b) or ($c and $d) or ($e and ($f or $g))
-}
-
-rule AMSI_ETW_Bypass_Patterns
-{
-    meta:
-        description = "File attempts to patch AMSI or disable ETW tracing"
-        severity    = "critical"
-
-    strings:
-        $a     = "AmsiScanBuffer" nocase
-        $b     = "amsiInitFailed" nocase
-        $c     = "EtwEventWrite" nocase
-        $d     = "ntdll" nocase
-        $e     = { C3 }
-        $f     = "VirtualProtect" nocase
-        $g     = "patch" nocase
-
-    condition:
-        ($a or $b or $c) and ($f or $g)
-}
-
-rule Standalone_Script_Shell_Execution
-{
-    meta:
-        description = "Individual script/shell execution indicator (standalone match)"
-        severity    = "medium"
-
-    strings:
-        $wscript_shell   = "WScript.Shell" nocase
-        $create_object   = "CreateObject" nocase
-        $get_object      = "GetObject" nocase
-        $shell_call      = /\\bShell\\s*\\(/ nocase
-        $shell_execute   = "ShellExecute" nocase
-        $shell_app       = "Shell.Application" nocase
-        $run_call        = /\\bRun\\s*\\(/ nocase
-        $exec_call       = /\\bExec\\s*\\(/ nocase
-
-    condition:
-        any of them
-}
-
-rule Standalone_COM_Objects
-{
-    meta:
-        description = "COM object instantiation or access (standalone match)"
-        severity    = "medium"
-
-    strings:
-        $fso    = "Scripting.FileSystemObject" nocase
-        $adodb  = "ADODB.Stream" nocase
-        $activex = "ActiveXObject" nocase
-        $clsid  = "clsid:" nocase
-
-    condition:
-        any of them
-}
-
-rule Standalone_Download_Network_Indicators
-{
-    meta:
-        description = "Individual network/download indicator (standalone match)"
-        severity    = "medium"
-
-    strings:
-        $dl_file       = "DownloadFile" nocase
-        $dl_string     = "DownloadString" nocase
-        $webclient     = "Net.WebClient" nocase
-        $xmlhttp       = "XMLHTTP" nocase
-        $msxml2        = "MSXML2" nocase
-        $ms_xmlhttp    = "Microsoft.XMLHTTP" nocase
-        $winhttp       = "WinHttp.WinHttpRequest" nocase
-        $urldownload   = "URLDownloadToFile" nocase
-        $iwr           = "Invoke-WebRequest" nocase
-        $irm           = "Invoke-RestMethod" nocase
-        $bits_transfer = "Start-BitsTransfer" nocase
-        $inet_connect  = "InternetConnectA" nocase
-        $ie_app        = "InternetExplorer.Application" nocase
-        $xmlhttp_req   = "XMLHttpRequest" nocase
-        $msxml2_xmlhttp = "MSXML2.XMLHTTP" nocase
-
-    condition:
-        any of them
-}
-
-rule Standalone_PowerShell_Indicators
-{
-    meta:
-        description = "Individual PowerShell indicator (standalone match)"
-        severity    = "medium"
-
-    strings:
-        $iex            = "Invoke-Expression" nocase
-        $iex_alias      = /\\biex\\s/ nocase
-        $start_process  = "Start-Process" nocase
-        $new_object     = "New-Object" nocase
-        $enc_cmd        = "-EncodedCommand" nocase
-        $enc_short      = /\\s-enc\\s/ nocase
-        $enc_e          = /\\s-e\\s/ nocase
-        $nop            = "-nop" nocase
-        $noni           = "-noni" nocase
-        $hidden_win     = "-w hidden" nocase
-        $invoke_cmd     = "Invoke-Command" nocase
-        $add_type       = "Add-Type" nocase
-        $reflection     = "System.Reflection.Assembly" nocase
-        $ps_enc_payload = /-[Ee](?:nc|ncodedcommand)\\s+[A-Za-z0-9+\\/=]{20,}/
-
-    condition:
-        any of them
-}
-
-rule Standalone_LOLBin_Indicators
-{
-    meta:
-        description = "LOLBin (Living Off The Land Binary) reference — may indicate abuse"
-        severity    = "info"
-
-    strings:
-        $certutil   = "certutil" nocase fullword
-        $bitsadmin  = "bitsadmin" nocase fullword
-        $mshta      = "mshta" nocase fullword
-        $regsvr32   = "regsvr32" nocase fullword
-        $rundll32   = "rundll32" nocase fullword
-        $cscript    = "cscript" nocase fullword
-        $wscript    = "wscript" nocase fullword
-        $msiexec    = "msiexec" nocase fullword
-        $cmd_c      = /\\bcmd\\s*\\/[ck]\\b/ nocase
-        $ps_enc     = /powershell\\s+.*-[Ee]nc/ nocase
-
-    condition:
-        any of them
-}
-
-rule Standalone_HTML_Suspicious_Elements
-{
-    meta:
-        description = "Suspicious HTML element or attribute (standalone match)"
-        severity    = "info"
-
-    strings:
-        $script_tag     = /<script[\\s>]/ nocase
-        $event_handler  = /\\bon\\w+\\s*=/ nocase
-        $iframe_tag     = /<iframe[\\s>]/ nocase
-        $object_tag     = /<object[\\s>]/ nocase
-        $embed_tag      = /<embed[\\s>]/ nocase
-        $form_tag       = /<form[\\s>]/ nocase
-
-    condition:
-        2 of them
-}
-
-rule Standalone_HTML_Credential_Indicators
-{
-    meta:
-        description = "HTML credential harvesting or redirect indicator"
-        severity    = "medium"
-
-    strings:
-        $password_input = /type\\s*=\\s*["']?password/ nocase
-        $doc_cookie     = "document.cookie" nocase
-        $form_submit    = /\\.submit\\s*\\(/ nocase
-        $meta_refresh   = /<meta[^>]+refresh/ nocase
-        $base_href      = /<base\\s+href/ nocase
-
-    condition:
-        2 of them
-}
-
-rule Standalone_HTML_Code_Execution
-{
-    meta:
-        description = "HTML/JavaScript code execution or obfuscation (2+ indicators)"
-        severity    = "medium"
-
-    strings:
-        $eval_call      = /eval\\s*\\(/ nocase
-        $doc_write      = "document.write" nocase
-        $atob_call      = /atob\\s*\\(/ nocase
-        $unescape_call  = /unescape\\s*\\(/ nocase
-        $fromcharcode   = "String.fromCharCode" nocase
-        $js_uri         = /javascript\\s*:/ nocase
-        $data_html_uri  = /data\\s*:\\s*text\\/html/ nocase
-        $vbscript_uri   = /vbscript\\s*:/ nocase
-
-    condition:
-        2 of them
-}
-
-rule Standalone_HTA_VBScript_Indicators
-{
-    meta:
-        description = "HTA or VBScript execution indicator (standalone match)"
-        severity    = "medium"
-
-    strings:
-        $hta_tag        = /<HTA:APPLICATION[^>]*>/ nocase
-        $exec_global    = "ExecuteGlobal" nocase
-        $exec_statement = "ExecuteStatement" nocase
-        $execute_call   = /\\bExecute\\s*\\(/ nocase
-        $eval_vbs       = /\\bEval\\s*\\(/ nocase
-        $getref         = /\\bGetRef\\s*\\(/ nocase
-        $chr_obfusc     = /\\bChr\\s*\\(\\s*\\d/ nocase
-        $chrw_obfusc    = /\\bChrW\\s*\\(\\s*\\d/ nocase
-        $strreverse     = "StrReverse" nocase
-        $msgbox         = "MsgBox" nocase
-        $vbscript_lang  = /language\\s*=\\s*["']?vbscript/ nocase
-        $jscript_lang   = /language\\s*=\\s*["']?jscript/ nocase
-
-    condition:
-        any of them
-}
-
-rule Standalone_WSF_Script_Indicators
-{
-    meta:
-        description = "Windows Script File execution indicator (standalone match)"
-        severity    = "medium"
-
-    strings:
-        $regwrite    = "RegWrite" nocase fullword
-        $frombase64  = "FromBase64String" nocase
-        $wbemdisp    = "wbemdisp.dll" nocase
-        $dde         = "DDE" nocase fullword
-        $ddeauto     = "DDEAUTO" nocase fullword
-
-    condition:
-        any of them
-}
-
-rule Standalone_RTF_OLE_Keywords
-{
-    meta:
-        description = "RTF OLE object control word with RTF context"
-        severity    = "high"
-
-    strings:
-        $rtf        = "{\\\\rtf"
-        $objdata    = "\\\\objdata"
-        $objocx     = "\\\\objocx"
-        $objemb     = "\\\\objemb"
-        $objautlink = "\\\\objautlink"
-        $objhtml    = "\\\\objhtml"
-        $objlink    = "\\\\objlink"
-        $objupdate  = "\\\\objupdate"
-        $objclass   = "\\\\objclass"
-
-    condition:
-        $rtf and any of ($objdata, $objocx, $objemb, $objautlink, $objhtml, $objlink, $objupdate, $objclass)
-}
-
-rule Standalone_RTF_Exploit_Patterns
-{
-    meta:
-        description = "RTF exploit vector or DDE field with RTF context"
-        severity    = "high"
-
-    strings:
-        $rtf           = "{\\\\rtf"
-        $equation_obj  = /\\{\\\\object\\b[^}]*\\\\objclass\\s+Equation/ nocase
-        $equation3     = "Equation.3" nocase
-        $eq3_clsid     = "0002CE02-0000-0000-C000-000000000046" nocase
-        $datafield     = "\\\\datafield"
-        $ddeauto_rtf   = "\\\\ddeauto"
-        $ddeauto_field = /\\\\field\\s*\\{[^}]*\\\\fldinst\\s+[^}]*DDEAUTO/ nocase
-        $import_field  = /\\\\field\\s*\\{[^}]*\\\\fldinst\\s+[^}]*IMPORT/ nocase
-        $include_field = /\\\\field\\s*\\{[^}]*\\\\fldinst\\s+[^}]*INCLUDETEXT/ nocase
-
-    condition:
-        $rtf and any of ($equation_obj, $equation3, $eq3_clsid, $datafield, $ddeauto_rtf, $ddeauto_field, $import_field, $include_field)
-}
-
-rule Standalone_RTF_Obfuscation
-{
-    meta:
-        description = "RTF obfuscation technique with RTF context"
-        severity    = "medium"
-
-    strings:
-        $rtf           = "{\\\\rtf"
-        $obfusc_header = /\\{\\\\rt[^f]/ nocase
-        $bin_payload   = /\\\\bin\\d{4,}/
-
-    condition:
-        $rtf and ($obfusc_header or $bin_payload)
-}
-
-rule Standalone_LNK_Argument_Patterns
-{
-    meta:
-        description = "Suspicious command-line argument patterns (2+ indicators suggest malicious intent)"
-        severity    = "high"
-
-    strings:
-        $enc_flag     = /-e(nc(odedcommand)?)\\b/ nocase
-        $noprofile    = /-nop(rofile)?\\b/ nocase
-        $hidden_win   = /-w(indowstyle)?\\s+hidden/ nocase
-        $ep_bypass    = /-ep\\s+bypass/ nocase
-        $frombase64   = "FromBase64String" nocase fullword
-
-    condition:
-        2 of them
-}
-
-rule Encoded_Base64_PE_Header
-{
-    meta:
-        description = "Base64-encoded PE executable (MZ header = TVqQ/TVpQ/TVro)"
-        severity    = "high"
-
-    strings:
-        $b64_mz1 = "TVqQ" ascii
-        $b64_mz2 = "TVpQ" ascii
-        $b64_mz3 = "TVro" ascii
-
-    condition:
-        any of them
-}
-
-rule Encoded_Base64_Gzip
-{
-    meta:
-        description = "Base64-encoded gzip data (H4sI prefix)"
-        severity    = "medium"
-
-    strings:
-        $b64_gz = "H4sI" ascii
-
-    condition:
-        $b64_gz
-}
-
-rule Encoded_Base64_OLE_Document
-{
-    meta:
-        description = "Base64-encoded OLE/CFB compound document (0M8R prefix)"
-        severity    = "medium"
-
-    strings:
-        $b64_ole = "0M8R" ascii
-
-    condition:
-        $b64_ole
-}
-
-rule Encoded_Base64_PDF
-{
-    meta:
-        description = "Base64-encoded PDF document (JVBE prefix)"
-        severity    = "medium"
-
-    strings:
-        $b64_pdf = "JVBE" ascii
-
-    condition:
-        $b64_pdf
-}
-
-rule Encoded_Base64_ZIP
-{
-    meta:
-        description = "Base64-encoded ZIP archive (UEsD prefix)"
-        severity    = "medium"
-
-    strings:
-        $b64_zip = "UEsD" ascii
-
-    condition:
-        $b64_zip
-}
-
-rule PowerShell_EncodedCommand
-{
-    meta:
-        description = "PowerShell -EncodedCommand with Base64 payload"
-        severity    = "high"
-
-    strings:
-        $enc1 = /-[Ee]nc\\s+[A-Za-z0-9+\\/]{20,}/
-        $enc2 = /-[Ee]ncodedcommand\\s+[A-Za-z0-9+\\/]{20,}/ nocase
-        $enc3 = /-[Ee][Cc]\\s+[A-Za-z0-9+\\/]{20,}/
-        $from = "FromBase64String" nocase fullword
-
-    condition:
-        any of them
-}
-
-rule Hex_Encoded_PE_Header
-{
-    meta:
-        description = "Hex-encoded PE executable header (4D5A9000)"
-        severity    = "high"
-
-    strings:
-        $hex_mz_lower = "4d5a9000" ascii
-        $hex_mz_upper = "4D5A9000" ascii
-        $hex_mz_mixed = "4d5a90" ascii
-
-    condition:
-        any of them
-}
-
-rule Hex_Shellcode_Pattern
-{
-    meta:
-        description = "Hex-encoded byte array pattern commonly used for shellcode"
-        severity    = "medium"
-
-    strings:
-        $ps_bytes = /0x[0-9a-fA-F]{2}(,\\s*0x[0-9a-fA-F]{2}){15,}/ ascii
-        $escaped  = /(\\\\x[0-9a-fA-F]{2}){16,}/ ascii
-
-    condition:
-        any of them
-}
-
-rule Stacked_Encoding_Indicators
-{
-    meta:
-        description = "Indicators of multi-layer encoding/obfuscation"
-        severity    = "high"
-
-    strings:
-        $decompress   = "IO.Compression" nocase
-        $memstream    = "IO.MemoryStream" nocase
-        $deflate      = "DeflateStream" nocase
-        $gzipstream   = "GZipStream" nocase
-        $from_b64     = "FromBase64String" nocase
-        $convert      = "[Convert]::" nocase
-        $iex          = "Invoke-Expression" nocase fullword
-        $iex_short    = /\\bIEX\\b/
-
-    condition:
-        3 of them
-}
-
-rule Embedded_ZIP_In_Non_Archive
-{
-    meta:
-        description = "ZIP local file header (PK\\\\x03\\\\x04) found inside a non-archive file"
-        severity    = "medium"
-
-    strings:
-        $pk = { 50 4B 03 04 }
-
-    condition:
-        #pk > 1
-}
-
-rule Embedded_Compressed_Stream
-{
-    meta:
-        description = "Zlib or gzip compressed stream embedded in file"
-        severity    = "info"
-
-    strings:
-        $zlib_default = { 78 9C }
-        $zlib_best    = { 78 DA }
-        $gzip_magic   = { 1F 8B 08 }
-
-    condition:
-        any of them
-}
-
-// ════════════════════════════════════════════════════════════════════════
-// REG — Windows Registry File rules
-// ════════════════════════════════════════════════════════════════════════
 
 rule REG_Persistence_Run_Key
 {
@@ -11294,148 +10936,6 @@ rule MSI_Service_Install
    Command Obfuscation Detection Rules
    ══════════════════════════════════════════════════════════════════════════ */
 
-rule CMD_Caret_Obfuscation
-{
-    meta:
-        description = "CMD command uses caret (^) insertion to break up keywords and evade detection"
-        severity    = "high"
-
-    strings:
-        $c1 = /[pP]\\^[oO]\\^[wW]\\^[eE]\\^[rR]\\^[sS]\\^[hH]\\^[eE]\\^[lL]\\^[lL]/ ascii
-        $c2 = /[cC]\\^[mM]\\^[dD]/ ascii
-        $c3 = /[wW]\\^[sS]\\^[cC]\\^[rR]\\^[iI]\\^[pP]\\^[tT]/ ascii
-        $c4 = /[nN]\\^[eE]\\^[tT]\\.\\^[wW]\\^[eE]\\^[bB]\\^[cC]\\^[lL]\\^[iI]\\^[eE]\\^[nN]\\^[tT]/ ascii
-        $c5 = /[rR]\\^[eE]\\^[gG]\\^[sS]\\^[vV]\\^[rR]\\^3\\^2/ ascii
-        $c6 = /[mM]\\^[sS]\\^[hH]\\^[tT]\\^[aA]/ ascii
-        $c7 = /[bB]\\^[iI]\\^[tT]\\^[sS]\\^[aA]\\^[dD]\\^[mM]\\^[iI]\\^[nN]/ ascii
-        $c8 = /[cC]\\^[eE]\\^[rR]\\^[tT]\\^[uU]\\^[tT]\\^[iI]\\^[lL]/ ascii
-        $generic = /\\w\\^\\w\\^\\w\\^\\w\\^\\w\\^\\w/ ascii
-
-    condition:
-        any of them
-}
-
-rule CMD_Set_Variable_Obfuscation
-{
-    meta:
-        description = "CMD script uses SET variable concatenation to build commands from fragments"
-        severity    = "high"
-
-    strings:
-        $set_pattern = /[sS][eE][tT]\\s+\\w{1,3}=\\S{1,20}/ ascii
-        $concat = /(%\\w{1,3}%){3,}/ ascii
-        $call = /[cC][aA][lL][lL]\\s+(%\\w{1,3}%){2,}/ ascii
-
-    condition:
-        (#set_pattern > 3 and $concat) or $call
-}
-
-rule CMD_Environment_Substring_Abuse
-{
-    meta:
-        description = "CMD script extracts substrings from environment variables to build commands"
-        severity    = "high"
-
-    strings:
-        $substr = /(%\\w+:~\\d{1,3},\\d{1,3}%){3,}/ ascii
-        $comspec = "%comspec:~" nocase
-        $path_sub = "%path:~" nocase
-
-    condition:
-        $substr or (#comspec > 2) or (#path_sub > 2)
-}
-
-rule PS_String_Concatenation_Obfuscation
-{
-    meta:
-        description = "PowerShell uses excessive string concatenation to evade keyword detection"
-        severity    = "medium"
-
-    strings:
-        $concat_single = /('[a-zA-Z]{1,4}'\\s*\\+\\s*){4,}'[a-zA-Z]{1,4}'/ ascii
-        $concat_double = /("[a-zA-Z]{1,4}"\\s*\\+\\s*){4,}"[a-zA-Z]{1,4}"/ ascii
-        $iex_concat = /[iI][eE][xX]\\s*\\(\\s*['"][a-zA-Z]{1,3}['"]\\s*\\+/ ascii
-
-    condition:
-        any of them
-}
-
-rule PS_Backtick_Obfuscation
-{
-    meta:
-        description = "PowerShell uses backtick escape characters to break up keywords"
-        severity    = "medium"
-
-    strings:
-        $bt1 = "In\`v\`o\`k\`e" ascii
-        $bt2 = "Ne\`w\`-O\`b\`j" ascii
-        $bt3 = "Do\`wn\`lo\`ad" ascii
-        $bt4 = "We\`b\`Cl\`ie\`nt" ascii
-        $bt5 = "Sy\`st\`em" ascii
-        $bt6 = "Ne\`t." ascii
-        $bt7 = /\\w\`\\w\`\\w\`\\w\`\\w\`\\w/ ascii
-
-    condition:
-        any of them
-}
-
-rule PS_Format_Operator_Obfuscation
-{
-    meta:
-        description = "PowerShell uses -f format operator to reconstruct strings from fragments"
-        severity    = "medium"
-
-    strings:
-        $fmt = /'\\{0\\}\\{1\\}\\{2\\}(\\{3\\})?(\\{4\\})?(\\{5\\})?' *-[fF] *'[^']{1,12}',\\s*'[^']{1,12}',\\s*'[^']{1,12}'/ ascii
-
-    condition:
-        $fmt
-}
-
-rule PS_Char_Casting_Obfuscation
-{
-    meta:
-        description = "PowerShell uses [char] type casting to build strings from ASCII codes"
-        severity    = "high"
-
-    strings:
-        $char = /(\\[char\\]\\d{2,3}\\s*\\+\\s*){4,}/ nocase
-        $char_join = /\\-join\\s*\\(\\s*(\\d{2,3}\\s*,\\s*){4,}/ nocase
-        $char_arr = /\\[char\\[\\]\\]\\s*\\(\\s*(\\d{2,3}\\s*,\\s*){4,}/ nocase
-
-    condition:
-        any of them
-}
-
-rule PS_String_Reversal_Obfuscation
-{
-    meta:
-        description = "PowerShell reverses strings to hide commands"
-        severity    = "medium"
-
-    strings:
-        $rev1 = /\\[array\\]::reverse\\s*\\(/ nocase
-        $rev2 = /-join\\s*\\[regex\\]::matches\\([^)]+,\\s*'\\.'\\s*,\\s*'RightToLeft'\\)/ nocase
-        $rev3 = /\\$[a-zA-Z]+\\[-1\\.\\.-?\\d+\\]/ ascii
-
-    condition:
-        any of them
-}
-
-rule PS_Replace_Chain_Obfuscation
-{
-    meta:
-        description = "PowerShell uses chained -replace operators to transform encoded strings"
-        severity    = "medium"
-
-    strings:
-        $rep = /(-replace\\s*'[^']{1,20}'\\s*,\\s*'[^']{0,20}'\\s*){3,}/ nocase
-        $creplace = /(\\.\\s*replace\\s*\\(\\s*'[^']{1,20}'\\s*,\\s*'[^']{0,20}'\\s*\\)\\s*){3,}/ nocase
-
-    condition:
-        any of them
-}
-
 rule URL_Encoded_Command
 {
     meta:
@@ -11453,19 +10953,625 @@ rule URL_Encoded_Command
         any of them
 }
 
-rule HTML_Entity_Obfuscated_Script
+
+// ─── Archive Threats ───
+// 11 rules
+
+rule ZIP_Contains_Script_File
 {
     meta:
-        description = "HTML file uses numeric character entities to hide script content"
+        description = "ZIP archive contains scripting files (.js/.vbs/.wsf/.hta/.bat/.cmd/.ps1)"
+        severity    = "critical"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = ".js" fullword
+        $b = ".jse" fullword
+        $c = ".vbs" fullword
+        $d = ".vbe" fullword
+        $e = ".wsf" fullword
+        $f = ".hta" fullword
+        $g = ".bat" fullword
+        $h = ".cmd" fullword
+        $i = ".ps1" fullword
+
+    condition:
+        $pk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i)
+}
+
+rule ZIP_Contains_LNK
+{
+    meta:
+        description = "ZIP archive contains Windows shortcut (.lnk) — masquerade delivery"
+        severity    = "critical"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = ".lnk" fullword
+
+    condition:
+        $pk and $a
+}
+
+rule ZIP_Contains_URL_Shortcut
+{
+    meta:
+        description = "ZIP archive contains .url shortcut file — uncommon, likely phishing"
+        severity    = "critical"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = ".url" fullword
+
+    condition:
+        $pk and $a
+}
+
+rule ZIP_Contains_ISO_IMG
+{
+    meta:
+        description = "ZIP archive contains disk image (.iso/.img/.vhd/.vhdx) — MotW bypass nesting"
+        severity    = "critical"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = ".iso" fullword
+        $b = ".img" fullword
+        $c = ".vhd" fullword
+        $d = ".vhdx" fullword
+
+    condition:
+        $pk and any of ($a, $b, $c, $d)
+}
+
+rule ZIP_Contains_Office_Macro_File
+{
+    meta:
+        description = "ZIP contains macro-enabled Office document (.docm/.xlsm/.pptm/.xlsb)"
         severity    = "high"
 
     strings:
-        $entity_chain = /(&#x?[0-9a-fA-F]{2,4};){10,}/ ascii
-        $script_tag = "<script" nocase
-        $eval = "eval" nocase
+        $pk = { 50 4B 03 04 }
+        $a = ".docm" fullword
+        $b = ".xlsm" fullword
+        $c = ".pptm" fullword
+        $d = ".xlsb" fullword
+        $e = ".dotm" fullword
 
     condition:
-        $entity_chain and ($script_tag or $eval)
+        $pk and any of ($a, $b, $c, $d, $e)
+}
+
+rule ZIP_Contains_HTA
+{
+    meta:
+        description = "ZIP archive contains an HTA file — strong phishing indicator"
+        severity    = "critical"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = ".hta" fullword
+
+    condition:
+        $pk and $a
+}
+
+rule ZIP_Contains_MSI
+{
+    meta:
+        description = "ZIP archive contains an MSI installer — uncommon as email attachment"
+        severity    = "high"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = ".msi" fullword
+
+    condition:
+        $pk and $a
+}
+
+rule RAR_Archive_Header
+{
+    meta:
+        description = "RAR archive detected — commonly used phishing delivery wrapper"
+        severity    = "medium"
+
+    strings:
+        $rar4 = { 52 61 72 21 1A 07 00 }
+        $rar5 = { 52 61 72 21 1A 07 01 00 }
+
+    condition:
+        $rar4 or $rar5
+}
+
+rule SevenZip_Archive_Header
+{
+    meta:
+        description = "7-Zip archive detected — sometimes used to bypass gateway extension filters"
+        severity    = "medium"
+
+    strings:
+        $a = { 37 7A BC AF 27 1C }
+
+    condition:
+        $a
+}
+
+rule Archive_Double_Extension
+{
+    meta:
+        description = "Archive file contains a double-extension filename — masquerade attempt"
+        severity    = "critical"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+        $a = ".pdf.js" nocase
+        $b = ".doc.vbs" nocase
+        $c = ".xlsx.js" nocase
+        $d = ".pdf.bat" nocase
+        $e = ".doc.hta" nocase
+        $f = ".jpg.js" nocase
+        $g = ".pdf.vbs" nocase
+        $h = ".doc.bat" nocase
+        $i = ".pdf.ps1" nocase
+        $j = ".txt.js" nocase
+        $k = ".pdf.wsf" nocase
+        $l = ".xls.hta" nocase
+
+    condition:
+        $pk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j, $k, $l)
+}
+
+rule ISO_IMG_Disk_Image
+{
+    meta:
+        description = "ISO 9660 disk image — used to bypass Mark-of-the-Web protections"
+        severity    = "high"
+
+    strings:
+        $iso = "CD001"
+
+    condition:
+        $iso
+}
+
+
+// ─── Encoding Threats ───
+// 28 rules
+
+rule Double_Extension_Any_File
+{
+    meta:
+        description = "File with double extension pattern in its content — masquerade attempt"
+        severity    = "high"
+
+    strings:
+        $a = ".pdf.hta" nocase
+        $b = ".doc.js" nocase
+        $c = ".xls.vbs" nocase
+        $d = ".jpg.js" nocase
+        $e = ".png.bat" nocase
+        $f = ".txt.cmd" nocase
+        $g = ".pdf.wsf" nocase
+        $h = ".doc.cmd" nocase
+        $i = ".xls.hta" nocase
+        $j = ".jpg.vbs" nocase
+        $k = ".pdf.bat" nocase
+        $l = ".doc.ps1" nocase
+
+    condition:
+        any of them
+}
+
+rule Right_To_Left_Override
+{
+    meta:
+        description = "File contains Right-to-Left Override character — filename spoofing technique"
+        severity    = "critical"
+
+    strings:
+        $a = { E2 80 AE }
+        $b = { FE FF 20 2E }
+
+    condition:
+        any of them
+}
+
+rule Standalone_Script_Shell_Execution
+{
+    meta:
+        description = "Individual script/shell execution indicator (standalone match)"
+        severity    = "medium"
+
+    strings:
+        $wscript_shell   = "WScript.Shell" nocase
+        $create_object   = "CreateObject" nocase
+        $get_object      = "GetObject" nocase
+        $shell_call      = /\\bShell\\s*\\(/ nocase
+        $shell_execute   = "ShellExecute" nocase
+        $shell_app       = "Shell.Application" nocase
+        $run_call        = /\\bRun\\s*\\(/ nocase
+        $exec_call       = /\\bExec\\s*\\(/ nocase
+
+    condition:
+        any of them
+}
+
+rule Standalone_COM_Objects
+{
+    meta:
+        description = "COM object instantiation or access (standalone match)"
+        severity    = "medium"
+
+    strings:
+        $fso    = "Scripting.FileSystemObject" nocase
+        $adodb  = "ADODB.Stream" nocase
+        $activex = "ActiveXObject" nocase
+        $clsid  = "clsid:" nocase
+
+    condition:
+        any of them
+}
+
+rule Standalone_Download_Network_Indicators
+{
+    meta:
+        description = "Individual network/download indicator (standalone match)"
+        severity    = "medium"
+
+    strings:
+        $dl_file       = "DownloadFile" nocase
+        $dl_string     = "DownloadString" nocase
+        $webclient     = "Net.WebClient" nocase
+        $xmlhttp       = "XMLHTTP" nocase
+        $msxml2        = "MSXML2" nocase
+        $ms_xmlhttp    = "Microsoft.XMLHTTP" nocase
+        $winhttp       = "WinHttp.WinHttpRequest" nocase
+        $urldownload   = "URLDownloadToFile" nocase
+        $iwr           = "Invoke-WebRequest" nocase
+        $irm           = "Invoke-RestMethod" nocase
+        $bits_transfer = "Start-BitsTransfer" nocase
+        $inet_connect  = "InternetConnectA" nocase
+        $ie_app        = "InternetExplorer.Application" nocase
+        $xmlhttp_req   = "XMLHttpRequest" nocase
+        $msxml2_xmlhttp = "MSXML2.XMLHTTP" nocase
+
+    condition:
+        any of them
+}
+
+rule Standalone_PowerShell_Indicators
+{
+    meta:
+        description = "Individual PowerShell indicator (standalone match)"
+        severity    = "medium"
+
+    strings:
+        $iex            = "Invoke-Expression" nocase
+        $iex_alias      = /\\biex\\s/ nocase
+        $start_process  = "Start-Process" nocase
+        $new_object     = "New-Object" nocase
+        $enc_cmd        = "-EncodedCommand" nocase
+        $enc_short      = /\\s-enc\\s/ nocase
+        $enc_e          = /\\s-e\\s/ nocase
+        $nop            = "-nop" nocase
+        $noni           = "-noni" nocase
+        $hidden_win     = "-w hidden" nocase
+        $invoke_cmd     = "Invoke-Command" nocase
+        $add_type       = "Add-Type" nocase
+        $reflection     = "System.Reflection.Assembly" nocase
+        $ps_enc_payload = /-[Ee](?:nc|ncodedcommand)\\s+[A-Za-z0-9+\\/=]{20,}/
+
+    condition:
+        any of them
+}
+
+rule Standalone_LOLBin_Indicators
+{
+    meta:
+        description = "LOLBin (Living Off The Land Binary) reference — may indicate abuse"
+        severity    = "info"
+
+    strings:
+        $certutil   = "certutil" nocase fullword
+        $bitsadmin  = "bitsadmin" nocase fullword
+        $mshta      = "mshta" nocase fullword
+        $regsvr32   = "regsvr32" nocase fullword
+        $rundll32   = "rundll32" nocase fullword
+        $cscript    = "cscript" nocase fullword
+        $wscript    = "wscript" nocase fullword
+        $msiexec    = "msiexec" nocase fullword
+        $cmd_c      = /\\bcmd\\s*\\/[ck]\\b/ nocase
+        $ps_enc     = /powershell\\s+.*-[Ee]nc/ nocase
+
+    condition:
+        any of them
+}
+
+rule Standalone_HTML_Suspicious_Elements
+{
+    meta:
+        description = "Suspicious HTML element or attribute (standalone match)"
+        severity    = "info"
+
+    strings:
+        $script_tag     = /<script[\\s>]/ nocase
+        $event_handler  = /\\bon\\w+\\s*=/ nocase
+        $iframe_tag     = /<iframe[\\s>]/ nocase
+        $object_tag     = /<object[\\s>]/ nocase
+        $embed_tag      = /<embed[\\s>]/ nocase
+        $form_tag       = /<form[\\s>]/ nocase
+
+    condition:
+        2 of them
+}
+
+rule Standalone_HTML_Credential_Indicators
+{
+    meta:
+        description = "HTML credential harvesting or redirect indicator"
+        severity    = "medium"
+
+    strings:
+        $password_input = /type\\s*=\\s*["']?password/ nocase
+        $doc_cookie     = "document.cookie" nocase
+        $form_submit    = /\\.submit\\s*\\(/ nocase
+        $meta_refresh   = /<meta[^>]+refresh/ nocase
+        $base_href      = /<base\\s+href/ nocase
+
+    condition:
+        2 of them
+}
+
+rule Standalone_HTML_Code_Execution
+{
+    meta:
+        description = "HTML/JavaScript code execution or obfuscation (2+ indicators)"
+        severity    = "medium"
+
+    strings:
+        $eval_call      = /eval\\s*\\(/ nocase
+        $doc_write      = "document.write" nocase
+        $atob_call      = /atob\\s*\\(/ nocase
+        $unescape_call  = /unescape\\s*\\(/ nocase
+        $fromcharcode   = "String.fromCharCode" nocase
+        $js_uri         = /javascript\\s*:/ nocase
+        $data_html_uri  = /data\\s*:\\s*text\\/html/ nocase
+        $vbscript_uri   = /vbscript\\s*:/ nocase
+
+    condition:
+        2 of them
+}
+
+rule Standalone_HTA_VBScript_Indicators
+{
+    meta:
+        description = "HTA or VBScript execution indicator (standalone match)"
+        severity    = "medium"
+
+    strings:
+        $hta_tag        = /<HTA:APPLICATION[^>]*>/ nocase
+        $exec_global    = "ExecuteGlobal" nocase
+        $exec_statement = "ExecuteStatement" nocase
+        $execute_call   = /\\bExecute\\s*\\(/ nocase
+        $eval_vbs       = /\\bEval\\s*\\(/ nocase
+        $getref         = /\\bGetRef\\s*\\(/ nocase
+        $chr_obfusc     = /\\bChr\\s*\\(\\s*\\d/ nocase
+        $chrw_obfusc    = /\\bChrW\\s*\\(\\s*\\d/ nocase
+        $strreverse     = "StrReverse" nocase
+        $msgbox         = "MsgBox" nocase
+        $vbscript_lang  = /language\\s*=\\s*["']?vbscript/ nocase
+        $jscript_lang   = /language\\s*=\\s*["']?jscript/ nocase
+
+    condition:
+        any of them
+}
+
+rule Standalone_WSF_Script_Indicators
+{
+    meta:
+        description = "Windows Script File execution indicator (standalone match)"
+        severity    = "medium"
+
+    strings:
+        $regwrite    = "RegWrite" nocase fullword
+        $frombase64  = "FromBase64String" nocase
+        $wbemdisp    = "wbemdisp.dll" nocase
+        $dde         = "DDE" nocase fullword
+        $ddeauto     = "DDEAUTO" nocase fullword
+
+    condition:
+        any of them
+}
+
+rule Standalone_RTF_OLE_Keywords
+{
+    meta:
+        description = "RTF OLE object control word with RTF context"
+        severity    = "high"
+
+    strings:
+        $rtf        = "{\\\\rtf"
+        $objdata    = "\\\\objdata"
+        $objocx     = "\\\\objocx"
+        $objemb     = "\\\\objemb"
+        $objautlink = "\\\\objautlink"
+        $objhtml    = "\\\\objhtml"
+        $objlink    = "\\\\objlink"
+        $objupdate  = "\\\\objupdate"
+        $objclass   = "\\\\objclass"
+
+    condition:
+        $rtf and any of ($objdata, $objocx, $objemb, $objautlink, $objhtml, $objlink, $objupdate, $objclass)
+}
+
+rule Standalone_RTF_Exploit_Patterns
+{
+    meta:
+        description = "RTF exploit vector or DDE field with RTF context"
+        severity    = "high"
+
+    strings:
+        $rtf           = "{\\\\rtf"
+        $equation_obj  = /\\{\\\\object\\b[^}]*\\\\objclass\\s+Equation/ nocase
+        $equation3     = "Equation.3" nocase
+        $eq3_clsid     = "0002CE02-0000-0000-C000-000000000046" nocase
+        $datafield     = "\\\\datafield"
+        $ddeauto_rtf   = "\\\\ddeauto"
+        $ddeauto_field = /\\\\field\\s*\\{[^}]*\\\\fldinst\\s+[^}]*DDEAUTO/ nocase
+        $import_field  = /\\\\field\\s*\\{[^}]*\\\\fldinst\\s+[^}]*IMPORT/ nocase
+        $include_field = /\\\\field\\s*\\{[^}]*\\\\fldinst\\s+[^}]*INCLUDETEXT/ nocase
+
+    condition:
+        $rtf and any of ($equation_obj, $equation3, $eq3_clsid, $datafield, $ddeauto_rtf, $ddeauto_field, $import_field, $include_field)
+}
+
+rule Standalone_RTF_Obfuscation
+{
+    meta:
+        description = "RTF obfuscation technique with RTF context"
+        severity    = "medium"
+
+    strings:
+        $rtf           = "{\\\\rtf"
+        $obfusc_header = /\\{\\\\rt[^f]/ nocase
+        $bin_payload   = /\\\\bin\\d{4,}/
+
+    condition:
+        $rtf and ($obfusc_header or $bin_payload)
+}
+
+rule Standalone_LNK_Argument_Patterns
+{
+    meta:
+        description = "Suspicious command-line argument patterns (2+ indicators suggest malicious intent)"
+        severity    = "high"
+
+    strings:
+        $enc_flag     = /-e(nc(odedcommand)?)\\b/ nocase
+        $noprofile    = /-nop(rofile)?\\b/ nocase
+        $hidden_win   = /-w(indowstyle)?\\s+hidden/ nocase
+        $ep_bypass    = /-ep\\s+bypass/ nocase
+        $frombase64   = "FromBase64String" nocase fullword
+
+    condition:
+        2 of them
+}
+
+rule Encoded_Base64_PE_Header
+{
+    meta:
+        description = "Base64-encoded PE executable (MZ header = TVqQ/TVpQ/TVro)"
+        severity    = "high"
+
+    strings:
+        $b64_mz1 = "TVqQ" ascii
+        $b64_mz2 = "TVpQ" ascii
+        $b64_mz3 = "TVro" ascii
+
+    condition:
+        any of them
+}
+
+rule Encoded_Base64_Gzip
+{
+    meta:
+        description = "Base64-encoded gzip data (H4sI prefix)"
+        severity    = "medium"
+
+    strings:
+        $b64_gz = "H4sI" ascii
+
+    condition:
+        $b64_gz
+}
+
+rule Encoded_Base64_OLE_Document
+{
+    meta:
+        description = "Base64-encoded OLE/CFB compound document (0M8R prefix)"
+        severity    = "medium"
+
+    strings:
+        $b64_ole = "0M8R" ascii
+
+    condition:
+        $b64_ole
+}
+
+rule Encoded_Base64_PDF
+{
+    meta:
+        description = "Base64-encoded PDF document (JVBE prefix)"
+        severity    = "medium"
+
+    strings:
+        $b64_pdf = "JVBE" ascii
+
+    condition:
+        $b64_pdf
+}
+
+rule Encoded_Base64_ZIP
+{
+    meta:
+        description = "Base64-encoded ZIP archive (UEsD prefix)"
+        severity    = "medium"
+
+    strings:
+        $b64_zip = "UEsD" ascii
+
+    condition:
+        $b64_zip
+}
+
+rule Hex_Encoded_PE_Header
+{
+    meta:
+        description = "Hex-encoded PE executable header (4D5A9000)"
+        severity    = "high"
+
+    strings:
+        $hex_mz_lower = "4d5a9000" ascii
+        $hex_mz_upper = "4D5A9000" ascii
+        $hex_mz_mixed = "4d5a90" ascii
+
+    condition:
+        any of them
+}
+
+rule Hex_Shellcode_Pattern
+{
+    meta:
+        description = "Hex-encoded byte array pattern commonly used for shellcode"
+        severity    = "medium"
+
+    strings:
+        $ps_bytes = /0x[0-9a-fA-F]{2}(,\\s*0x[0-9a-fA-F]{2}){15,}/ ascii
+        $escaped  = /(\\\\x[0-9a-fA-F]{2}){16,}/ ascii
+
+    condition:
+        any of them
+}
+
+rule Stacked_Encoding_Indicators
+{
+    meta:
+        description = "Indicators of multi-layer encoding/obfuscation"
+        severity    = "high"
+
+    strings:
+        $decompress   = "IO.Compression" nocase
+        $memstream    = "IO.MemoryStream" nocase
+        $deflate      = "DeflateStream" nocase
+        $gzipstream   = "GZipStream" nocase
+        $from_b64     = "FromBase64String" nocase
+        $convert      = "[Convert]::" nocase
+        $iex          = "Invoke-Expression" nocase fullword
+        $iex_short    = /\\bIEX\\b/
+
+    condition:
+        3 of them
 }
 
 rule Unicode_Escape_Obfuscation
@@ -11479,36 +11585,6 @@ rule Unicode_Escape_Obfuscation
 
     condition:
         $uesc
-}
-
-rule VBScript_Chr_Concatenation
-{
-    meta:
-        description = "VBScript uses Chr() function concatenation to build strings"
-        severity    = "high"
-
-    strings:
-        $chr = /([Cc][Hh][Rr]\\s*\\(\\s*\\d{2,3}\\s*\\)\\s*(&|&amp;)\\s*){5,}/ ascii
-        $chrw = /([Cc][Hh][Rr][Ww]\\s*\\(\\s*\\d{2,5}\\s*\\)\\s*(&|&amp;)\\s*){5,}/ ascii
-
-    condition:
-        any of them
-}
-
-rule JScript_Encoded_Script
-{
-    meta:
-        description = "File contains Microsoft JScript.Encode encoded script"
-        severity    = "high"
-
-    strings:
-        $marker = "#@~^" ascii
-        $end = "^#~@" ascii
-        $lang1 = "JScript.Encode" nocase
-        $lang2 = "VBScript.Encode" nocase
-
-    condition:
-        ($marker and $end) or any of ($lang*)
 }
 
 rule Obfuscated_IEX_Invocation
@@ -11559,265 +11635,6 @@ rule Obfuscated_Download_Cradle
 // Python Obfuscation Rules
 // ============================================================================
 
-rule Python_Exec_Base64_Obfuscation
-{
-    meta:
-        description = "Detects Python code using exec() with base64-decoded payloads"
-        severity = "high"
-        category = "obfuscation"
-        reference = "Python exec + base64 payload delivery"
-
-    strings:
-        $exec_b64_1 = "exec(base64.b64decode(" nocase
-        $exec_b64_2 = "exec(__import__('base64').b64decode(" nocase
-        $exec_b64_3 = "exec(compile(base64" nocase
-        $exec_b64_4 = "exec(marshal.loads(" nocase
-        $exec_b64_5 = "exec(zlib.decompress(base64" nocase
-        $import_os = "__import__('os')" nocase
-        $import_subprocess = "__import__('subprocess')" nocase
-        $import_socket = "__import__('socket')" nocase
-        $exec_compile = "exec(compile(" nocase
-
-    condition:
-        any of ($exec_b64_*) or ($exec_compile and any of ($import_*))
-}
-
-rule Python_Eval_Codec_Obfuscation
-{
-    meta:
-        description = "Detects Python eval/exec with codec or marshal-based obfuscation"
-        severity = "high"
-        category = "obfuscation"
-        reference = "Python eval with codec/zlib/marshal deobfuscation"
-
-    strings:
-        $eval = "eval(" nocase
-        $exec = "exec(" nocase
-        $codecs_decode = "codecs.decode(" nocase
-        $rot13 = "'rot_13'" nocase
-        $rot13b = "'rot13'" nocase
-        $zlib_decompress = "zlib.decompress(" nocase
-        $marshal_loads = "marshal.loads(" nocase
-        $bytearray = "bytearray(" nocase
-        $chr_join = /chr\\s*\\(\\s*\\w+\\s*\\)\\s*for\\s+\\w+\\s+in/
-
-    condition:
-        ($eval or $exec) and (any of ($codecs_decode, $rot13, $rot13b, $zlib_decompress, $marshal_loads) or ($bytearray and $chr_join))
-}
-
-rule Python_Char_Construction
-{
-    meta:
-        description = "Detects Python string construction via chr() calls to evade static analysis"
-        severity = "medium"
-        category = "obfuscation"
-        reference = "Python chr() string building"
-
-    strings:
-        $chr_chain = /chr\\(\\d+\\)\\s*\\+\\s*chr\\(\\d+\\)\\s*\\+\\s*chr\\(\\d+\\)/ 
-        $chr_join = /join\\s*\\(\\s*\\[?\\s*chr\\s*\\(\\s*\\d+\\s*\\)/ nocase
-        $chr_map = /map\\s*\\(\\s*chr\\s*,\\s*\\[/ nocase
-        $exec = "exec(" nocase
-        $eval = "eval(" nocase
-
-    condition:
-        any of ($chr_chain, $chr_join, $chr_map) and ($exec or $eval)
-}
-
-// ============================================================================
-// ROT13 / Caesar Cipher Rules
-// ============================================================================
-
-rule JS_ROT13_Cipher_Implementation
-{
-    meta:
-        description = "Detects JavaScript ROT13/Caesar cipher implementations used for obfuscation"
-        severity = "medium"
-        category = "obfuscation"
-        reference = "ROT13 character rotation in JavaScript"
-
-    strings:
-        $charcode_13 = /charCodeAt\\s*\\(\\s*\\w*\\s*\\)\\s*[\\+\\-]\\s*13/ nocase
-        $replace_alpha = /replace\\s*\\(\\s*\\/\\[a-zA-Z\\]\\// nocase
-        $fromcharcode_shift = /String\\.fromCharCode\\s*\\([^)]*[\\+\\-]\\s*13\\s*\\)/ nocase
-        $rot13_func = /function\\s+rot13\\s*\\(/ nocase
-        $rot13_name = "rot13" nocase
-        $caesar_shift = /charCodeAt\\s*\\([^)]*\\)\\s*[\\+\\-]\\s*\\d{1,2}\\s*\\)\\s*%\\s*26/ nocase
-
-    condition:
-        ($charcode_13 and $replace_alpha) or $fromcharcode_shift or ($rot13_func) or $caesar_shift
-}
-
-// ============================================================================
-// PowerShell Call Operator Obfuscation
-// ============================================================================
-
-rule PS_Call_Operator_Obfuscation
-{
-    meta:
-        description = "Detects PowerShell call operator (&) with string concatenation to invoke commands dynamically"
-        severity = "high"
-        category = "obfuscation"
-        reference = "PowerShell & operator with dynamic command construction"
-
-    strings:
-        $call_concat_1 = /&\\s*\\(\\s*['"][a-zA-Z]+['"]\\s*\\+\\s*['"][a-zA-Z]+['"]/ nocase
-        $call_concat_2 = /&\\s*\\(\\s*\\$[a-zA-Z]+\\s*\\+\\s*\\$[a-zA-Z]+\\s*\\)/ nocase
-        $call_var = /&\\s*\\(\\s*\\$\\w+\\s*\\)/ nocase
-        $call_iex = /&\\s*\\(\\s*['"]i['"\\s]*\\+\\s*['"]e['"\\s]*\\+\\s*['"]x['"]\\s*\\)/ nocase
-        $call_icm = /&\\s*\\(\\s*['"]Invoke-/ nocase
-        $dot_invoke = /\\.\\s*\\(\\s*['"][a-zA-Z]+['"]\\s*\\+/ nocase
-
-    condition:
-        any of them
-}
-
-// ============================================================================
-// PowerShell Environment Variable Payload
-// ============================================================================
-
-rule PS_EnvVar_Payload_Execution
-{
-    meta:
-        description = "Detects PowerShell using environment variables as payload containers with IEX"
-        severity = "high"
-        category = "obfuscation"
-        reference = "PowerShell $env: variable payload + IEX execution"
-
-    strings:
-        $env_set = /\\$env:\\w+\\s*=\\s*['"]/ nocase
-        $env_set2 = /\\[Environment\\]::SetEnvironmentVariable\\s*\\(/ nocase
-        $env_get = /\\$env:\\w+/ nocase
-        $iex = "iex" nocase
-        $invoke_expr = "Invoke-Expression" nocase
-        $env_iex_combo = /iex\\s*\\(?\\s*\\$env:\\w+/ nocase
-        $env_iex_combo2 = /Invoke-Expression\\s*\\(?\\s*\\$env:\\w+/ nocase
-
-    condition:
-        any of ($env_iex_combo*) or (any of ($env_set*) and any of ($iex, $invoke_expr) and $env_get)
-}
-
-// ============================================================================
-// PowerShell Split/Join Reassembly
-// ============================================================================
-
-rule PS_Split_Join_Reassembly
-{
-    meta:
-        description = "Detects PowerShell -split/-join operators used for string reassembly obfuscation"
-        severity = "medium"
-        category = "obfuscation"
-        reference = "PowerShell -split + -join pattern for payload reassembly"
-
-    strings:
-        $split_join_1 = /\\-split\\s*['"][^'"]+['"]\\s*\\-join\\s*['"][^'"]*['"]/ nocase
-        $split_join_2 = /\\.Split\\s*\\(\\s*['"][^'"]+['"]\\s*\\)\\s*[-\\.]join/ nocase
-        $string_join = /\\[string\\]::Join\\s*\\(/ nocase
-        $split_iex = /\\-split\\s*['"][^'"]+['"].*iex/ nocase
-        $join_iex = /\\-join\\s*['"][^'"]*['"].*iex/ nocase
-        $split_invoke = /\\-split\\s*['"][^'"]+['"].*Invoke-Expression/ nocase
-
-    condition:
-        any of them
-}
-
-// ============================================================================
-// PowerShell Hashtable Command Construction
-// ============================================================================
-
-rule PS_Hashtable_Command_Construction
-{
-    meta:
-        description = "Detects PowerShell hashtable-based command construction and invocation"
-        severity = "medium"
-        category = "obfuscation"
-        reference = "PowerShell @{} hashtable with call operator execution"
-
-    strings:
-        $hashtable = /\\$\\w+\\s*=\\s*@\\{/ nocase
-        $call_key = /&\\s*\\(?\\s*\\$\\w+\\.\\w+\\s*\\)?/ nocase
-        $call_index = /&\\s*\\(?\\s*\\$\\w+\\[\\s*['"]/ nocase
-        $dot_key = /\\.\\s*\\(?\\s*\\$\\w+\\.\\w+\\s*\\)?/ nocase
-
-    condition:
-        $hashtable and any of ($call_key, $call_index, $dot_key)
-}
-
-// ============================================================================
-// JavaScript Split/Join Deobfuscation
-// ============================================================================
-
-rule JS_Split_Join_Deobfuscation
-{
-    meta:
-        description = "Detects JavaScript split/join pattern used for character removal deobfuscation"
-        severity = "medium"
-        category = "obfuscation"
-        reference = "JavaScript .split('x').join('') character stripping"
-
-    strings:
-        $split_join_empty = /\\.split\\s*\\(\\s*['"][^'"]+['"]\\s*\\)\\s*\\.join\\s*\\(\\s*['"]['"]/ nocase
-        $split_join_replace = /\\.split\\s*\\(\\s*['"][^'"]+['"]\\s*\\)\\s*\\.join\\s*\\(\\s*['"][^'"]+['"]/ nocase
-        $eval = "eval(" nocase
-        $func = "Function(" nocase
-        $document_write = "document.write(" nocase
-        $innerhtml = "innerHTML" nocase
-
-    condition:
-        any of ($split_join_*) and any of ($eval, $func, $document_write, $innerhtml)
-}
-
-// ============================================================================
-// JavaScript Proxy-Based Function Hiding
-// ============================================================================
-
-rule JS_Proxy_Function_Hiding
-{
-    meta:
-        description = "Detects JavaScript Proxy objects used to wrap or hide function calls"
-        severity = "medium"
-        category = "obfuscation"
-        reference = "JavaScript Proxy handler wrapping suspicious invocations"
-
-    strings:
-        $proxy = "new Proxy(" nocase
-        $handler_apply = /handler\\s*[=:]\\s*\\{[^}]*apply\\s*:/ nocase
-        $handler_get = /handler\\s*[=:]\\s*\\{[^}]*get\\s*:/ nocase
-        $inline_get = /\\{\\s*get\\s*\\(\\s*\\w+\\s*,\\s*\\w+\\s*\\)\\s*\\{/ nocase
-        $inline_apply = /\\{\\s*apply\\s*\\(\\s*\\w+/ nocase
-
-    condition:
-        $proxy and any of ($handler_apply, $handler_get, $inline_get, $inline_apply)
-}
-
-// ============================================================================
-// JavaScript Bracket Property / Hex Escape Execution
-// ============================================================================
-
-rule JS_Bracket_Hex_Property_Execution
-{
-    meta:
-        description = "Detects JavaScript bracket notation with hex/unicode escapes to invoke functions"
-        severity = "high"
-        category = "obfuscation"
-        reference = "window['\\\\x65\\\\x76\\\\x61\\\\x6c'] style property access"
-
-    strings:
-        $hex_bracket_1 = /\\w+\\s*\\[\\s*['"]\\\\x[0-9a-fA-F]{2}(\\\\x[0-9a-fA-F]{2})+['"]\\s*\\]/ nocase
-        $hex_bracket_2 = /\\w+\\s*\\[\\s*['"]\\\\u[0-9a-fA-F]{4}(\\\\u[0-9a-fA-F]{4})+['"]\\s*\\]/ nocase
-        $window_hex = /window\\s*\\[\\s*['"]\\\\[xu]/ nocase
-        $document_hex = /document\\s*\\[\\s*['"]\\\\[xu]/ nocase
-        $this_hex = /this\\s*\\[\\s*['"]\\\\[xu]/ nocase
-        $global_hex = /globalThis\\s*\\[\\s*['"]\\\\[xu]/ nocase
-
-    condition:
-        any of them
-}
-
-// ============================================================================
-// Space / Colon / Dash Delimited Hex Strings
-// ============================================================================
-
 rule Space_Delimited_Hex_Payload
 {
     meta:
@@ -11839,68 +11656,281 @@ rule Space_Delimited_Hex_Payload
 // Bash / Shell Obfuscation Rules
 // ============================================================================
 
-rule Bash_Base64_Execution
+
+// ─── Network Indicators ───
+// 3 rules
+
+rule UNC_Path_NTLM_Theft
 {
     meta:
-        description = "Detects bash/shell commands that decode and execute base64-encoded payloads"
-        severity = "high"
-        category = "obfuscation"
-        reference = "eval $(echo ... | base64 -d) and similar patterns"
+        description = "File contains UNC path reference — may trigger NTLM authentication to attacker"
+        severity    = "high"
 
     strings:
-        $eval_b64_1 = /eval\\s+\\$\\(\\s*echo\\s+[A-Za-z0-9\\+\\/=]+\\s*\\|\\s*base64\\s+-(d|decode)\\s*\\)/ nocase
-        $eval_b64_2 = /eval\\s+['"\`]\\$\\(\\s*base64\\s+-(d|decode)/ nocase
-        $bash_b64_1 = /bash\\s+-(c|i)\\s+['"]*\\$\\(\\s*echo\\s+[^\\)]*base64\\s+-(d|decode)/ nocase
-        $bash_b64_2 = /bash\\s+-(c|i)\\s+['"]*\\$\\(\\s*base64\\s+-(d|decode)/ nocase
-        $sh_b64 = /\\/bin\\/sh\\s+-(c|i)\\s+['"]*\\$\\(\\s*.*base64\\s+-(d|decode)/ nocase
-        $pipe_b64_bash = /base64\\s+-(d|decode)\\s*\\|\\s*(ba)?sh/ nocase
-        $printf_eval = /eval\\s+\\$\\(\\s*printf\\s+/ nocase
+        $a = /\\\\\\\\[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\\\/
+        $b = /\\\\\\\\[a-zA-Z0-9\\-]+\\.[a-z]{2,4}\\\\/
 
     condition:
         any of them
 }
 
-rule Bash_Variable_Obfuscation
+rule WebDAV_Reference
 {
     meta:
-        description = "Detects bash variable expansion and string manipulation obfuscation techniques"
-        severity = "medium"
-        category = "obfuscation"
-        reference = "Bash \${var} abuse, IFS manipulation, and heredoc payloads"
+        description = "File references WebDAV path — can fetch remote payloads or steal NTLM hashes"
+        severity    = "high"
 
     strings:
-        $ifs_manip = /IFS\\s*=\\s*['"][^'"]*['"]\\s*;/ nocase
-        $var_concat = /\\$\\{?\\w+\\}?\\$\\{?\\w+\\}?\\$\\{?\\w+\\}?/ nocase
-        $eval_var = /eval\\s+['"]*\\$\\{?\\w+\\}?/ nocase
-        $heredoc_exec = /<<\\s*['"]*\\w+['"]*\\s*\\n.*\\n\\s*\\w+/
-        $rev_pipe = /rev\\s*<<<\\s*['"]/ nocase
-        $xxd_pipe = /xxd\\s+-(r|revert)\\s*.*\\|\\s*(ba)?sh/ nocase
-        $printf_slash = /\\$\\(printf\\s+['"]\\\\[0-9x]/ nocase
-        $bracket_cmd = /\\$\\{\\w+:[\\d]+:[\\d]+\\}/ nocase
-
-    condition:
-        any of ($ifs_manip, $rev_pipe, $xxd_pipe) or ($eval_var and any of ($var_concat, $printf_slash, $bracket_cmd)) or ($heredoc_exec and $eval_var)
-}
-
-rule Shell_Curl_Wget_Pipe_Exec
-{
-    meta:
-        description = "Detects shell commands that download and directly execute scripts via pipe"
-        severity = "high"
-        category = "obfuscation"
-        reference = "curl/wget piped to bash/sh for remote code execution"
-
-    strings:
-        $curl_bash = /curl\\s+[^\\|]*\\|\\s*(ba)?sh/ nocase
-        $wget_bash = /wget\\s+[^\\|]*\\|\\s*(ba)?sh/ nocase
-        $curl_eval = /eval\\s+\\$\\(\\s*curl\\s+/ nocase
-        $wget_eval = /eval\\s+\\$\\(\\s*wget\\s+/ nocase
-        $curl_source = /source\\s+<\\(\\s*curl\\s+/ nocase
-        $wget_source = /source\\s+<\\(\\s*wget\\s+/ nocase
+        $a = "\\\\\\\\DavWWWRoot\\\\" nocase
+        $b = "\\\\DavWWWRoot\\\\" nocase
+        $c = "@SSL\\\\DavWWWRoot" nocase
 
     condition:
         any of them
 }
+
+rule Credential_Dumping_Commands
+{
+    meta:
+        description = "File references credential dumping tools or techniques beyond mimikatz"
+        severity    = "critical"
+
+    strings:
+        $a     = "procdump" nocase
+        $b     = "lsass" nocase
+        $c     = "comsvcs.dll" nocase
+        $d     = "MiniDump" nocase
+        $e     = "ntdsutil" nocase
+        $f     = "vssadmin" nocase
+        $g     = "ntds.dit" nocase
+
+    condition:
+        ($a and $b) or ($c and $d) or ($e and ($f or $g))
+}
+
+
+// ─── Suspicious Patterns ───
+// 7 rules
+
+rule Embedded_PE_Header
+{
+    meta:
+        description = "File contains an embedded MZ PE header — hidden executable inside document"
+        severity    = "critical"
+
+    strings:
+        $mz = { 4D 5A 90 00 }
+
+    condition:
+        $mz
+}
+
+rule Suspicious_COM_Hijack_CLSID
+{
+    meta:
+        description = "File references COM object CLSIDs commonly abused for hijacking persistence"
+        severity    = "medium"
+
+    strings:
+        $clsid_mmcfx   = "{49CBB1C7-97D1-485A-9EC1-A26065633066}" nocase
+        $inproc         = "InprocServer32" nocase
+        $treatAs        = "TreatAs" nocase
+        $clsid_generic  = /CLSID\\\\{[0-9A-Fa-f\\-]{36}}/ nocase
+
+    condition:
+        ($inproc or $treatAs) and $clsid_generic
+}
+
+rule General_XOR_Decode_Loop
+{
+    meta:
+        description = "File contains XOR decoding patterns — common payload deobfuscation"
+        severity    = "medium"
+
+    strings:
+        $a     = "xor" nocase fullword
+        $b     = "fromCharCode" nocase
+        $c     = "charCodeAt" nocase
+        $d     = "Chr(" nocase
+
+    condition:
+        $a and any of ($b, $c, $d)
+}
+
+rule General_Base64_With_Execution
+{
+    meta:
+        description = "File decodes base64 and passes result to execution function"
+        severity    = "high"
+
+    strings:
+        $b64_1 = "base64" nocase
+        $b64_2 = "FromBase64String" nocase
+        $b64_3 = "atob(" nocase
+        $exec1 = "eval(" nocase
+        $exec2 = "Invoke-Expression" nocase
+        $exec3 = "iex " nocase
+        $exec4 = "Execute(" nocase
+        $exec5 = "ExecuteGlobal(" nocase
+        $exec6 = "Function(" nocase
+
+    condition:
+        any of ($b64_1, $b64_2, $b64_3) and any of ($exec1, $exec2, $exec3, $exec4, $exec5, $exec6)
+}
+
+rule General_Hex_Encoded_Shellcode
+{
+    meta:
+        description = "File contains patterns consistent with hex-encoded shellcode blobs"
+        severity    = "high"
+
+    strings:
+        $hex_prefix = /\\\\x[0-9a-fA-F]{2}(\\\\x[0-9a-fA-F]{2}){15,}/
+        $hex_comma  = /0x[0-9a-fA-F]{2}(,\\s*0x[0-9a-fA-F]{2}){15,}/
+
+    condition:
+        any of them
+}
+
+rule Embedded_ZIP_In_Non_Archive
+{
+    meta:
+        description = "ZIP local file header (PK\\\\x03\\\\x04) found inside a non-archive file"
+        severity    = "medium"
+
+    strings:
+        $pk = { 50 4B 03 04 }
+
+    condition:
+        #pk > 1
+}
+
+rule Embedded_Compressed_Stream
+{
+    meta:
+        description = "Zlib or gzip compressed stream embedded in file"
+        severity    = "info"
+
+    strings:
+        $zlib_default = { 78 9C }
+        $zlib_best    = { 78 DA }
+        $gzip_magic   = { 1F 8B 08 }
+
+    condition:
+        any of them
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// REG — Windows Registry File rules
+// ════════════════════════════════════════════════════════════════════════
+
+
+// ─── File Analysis ───
+// 5 rules
+
+rule PE_Process_Injection_APIs
+{
+    meta:
+        description = "PE binary imports classic process injection APIs (alloc + write + thread)"
+        severity    = "critical"
+
+    strings:
+        $mz       = { 4D 5A }
+        $alloc    = "VirtualAlloc" nocase
+        $allocex  = "VirtualAllocEx" nocase
+        $write    = "WriteProcessMemory" nocase
+        $thread   = "CreateRemoteThread" nocase
+        $protect  = "VirtualProtect" nocase
+        $move     = "RtlMoveMemory" nocase
+
+    condition:
+        $mz at 0 and (
+            ($alloc or $allocex) and ($write or $move) and $thread
+        )
+}
+
+rule PE_Shellcode_Loader_Pattern
+{
+    meta:
+        description = "PE imports memory manipulation APIs commonly used for shellcode loading"
+        severity    = "high"
+
+    strings:
+        $mz       = { 4D 5A }
+        $alloc    = "VirtualAlloc" nocase
+        $protect  = "VirtualProtect" nocase
+        $move     = "RtlMoveMemory" nocase
+        $load     = "LoadLibraryA" nocase
+
+    condition:
+        $mz at 0 and 3 of ($alloc, $protect, $move, $load)
+}
+
+rule PE_Download_Execute
+{
+    meta:
+        description = "PE binary downloads remote content and executes it"
+        severity    = "critical"
+
+    strings:
+        $mz      = { 4D 5A }
+        $dl1     = "InternetConnectA" nocase
+        $dl2     = "URLDownloadToFile" nocase
+        $dl3     = "URLDownloadToFileA" nocase
+        $dl4     = "InternetOpenA" nocase
+        $dl5     = "InternetReadFile" nocase
+        $exec1   = "WinExec" nocase
+        $exec2   = "CreateProcessA" nocase
+        $exec3   = "CreateProcessW" nocase
+        $exec4   = "ShellExecuteA" nocase
+
+    condition:
+        $mz at 0 and any of ($dl1, $dl2, $dl3, $dl4, $dl5) and any of ($exec1, $exec2, $exec3, $exec4)
+}
+
+rule PE_Suspicious_Imports_Cluster
+{
+    meta:
+        description = "PE binary imports 3+ suspicious APIs (injection, download, execution)"
+        severity    = "high"
+
+    strings:
+        $mz   = { 4D 5A }
+        $a    = "VirtualAlloc" nocase
+        $b    = "WriteProcessMemory" nocase
+        $c    = "CreateRemoteThread" nocase
+        $d    = "InternetConnectA" nocase
+        $e    = "URLDownloadToFile" nocase
+        $f    = "WinExec" nocase
+        $g    = "CreateProcessA" nocase
+        $h    = "VirtualProtect" nocase
+        $i    = "RtlMoveMemory" nocase
+        $j    = "LoadLibraryA" nocase
+        $k    = "NtUnmapViewOfSection" nocase
+
+    condition:
+        $mz at 0 and 3 of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j, $k)
+}
+
+rule PE_Process_Hollowing
+{
+    meta:
+        description = "PE imports APIs consistent with process hollowing technique"
+        severity    = "critical"
+
+    strings:
+        $mz     = { 4D 5A }
+        $a      = "NtUnmapViewOfSection" nocase
+        $b      = "ZwUnmapViewOfSection" nocase
+        $c      = "WriteProcessMemory" nocase
+        $d      = "CreateProcessA" nocase
+        $e      = "CreateProcessW" nocase
+        $f      = "ResumeThread" nocase
+
+    condition:
+        $mz at 0 and ($a or $b) and $c and ($d or $e) and $f
+}
+
 `;
 
 'use strict';

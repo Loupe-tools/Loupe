@@ -1,0 +1,638 @@
+// ─── Document Threats ───
+// 39 rules
+
+rule PDF_JavaScript_Execution
+{
+    meta:
+        description = "PDF contains JavaScript references — can be used for exploitation"
+        severity    = "high"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/JavaScript"
+        $b = "/JS "
+        $c = "/JS("
+
+    condition:
+        $pdf and any of ($a, $b, $c)
+}
+
+rule PDF_AutoOpen_Action
+{
+    meta:
+        description = "PDF uses OpenAction or Additional Actions to auto-execute on open"
+        severity    = "high"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/OpenAction"
+        $b = "/AA"
+
+    condition:
+        $pdf and ($a or $b)
+}
+
+rule PDF_Launch_Action
+{
+    meta:
+        description = "PDF uses /Launch to execute external programs"
+        severity    = "critical"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/Launch"
+
+    condition:
+        $pdf and $a
+}
+
+rule PDF_Embedded_File_Attachment
+{
+    meta:
+        description = "PDF contains embedded file attachments — potential payload delivery"
+        severity    = "medium"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/EmbeddedFile"
+        $b = "/Filespec"
+
+    condition:
+        $pdf and ($a or $b)
+}
+
+rule PDF_Obfuscated_Stream
+{
+    meta:
+        description = "PDF uses multiple unusual encoding filters — may hide malicious content"
+        severity    = "medium"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/ASCIIHexDecode"
+        $b = "/ASCII85Decode"
+        $c = "/LZWDecode"
+        $d = "/RunLengthDecode"
+
+    condition:
+        $pdf and 2 of ($a, $b, $c, $d)
+}
+
+rule PDF_SubmitForm_Action
+{
+    meta:
+        description = "PDF uses /SubmitForm — can exfiltrate form data to external URL"
+        severity    = "high"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/SubmitForm"
+
+    condition:
+        $pdf and $a
+}
+
+rule PDF_URI_Link
+{
+    meta:
+        description = "PDF contains URI action — may redirect to phishing or malware site"
+        severity    = "medium"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/URI"
+        $b = "/S /URI"
+
+    condition:
+        $pdf and ($a or $b)
+}
+
+rule PDF_GoToR_Remote_Link
+{
+    meta:
+        description = "PDF uses /GoToR to open a remote PDF — can chain to exploit"
+        severity    = "high"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/GoToR"
+        $b = "/GoToE"
+
+    condition:
+        $pdf and ($a or $b)
+}
+
+rule PDF_XFA_Form
+{
+    meta:
+        description = "PDF contains XFA forms — complex attack surface, historically exploited"
+        severity    = "high"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/XFA"
+        $b = "xdp:xdp" nocase
+        $c = "xfa:data" nocase
+
+    condition:
+        $pdf and any of ($a, $b, $c)
+}
+
+rule PDF_Encrypted_Content
+{
+    meta:
+        description = "PDF is encrypted — may bypass content scanning by email gateways"
+        severity    = "medium"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/Encrypt"
+
+    condition:
+        $pdf and $a
+}
+
+rule PDF_Phishing_QR_Code_Indicators
+{
+    meta:
+        description = "PDF likely contains only an image — possible QR code phishing (quishing)"
+        severity    = "medium"
+
+    strings:
+        $pdf = { 25 50 44 46 }
+        $a = "/Image"
+        $b = "/XObject"
+        $c = "/Subtype /Image"
+
+    condition:
+        $pdf and ($a and $b and $c)
+}
+
+rule RTF_Embedded_Object
+{
+    meta:
+        description = "RTF document contains embedded OLE object"
+        severity    = "high"
+
+    strings:
+        $rtf = "{\\rtf"
+        $a = "{\\object"
+        $b = "\\objdata"
+        $c = "\\objemb"
+
+    condition:
+        $rtf and any of ($a, $b, $c)
+}
+
+rule RTF_Equation_Editor_Exploit
+{
+    meta:
+        description = "RTF references Equation Editor CLSID — CVE-2017-11882 / CVE-2018-0802"
+        severity    = "critical"
+
+    strings:
+        $rtf = "{\\rtf"
+        $clsid = "0002ce02" nocase
+
+    condition:
+        $rtf and $clsid
+}
+
+rule RTF_Obfuscated_Header
+{
+    meta:
+        description = "RTF with heavy obfuscation — absurdly long control words or hex escapes"
+        severity    = "high"
+
+    strings:
+        $rtf = "{\\rtf"
+        $junk1 = /\{\\[a-z]{20,}/
+        $junk2 = /\\'\w\w\\'\w\w\\'\w\w\\'\w\w/
+
+    condition:
+        $rtf and ($junk1 or $junk2)
+}
+
+rule RTF_Large_Hex_Blob
+{
+    meta:
+        description = "RTF with very large hex-encoded data blob — likely embedded payload"
+        severity    = "high"
+
+    strings:
+        $rtf = "{\\rtf"
+        $a = "\\objdata"
+        $hex = /[0-9a-fA-F]{500,}/
+
+    condition:
+        $rtf and $a and $hex
+}
+
+rule RTF_Package_Object
+{
+    meta:
+        description = "RTF contains packager shell object — drops files to disk"
+        severity    = "critical"
+
+    strings:
+        $rtf = "{\\rtf"
+        $a = "Package" nocase
+        $b = "\\object"
+        $c = "OLE2Link" nocase
+
+    condition:
+        $rtf and 2 of ($a, $b, $c)
+}
+
+rule OneNote_Embedded_Script
+{
+    meta:
+        description = "OneNote file with embedded script or executable file references"
+        severity    = "critical"
+
+    strings:
+        $magic = { E4 52 5C 7B 8C D8 A7 4D }
+        $a = ".bat" wide
+        $b = ".cmd" wide
+        $c = ".hta" wide
+        $d = ".vbs" wide
+        $e = ".js" wide
+        $f = ".ps1" wide
+        $g = ".exe" wide
+        $h = ".wsf" wide
+
+    condition:
+        $magic and any of ($a, $b, $c, $d, $e, $f, $g, $h)
+}
+
+rule OneNote_Any_Embedded_File
+{
+    meta:
+        description = "OneNote file with any embedded file attachment — review for payloads"
+        severity    = "high"
+
+    strings:
+        $magic = { E4 52 5C 7B 8C D8 A7 4D }
+        $a = { 00 00 00 00 E7 16 E3 BD }
+
+    condition:
+        $magic and $a
+}
+
+rule SVG_Embedded_Script
+{
+    meta:
+        description = "SVG image containing embedded JavaScript or event handlers"
+        severity    = "high"
+
+    strings:
+        $svg = "<svg" nocase
+        $a = "<script" nocase
+        $b = "onload=" nocase
+        $c = "onerror=" nocase
+        $d = "onclick=" nocase
+        $e = "<foreignObject" nocase
+
+    condition:
+        $svg and ($a or $b or $c or $d or $e)
+}
+
+rule SVG_Redirect_Phish
+{
+    meta:
+        description = "SVG image with embedded link or meta redirect — phishing lure disguised as image"
+        severity    = "high"
+
+    strings:
+        $svg = "<svg" nocase
+        $a = "<a " nocase
+        $b = "href=" nocase
+        $c = "xlink:href=" nocase
+        $d = "http-equiv=\"refresh\"" nocase
+
+    condition:
+        $svg and 2 of ($a, $b, $c, $d)
+}
+
+rule SVG_Base64_Embedded_Content
+{
+    meta:
+        description = "SVG with large base64 data URI — may smuggle hidden content"
+        severity    = "high"
+
+    strings:
+        $svg = "<svg" nocase
+        $a = "data:text/html;base64" nocase
+        $b = "data:application" nocase
+        $c = "data:image/svg+xml;base64" nocase
+
+    condition:
+        $svg and any of ($a, $b, $c)
+}
+
+rule HTML_Smuggling
+{
+    meta:
+        description = "HTML file using blob/download smuggling to deliver hidden payload"
+        severity    = "critical"
+
+    strings:
+        $a = "new Blob" nocase
+        $b = "URL.createObjectURL" nocase
+        $c = "msSaveOrOpenBlob" nocase
+        $d = "download=" nocase
+        $e = ".click()"
+        $f = "atob("
+        $g = "Uint8Array"
+
+    condition:
+        3 of them
+}
+
+rule HTML_Credential_Phish_Form
+{
+    meta:
+        description = "HTML file with password input and brand impersonation or external form action"
+        severity    = "high"
+
+    strings:
+        $form = "<form" nocase
+        $pwd1 = "type=\"password\"" nocase
+        $pwd2 = "type='password'" nocase
+        $act1 = "action=\"http" nocase
+        $act2 = "action='http" nocase
+        $brand1 = "Microsoft" nocase
+        $brand2 = "Office 365" nocase
+        $brand3 = "SharePoint" nocase
+        $brand4 = "OneDrive" nocase
+        $brand5 = "Adobe" nocase
+        $brand6 = "DocuSign" nocase
+        $brand7 = "Google" nocase
+
+    condition:
+        $form and ($pwd1 or $pwd2) and ($act1 or $act2 or $brand1 or $brand2 or $brand3 or $brand4 or $brand5 or $brand6 or $brand7)
+}
+
+rule HTML_Meta_Redirect_Phish
+{
+    meta:
+        description = "HTML file with meta refresh redirect — used in phishing redirectors"
+        severity    = "high"
+
+    strings:
+        $a = "http-equiv=\"refresh\"" nocase
+        $b = "http-equiv='refresh'" nocase
+        $c = "url=" nocase
+        $d = "<meta" nocase
+
+    condition:
+        ($a or $b) and $c and $d
+}
+
+rule HTML_JavaScript_Redirect
+{
+    meta:
+        description = "HTML with JavaScript redirect — common phishing redirector technique"
+        severity    = "high"
+
+    strings:
+        $a = "window.location" nocase
+        $b = "location.href" nocase
+        $c = "location.replace" nocase
+        $d = "document.location" nocase
+        $e = "<script" nocase
+
+    condition:
+        $e and any of ($a, $b, $c, $d)
+}
+
+rule HTML_Obfuscated_Phish_Page
+{
+    meta:
+        description = "HTML page with heavy obfuscation — typical of advanced phishing kits"
+        severity    = "critical"
+
+    strings:
+        $a = "atob(" nocase
+        $b = "String.fromCharCode" nocase
+        $c = "unescape(" nocase
+        $d = "document.write(" nocase
+        $e = "eval(" nocase
+        $f = "type=\"password\"" nocase
+        $g = "type='password'" nocase
+
+    condition:
+        ($f or $g) and 2 of ($a, $b, $c, $d, $e)
+}
+
+rule HTML_Invisible_Iframe
+{
+    meta:
+        description = "HTML page with hidden/invisible iframe — clickjacking or silent redirect"
+        severity    = "high"
+
+    strings:
+        $a = "<iframe" nocase
+        $b = "display:none" nocase
+        $c = "visibility:hidden" nocase
+        $d = "width=\"0\"" nocase
+        $e = "height=\"0\"" nocase
+        $f = "width:0" nocase
+        $g = "height:0" nocase
+
+    condition:
+        $a and any of ($b, $c, $d, $e, $f, $g)
+}
+
+rule HTML_Captcha_Phish_Gate
+{
+    meta:
+        description = "HTML phishing page with fake CAPTCHA gate — delays analysis, builds trust"
+        severity    = "high"
+
+    strings:
+        $a = "captcha" nocase
+        $b = "verify" nocase
+        $c = "human" nocase
+        $d = "type=\"password\"" nocase
+        $e = "robot" nocase
+
+    condition:
+        3 of them
+}
+
+rule HTML_LocalStorage_Exfil
+{
+    meta:
+        description = "HTML phishing page accesses localStorage or sessionStorage — credential caching"
+        severity    = "medium"
+
+    strings:
+        $a = "localStorage" nocase
+        $b = "sessionStorage" nocase
+        $c = "setItem" nocase
+        $d = "getItem" nocase
+        $e = "password" nocase
+
+    condition:
+        ($a or $b) and ($c or $d) and $e
+}
+
+rule HTML_Data_URI_Payload
+{
+    meta:
+        description = "HTML file uses data URI to embed executable or script content"
+        severity    = "high"
+
+    strings:
+        $a = "data:text/html;base64" nocase
+        $b = "data:application/x-javascript" nocase
+        $c = "data:application/octet-stream" nocase
+        $d = "data:text/javascript" nocase
+
+    condition:
+        any of them
+}
+
+rule HTML_WebSocket_Exfil
+{
+    meta:
+        description = "HTML page opens WebSocket connection — potential credential exfiltration channel"
+        severity    = "medium"
+
+    strings:
+        $a = "new WebSocket" nocase
+        $d = "password" nocase
+
+    condition:
+        ($a or $b or $c) and $d
+}
+
+rule IQY_Web_Query_File
+{
+    meta:
+        description = "IQY web query file — fetches remote data into Excel, abused for C2"
+        severity    = "critical"
+
+    strings:
+        $a = "WEB" nocase
+        $b = "http" nocase
+        $c = "1"
+
+    condition:
+        all of them
+}
+
+rule SLK_Symbolic_Link_File
+{
+    meta:
+        description = "SLK (Symbolic Link) spreadsheet file — legacy format that bypasses macro blocks"
+        severity    = "high"
+
+    strings:
+        $a = "ID;P" nocase
+
+    condition:
+        $a
+}
+
+rule CSV_Formula_Injection
+{
+    meta:
+        description = "CSV file with formula injection — payloads execute when opened in Excel"
+        severity    = "high"
+
+    strings:
+        $a = "=CMD(" nocase
+        $b = "=EXEC(" nocase
+        $c = "=SYSTEM(" nocase
+        $d = /^=[A-Z]+\(/ nocase
+        $e = "+cmd" nocase
+        $f = "-cmd" nocase
+        $g = "@SUM(" nocase
+        $h = "=HYPERLINK(" nocase
+
+    condition:
+        any of ($a, $b, $c, $e, $f) or ($d and ($g or $h))
+}
+
+rule PDF_AcroForm_With_JavaScript
+{
+    meta:
+        description = "PDF has AcroForm combined with JavaScript — interactive form exploitation"
+        severity    = "high"
+
+    strings:
+        $pdf   = { 25 50 44 46 }
+        $acro  = "/AcroForm"
+        $js1   = "/JavaScript"
+        $js2   = "/JS"
+
+    condition:
+        $pdf and $acro and ($js1 or $js2)
+}
+
+rule PDF_RichMedia_Content
+{
+    meta:
+        description = "PDF contains RichMedia (Flash/multimedia) — historically exploited attack surface"
+        severity    = "high"
+
+    strings:
+        $pdf   = { 25 50 44 46 }
+        $a     = "/RichMedia"
+
+    condition:
+        $pdf and $a
+}
+
+rule PDF_ObjectStream_With_Action
+{
+    meta:
+        description = "PDF uses object streams with auto-action — can hide malicious objects"
+        severity    = "high"
+
+    strings:
+        $pdf   = { 25 50 44 46 }
+        $obj   = "/ObjStm"
+        $a     = "/OpenAction"
+        $b     = "/AA"
+        $c     = "/JavaScript"
+
+    condition:
+        $pdf and $obj and any of ($a, $b, $c)
+}
+
+rule PDF_Eval_Obfuscation
+{
+    meta:
+        description = "PDF contains JavaScript eval or encoding functions — obfuscated exploit code"
+        severity    = "critical"
+
+    strings:
+        $pdf   = { 25 50 44 46 }
+        $js    = "/JavaScript"
+        $a     = "eval" nocase
+        $b     = "String.fromCharCode" nocase
+        $c     = "unescape" nocase
+        $d     = "atob" nocase
+
+    condition:
+        $pdf and $js and 2 of ($a, $b, $c, $d)
+}
+
+rule HTML_Entity_Obfuscated_Script
+{
+    meta:
+        description = "HTML file uses numeric character entities to hide script content"
+        severity    = "high"
+
+    strings:
+        $entity_chain = /(&#x?[0-9a-fA-F]{2,4};){10,}/ ascii
+        $script_tag = "<script" nocase
+        $eval = "eval" nocase
+
+    condition:
+        $entity_chain and ($script_tag or $eval)
+}
+

@@ -3,7 +3,8 @@
 **A 100% offline, single-file security analyser for suspicious files.**  
 No server, no uploads, no tracking — just drop a file and inspect it.
 
-> **[▶ Try it here](https://sam-dowling.github.io/GloveBox/)**
+**<a href="https://sam-dowling.github.io/GloveBox/" target="_blank">▶ Try it here</a>**
+
 
 ![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)
 ![100% Offline](https://img.shields.io/badge/100%25-Offline-brightgreen)
