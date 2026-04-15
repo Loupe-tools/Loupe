@@ -1312,26 +1312,27 @@ body.dark .enc-finding-inner-card {
   color: rgba(255, 255, 255, .5);
 }
 
-/* ── Encoded content snippet preview ── */
-.enc-snippet {
+/* ── Decoded content preview ── */
+.enc-decoded-preview {
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: 10px;
-  background: rgba(0, 0, 0, .04);
-  border: 1px solid rgba(0, 0, 0, .08);
+  background: rgba(22, 163, 74, .06);
+  border: 1px solid rgba(22, 163, 74, .15);
   border-radius: 4px;
   padding: 5px 8px;
   margin: 4px 0;
   word-break: break-all;
+  white-space: pre-wrap;
   line-height: 1.5;
-  color: #555;
-  max-height: 54px;
+  color: #2d5a3a;
+  max-height: 80px;
   overflow: hidden;
 }
 
-body.dark .enc-snippet {
-  background: rgba(255, 255, 255, .04);
-  border-color: rgba(255, 255, 255, .08);
-  color: rgba(255, 255, 255, .5);
+body.dark .enc-decoded-preview {
+  background: rgba(74, 222, 128, .06);
+  border-color: rgba(74, 222, 128, .12);
+  color: rgba(74, 222, 128, .7);
 }
 
 /* ── Encoded content meta clickable ── */

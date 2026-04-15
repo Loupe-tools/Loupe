@@ -39,14 +39,18 @@ Object.assign(App.prototype, {
       this._renderMacrosSection(body, analyzer);
     }
 
-    // 3. Encoded Content (only if detected)
+    // 3. Deobfuscation (only if detected)
     if (f.encodedContent && f.encodedContent.length) {
       this._renderEncodedContentSection(body, f.encodedContent, fileName);
     }
 
-    // 4. Signatures & IOCs (sorted by severity, open if findings exist)
+    // 4. Detections (YARA matches, patterns, info) & 5. IOCs (URLs, IPs, hashes, etc.)
     const allRefs = [...(f.externalRefs || []), ...(f.interestingStrings || [])];
-    this._renderSignaturesSection(body, allRefs, fileName);
+    const _DETECTION_TYPES = new Set([IOC.YARA, IOC.PATTERN, IOC.INFO]);
+    const detections = allRefs.filter(r => _DETECTION_TYPES.has(r.type));
+    const iocRefs = allRefs.filter(r => !_DETECTION_TYPES.has(r.type));
+    this._renderFindingsTableSection(body, detections, fileName, '🚨', 'Detections', '✅ No detections triggered.');
+    this._renderFindingsTableSection(body, iocRefs, fileName, '📡', 'IOCs', '✅ No indicators of compromise found.');
 
     // Show sidebar
     if (!this.sidebarOpen) this._toggleSidebar();
@@ -307,7 +311,7 @@ Object.assign(App.prototype, {
 
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
-    sum.textContent = `🔓 Encoded Content (${encodedFindings.length})`;
+    sum.textContent = `🧅 Deobfuscation (${encodedFindings.length})`;
     if (hasHigh) {
       const badge = document.createElement('span');
       badge.className = 'badge badge-high';
@@ -430,22 +434,26 @@ Object.assign(App.prototype, {
       }
       details.appendChild(meta);
 
-      // Snippet preview of the raw encoded content
-      const _snippetText = finding.snippet || (_sourceText && finding.length
-        ? _sourceText.substring(finding.offset, finding.offset + Math.min(finding.length, 120))
-        : null);
-      if (_snippetText) {
-        const snippetEl = document.createElement('div');
-        snippetEl.className = 'enc-snippet';
-        snippetEl.textContent = _snippetText.length < (finding.length || Infinity)
-          ? _snippetText + '\u2026'
-          : _snippetText;
-        if (_canLocate) {
-          snippetEl.title = 'Click to locate in view';
-          snippetEl.style.cursor = 'pointer';
-          snippetEl.addEventListener('click', () => this._highlightEncodedInView(finding, true));
-        }
-        details.appendChild(snippetEl);
+      // Decoded/deobfuscated content preview (prioritized over raw snippet —
+      // hovering the card already highlights the encoded source in the view)
+      let _decodedPreview = null;
+      if (finding._deobfuscatedText) {
+        _decodedPreview = finding._deobfuscatedText;
+      } else if (finding.decodedBytes && finding.decodedBytes.length > 0) {
+        try {
+          const t = new TextDecoder('utf-8', { fatal: true }).decode(finding.decodedBytes.slice(0, 800));
+          const cc = [...t].filter(c => { const cp = c.codePointAt(0); return cp < 32 && cp !== 9 && cp !== 10 && cp !== 13; }).length;
+          if (cc <= t.length * 0.1) _decodedPreview = t;
+        } catch (_) { /* binary content — no text preview */ }
+      }
+      if (_decodedPreview) {
+        const previewEl = document.createElement('div');
+        previewEl.className = 'enc-decoded-preview';
+        const maxLen = 200;
+        previewEl.textContent = _decodedPreview.length > maxLen
+          ? _decodedPreview.substring(0, maxLen) + '\u2026'
+          : _decodedPreview;
+        details.appendChild(previewEl);
       }
 
       // Decoded type
@@ -482,7 +490,7 @@ Object.assign(App.prototype, {
         const counts = {};
         for (const ioc of finding.iocs) counts[ioc.type] = (counts[ioc.type] || 0) + 1;
         iocLine.textContent = 'IOCs: ' + Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ');
-        iocLine.title = 'Click to highlight IOC rows in Signatures & IOCs';
+        iocLine.title = 'Click to highlight related IOC rows';
         iocLine.addEventListener('click', (e) => {
           e.stopPropagation();
           this._flashIocRows(finding);
@@ -700,9 +708,9 @@ Object.assign(App.prototype, {
 
       // Update summary count
       if (activeSeverities.size > 0) {
-        sum.textContent = `🔓 Encoded Content (${visibleCount}/${encodedFindings.length})`;
+        sum.textContent = `🧅 Deobfuscation (${visibleCount}/${encodedFindings.length})`;
       } else {
-        sum.textContent = `🔓 Encoded Content (${encodedFindings.length})`;
+        sum.textContent = `🧅 Deobfuscation (${encodedFindings.length})`;
       }
     };
 
@@ -710,8 +718,8 @@ Object.assign(App.prototype, {
     container.appendChild(det);
   },
 
-  // ── Signatures & IOCs section ──────────────────────────────────────────
-  _renderSignaturesSection(container, refs, fileName) {
+  // ── Generic findings table section (used for Detections + IOCs) ────────
+  _renderFindingsTableSection(container, refs, fileName, sectionEmoji, sectionTitle, emptyMessage) {
     const det = document.createElement('details');
     det.className = 'sb-details';
     if (refs.length) det.open = true;
@@ -719,8 +727,8 @@ Object.assign(App.prototype, {
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
     sum.textContent = refs.length
-      ? `🔍 Signatures & IOCs (${refs.length})`
-      : '🔍 Signatures & IOCs';
+      ? `${sectionEmoji} ${sectionTitle} (${refs.length})`
+      : `${sectionEmoji} ${sectionTitle}`;
     det.appendChild(sum);
 
     const body = document.createElement('div');
@@ -729,7 +737,7 @@ Object.assign(App.prototype, {
     if (!refs.length) {
       const p = document.createElement('p');
       p.style.cssText = 'color:#888;text-align:center;margin-top:12px;font-size:12px;';
-      p.textContent = '✅ No signatures or indicators found.';
+      p.textContent = emptyMessage;
       body.appendChild(p);
       det.appendChild(body);
       container.appendChild(det);
@@ -980,9 +988,9 @@ Object.assign(App.prototype, {
       // Update summary count if filters are active
       const hasActiveFilters = activeSeverities.size > 0 || activeTypes.size > 0 || q;
       if (hasActiveFilters) {
-        sum.textContent = `🔍 Signatures & IOCs (${visibleCount}/${refs.length})`;
+        sum.textContent = `${sectionEmoji} ${sectionTitle} (${visibleCount}/${refs.length})`;
       } else {
-        sum.textContent = `🔍 Signatures & IOCs (${refs.length})`;
+        sum.textContent = `${sectionEmoji} ${sectionTitle} (${refs.length})`;
       }
     };
 
@@ -1669,7 +1677,7 @@ Object.assign(App.prototype, {
   _flashIocRows(finding) {
     const rows = finding._iocRows;
     if (!rows || !rows.length) return;
-    // Ensure Signatures & IOCs section is open
+    // Ensure parent section is open
     const sigDetails = rows[0].closest('.sb-details');
     if (sigDetails && !sigDetails.open) sigDetails.open = true;
     // Small delay to let section expand before scrolling

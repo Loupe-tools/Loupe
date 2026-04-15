@@ -332,8 +332,10 @@ Object.assign(App.prototype, {
 
           <h3>Links</h3>
           <p>
-            <a href="https://github.com/Sam-Dowling/GloveBox" target="_blank" rel="noopener">GitHub Repository</a>
+            <a href="https://github.com/Sam-Dowling/GloveBox/releases/latest/download/glovebox.html" target="_blank" rel="noopener">Download GloveBox</a>
             ·
+            <a href="https://github.com/Sam-Dowling/GloveBox" target="_blank" rel="noopener">GitHub Repository</a>
+            
             <a href="https://sam-dowling.github.io/GloveBox/" target="_blank" rel="noopener">Live Demo</a>
           </p>
 
