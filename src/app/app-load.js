@@ -258,6 +258,10 @@ Object.assign(App.prototype, {
         const r = new ElfRenderer();
         this.findings = r.analyzeForSecurity(buffer, file.name);
         docEl = r.render(buffer, file.name);
+      } else if (['dylib', 'bundle'].includes(ext)) {
+        const r = new MachoRenderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        docEl = r.render(buffer, file.name);
       } else {
         // ── Content-based detection fallback for extensionless/unknown files ──
         // Detect file type by magic bytes when extension is missing or unrecognized
@@ -410,6 +414,10 @@ Object.assign(App.prototype, {
           docEl = r.render(buffer, file.name);
         } else if (detectedType === 'elf') {
           const r = new ElfRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'macho') {
+          const r = new MachoRenderer();
           this.findings = r.analyzeForSecurity(buffer, file.name);
           docEl = r.render(buffer, file.name);
         } else {
@@ -566,6 +574,12 @@ Object.assign(App.prototype, {
       return { hex: h(2), label: 'PE Executable (MZ)' };
     if (bytes[0] === 0x7F && bytes[1] === 0x45 && bytes[2] === 0x4C && bytes[3] === 0x46)
       return { hex: h(4), label: 'ELF Binary' };
+    if (bytes[0] === 0xCF && bytes[1] === 0xFA && bytes[2] === 0xED && bytes[3] === 0xFE)
+      return { hex: h(4), label: 'Mach-O Binary (64-bit)' };
+    if (bytes[0] === 0xCE && bytes[1] === 0xFA && bytes[2] === 0xED && bytes[3] === 0xFE)
+      return { hex: h(4), label: 'Mach-O Binary (32-bit)' };
+    if (bytes[0] === 0xCA && bytes[1] === 0xFE && bytes[2] === 0xBA && bytes[3] === 0xBE)
+      return { hex: h(4), label: 'Mach-O Fat/Universal Binary' };
     if (bytes[0] === 0x52 && bytes[1] === 0x61 && bytes[2] === 0x72)
       return { hex: h(3), label: 'RAR Archive' };
     if (bytes[0] === 0x37 && bytes[1] === 0x7A && bytes[2] === 0xBC && bytes[3] === 0xAF)
@@ -717,6 +731,12 @@ Object.assign(App.prototype, {
     // ELF Binary
     if (bytes[0] === 0x7F && bytes[1] === 0x45 && bytes[2] === 0x4C && bytes[3] === 0x46)
       return 'elf';
+    
+    // Mach-O Binary (64-bit LE: CF FA ED FE, 32-bit LE: CE FA ED FE, Fat/Universal: CA FE BA BE)
+    if ((bytes[0] === 0xCF && bytes[1] === 0xFA && bytes[2] === 0xED && bytes[3] === 0xFE) ||
+        (bytes[0] === 0xCE && bytes[1] === 0xFA && bytes[2] === 0xED && bytes[3] === 0xFE) ||
+        (bytes[0] === 0xCA && bytes[1] === 0xFE && bytes[2] === 0xBA && bytes[3] === 0xBE))
+      return 'macho';
     
     // Gzip
     if (bytes[0] === 0x1F && bytes[1] === 0x8B)

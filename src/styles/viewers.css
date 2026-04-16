@@ -3895,25 +3895,182 @@ body.dark .elf-error {
   color: #e74c3c;
 }
 
-/* ── Binary viewer interactive features (shared by PE + ELF) ────────── */
+/* ════════ Mach-O Viewer ════════ */
+
+.macho-view {
+  padding: 12px 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: #333;
+  line-height: 1.5;
+}
+body.dark .macho-view { color: #ddd; }
+
+/* Collapsible sections */
+.macho-section {
+  margin-bottom: 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+}
+body.dark .macho-section { border-color: rgba(255,255,255,0.08); }
+.macho-section > summary {
+  padding: 8px 12px;
+  background: #f5f5f5;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  border-bottom: 1px solid #ddd;
+}
+body.dark .macho-section > summary { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.06); }
+.macho-section > summary::-webkit-details-marker { display: none; }
+.macho-section > summary::before { content: '▶ '; font-size: 10px; color: #888; }
+.macho-section[open] > summary::before { content: '▼ '; }
+.macho-section[open] > summary { border-bottom: 1px solid #ddd; }
+body.dark .macho-section[open] > summary { border-color: rgba(255,255,255,0.06); }
+.macho-section > :not(summary) { padding: 10px 12px; }
+
+/* Tables */
+.macho-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.macho-table th {
+  background: #f0f0f0;
+  padding: 5px 8px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid #ddd;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+body.dark .macho-table th { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.08); }
+.macho-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #eee;
+  font-family: 'Consolas','Courier New',monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
+}
+body.dark .macho-table td { border-color: rgba(255,255,255,0.04); }
+.macho-table tbody tr:hover { background: rgba(0,150,200,0.04); }
+body.dark .macho-table tbody tr:hover { background: rgba(0,200,255,0.04); }
+
+/* Highlight rows */
+.macho-highlight { background: rgba(231, 76, 60, 0.06) !important; }
+body.dark .macho-highlight { background: rgba(231, 76, 60, 0.1) !important; }
+
+/* Security grid */
+.macho-security-grid { display: flex; flex-direction: column; gap: 6px; }
+.macho-sec-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 4px; font-size: 12px;
+}
+.macho-sec-on { background: rgba(46, 204, 113, .06); }
+.macho-sec-off { background: rgba(231, 76, 60, .06); }
+body.dark .macho-sec-on { background: rgba(46, 204, 113, .08); }
+body.dark .macho-sec-off { background: rgba(231, 76, 60, .08); }
+.macho-sec-icon { font-size: 14px; flex-shrink: 0; width: 20px; text-align: center; }
+.macho-sec-name { font-weight: 600; min-width: 200px; }
+.macho-sec-desc { color: #666; flex: 1; }
+body.dark .macho-sec-desc { color: #999; }
+
+/* Segment blocks */
+.macho-segment-block { margin-bottom: 6px; border: 1px solid #eee; border-radius: 4px; }
+body.dark .macho-segment-block { border-color: rgba(255,255,255,0.06); }
+.macho-segment-name {
+  padding: 5px 8px; cursor: pointer; font-size: 12px; user-select: none;
+  background: rgba(0,136,204,0.04);
+}
+body.dark .macho-segment-name { background: rgba(0,200,255,0.04); }
+.macho-seg-meta { color: #888; font-weight: normal; margin-left: 8px; font-family: 'Consolas','Courier New',monospace; font-size: 11px; }
+body.dark .macho-seg-meta { color: #666; }
+.macho-warn-badge {
+  display: inline-block; padding: 1px 5px; background: #e74c3c; color: #fff;
+  border-radius: 2px; font-size: 10px; font-weight: 700; margin-left: 6px;
+}
+.macho-warn-text { color: #e67e22; font-weight: 500; }
+body.dark .macho-warn-text { color: #f39c12; }
+
+/* Suspicious symbols */
+.macho-suspicious-sym { color: #e74c3c; font-weight: 600; }
+body.dark .macho-suspicious-sym { color: #ff6b6b; }
+.macho-suspicious-desc { color: #c0392b; font-size: 11px; font-style: italic; }
+body.dark .macho-suspicious-desc { color: #e74c3c; }
+.macho-suspicious-row { background: rgba(231, 76, 60, .04) !important; }
+body.dark .macho-suspicious-row { background: rgba(231, 76, 60, .08) !important; }
+
+/* Dylib types */
+.macho-dylib-type {
+  display: inline-block; padding: 1px 5px; border-radius: 2px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; margin-right: 4px;
+}
+.macho-dylib-weak { background: #f39c12; color: #fff; }
+.macho-dylib-reexport { background: #3498db; color: #fff; }
+.macho-dylib-lazy { background: #95a5a6; color: #fff; }
+
+/* RPATH items */
+.macho-rpath-item { padding: 2px 0; font-family: 'Consolas','Courier New',monospace; font-size: 12px; }
+
+/* Entitlements */
+.macho-entitlements {
+  padding: 8px 12px; background: #f8f8f0; border: 1px solid #ddd; border-radius: 4px;
+  font-family: 'Consolas','Courier New',monospace; font-size: 11px; line-height: 1.5;
+  overflow-x: auto; white-space: pre-wrap; max-height: 300px; overflow-y: auto;
+}
+body.dark .macho-entitlements { background: #141428; border-color: #333; color: #ddd; }
+
+/* Strings */
+.macho-strings-container { max-height: 500px; overflow-y: auto; }
+.macho-strings-list { font-family: 'Consolas','Courier New',monospace; font-size: 12px; }
+.macho-string-item {
+  padding: 2px 8px; border-bottom: 1px solid #f0f0f0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+body.dark .macho-string-item { border-color: rgba(255,255,255,0.03); }
+.macho-string-item:hover { background: rgba(0,136,204,0.06); }
+body.dark .macho-string-item:hover { background: rgba(0,200,255,0.06); }
+
+/* Error box */
+.macho-error {
+  padding: 16px; margin: 12px; border-radius: 8px;
+  background: rgba(231, 76, 60, .08); color: #c0392b; font-weight: 500;
+}
+body.dark .macho-error { background: rgba(231, 76, 60, .15); color: #e74c3c; }
+
+/* ── Binary viewer interactive features (shared by PE + ELF + Mach-O) ── */
 
 /* Clickable table rows */
 .pe-table tbody tr.bin-clickable,
-.elf-table tbody tr.bin-clickable { cursor: pointer; transition: background 0.15s; }
+.elf-table tbody tr.bin-clickable,
+.macho-table tbody tr.bin-clickable { cursor: pointer; transition: background 0.15s; }
 .pe-table tbody tr.bin-clickable:hover,
-.elf-table tbody tr.bin-clickable:hover { background: rgba(0,150,200,0.08); }
+.elf-table tbody tr.bin-clickable:hover,
+.macho-table tbody tr.bin-clickable:hover { background: rgba(0,150,200,0.08); }
 body.dark .pe-table tbody tr.bin-clickable:hover,
-body.dark .elf-table tbody tr.bin-clickable:hover { background: rgba(0,200,255,0.08); }
+body.dark .elf-table tbody tr.bin-clickable:hover,
+body.dark .macho-table tbody tr.bin-clickable:hover { background: rgba(0,200,255,0.08); }
 .pe-table tbody tr.bin-clickable td:first-child::before,
-.elf-table tbody tr.bin-clickable td:first-child::before {
+.elf-table tbody tr.bin-clickable td:first-child::before,
+.macho-table tbody tr.bin-clickable td:first-child::before {
   content: '▶ '; font-size: 9px; color: #aaa; transition: transform 0.2s;
 }
 .pe-table tbody tr.bin-expanded td:first-child::before,
-.elf-table tbody tr.bin-expanded td:first-child::before { content: '▼ '; color: #0088cc; }
+.elf-table tbody tr.bin-expanded td:first-child::before,
+.macho-table tbody tr.bin-expanded td:first-child::before { content: '▼ '; color: #0088cc; }
 body.dark .pe-table tbody tr.bin-clickable td:first-child::before,
-body.dark .elf-table tbody tr.bin-clickable td:first-child::before { color: #666; }
+body.dark .elf-table tbody tr.bin-clickable td:first-child::before,
+body.dark .macho-table tbody tr.bin-clickable td:first-child::before { color: #666; }
 body.dark .pe-table tbody tr.bin-expanded td:first-child::before,
-body.dark .elf-table tbody tr.bin-expanded td:first-child::before { color: #5dade2; }
+body.dark .elf-table tbody tr.bin-expanded td:first-child::before,
+body.dark .macho-table tbody tr.bin-expanded td:first-child::before { color: #5dade2; }
 
 /* Inline hex dump */
 .bin-hexdump {
