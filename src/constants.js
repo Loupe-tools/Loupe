@@ -88,6 +88,28 @@ function toRoman(n) {
   let r = ''; for (let i = 0; i < v.length; i++) while (n >= v[i]) { r += s[i]; n -= v[i]; } return r;
 }
 
+// ── File path trimming ────────────────────────────────────────────────────────
+/**
+ * Trim garbage appended after file extensions in binary-extracted path strings.
+ * PE/ELF string extraction can fuse adjacent printable data into one string,
+ * e.g. "file.pdbtEXtSoftwareAdobe..." → should be "file.pdb".
+ * If the last component's extension part is unreasonably long (>10 chars) and
+ * doesn't match a known extension, trim at the first recognized extension.
+ */
+const _KNOWN_EXT_RE = /^\.(exe|dll|sys|drv|ocx|cpl|scr|com|pdb|lib|obj|exp|pif|lnk|url|bat|cmd|ps1|py|vbs|vbe|js|jse|wsh|wsf|wsc|hta|sct|inf|reg|msi|msp|mst|txt|log|ini|cfg|conf|config|xml|html?|json|ya?ml|toml|csv|tsv|sql|sqlite|db|mdb|accdb|doc[xm]?|xls[xmb]?|ppt[xm]?|pdf|rtf|odt|ods|odp|one|eml|msg|pst|evtx?|zip|rar|7z|gz|tar|bz2|xz|cab|iso|img|vhdx?|vmdk|dmp|bak|tmp|old|dat|bin|pyc|pyo|pyw|rb|java|class|jar|war|apk|cpp|hpp|cs|go|rs|php|aspx?|jsp|sh|so|dylib|manifest|pem|crt|cer|der|key|pfx|ico|png|jpe?g|gif|bmp|svg|webp|tiff?|mp[34]|avi|mov|wmv|wav|ogg|woff2?|ttf|otf|eot)/i;
+function _trimPathExtGarbage(path) {
+  const ls = path.lastIndexOf('\\');
+  if (ls < 0) return path;
+  const fn = path.slice(ls + 1);
+  const dot = fn.lastIndexOf('.');
+  if (dot < 0) return path;
+  const ext = fn.slice(dot + 1);
+  if (ext.length <= 10) return path;           // extension is a reasonable length
+  const tail = fn.slice(dot);                   // e.g. ".pdbtEXtSoftwareAdobe"
+  const extM = tail.match(_KNOWN_EXT_RE);
+  return extM ? path.slice(0, ls + 1 + dot + extM[0].length) : path;
+}
+
 // ── Byte formatting ───────────────────────────────────────────────────────────
 /** Format bytes to human-readable string (B, KB, MB, GB). */
 function fmtBytes(n) {

@@ -120,7 +120,7 @@ Object.assign(App.prototype, {
     dz.className = ''; dz.innerHTML = '';
     const icon = document.createElement('span'); icon.className = 'dz-icon'; icon.textContent = '📄'; dz.appendChild(icon);
     const txt = document.createElement('div'); txt.className = 'dz-text'; txt.textContent = 'Drop a file here to analyse'; dz.appendChild(txt);
-    const sub = document.createElement('div'); sub.className = 'dz-sub'; sub.textContent = 'docx · xlsx · pptx · pdf · doc · msg · eml · lnk · hta · csv · and any file · 100% offline'; dz.appendChild(sub);
+    const sub = document.createElement('div'); sub.className = 'dz-sub'; sub.textContent = 'Office documents · PDFs · executables · emails · archives · event logs · scripts · any file · 100% offline'; dz.appendChild(sub);
     // Hide file info + close button + viewer toolbar
     document.getElementById('file-info').textContent = '';
     document.getElementById('btn-close').classList.add('hidden');

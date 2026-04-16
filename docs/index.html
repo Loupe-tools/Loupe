@@ -5027,6 +5027,836 @@ body.dark .update-btn-close:hover {
   background: rgba(255, 255, 255, .1);
 }
 
+/* ══════════════════════════════════════════════════════
+   PE EXECUTABLE VIEWER
+   ══════════════════════════════════════════════════════ */
+.pe-view {
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: #1a1a2e;
+}
+
+body.dark .pe-view {
+  color: #e0e0e0;
+}
+
+/* ── PE Sections (collapsible) ──────────────────────── */
+.pe-section {
+  margin: 0 0 12px;
+  border: 1px solid rgba(0, 0, 0, .1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+body.dark .pe-section {
+  border-color: rgba(255, 255, 255, .1);
+}
+
+.pe-section > summary {
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, .03);
+  border-bottom: 1px solid rgba(0, 0, 0, .08);
+  user-select: none;
+}
+
+body.dark .pe-section > summary {
+  background: rgba(255, 255, 255, .04);
+  border-bottom-color: rgba(255, 255, 255, .06);
+}
+
+.pe-section > summary:hover {
+  background: rgba(0, 0, 0, .06);
+}
+
+body.dark .pe-section > summary:hover {
+  background: rgba(255, 255, 255, .07);
+}
+
+.pe-section[open] > summary {
+  border-bottom: 1px solid rgba(0, 0, 0, .1);
+}
+
+body.dark .pe-section[open] > summary {
+  border-bottom-color: rgba(255, 255, 255, .08);
+}
+
+/* ── PE Tables ──────────────────────────────────────── */
+.pe-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.pe-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #555;
+  background: rgba(0, 0, 0, .03);
+  border-bottom: 2px solid rgba(0, 0, 0, .1);
+}
+
+body.dark .pe-table th {
+  color: rgba(255, 255, 255, .5);
+  background: rgba(255, 255, 255, .03);
+  border-bottom-color: rgba(255, 255, 255, .1);
+}
+
+.pe-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, .05);
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  vertical-align: middle;
+}
+
+body.dark .pe-table td {
+  border-bottom-color: rgba(255, 255, 255, .04);
+}
+
+.pe-table tbody tr:hover {
+  background: rgba(0, 120, 215, .05);
+}
+
+body.dark .pe-table tbody tr:hover {
+  background: rgba(0, 200, 255, .06);
+}
+
+/* ── Entropy bars ───────────────────────────────────── */
+.pe-entropy-bar {
+  display: inline-block;
+  width: 80px;
+  height: 10px;
+  background: rgba(0, 0, 0, .08);
+  border-radius: 5px;
+  overflow: hidden;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+body.dark .pe-entropy-bar {
+  background: rgba(255, 255, 255, .1);
+}
+
+.pe-entropy-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width .3s ease;
+}
+
+.pe-entropy-val {
+  font-size: 11px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  color: #666;
+}
+
+body.dark .pe-entropy-val {
+  color: rgba(255, 255, 255, .5);
+}
+
+/* ── Security features grid ─────────────────────────── */
+.pe-security-grid {
+  padding: 8px;
+}
+
+.pe-sec-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 4px 0;
+  gap: 10px;
+}
+
+.pe-sec-on {
+  background: rgba(39, 174, 96, .08);
+}
+
+body.dark .pe-sec-on {
+  background: rgba(39, 174, 96, .12);
+}
+
+.pe-sec-off {
+  background: rgba(231, 76, 60, .06);
+}
+
+body.dark .pe-sec-off {
+  background: rgba(231, 76, 60, .1);
+}
+
+.pe-sec-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+
+.pe-sec-name {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 280px;
+}
+
+.pe-sec-desc {
+  font-size: 12px;
+  color: #666;
+}
+
+body.dark .pe-sec-desc {
+  color: rgba(255, 255, 255, .45);
+}
+
+/* ── Imports ────────────────────────────────────────── */
+.pe-imports {
+  padding: 4px 8px;
+}
+
+.pe-import-dll {
+  margin: 4px 0;
+  border: 1px solid rgba(0, 0, 0, .06);
+  border-radius: 4px;
+}
+
+body.dark .pe-import-dll {
+  border-color: rgba(255, 255, 255, .06);
+}
+
+.pe-import-dll > summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.pe-import-dll > summary:hover {
+  background: rgba(0, 0, 0, .03);
+}
+
+body.dark .pe-import-dll > summary:hover {
+  background: rgba(255, 255, 255, .04);
+}
+
+.pe-import-count {
+  color: #888;
+  font-size: 12px;
+}
+
+.pe-import-warn {
+  color: #e74c3c;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.pe-import-list {
+  padding: 8px 12px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pe-import-func {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, .04);
+  border-radius: 3px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 11.5px;
+}
+
+body.dark .pe-import-func {
+  background: rgba(255, 255, 255, .06);
+}
+
+.pe-import-func.pe-suspicious {
+  background: rgba(231, 76, 60, .12);
+  color: #c0392b;
+  font-weight: 600;
+  border: 1px solid rgba(231, 76, 60, .2);
+  cursor: help;
+}
+
+body.dark .pe-import-func.pe-suspicious {
+  background: rgba(231, 76, 60, .18);
+  color: #e74c3c;
+  border-color: rgba(231, 76, 60, .3);
+}
+
+/* ── Exports info ───────────────────────────────────── */
+.pe-export-info {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: #555;
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+
+body.dark .pe-export-info {
+  color: rgba(255, 255, 255, .5);
+  border-bottom-color: rgba(255, 255, 255, .06);
+}
+
+/* ── Rich Header info ───────────────────────────────── */
+.pe-rich-info {
+  padding: 8px 12px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  color: #555;
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+}
+
+body.dark .pe-rich-info {
+  color: rgba(255, 255, 255, .5);
+  border-bottom-color: rgba(255, 255, 255, .06);
+}
+
+/* ── Strings ────────────────────────────────────────── */
+.pe-strings {
+  padding: 4px 8px;
+}
+
+.pe-strings-section {
+  margin: 4px 0;
+}
+
+.pe-strings-section > summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.pe-strings-list {
+  max-height: 500px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+  margin: 0;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  background: rgba(0, 0, 0, .03);
+  border-radius: 4px;
+}
+
+body.dark .pe-strings-list {
+  background: rgba(255, 255, 255, .03);
+}
+
+.pe-string-item {
+  padding: 1px 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, .03);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: hidden;
+}
+
+body.dark .pe-string-item {
+  border-bottom-color: rgba(255, 255, 255, .03);
+}
+
+.pe-string-item:hover {
+  background: rgba(0, 120, 215, .06);
+}
+
+body.dark .pe-string-item:hover {
+  background: rgba(0, 200, 255, .08);
+}
+
+/* ── Error box ──────────────────────────────────────── */
+.pe-error {
+  padding: 16px;
+  margin: 12px;
+  background: rgba(231, 76, 60, .1);
+  border: 1px solid rgba(231, 76, 60, .3);
+  border-radius: 6px;
+  color: #c0392b;
+  font-weight: 500;
+}
+
+body.dark .pe-error {
+  background: rgba(231, 76, 60, .15);
+  color: #e74c3c;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ELF Viewer
+   ════════════════════════════════════════════════════════════════ */
+
+.elf-view {
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  color: #2c3e50;
+}
+
+body.dark .elf-view {
+  color: #e0e0e0;
+}
+
+/* ── ELF Sections (collapsible) ─────────────────────── */
+.elf-section {
+  margin: 0 0 12px;
+  border: 1px solid rgba(0, 0, 0, .1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+body.dark .elf-section {
+  border-color: rgba(255, 255, 255, .1);
+}
+
+.elf-section > summary {
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(0, 0, 0, .02);
+  list-style: none;
+}
+
+body.dark .elf-section > summary {
+  background: rgba(255, 255, 255, .04);
+}
+
+.elf-section > summary:hover {
+  background: rgba(0, 0, 0, .06);
+}
+
+body.dark .elf-section > summary:hover {
+  background: rgba(255, 255, 255, .07);
+}
+
+.elf-section > summary::-webkit-details-marker { display: none; }
+.elf-section > summary::marker { content: ''; }
+.elf-section > summary::before { content: '▶ '; font-size: 10px; margin-right: 4px; }
+.elf-section[open] > summary::before { content: '▼ '; }
+
+.elf-section[open] > summary {
+  border-bottom: 1px solid rgba(0, 0, 0, .1);
+}
+
+body.dark .elf-section[open] > summary {
+  border-bottom-color: rgba(255, 255, 255, .08);
+}
+
+/* ── ELF Tables ─────────────────────────────────────── */
+.elf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 0;
+}
+
+.elf-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #555;
+  background: rgba(0, 0, 0, .03);
+  border-bottom: 2px solid rgba(0, 0, 0, .1);
+}
+
+body.dark .elf-table th {
+  color: rgba(255, 255, 255, .5);
+  background: rgba(255, 255, 255, .03);
+  border-bottom-color: rgba(255, 255, 255, .1);
+}
+
+.elf-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, .05);
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  vertical-align: middle;
+}
+
+body.dark .elf-table td {
+  border-bottom-color: rgba(255, 255, 255, .04);
+}
+
+.elf-table tbody tr:hover {
+  background: rgba(0, 120, 215, .05);
+}
+
+body.dark .elf-table tbody tr:hover {
+  background: rgba(0, 200, 255, .06);
+}
+
+/* ── Security grid ──────────────────────────────────── */
+.elf-security-grid {
+  padding: 10px;
+}
+
+.elf-sec-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 4px 0;
+}
+
+.elf-sec-on {
+  background: rgba(39, 174, 96, .08);
+}
+
+body.dark .elf-sec-on {
+  background: rgba(39, 174, 96, .12);
+}
+
+.elf-sec-off {
+  background: rgba(231, 76, 60, .06);
+}
+
+body.dark .elf-sec-off {
+  background: rgba(231, 76, 60, .1);
+}
+
+.elf-sec-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.elf-sec-name {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 200px;
+}
+
+.elf-sec-desc {
+  font-size: 12px;
+  color: #666;
+  flex: 1;
+}
+
+body.dark .elf-sec-desc {
+  color: rgba(255, 255, 255, .45);
+}
+
+/* ── Highlight rows (W+X, high entropy) ─────────────── */
+.elf-highlight {
+  background: rgba(231, 76, 60, .08) !important;
+}
+
+body.dark .elf-highlight {
+  background: rgba(231, 76, 60, .14) !important;
+}
+
+/* ── Suspicious symbols ─────────────────────────────── */
+.elf-suspicious-row {
+  background: rgba(231, 76, 60, .06);
+}
+
+body.dark .elf-suspicious-row {
+  background: rgba(231, 76, 60, .1);
+}
+
+.elf-suspicious-sym {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+body.dark .elf-suspicious-sym {
+  color: #e74c3c;
+}
+
+.elf-suspicious-desc {
+  font-size: 11px;
+  color: #e67e22;
+}
+
+body.dark .elf-suspicious-desc {
+  color: #f39c12;
+}
+
+/* ── Library list ───────────────────────────────────── */
+.elf-lib-list {
+  padding: 10px 14px;
+}
+
+.elf-lib-item {
+  display: inline-block;
+  padding: 3px 10px;
+  margin: 2px 4px;
+  background: rgba(0, 120, 215, .08);
+  border-radius: 4px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+body.dark .elf-lib-item {
+  background: rgba(0, 200, 255, .1);
+}
+
+.elf-warn-text {
+  color: #e67e22;
+  font-weight: 600;
+}
+
+body.dark .elf-warn-text {
+  color: #f39c12;
+}
+
+/* ── Strings ────────────────────────────────────────── */
+.elf-strings-container {
+  padding: 4px 8px;
+}
+
+.elf-strings-list {
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, .02);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+body.dark .elf-strings-list {
+  background: rgba(255, 255, 255, .03);
+}
+
+.elf-string-item {
+  padding: 2px 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, .03);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+body.dark .elf-string-item {
+  border-bottom-color: rgba(255, 255, 255, .03);
+}
+
+.elf-string-item:hover {
+  background: rgba(0, 120, 215, .06);
+}
+
+body.dark .elf-string-item:hover {
+  background: rgba(0, 200, 255, .08);
+}
+
+/* ── Error box ──────────────────────────────────────── */
+.elf-error {
+  padding: 16px;
+  margin: 12px;
+  border-radius: 8px;
+  background: rgba(231, 76, 60, .08);
+  color: #c0392b;
+  font-weight: 500;
+}
+
+body.dark .elf-error {
+  background: rgba(231, 76, 60, .15);
+  color: #e74c3c;
+}
+
+/* ── Binary viewer interactive features (shared by PE + ELF) ────────── */
+
+/* Clickable table rows */
+.pe-table tbody tr.bin-clickable,
+.elf-table tbody tr.bin-clickable { cursor: pointer; transition: background 0.15s; }
+.pe-table tbody tr.bin-clickable:hover,
+.elf-table tbody tr.bin-clickable:hover { background: rgba(0,150,200,0.08); }
+body.dark .pe-table tbody tr.bin-clickable:hover,
+body.dark .elf-table tbody tr.bin-clickable:hover { background: rgba(0,200,255,0.08); }
+.pe-table tbody tr.bin-clickable td:first-child::before,
+.elf-table tbody tr.bin-clickable td:first-child::before {
+  content: '▶ '; font-size: 9px; color: #aaa; transition: transform 0.2s;
+}
+.pe-table tbody tr.bin-expanded td:first-child::before,
+.elf-table tbody tr.bin-expanded td:first-child::before { content: '▼ '; color: #0088cc; }
+body.dark .pe-table tbody tr.bin-clickable td:first-child::before,
+body.dark .elf-table tbody tr.bin-clickable td:first-child::before { color: #666; }
+body.dark .pe-table tbody tr.bin-expanded td:first-child::before,
+body.dark .elf-table tbody tr.bin-expanded td:first-child::before { color: #5dade2; }
+
+/* Inline hex dump */
+.bin-hexdump {
+  margin: 0; padding: 10px; background: #f8f8f0; border: 1px solid #ddd;
+  border-top: none; overflow-x: auto; font-family: 'Consolas','Courier New',monospace;
+  font-size: 12px; line-height: 1.5; max-height: 320px; overflow-y: auto;
+}
+body.dark .bin-hexdump { background: #141428; border-color: #333; }
+.bin-hexdump-line { display: flex; gap: 12px; white-space: pre; }
+.bin-hexdump-offset { color: #888; min-width: 72px; user-select: none; }
+body.dark .bin-hexdump-offset { color: #555; }
+.bin-hexdump-hex { color: #555; min-width: 380px; }
+body.dark .bin-hexdump-hex { color: #999; }
+.bin-hexdump-hex .bin-nz { color: #0066cc; }
+body.dark .bin-hexdump-hex .bin-nz { color: #5dade2; }
+.bin-hexdump-ascii { color: #666; border-left: 1px solid #ddd; padding-left: 8px; }
+body.dark .bin-hexdump-ascii { color: #777; border-color: #333; }
+.bin-hexdump-show-more {
+  display: block; margin: 6px auto 0; padding: 3px 14px; background: #e8e8e8;
+  border: 1px solid #ccc; border-radius: 3px; cursor: pointer; font-size: 11px; color: #555;
+}
+body.dark .bin-hexdump-show-more { background: #252540; border-color: #444; color: #aaa; }
+.bin-hexdump-show-more:hover { background: #ddd; }
+body.dark .bin-hexdump-show-more:hover { background: #303050; }
+.bin-hexdump-row td { padding: 0 !important; }
+.bin-hexdump-row td[colspan] { border-top: none; }
+
+/* Search bars */
+.bin-search-wrap {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; margin-bottom: 6px;
+  background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px;
+}
+body.dark .bin-search-wrap { background: #1a1a30; border-color: #3a3a4e; }
+.bin-search-wrap input {
+  flex: 1; padding: 4px 8px; border: 1px solid #ccc; border-radius: 3px;
+  font-size: 12px; background: #fff; color: #333; outline: none; min-width: 120px;
+}
+body.dark .bin-search-wrap input { background: #222240; border-color: #444; color: #ddd; }
+.bin-search-wrap input:focus { border-color: #0088cc; }
+.bin-search-count { font-size: 11px; color: #888; white-space: nowrap; }
+body.dark .bin-search-count { color: #666; }
+.bin-search-wrap input::placeholder { color: #aaa; }
+body.dark .bin-search-wrap input::placeholder { color: #555; }
+
+/* Info cards for suspicious imports/symbols */
+.bin-info-card {
+  margin: 2px 0 6px 0; padding: 8px 12px; background: #fff8e1; border: 1px solid #f0c040;
+  border-left: 3px solid #e67e22; border-radius: 4px; font-size: 12px; line-height: 1.5;
+}
+body.dark .bin-info-card { background: #2a2520; border-color: #5a4520; border-left-color: #e67e22; }
+.bin-info-card-cat {
+  display: inline-block; padding: 1px 6px; background: #e74c3c; color: #fff;
+  border-radius: 2px; font-size: 10px; font-weight: 600; margin-right: 6px; text-transform: uppercase;
+}
+.bin-info-card-cat.cat-inject { background: #c0392b; }
+.bin-info-card-cat.cat-antidebug { background: #8e44ad; }
+.bin-info-card-cat.cat-cred { background: #d35400; }
+.bin-info-card-cat.cat-exec { background: #2980b9; }
+.bin-info-card-cat.cat-network { background: #16a085; }
+.bin-info-card-cat.cat-crypto { background: #7f8c8d; }
+.bin-info-card-cat.cat-file { background: #27ae60; }
+.bin-info-card-cat.cat-recon { background: #f39c12; }
+.bin-info-card-desc { color: #555; margin-top: 3px; }
+body.dark .bin-info-card-desc { color: #aaa; }
+
+/* Cross-reference button */
+.bin-xref-btn {
+  display: inline-block; padding: 1px 5px; font-size: 11px; cursor: pointer;
+  background: transparent; border: 1px solid #bbb; border-radius: 3px; color: #666;
+  transition: all 0.15s; vertical-align: middle;
+}
+.bin-xref-btn:hover { background: #e8f4fd; border-color: #0088cc; color: #0088cc; }
+body.dark .bin-xref-btn { border-color: #555; color: #888; }
+body.dark .bin-xref-btn:hover { background: #1a2a3e; border-color: #0088cc; color: #5dade2; }
+
+/* Auto-collapse badge */
+.bin-collapse-note {
+  display: inline; font-size: 11px; font-weight: normal; color: #888; margin-left: 8px;
+}
+body.dark .bin-collapse-note { color: #666; }
+
+/* Hidden rows from search filter */
+.bin-hidden { display: none !important; }
+
+/* Floating tooltip for suspicious imports — fixed positioning to avoid clipping */
+.bin-tooltip {
+  position: fixed; z-index: 10000;
+  min-width: 280px; max-width: 400px; padding: 10px 14px;
+  background: #fffbe6; border: 1px solid #f0c040; border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18); font-size: 12px; line-height: 1.5;
+  white-space: normal; text-align: left; cursor: default;
+  animation: bin-tip-in 0.12s ease-out;
+}
+.bin-tooltip::before {
+  content: ''; position: absolute; top: -6px; left: 14px;
+  border-left: 6px solid transparent; border-right: 6px solid transparent;
+  border-bottom: 6px solid #f0c040;
+}
+.bin-tooltip::after {
+  content: ''; position: absolute; top: -5px; left: 15px;
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-bottom: 5px solid #fffbe6;
+}
+/* Flipped tooltip (arrow on bottom) */
+.bin-tooltip.bin-tooltip-flip::before {
+  top: auto; bottom: -6px;
+  border-bottom: none; border-top: 6px solid #f0c040;
+}
+.bin-tooltip.bin-tooltip-flip::after {
+  top: auto; bottom: -5px;
+  border-bottom: none; border-top: 5px solid #fffbe6;
+}
+.bin-tooltip strong { font-size: 13px; }
+.bin-tooltip-desc { margin-top: 4px; color: #555; }
+.bin-tooltip-section { margin-top: 6px; color: #444; }
+.bin-tooltip-label {
+  display: block; font-weight: 600; font-size: 11px; color: #777;
+  text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 1px;
+}
+.bin-tooltip-mitre {
+  margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(0,0,0,0.08);
+  font-size: 11px; color: #888;
+}
+body.dark .bin-tooltip {
+  background: #2a2520; border-color: #5a4520; color: #ddd;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+body.dark .bin-tooltip::before { border-bottom-color: #5a4520; }
+body.dark .bin-tooltip::after { border-bottom-color: #2a2520; }
+body.dark .bin-tooltip.bin-tooltip-flip::before { border-bottom-color: transparent; border-top-color: #5a4520; }
+body.dark .bin-tooltip.bin-tooltip-flip::after { border-bottom-color: transparent; border-top-color: #2a2520; }
+body.dark .bin-tooltip-desc { color: #aaa; }
+body.dark .bin-tooltip-section { color: #bbb; }
+body.dark .bin-tooltip-label { color: #888; }
+body.dark .bin-tooltip-mitre { color: #777; border-top-color: rgba(255,255,255,0.08); }
+@keyframes bin-tip-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Risk filter — hide non-suspicious import functions when active */
+.pe-imports.risk-filter-active .pe-import-func:not(.pe-suspicious) { display: none !important; }
+
+/* Risk toggle button */
+.bin-risk-toggle {
+  padding: 3px 10px; font-size: 11px; font-weight: 600; border: 1px solid #e0a030;
+  border-radius: 3px; background: transparent; color: #b8860b; cursor: pointer;
+  white-space: nowrap; transition: all 0.15s;
+}
+.bin-risk-toggle:hover { background: rgba(230,160,48,0.12); }
+.bin-risk-toggle.active {
+  background: #e74c3c; color: #fff; border-color: #c0392b;
+}
+body.dark .bin-risk-toggle { border-color: #8b6914; color: #d4a017; }
+body.dark .bin-risk-toggle:hover { background: rgba(212,160,23,0.15); }
+body.dark .bin-risk-toggle.active { background: #c0392b; color: #fff; border-color: #e74c3c; }
+
+/* Tab bar for string types */
+.bin-tab-bar {
+  display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid #ddd;
+}
+body.dark .bin-tab-bar { border-color: rgba(255,255,255,0.08); }
+.bin-tab {
+  padding: 5px 16px; border: 1px solid #bbb; border-bottom: none; border-radius: 6px 6px 0 0;
+  cursor: pointer; font-size: 12px; background: #e8e8e8; color: #555; transition: all 0.15s;
+}
+.bin-tab.active { background: #fff; font-weight: 600; color: #000; }
+.bin-tab:hover:not(.active) { background: #d4d4d4; }
+body.dark .bin-tab { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); color: rgba(255,255,255,0.4); }
+body.dark .bin-tab.active { background: #12131c; color: #22d3ee; border-color: rgba(34,211,238,0.2); }
+body.dark .bin-tab:hover:not(.active) { background: rgba(255,255,255,0.08); }
+
+/* Search match highlight */
+.bin-match { background: rgba(0,136,204,0.15); border-radius: 2px; }
+body.dark .bin-match { background: rgba(0,200,255,0.1); }
+
+/* Clickable suspicious func (PE imports) */
+.pe-import-func.pe-suspicious { cursor: pointer; }
+.pe-import-func.pe-suspicious:hover { outline: 1px solid #e67e22; outline-offset: 1px; }
+
+/* Strings search container */
+.bin-strings-wrap { position: relative; }
+.pe-strings-pre, .elf-strings-list { transition: opacity 0.15s; }
+
 /* noscript fallback */
 .noscript-msg {
   padding: 40px;
@@ -5055,7 +5885,7 @@ body.dark .update-btn-close:hover {
     <button class="tb-btn tb-icon-btn" id="btn-security" title="Toggle security sidebar (S)">🛡</button>
     <button class="tb-btn tb-icon-btn" id="btn-help" title="Help &amp; About (?)">?</button>
     <button class="tb-btn tb-icon-btn" id="btn-theme" title="Toggle dark mode">🌙</button>
-    <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.ppt,.odt,.odp,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.rtf,.pdf,.zip,.gz,.gzip,.tar,.tgz,.rar,.7z,.cab,.iso,.img,.one,.url,.webloc,.iqy,.slk,.wsf,.wsc,.wsh,.reg,.inf,.sct,.msi,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml,.jpg,.jpeg,.png,.gif,.bmp,.webp,.ico,.tif,.tiff,.avif,.svg,.evtx,.sqlite,.db" style="display:none">
+    <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.ppt,.odt,.odp,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.rtf,.pdf,.zip,.gz,.gzip,.tar,.tgz,.rar,.7z,.cab,.iso,.img,.one,.url,.webloc,.iqy,.slk,.wsf,.wsc,.wsh,.reg,.inf,.sct,.msi,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml,.jpg,.jpeg,.png,.gif,.bmp,.webp,.ico,.tif,.tiff,.avif,.svg,.evtx,.sqlite,.db,.exe,.dll,.sys,.scr,.cpl,.ocx,.drv,.com,.elf,.so,.o" style="display:none">
   </div>
 
   <!-- ── Main area (viewer + sidebar side-by-side) ──────────────────── -->
@@ -6492,7 +7322,7 @@ relevance:0}),e.C_NUMBER_MODE]}}})();hljs.registerLanguage("vbscript",e)})();
 
   <!-- ── Application ─────────────────────────────────────────────────── -->
   <script>
-const GLOVEBOX_VERSION = '20260415.2237';
+const GLOVEBOX_VERSION = '20260416.1455';
 const DEFAULT_YARA_RULES = `// ─── Office Macros ───
 // 33 rules
 
@@ -12242,6 +13072,755 @@ rule PE_Process_Hollowing
         $mz at 0 and ($a or $b) and $c and ($d or $e) and $f
 }
 
+
+// ════════════════════════════════════════════════════════════════
+// PE / Executable threats — packer detection, suspicious patterns,
+// known malware indicators, and anomaly detection for PE files
+// ════════════════════════════════════════════════════════════════
+
+rule PE_UPX_Packed {
+    meta:
+        description = "UPX packed executable"
+        category = "packer"
+        severity = "medium"
+    strings:
+        $upx0 = "UPX0" ascii
+        $upx1 = "UPX1" ascii
+        $upx2 = "UPX!" ascii
+        $upx3 = "UPX2" ascii
+    condition:
+        uint16(0) == 0x5A4D and ($upx0 or $upx1 or $upx2 or $upx3)
+}
+
+rule PE_Themida_Packed {
+    meta:
+        description = "Themida/WinLicense protected executable"
+        category = "packer"
+        severity = "high"
+    strings:
+        $s1 = ".themida" ascii
+        $s2 = ".Themida" ascii
+        $s3 = "WinLicen" ascii
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_VMProtect_Packed {
+    meta:
+        description = "VMProtect packed executable"
+        category = "packer"
+        severity = "high"
+    strings:
+        $s1 = ".vmp0" ascii
+        $s2 = ".vmp1" ascii
+        $s3 = ".vmp2" ascii
+        $s4 = "VMProtect" ascii wide
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_ASPack_Packed {
+    meta:
+        description = "ASPack packed executable"
+        category = "packer"
+        severity = "medium"
+    strings:
+        $s1 = ".aspack" ascii
+        $s2 = ".adata" ascii
+        $s3 = "ASPack" ascii
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_MPRESS_Packed {
+    meta:
+        description = "MPRESS packed executable"
+        category = "packer"
+        severity = "medium"
+    strings:
+        $s1 = ".MPRESS1" ascii
+        $s2 = ".MPRESS2" ascii
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_Enigma_Packed {
+    meta:
+        description = "Enigma Protector packed executable"
+        category = "packer"
+        severity = "high"
+    strings:
+        $s1 = ".enigma1" ascii
+        $s2 = ".enigma2" ascii
+        $s3 = "Enigma protector" ascii wide nocase
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_PECompact_Packed {
+    meta:
+        description = "PECompact packed executable"
+        category = "packer"
+        severity = "medium"
+    strings:
+        $s1 = "PEC2" ascii
+        $s2 = ".pec2" ascii
+        $s3 = "PECompact2" ascii
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_Process_Injection_APIs {
+    meta:
+        description = "PE imports process injection API combination"
+        category = "suspicious_api"
+        severity = "high"
+    strings:
+        $alloc = "VirtualAllocEx" ascii
+        $write = "WriteProcessMemory" ascii
+        $thread = "CreateRemoteThread" ascii
+        $hollow = "NtUnmapViewOfSection" ascii
+        $ctx = "SetThreadContext" ascii
+    condition:
+        uint16(0) == 0x5A4D and (($alloc and $write) or ($alloc and $thread) or $hollow or ($ctx and $thread))
+}
+
+rule PE_Process_Hollowing {
+    meta:
+        description = "PE shows signs of process hollowing technique"
+        category = "suspicious_api"
+        severity = "critical"
+    strings:
+        $create = "CreateProcessA" ascii
+        $createw = "CreateProcessW" ascii
+        $unmap = "NtUnmapViewOfSection" ascii
+        $write = "WriteProcessMemory" ascii
+        $ctx = "SetThreadContext" ascii
+        $resume = "ResumeThread" ascii
+    condition:
+        uint16(0) == 0x5A4D and ($create or $createw) and $unmap and ($write or $ctx) and $resume
+}
+
+rule PE_Anti_Debug_Techniques {
+    meta:
+        description = "PE uses multiple anti-debugging techniques"
+        category = "evasion"
+        severity = "medium"
+    strings:
+        $dbg1 = "IsDebuggerPresent" ascii
+        $dbg2 = "CheckRemoteDebuggerPresent" ascii
+        $dbg3 = "NtQueryInformationProcess" ascii
+        $dbg4 = "OutputDebugStringA" ascii
+    condition:
+        uint16(0) == 0x5A4D and 2 of them
+}
+
+rule PE_Credential_Theft_APIs {
+    meta:
+        description = "PE imports credential theft APIs"
+        category = "suspicious_api"
+        severity = "critical"
+    strings:
+        $cred1 = "CredEnumerate" ascii
+        $cred2 = "LsaRetrievePrivateData" ascii
+        $cred3 = "SamConnect" ascii
+        $cred4 = "CryptUnprotectData" ascii
+        $cred5 = "CredRead" ascii
+    condition:
+        uint16(0) == 0x5A4D and 2 of them
+}
+
+rule PE_Ransomware_APIs {
+    meta:
+        description = "PE imports encryption APIs combined with file operations (ransomware indicator)"
+        category = "suspicious_api"
+        severity = "critical"
+    strings:
+        $enc1 = "CryptEncrypt" ascii
+        $enc2 = "BCryptEncrypt" ascii
+        $enc3 = "CryptGenKey" ascii
+        $file1 = "FindFirstFileA" ascii
+        $file1w = "FindFirstFileW" ascii
+        $file2 = "FindNextFileA" ascii
+        $file2w = "FindNextFileW" ascii
+        $del1 = "DeleteFileA" ascii
+        $del1w = "DeleteFileW" ascii
+    condition:
+        uint16(0) == 0x5A4D and ($enc1 or $enc2 or $enc3) and ($file1 or $file1w) and ($file2 or $file2w)
+}
+
+rule PE_Download_Capability {
+    meta:
+        description = "PE has download/C2 capability via URLDownloadToFile or WinHTTP"
+        category = "suspicious_api"
+        severity = "high"
+    strings:
+        $dl1 = "URLDownloadToFileA" ascii
+        $dl2 = "URLDownloadToFileW" ascii
+        $dl3 = "URLDownloadToCacheFile" ascii
+        $http1 = "HttpSendRequestA" ascii
+        $http2 = "HttpSendRequestW" ascii
+        $inet1 = "InternetOpenUrlA" ascii
+        $inet2 = "InternetOpenUrlW" ascii
+        $winhttp = "WinHttpSendRequest" ascii
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_Dynamic_API_Resolution {
+    meta:
+        description = "PE uses dynamic API resolution (common in malware to hide imports)"
+        category = "evasion"
+        severity = "medium"
+    strings:
+        $gpa = "GetProcAddress" ascii
+        $lla = "LoadLibraryA" ascii
+        $llw = "LoadLibraryW" ascii
+        $ldr = "LdrLoadDll" ascii
+        $ldr2 = "LdrGetProcedureAddress" ascii
+    condition:
+        uint16(0) == 0x5A4D and $gpa and ($lla or $llw or $ldr or $ldr2)
+}
+
+rule PE_Service_Persistence {
+    meta:
+        description = "PE creates Windows services (persistence mechanism)"
+        category = "suspicious_api"
+        severity = "high"
+    strings:
+        $cs1 = "CreateServiceA" ascii
+        $cs2 = "CreateServiceW" ascii
+        $osc1 = "OpenSCManagerA" ascii
+        $osc2 = "OpenSCManagerW" ascii
+    condition:
+        uint16(0) == 0x5A4D and ($cs1 or $cs2) and ($osc1 or $osc2)
+}
+
+rule PE_Registry_Persistence {
+    meta:
+        description = "PE writes to common persistence registry keys"
+        category = "suspicious"
+        severity = "medium"
+    strings:
+        $reg1 = "RegSetValueExA" ascii
+        $reg2 = "RegSetValueExW" ascii
+        $run1 = "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run" ascii wide nocase
+        $run2 = "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\RunOnce" ascii wide nocase
+        $run3 = "CurrentVersion\\\\Explorer\\\\Shell Folders" ascii wide nocase
+    condition:
+        uint16(0) == 0x5A4D and ($reg1 or $reg2) and any of ($run*)
+}
+
+rule PE_Suspicious_Section_Name {
+    meta:
+        description = "PE has unusual section names indicating modification or packing"
+        category = "anomaly"
+        severity = "medium"
+    strings:
+        $s1 = ".rmnet" ascii
+        $s2 = ".petite" ascii
+        $s3 = ".perplex" ascii
+        $s4 = ".nsp0" ascii
+        $s5 = ".nsp1" ascii
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_Dot_NET_Assembly {
+    meta:
+        description = "PE is a .NET assembly (CLR executable)"
+        category = "info"
+        severity = "info"
+    strings:
+        $clr1 = "_CorExeMain" ascii
+        $clr2 = "_CorDllMain" ascii
+        $clr3 = "mscoree.dll" ascii nocase
+        $clr4 = "mscorlib" ascii wide nocase
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_AutoIT_Compiled {
+    meta:
+        description = "AutoIT compiled executable (common in commodity malware)"
+        category = "suspicious"
+        severity = "high"
+    strings:
+        $au3_1 = "AU3!" ascii
+        $au3_2 = "AutoIt" ascii wide
+        $au3_3 = "AutoIt3" ascii wide
+        $au3_4 = "#AutoIt3Wrapper" ascii
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_PyInstaller_Packed {
+    meta:
+        description = "PyInstaller packed Python executable"
+        category = "packer"
+        severity = "medium"
+    strings:
+        $py1 = "PyInstaller" ascii wide
+        $py2 = "pyi_rth_" ascii
+        $py3 = "_MEIPASS" ascii wide
+        $py4 = "PYZ-00.pyz" ascii
+    condition:
+        uint16(0) == 0x5A4D and 2 of them
+}
+
+rule PE_NSIS_Installer {
+    meta:
+        description = "NSIS (Nullsoft Scriptable Install System) installer"
+        category = "info"
+        severity = "info"
+    strings:
+        $nsis1 = "Nullsoft" ascii wide
+        $nsis2 = "NSIS" ascii
+        $nsis3 = "NullsoftInst" ascii
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_Embedded_PE {
+    meta:
+        description = "PE file contains another embedded PE file"
+        category = "suspicious"
+        severity = "high"
+    strings:
+        $mz = "MZ" ascii
+        $pe = "PE\\x00\\x00" ascii
+    condition:
+        uint16(0) == 0x5A4D and #mz > 1 and #pe > 1
+}
+
+rule PE_Suspicious_Strings_CnC {
+    meta:
+        description = "PE contains strings suggesting C2 communication"
+        category = "suspicious"
+        severity = "high"
+    strings:
+        $s1 = "cmd.exe /c" ascii wide nocase
+        $s2 = "powershell" ascii wide nocase
+        $s3 = "/c whoami" ascii wide nocase
+        $s4 = "User-Agent:" ascii wide
+        $s5 = "POST /" ascii
+        $s6 = "GET /" ascii
+        $s7 = "Mozilla/5.0" ascii
+    condition:
+        uint16(0) == 0x5A4D and 3 of them
+}
+
+rule PE_Cobalt_Strike_Indicators {
+    meta:
+        description = "PE shows indicators of Cobalt Strike beacon"
+        category = "malware"
+        severity = "critical"
+    strings:
+        $cs1 = "%02d/%02d/%02d %02d:%02d:%02d" ascii
+        $cs2 = "beacon.dll" ascii wide
+        $cs3 = "beacon.x64.dll" ascii wide
+        $cs4 = "%s (admin)" ascii
+        $cs5 = "ReflectiveLoader" ascii
+        $cs6 = "%%POSTEX" ascii
+    condition:
+        uint16(0) == 0x5A4D and 2 of them
+}
+
+rule PE_Mimikatz_Indicators {
+    meta:
+        description = "PE contains Mimikatz-related strings"
+        category = "malware"
+        severity = "critical"
+    strings:
+        $m1 = "mimikatz" ascii wide nocase
+        $m2 = "sekurlsa::" ascii wide
+        $m3 = "kerberos::" ascii wide
+        $m4 = "gentilkiwi" ascii wide
+        $m5 = "wdigest" ascii wide
+        $m6 = "lsadump::" ascii wide
+    condition:
+        uint16(0) == 0x5A4D and 2 of them
+}
+
+rule PE_Metasploit_Payload {
+    meta:
+        description = "PE shows indicators of Metasploit payload"
+        category = "malware"
+        severity = "critical"
+    strings:
+        $msf1 = "metsrv" ascii wide
+        $msf2 = "meterpreter" ascii wide nocase
+        $msf3 = "Meterpreter" ascii wide
+        $msf4 = "reverse_tcp" ascii wide
+        $msf5 = "reverse_http" ascii wide
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+// ════════════════════════════════════════════════════════════════
+// ELF / Linux binary threats — packer detection, malware families,
+// rootkit indicators, reverse shells, cryptominers, and IoT malware
+// ════════════════════════════════════════════════════════════════
+
+rule ELF_UPX_Packed {
+    meta:
+        description = "UPX packed ELF binary"
+        category = "packer"
+        severity = "medium"
+    strings:
+        $upx0 = "UPX!" ascii
+        $upx1 = "UPX0" ascii
+        $upx2 = "UPX1" ascii
+        $info = "$Info: This file is packed with the UPX" ascii
+    condition:
+        uint32(0) == 0x464C457F and any of them
+}
+
+rule ELF_Generic_Packer {
+    meta:
+        description = "Possible packed/encrypted ELF binary (modified section names)"
+        category = "packer"
+        severity = "medium"
+    strings:
+        $s1 = ".packed" ascii
+        $s2 = ".crypted" ascii
+        $s3 = ".obfusc" ascii
+        $s4 = ".protect" ascii
+        $s5 = "MPRESS" ascii
+    condition:
+        uint32(0) == 0x464C457F and any of them
+}
+
+rule ELF_Mirai_Strings {
+    meta:
+        description = "Mirai botnet variant indicators"
+        category = "malware"
+        severity = "critical"
+    strings:
+        $s1 = "/proc/self/exe" ascii
+        $s2 = "/proc/net/tcp" ascii
+        $s3 = "POST /cdn-cgi/" ascii
+        $s4 = "/bin/busybox" ascii
+        $telnet1 = "telnet" ascii
+        $telnet2 = "telnetd" ascii
+        $scan1 = "scanner_init" ascii
+        $scan2 = "scanner_kill" ascii
+        $kill1 = "killer_init" ascii
+        $kill2 = "killer_kill" ascii
+        $atk1 = "attack_init" ascii
+        $atk2 = "attack_parse" ascii
+        $cred1 = "admin" ascii
+        $cred2 = "root" ascii
+        $cred3 = "default" ascii
+        $cred4 = "password" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        (($scan1 and $scan2) or ($kill1 and $kill2) or ($atk1 and $atk2)) and
+        2 of ($telnet*, $s*, $cred*)
+}
+
+rule ELF_Mirai_Config {
+    meta:
+        description = "Mirai botnet configuration/CNC patterns"
+        category = "malware"
+        severity = "critical"
+    strings:
+        $cnc1 = "CNC_ADDR" ascii
+        $cnc2 = "cnc_addr" ascii
+        $table_init = "table_init" ascii
+        $table_lock = "table_lock_val" ascii
+        $table_unlock = "table_unlock_val" ascii
+        $arch1 = ".arc" ascii
+        $arch2 = ".arm" ascii
+        $arch3 = ".mips" ascii
+        $arch4 = ".x86" ascii
+        $arch5 = ".spc" ascii
+        $arch6 = ".m68k" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        ($table_init or ($cnc1 or $cnc2)) and 2 of ($arch*)
+}
+
+rule ELF_Cryptominer_XMRig {
+    meta:
+        description = "XMRig cryptocurrency miner"
+        category = "cryptominer"
+        severity = "high"
+    strings:
+        $s1 = "xmrig" ascii nocase
+        $s2 = "XMRig" ascii
+        $s3 = "stratum+tcp://" ascii
+        $s4 = "stratum+ssl://" ascii
+        $s5 = "stratum+tls://" ascii
+        $s6 = "pool.minexmr.com" ascii
+        $s7 = "mine.xmrpool.net" ascii
+        $s8 = "randomx" ascii nocase
+        $s9 = "cryptonight" ascii nocase
+        $s10 = "--coin=" ascii
+        $s11 = "--donate-level" ascii
+    condition:
+        uint32(0) == 0x464C457F and 2 of them
+}
+
+rule ELF_Cryptominer_Generic {
+    meta:
+        description = "Generic cryptocurrency mining indicators"
+        category = "cryptominer"
+        severity = "high"
+    strings:
+        $pool1 = "mining.pool" ascii
+        $pool2 = "pool.hashvault.pro" ascii
+        $pool3 = "nanopool.org" ascii
+        $pool4 = "minergate.com" ascii
+        $pool5 = "supportxmr.com" ascii
+        $proto1 = "stratum://" ascii
+        $proto2 = "\\"jsonrpc\\"" ascii
+        $proto3 = "mining.subscribe" ascii
+        $proto4 = "mining.authorize" ascii
+        $hash1 = "ethash" ascii nocase
+        $hash2 = "equihash" ascii nocase
+        $hash3 = "kawpow" ascii nocase
+    condition:
+        uint32(0) == 0x464C457F and 2 of them
+}
+
+rule ELF_ESXi_Ransomware {
+    meta:
+        description = "ESXi/VMware ransomware indicators"
+        category = "ransomware"
+        severity = "critical"
+    strings:
+        $esxi1 = "esxcli" ascii
+        $esxi2 = "vim-cmd" ascii
+        $esxi3 = "/vmfs/volumes" ascii
+        $esxi4 = "esxcli vm process kill" ascii
+        $vm1 = ".vmdk" ascii
+        $vm2 = ".vmx" ascii
+        $vm3 = ".vmxf" ascii
+        $vm4 = ".vmsd" ascii
+        $vm5 = ".vmsn" ascii
+        $vm6 = ".vswp" ascii
+        $vm7 = ".vmem" ascii
+        $enc1 = "encrypt" ascii nocase
+        $enc2 = "openssl" ascii
+        $enc3 = "ransom" ascii nocase
+        $enc4 = ".locked" ascii
+        $enc5 = ".encrypted" ascii
+        $note1 = "README" ascii
+        $note2 = "RECOVER" ascii
+        $note3 = "RESTORE" ascii
+        $note4 = "bitcoin" ascii nocase
+    condition:
+        uint32(0) == 0x464C457F and
+        1 of ($esxi*) and 2 of ($vm*) and (1 of ($enc*) or 1 of ($note*))
+}
+
+rule ELF_Reverse_Shell {
+    meta:
+        description = "Reverse shell indicators"
+        category = "backdoor"
+        severity = "high"
+    strings:
+        $sh1 = "/bin/sh" ascii
+        $sh2 = "/bin/bash" ascii
+        $sh3 = "/bin/dash" ascii
+        $net1 = "/dev/tcp/" ascii
+        $net2 = "/dev/udp/" ascii
+        $net3 = "SOCK_STREAM" ascii
+        $cmd1 = "dup2" ascii
+        $cmd2 = "execve" ascii
+        $cmd3 = "socket" ascii
+        $cmd4 = "connect" ascii
+        $py1 = "import socket" ascii
+        $py2 = "subprocess" ascii
+        $perl1 = "IO::Socket" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        (($cmd3 and $cmd1 and ($cmd2 or 1 of ($sh*))) or
+         ($py1 and $py2) or
+         ($perl1 and 1 of ($sh*)) or
+         1 of ($net1, $net2))
+}
+
+rule ELF_LD_PRELOAD_Hijack {
+    meta:
+        description = "LD_PRELOAD library hijacking / userland rootkit"
+        category = "rootkit"
+        severity = "high"
+    strings:
+        $s1 = "LD_PRELOAD" ascii
+        $s2 = "/etc/ld.so.preload" ascii
+        $hook1 = "readdir" ascii
+        $hook2 = "readdir64" ascii
+        $hook3 = "fopen" ascii
+        $hook4 = "fopen64" ascii
+        $hook5 = "open" ascii
+        $hook6 = "stat" ascii
+        $hook7 = "lstat" ascii
+        $hook8 = "accept" ascii
+        $dlsym = "dlsym" ascii
+        $rtld = "RTLD_NEXT" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        1 of ($s*) and $dlsym and $rtld and 2 of ($hook*)
+}
+
+rule ELF_Proc_Hiding {
+    meta:
+        description = "Process/file hiding via /proc manipulation"
+        category = "rootkit"
+        severity = "high"
+    strings:
+        $proc1 = "/proc/self/maps" ascii
+        $proc2 = "/proc/self/status" ascii
+        $proc3 = "/proc/self/fd" ascii
+        $proc4 = "/proc/%d" ascii
+        $proc5 = "/proc/self/exe" ascii
+        $hide1 = "readdir" ascii
+        $hide2 = "getdents" ascii
+        $hide3 = "getdents64" ascii
+        $unlink1 = "unlink" ascii
+        $unlink2 = "/proc/self/exe" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        3 of ($proc*) and (1 of ($hide*) or ($unlink1 and $unlink2))
+}
+
+rule ELF_Ptrace_AntiDebug {
+    meta:
+        description = "Anti-debugging via ptrace"
+        category = "evasion"
+        severity = "medium"
+    strings:
+        $s1 = "PTRACE_TRACEME" ascii
+        $s2 = "ptrace" ascii
+        $s3 = "TracerPid" ascii
+        $s4 = "/proc/self/status" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        ($s1 or ($s2 and ($s3 or $s4)))
+}
+
+rule ELF_Self_Deletion {
+    meta:
+        description = "Self-deleting binary (anti-forensics)"
+        category = "evasion"
+        severity = "medium"
+    strings:
+        $s1 = "/proc/self/exe" ascii
+        $s2 = "unlink" ascii
+        $s3 = "unlinkat" ascii
+        $s4 = "remove" ascii
+        $s5 = "shred" ascii
+        $argv0 = "argv[0]" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        $s1 and 1 of ($s2, $s3, $s4, $s5)
+}
+
+rule ELF_Kernel_Module_Rootkit {
+    meta:
+        description = "Kernel module / LKM rootkit indicators"
+        category = "rootkit"
+        severity = "critical"
+    strings:
+        $s1 = "init_module" ascii
+        $s2 = "finit_module" ascii
+        $s3 = "delete_module" ascii
+        $s4 = "insmod" ascii
+        $s5 = "modprobe" ascii
+        $hook1 = "sys_call_table" ascii
+        $hook2 = "kallsyms_lookup_name" ascii
+        $hook3 = "register_kprobe" ascii
+        $hide1 = "list_del" ascii
+        $hide2 = "__this_module" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        1 of ($s*) and (1 of ($hook*) or 1 of ($hide*))
+}
+
+rule ELF_Credential_Access {
+    meta:
+        description = "Credential file access patterns"
+        category = "credential_theft"
+        severity = "high"
+    strings:
+        $s1 = "/etc/passwd" ascii
+        $s2 = "/etc/shadow" ascii
+        $s3 = "/etc/sudoers" ascii
+        $s4 = ".ssh/id_rsa" ascii
+        $s5 = ".ssh/authorized_keys" ascii
+        $s6 = ".bash_history" ascii
+        $s7 = ".gnupg" ascii
+        $s8 = "/tmp/krb5cc_" ascii
+        $s9 = "/.aws/credentials" ascii
+        $s10 = "/.docker/config.json" ascii
+    condition:
+        uint32(0) == 0x464C457F and 3 of them
+}
+
+rule ELF_Persistence_Mechanism {
+    meta:
+        description = "Linux persistence mechanism indicators"
+        category = "persistence"
+        severity = "high"
+    strings:
+        $cron1 = "/etc/crontab" ascii
+        $cron2 = "/var/spool/cron" ascii
+        $cron3 = "crontab" ascii
+        $svc1 = "/etc/systemd/system" ascii
+        $svc2 = "/lib/systemd/system" ascii
+        $svc3 = "systemctl enable" ascii
+        $svc4 = "systemctl start" ascii
+        $rc1 = "/etc/rc.local" ascii
+        $rc2 = "/etc/init.d/" ascii
+        $rc3 = "update-rc.d" ascii
+        $prof1 = ".bashrc" ascii
+        $prof2 = ".profile" ascii
+        $prof3 = "/etc/profile.d/" ascii
+        $auth1 = "authorized_keys" ascii
+    condition:
+        uint32(0) == 0x464C457F and 3 of them
+}
+
+rule ELF_Container_Escape {
+    meta:
+        description = "Container escape / breakout indicators"
+        category = "container_escape"
+        severity = "critical"
+    strings:
+        $s1 = "/.dockerenv" ascii
+        $s2 = "/proc/1/cgroup" ascii
+        $s3 = "docker" ascii
+        $s4 = "kubelet" ascii
+        $s5 = "kubernetes" ascii
+        $esc1 = "nsenter" ascii
+        $esc2 = "mount" ascii
+        $esc3 = "chroot" ascii
+        $esc4 = "/proc/sysrq-trigger" ascii
+        $esc5 = "CAP_SYS_ADMIN" ascii
+        $esc6 = "release_agent" ascii
+    condition:
+        uint32(0) == 0x464C457F and
+        2 of ($s*) and 2 of ($esc*)
+}
+
+rule ELF_BPF_Rootkit {
+    meta:
+        description = "eBPF-based rootkit indicators"
+        category = "rootkit"
+        severity = "high"
+    strings:
+        $s1 = "bpf_probe_read" ascii
+        $s2 = "bpf_map_update_elem" ascii
+        $s3 = "bpf_override_return" ascii
+        $s4 = "BPF_PROG_LOAD" ascii
+        $s5 = "BPF_MAP_CREATE" ascii
+        $s6 = "tracepoint" ascii
+        $s7 = "kprobe" ascii
+    condition:
+        uint32(0) == 0x464C457F and 3 of them
+}
 `;
 
 'use strict';
@@ -12332,6 +13911,28 @@ function toRoman(n) {
   const v = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
   const s = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I'];
   let r = ''; for (let i = 0; i < v.length; i++) while (n >= v[i]) { r += s[i]; n -= v[i]; } return r;
+}
+
+// ── File path trimming ────────────────────────────────────────────────────────
+/**
+ * Trim garbage appended after file extensions in binary-extracted path strings.
+ * PE/ELF string extraction can fuse adjacent printable data into one string,
+ * e.g. "file.pdbtEXtSoftwareAdobe..." → should be "file.pdb".
+ * If the last component's extension part is unreasonably long (>10 chars) and
+ * doesn't match a known extension, trim at the first recognized extension.
+ */
+const _KNOWN_EXT_RE = /^\.(exe|dll|sys|drv|ocx|cpl|scr|com|pdb|lib|obj|exp|pif|lnk|url|bat|cmd|ps1|py|vbs|vbe|js|jse|wsh|wsf|wsc|hta|sct|inf|reg|msi|msp|mst|txt|log|ini|cfg|conf|config|xml|html?|json|ya?ml|toml|csv|tsv|sql|sqlite|db|mdb|accdb|doc[xm]?|xls[xmb]?|ppt[xm]?|pdf|rtf|odt|ods|odp|one|eml|msg|pst|evtx?|zip|rar|7z|gz|tar|bz2|xz|cab|iso|img|vhdx?|vmdk|dmp|bak|tmp|old|dat|bin|pyc|pyo|pyw|rb|java|class|jar|war|apk|cpp|hpp|cs|go|rs|php|aspx?|jsp|sh|so|dylib|manifest|pem|crt|cer|der|key|pfx|ico|png|jpe?g|gif|bmp|svg|webp|tiff?|mp[34]|avi|mov|wmv|wav|ogg|woff2?|ttf|otf|eot)/i;
+function _trimPathExtGarbage(path) {
+  const ls = path.lastIndexOf('\\');
+  if (ls < 0) return path;
+  const fn = path.slice(ls + 1);
+  const dot = fn.lastIndexOf('.');
+  if (dot < 0) return path;
+  const ext = fn.slice(dot + 1);
+  if (ext.length <= 10) return path;           // extension is a reasonable length
+  const tail = fn.slice(dot);                   // e.g. ".pdbtEXtSoftwareAdobe"
+  const extM = tail.match(_KNOWN_EXT_RE);
+  return extM ? path.slice(0, ls + 1 + dot + extM[0].length) : path;
 }
 
 // ── Byte formatting ───────────────────────────────────────────────────────────
@@ -13883,7 +15484,7 @@ class EncodedContentDetector {
       if (parts.every(p => p <= 255) && !m[0].startsWith('0.')) add(IOC.IP, m[0], 'high');
     }
     for (const m of text.matchAll(/[A-Za-z]:\\(?:[\w\-. ]+\\)+[\w\-. ]{2,}/g))
-      add(IOC.FILE_PATH, m[0], 'medium');
+      add(IOC.FILE_PATH, _trimPathExtGarbage(m[0]), 'medium');
     for (const m of text.matchAll(/\\\\[\w.\-]{2,}(?:\\[\w.\-]{1,})+/g))
       add(IOC.UNC_PATH, m[0], 'medium');
 
@@ -28314,6 +29915,3278 @@ class PdfRenderer {
 
 'use strict';
 // ════════════════════════════════════════════════════════════════════════════
+// pe-renderer.js — Windows PE (EXE/DLL/SYS) binary parser + analysis view
+// Parses PE32/PE32+ headers, sections, imports, exports, resources, Rich
+// header, and security features entirely in the browser.
+// Depends on: constants.js (IOC)
+// ════════════════════════════════════════════════════════════════════════════
+
+class PeRenderer {
+
+  // ── Machine type constants ───────────────────────────────────────────────
+  static MACHINE = {
+    0x0000: 'Unknown', 0x014C: 'i386 (x86)', 0x0166: 'MIPS R4000',
+    0x0169: 'MIPS WCE v2', 0x01A2: 'Hitachi SH3', 0x01A3: 'Hitachi SH3 DSP',
+    0x01A6: 'Hitachi SH4', 0x01A8: 'Hitachi SH5', 0x01C0: 'ARM',
+    0x01C2: 'ARM Thumb', 0x01C4: 'ARM Thumb-2 (ARMv7)', 0x01D3: 'AM33',
+    0x8664: 'AMD64 (x64)', 0xAA64: 'ARM64', 0x5032: 'RISC-V 32',
+    0x5064: 'RISC-V 64', 0x0200: 'IA-64 (Itanium)',
+  };
+
+  // ── Subsystem constants ──────────────────────────────────────────────────
+  static SUBSYSTEM = {
+    0: 'Unknown', 1: 'Native', 2: 'Windows GUI', 3: 'Windows Console',
+    5: 'OS/2 Console', 7: 'POSIX Console', 9: 'Windows CE GUI',
+    10: 'EFI Application', 11: 'EFI Boot Driver', 12: 'EFI Runtime Driver',
+    13: 'EFI ROM', 14: 'Xbox', 16: 'Windows Boot App',
+  };
+
+  // ── DLL Characteristics flags ────────────────────────────────────────────
+  static DLL_CHARS = {
+    0x0020: 'HIGH_ENTROPY_VA', 0x0040: 'DYNAMIC_BASE (ASLR)',
+    0x0080: 'FORCE_INTEGRITY', 0x0100: 'NX_COMPAT (DEP)',
+    0x0200: 'NO_ISOLATION', 0x0400: 'NO_SEH', 0x0800: 'NO_BIND',
+    0x1000: 'APPCONTAINER', 0x2000: 'WDM_DRIVER',
+    0x4000: 'GUARD_CF (CFG)', 0x8000: 'TERMINAL_SERVER_AWARE',
+  };
+
+  // ── COFF Characteristics flags ───────────────────────────────────────────
+  static COFF_CHARS = {
+    0x0001: 'RELOCS_STRIPPED', 0x0002: 'EXECUTABLE_IMAGE',
+    0x0004: 'LINE_NUMS_STRIPPED', 0x0008: 'LOCAL_SYMS_STRIPPED',
+    0x0010: 'AGGRESSIVE_WS_TRIM', 0x0020: 'LARGE_ADDRESS_AWARE',
+    0x0080: 'BYTES_REVERSED_LO', 0x0100: '32BIT_MACHINE',
+    0x0200: 'DEBUG_STRIPPED', 0x0400: 'REMOVABLE_RUN_FROM_SWAP',
+    0x0800: 'NET_RUN_FROM_SWAP', 0x1000: 'SYSTEM (driver)',
+    0x2000: 'DLL', 0x4000: 'UP_SYSTEM_ONLY',
+    0x8000: 'BYTES_REVERSED_HI',
+  };
+
+  // ── Section Characteristics flags ────────────────────────────────────────
+  static SEC_CHARS = {
+    0x00000020: 'CODE', 0x00000040: 'INITIALIZED_DATA',
+    0x00000080: 'UNINITIALIZED_DATA', 0x02000000: 'DISCARDABLE',
+    0x04000000: 'NOT_CACHED', 0x08000000: 'NOT_PAGED',
+    0x10000000: 'SHARED', 0x20000000: 'EXECUTE',
+    0x40000000: 'READ', 0x80000000: 'WRITE',
+  };
+
+  // ── Resource type constants ──────────────────────────────────────────────
+  static RES_TYPE = {
+    1: 'Cursor', 2: 'Bitmap', 3: 'Icon', 4: 'Menu', 5: 'Dialog',
+    6: 'String Table', 7: 'Font Directory', 8: 'Font', 9: 'Accelerator',
+    10: 'RC Data', 11: 'Message Table', 12: 'Group Cursor', 14: 'Group Icon',
+    16: 'Version Info', 17: 'DlgInclude', 19: 'Plug & Play',
+    20: 'VXD', 21: 'Animated Cursor', 22: 'Animated Icon',
+    23: 'HTML', 24: 'Manifest',
+  };
+
+  // ── Detailed API info (description, context, MITRE ATT&CK) ──────────────
+  static SUSPICIOUS_APIS_DETAIL = {
+    VirtualAlloc: {
+      desc: 'Allocates or reserves memory pages in the calling process.',
+      context: 'Commonly used to allocate RWX memory for shellcode or unpacked payloads.',
+      mitre: 'T1055 — Process Injection',
+    },
+    VirtualAllocEx: {
+      desc: 'Allocates memory in another process\'s address space.',
+      context: 'Key step in remote process injection — prepares a code cave in the target process for shellcode.',
+      mitre: 'T1055.001 — DLL Injection',
+    },
+    VirtualProtect: {
+      desc: 'Changes the access protection on a region of committed pages in the calling process.',
+      context: 'Used by packers to mark data as executable at runtime, or by injectors to make writable code pages.',
+      mitre: 'T1055 — Process Injection',
+    },
+    VirtualProtectEx: {
+      desc: 'Changes memory protection in a remote process.',
+      context: 'Enables write+execute on remote process memory to facilitate code injection.',
+      mitre: 'T1055 — Process Injection',
+    },
+    WriteProcessMemory: {
+      desc: 'Writes data to an area of memory in the address space of another process.',
+      context: 'Classic injection primitive — writes shellcode or a DLL path into a remote process before triggering execution.',
+      mitre: 'T1055.001 — DLL Injection',
+    },
+    CreateRemoteThread: {
+      desc: 'Creates a thread that runs in the virtual address space of another process.',
+      context: 'Executes injected code in a remote process. Combined with VirtualAllocEx + WriteProcessMemory this forms the classic injection triad.',
+      mitre: 'T1055.001 — DLL Injection',
+    },
+    CreateRemoteThreadEx: {
+      desc: 'Extended version of CreateRemoteThread with additional parameters.',
+      context: 'Same injection purpose as CreateRemoteThread with more control over thread attributes.',
+      mitre: 'T1055.001 — DLL Injection',
+    },
+    NtUnmapViewOfSection: {
+      desc: 'Unmaps a view of a section from the virtual address space of a process.',
+      context: 'Used in process hollowing to carve out the legitimate image before replacing it with malicious code.',
+      mitre: 'T1055.012 — Process Hollowing',
+    },
+    QueueUserAPC: {
+      desc: 'Adds a user-mode APC (Asynchronous Procedure Call) to a thread\'s APC queue.',
+      context: 'Used in "Early Bird" injection — queues malicious code before the main thread starts, evading hooks.',
+      mitre: 'T1055.004 — APC Injection',
+    },
+    SetThreadContext: {
+      desc: 'Sets the context (register state) of a thread.',
+      context: 'Used in process hollowing to redirect execution to injected code by modifying the instruction pointer.',
+      mitre: 'T1055.012 — Process Hollowing',
+    },
+    ResumeThread: {
+      desc: 'Resumes a suspended thread.',
+      context: 'Final step in many injection chains — resumes a thread after modifying its context or injecting code.',
+      mitre: 'T1055 — Process Injection',
+    },
+    IsDebuggerPresent: {
+      desc: 'Determines whether the calling process is being debugged.',
+      context: 'Basic anti-analysis check. Malware uses this to alter behavior or terminate when a debugger is detected.',
+      mitre: 'T1622 — Debugger Evasion',
+    },
+    CheckRemoteDebuggerPresent: {
+      desc: 'Determines whether a remote debugger is debugging the specified process.',
+      context: 'Anti-debugging technique that detects both user-mode and kernel-mode debuggers.',
+      mitre: 'T1622 — Debugger Evasion',
+    },
+    NtQueryInformationProcess: {
+      desc: 'Retrieves information about the specified process (ntdll).',
+      context: 'Used to query ProcessDebugPort, ProcessDebugFlags, etc. for anti-debug, or to detect sandbox/VM environments.',
+      mitre: 'T1622 — Debugger Evasion',
+    },
+    GetTickCount: {
+      desc: 'Returns the number of milliseconds since system boot.',
+      context: 'Used for timing-based anti-analysis — detects single-stepping in debuggers or fast-forwarding in sandboxes.',
+      mitre: 'T1497.003 — Time Based Evasion',
+    },
+    QueryPerformanceCounter: {
+      desc: 'Returns a high-resolution timestamp.',
+      context: 'Precision timing check to detect debugger-induced delays or sandbox acceleration.',
+      mitre: 'T1497.003 — Time Based Evasion',
+    },
+    CredEnumerateA: {
+      desc: 'Enumerates credentials stored in the Windows Credential Manager.',
+      context: 'Allows malware to harvest saved passwords, tokens, and certificates from the credential store.',
+      mitre: 'T1555.004 — Windows Credential Manager',
+    },
+    CryptUnprotectData: {
+      desc: 'Decrypts data previously encrypted with CryptProtectData (DPAPI).',
+      context: 'Used to decrypt browser passwords, cookies, and other DPAPI-protected secrets.',
+      mitre: 'T1555.003 — Credentials from Web Browsers',
+    },
+    CreateProcessA: {
+      desc: 'Creates a new process and its primary thread (ANSI).',
+      context: 'Can launch child processes — often used with CREATE_SUSPENDED flag as part of process injection chains.',
+      mitre: 'T1106 — Native API',
+    },
+    CreateProcessW: {
+      desc: 'Creates a new process and its primary thread (Unicode).',
+      context: 'Can launch child processes — often used with CREATE_SUSPENDED flag as part of process injection chains.',
+      mitre: 'T1106 — Native API',
+    },
+    ShellExecuteA: {
+      desc: 'Performs an operation on a specified file (open, print, run).',
+      context: 'Can launch executables, open documents, or run scripts through shell verb associations.',
+      mitre: 'T1204.002 — Malicious File',
+    },
+    URLDownloadToFileA: {
+      desc: 'Downloads a resource from the Internet and saves it to a local file.',
+      context: 'Simple one-call download primitive frequently used by droppers and downloaders to stage payloads.',
+      mitre: 'T1105 — Ingress Tool Transfer',
+    },
+    URLDownloadToFileW: {
+      desc: 'Downloads a resource from the Internet and saves it to a local file (Unicode).',
+      context: 'Simple one-call download primitive frequently used by droppers and downloaders to stage payloads.',
+      mitre: 'T1105 — Ingress Tool Transfer',
+    },
+    InternetOpenA: {
+      desc: 'Initializes WinINet for HTTP/FTP requests.',
+      context: 'First call in WinINet networking chain — establishes user agent and proxy configuration for C2.',
+      mitre: 'T1071.001 — Web Protocols',
+    },
+    InternetOpenUrlA: {
+      desc: 'Opens a URL for reading via HTTP, HTTPS, or FTP.',
+      context: 'Used to download payloads or communicate with command-and-control servers.',
+      mitre: 'T1071.001 — Web Protocols',
+    },
+    WSAStartup: {
+      desc: 'Initializes Winsock for raw socket networking.',
+      context: 'Required before any raw socket calls — indicates custom network protocol or C2 channel.',
+      mitre: 'T1095 — Non-Application Layer Protocol',
+    },
+    CryptEncrypt: {
+      desc: 'Encrypts data using a symmetric or asymmetric key.',
+      context: 'Used by ransomware to encrypt victim files. Also used legitimately for data protection.',
+      mitre: 'T1486 — Data Encrypted for Impact',
+    },
+    BCryptEncrypt: {
+      desc: 'Encrypts data using the BCrypt (CNG) API.',
+      context: 'Modern crypto API used by ransomware for file encryption or by malware for encrypted C2.',
+      mitre: 'T1486 — Data Encrypted for Impact',
+    },
+    RegSetValueExA: {
+      desc: 'Sets the data and type of a specified registry value.',
+      context: 'Registry writes enable persistence (Run keys), defense evasion, and configuration storage.',
+      mitre: 'T1547.001 — Registry Run Keys',
+    },
+    RegSetValueExW: {
+      desc: 'Sets the data and type of a specified registry value (Unicode).',
+      context: 'Registry writes enable persistence (Run keys), defense evasion, and configuration storage.',
+      mitre: 'T1547.001 — Registry Run Keys',
+    },
+    CreateServiceA: {
+      desc: 'Creates a Windows service object.',
+      context: 'Installing a service provides persistent execution at SYSTEM privilege level.',
+      mitre: 'T1543.003 — Windows Service',
+    },
+    LoadLibraryA: {
+      desc: 'Loads a DLL module into the calling process.',
+      context: 'Dynamic DLL loading is used by packers and malware to resolve functionality at runtime, avoiding static import detection.',
+      mitre: 'T1129 — Shared Modules',
+    },
+    GetProcAddress: {
+      desc: 'Retrieves the address of an exported function from a DLL.',
+      context: 'Combined with LoadLibrary, enables API-hiding — resolves functions at runtime to evade import table analysis.',
+      mitre: 'T1106 — Native API',
+    },
+    LdrLoadDll: {
+      desc: 'Low-level ntdll function that loads a DLL.',
+      context: 'Bypasses LoadLibrary hooks placed by security products for DLL load monitoring.',
+      mitre: 'T1129 — Shared Modules',
+    },
+  };
+
+  // ── Suspicious import APIs ───────────────────────────────────────────────
+  static SUSPICIOUS_APIS = {
+    // Process injection
+    VirtualAlloc: 'Memory allocation (common in injection)',
+    VirtualAllocEx: 'Remote memory allocation → process injection',
+    VirtualProtect: 'Memory permission change → code injection / unpacking',
+    VirtualProtectEx: 'Remote memory permission change → injection',
+    WriteProcessMemory: 'Write to remote process → process injection',
+    CreateRemoteThread: 'Remote thread creation → process injection',
+    CreateRemoteThreadEx: 'Remote thread creation → process injection',
+    NtUnmapViewOfSection: 'Unmap section → process hollowing',
+    NtWriteVirtualMemory: 'Write to process memory → injection',
+    NtCreateThreadEx: 'Create thread → injection',
+    QueueUserAPC: 'APC injection → early bird injection',
+    SetThreadContext: 'Thread hijacking → process hollowing',
+    ResumeThread: 'Resume suspended thread → injection chain',
+    RtlCreateUserThread: 'Create thread (ntdll) → injection',
+    NtQueueApcThread: 'APC queue → injection',
+
+    // Anti-debugging / evasion
+    IsDebuggerPresent: 'Debugger detection → anti-analysis',
+    CheckRemoteDebuggerPresent: 'Remote debugger detection → anti-analysis',
+    NtQueryInformationProcess: 'Process info query → anti-debug / sandbox detect',
+    GetTickCount: 'Timing check → sandbox / debugger evasion',
+    QueryPerformanceCounter: 'Timing check → sandbox evasion',
+    OutputDebugStringA: 'Debug string → anti-debug technique',
+    GetSystemInfo: 'System info → sandbox / VM detection',
+    EnumSystemFirmwareTables: 'Firmware tables → VM detection',
+
+    // Credential theft
+    CredEnumerateA: 'Credential enumeration → credential theft',
+    CredEnumerateW: 'Credential enumeration → credential theft',
+    LsaRetrievePrivateData: 'LSA secrets → credential theft',
+    SamConnect: 'SAM database access → credential dumping',
+    CryptUnprotectData: 'DPAPI decryption → credential / data theft',
+
+    // Execution
+    CreateProcessA: 'Process creation',
+    CreateProcessW: 'Process creation',
+    CreateProcessInternalW: 'Internal process creation → stealth',
+    ShellExecuteA: 'Shell command execution',
+    ShellExecuteW: 'Shell command execution',
+    ShellExecuteExA: 'Shell command execution',
+    ShellExecuteExW: 'Shell command execution',
+    WinExec: 'Command execution (legacy)',
+
+    // Networking
+    InternetOpenA: 'Internet connection → C2 / download',
+    InternetOpenW: 'Internet connection → C2 / download',
+    InternetOpenUrlA: 'URL request → C2 / download',
+    InternetOpenUrlW: 'URL request → C2 / download',
+    HttpSendRequestA: 'HTTP request → C2',
+    HttpSendRequestW: 'HTTP request → C2',
+    URLDownloadToFileA: 'File download → payload staging',
+    URLDownloadToFileW: 'File download → payload staging',
+    WSAStartup: 'Winsock init → raw networking',
+
+    // Crypto (ransomware indicators)
+    CryptEncrypt: 'Encryption → potential ransomware',
+    CryptDecrypt: 'Decryption → potential data theft',
+    CryptGenKey: 'Key generation → crypto operations',
+    CryptDeriveKey: 'Key derivation → crypto operations',
+    CryptAcquireContextA: 'Crypto provider → encryption operations',
+    CryptAcquireContextW: 'Crypto provider → encryption operations',
+    BCryptEncrypt: 'BCrypt encryption → potential ransomware',
+
+    // Persistence
+    RegSetValueExA: 'Registry write → persistence / config',
+    RegSetValueExW: 'Registry write → persistence / config',
+    RegCreateKeyExA: 'Registry key creation → persistence',
+    RegCreateKeyExW: 'Registry key creation → persistence',
+
+    // Service manipulation
+    CreateServiceA: 'Service creation → persistence / privilege escalation',
+    CreateServiceW: 'Service creation → persistence / privilege escalation',
+    StartServiceA: 'Service start → execution',
+    StartServiceW: 'Service start → execution',
+
+    // Dynamic loading (used by packers / evaders)
+    LoadLibraryA: 'Dynamic DLL loading',
+    LoadLibraryW: 'Dynamic DLL loading',
+    LoadLibraryExA: 'Dynamic DLL loading',
+    GetProcAddress: 'Dynamic API resolution → API hiding',
+    LdrLoadDll: 'Low-level DLL loading → stealth',
+  };
+
+  // ── Known packer section names ───────────────────────────────────────────
+  static PACKER_SECTIONS = {
+    'UPX0': 'UPX Packer', 'UPX1': 'UPX Packer', 'UPX2': 'UPX Packer',
+    '.aspack': 'ASPack', '.adata': 'ASPack', 'ASPack': 'ASPack',
+    '.nsp0': 'NsPack', '.nsp1': 'NsPack', '.nsp2': 'NsPack',
+    '.themida': 'Themida', '.Themida': 'Themida',
+    '.vmp0': 'VMProtect', '.vmp1': 'VMProtect', '.vmp2': 'VMProtect',
+    '.petite': 'Petite', '.pec2': 'PECompact', 'PEC2': 'PECompact',
+    '.MPRESS1': 'MPRESS', '.MPRESS2': 'MPRESS',
+    '.enigma1': 'Enigma Protector', '.enigma2': 'Enigma Protector',
+    '.perplex': 'Perplex PE-Protector',
+    '.rmnet': 'Ramnit virus', '.rsrc1': 'Possibly packed/patched',
+  };
+
+  // ── Data directory index names ───────────────────────────────────────────
+  static DATA_DIR_NAMES = [
+    'Export Table', 'Import Table', 'Resource Table', 'Exception Table',
+    'Certificate Table', 'Base Relocation Table', 'Debug', 'Architecture',
+    'Global Ptr', 'TLS Table', 'Load Config', 'Bound Import',
+    'Import Address Table (IAT)', 'Delay Import', 'CLR Runtime Header', 'Reserved',
+  ];
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Binary read helpers
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _u8(bytes, off) { return bytes[off]; }
+  _u16(bytes, off) { return bytes[off] | (bytes[off + 1] << 8); }
+  _u32(bytes, off) { return (bytes[off] | (bytes[off + 1] << 8) | (bytes[off + 2] << 16) | (bytes[off + 3] << 24)) >>> 0; }
+  _u64(bytes, off) {
+    const lo = this._u32(bytes, off), hi = this._u32(bytes, off + 4);
+    // Return as a Number (safe up to 2^53)
+    return hi * 0x100000000 + lo;
+  }
+
+  _str(bytes, off, len) {
+    let s = '';
+    for (let i = 0; i < len && bytes[off + i] !== 0; i++) s += String.fromCharCode(bytes[off + i]);
+    return s;
+  }
+
+  _hex(v, digits) { return '0x' + v.toString(16).toUpperCase().padStart(digits || 0, '0'); }
+
+  _entropy(bytes, off, len) {
+    if (!len || off + len > bytes.length) return 0;
+    const freq = new Uint32Array(256);
+    const end = Math.min(off + len, bytes.length);
+    const actual = end - off;
+    for (let i = off; i < end; i++) freq[bytes[i]]++;
+    let ent = 0;
+    for (let i = 0; i < 256; i++) {
+      if (freq[i] === 0) continue;
+      const p = freq[i] / actual;
+      ent -= p * Math.log2(p);
+    }
+    return Math.round(ent * 1000) / 1000;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  RVA → file offset conversion
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _rvaToOffset(rva, sections) {
+    for (const s of sections) {
+      if (rva >= s.virtualAddress && rva < s.virtualAddress + s.virtualSize) {
+        return rva - s.virtualAddress + s.rawDataOffset;
+      }
+    }
+    return rva; // If not found, return as-is (may be header-relative)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Core PE parser
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _parse(bytes) {
+    const pe = {};
+
+    // ── DOS Header ─────────────────────────────────────────────────────
+    if (bytes.length < 64 || this._u16(bytes, 0) !== 0x5A4D)
+      throw new Error('Not a valid PE file (missing MZ signature)');
+
+    pe.dosHeader = {
+      e_magic: 'MZ',
+      e_lfanew: this._u32(bytes, 0x3C),
+    };
+
+    const peOff = pe.dosHeader.e_lfanew;
+    if (peOff + 4 > bytes.length)
+      throw new Error('Invalid PE: e_lfanew points beyond file');
+
+    // ── Rich Header (between DOS stub and PE signature) ────────────────
+    pe.richHeader = this._parseRichHeader(bytes, peOff);
+
+    // ── PE Signature ───────────────────────────────────────────────────
+    if (this._u32(bytes, peOff) !== 0x00004550)
+      throw new Error('Invalid PE signature (expected PE\\0\\0)');
+
+    // ── COFF Header ────────────────────────────────────────────────────
+    const coffOff = peOff + 4;
+    if (coffOff + 20 > bytes.length)
+      throw new Error('File too small for COFF header');
+
+    const machine = this._u16(bytes, coffOff);
+    const numSections = this._u16(bytes, coffOff + 2);
+    const timestamp = this._u32(bytes, coffOff + 4);
+    const optHeaderSize = this._u16(bytes, coffOff + 16);
+    const characteristics = this._u16(bytes, coffOff + 18);
+
+    pe.coff = {
+      machine, machineStr: PeRenderer.MACHINE[machine] || this._hex(machine, 4),
+      numSections, timestamp,
+      timestampStr: timestamp === 0 ? 'Epoch (0)' :
+        timestamp === 0xFFFFFFFF ? 'Invalid (0xFFFFFFFF)' :
+        new Date(timestamp * 1000).toISOString().replace('T', ' ').replace(/\.\d+Z/, ' UTC'),
+      optHeaderSize, characteristics,
+      characteristicsFlags: this._decodeFlags(characteristics, PeRenderer.COFF_CHARS),
+      isDLL: !!(characteristics & 0x2000),
+      isSystem: !!(characteristics & 0x1000),
+    };
+
+    // ── Optional Header ────────────────────────────────────────────────
+    const optOff = coffOff + 20;
+    if (optOff + 2 > bytes.length)
+      throw new Error('File too small for Optional Header');
+
+    const optMagic = this._u16(bytes, optOff);
+    const is64 = optMagic === 0x020B;
+    pe.is64 = is64;
+
+    if (optMagic !== 0x010B && optMagic !== 0x020B)
+      throw new Error('Unknown Optional Header magic: ' + this._hex(optMagic, 4));
+
+    pe.optional = {
+      magic: optMagic, magicStr: is64 ? 'PE32+ (64-bit)' : 'PE32 (32-bit)',
+      majorLinkerVer: this._u8(bytes, optOff + 2),
+      minorLinkerVer: this._u8(bytes, optOff + 3),
+      sizeOfCode: this._u32(bytes, optOff + 4),
+      sizeOfInitializedData: this._u32(bytes, optOff + 8),
+      sizeOfUninitializedData: this._u32(bytes, optOff + 12),
+      entryPoint: this._u32(bytes, optOff + 16),
+      baseOfCode: this._u32(bytes, optOff + 20),
+    };
+
+    if (is64) {
+      pe.optional.imageBase = this._u64(bytes, optOff + 24);
+      pe.optional.sectionAlignment = this._u32(bytes, optOff + 32);
+      pe.optional.fileAlignment = this._u32(bytes, optOff + 36);
+      pe.optional.majorOSVer = this._u16(bytes, optOff + 40);
+      pe.optional.minorOSVer = this._u16(bytes, optOff + 42);
+      pe.optional.majorImageVer = this._u16(bytes, optOff + 44);
+      pe.optional.minorImageVer = this._u16(bytes, optOff + 46);
+      pe.optional.majorSubsysVer = this._u16(bytes, optOff + 48);
+      pe.optional.minorSubsysVer = this._u16(bytes, optOff + 50);
+      pe.optional.sizeOfImage = this._u32(bytes, optOff + 56);
+      pe.optional.sizeOfHeaders = this._u32(bytes, optOff + 60);
+      pe.optional.checksum = this._u32(bytes, optOff + 64);
+      pe.optional.subsystem = this._u16(bytes, optOff + 68);
+      pe.optional.dllCharacteristics = this._u16(bytes, optOff + 70);
+      pe.optional.numberOfRvaAndSizes = this._u32(bytes, optOff + 108);
+    } else {
+      pe.optional.baseOfData = this._u32(bytes, optOff + 24);
+      pe.optional.imageBase = this._u32(bytes, optOff + 28);
+      pe.optional.sectionAlignment = this._u32(bytes, optOff + 32);
+      pe.optional.fileAlignment = this._u32(bytes, optOff + 36);
+      pe.optional.majorOSVer = this._u16(bytes, optOff + 40);
+      pe.optional.minorOSVer = this._u16(bytes, optOff + 42);
+      pe.optional.majorImageVer = this._u16(bytes, optOff + 44);
+      pe.optional.minorImageVer = this._u16(bytes, optOff + 46);
+      pe.optional.majorSubsysVer = this._u16(bytes, optOff + 48);
+      pe.optional.minorSubsysVer = this._u16(bytes, optOff + 50);
+      pe.optional.sizeOfImage = this._u32(bytes, optOff + 56);
+      pe.optional.sizeOfHeaders = this._u32(bytes, optOff + 60);
+      pe.optional.checksum = this._u32(bytes, optOff + 64);
+      pe.optional.subsystem = this._u16(bytes, optOff + 68);
+      pe.optional.dllCharacteristics = this._u16(bytes, optOff + 70);
+      pe.optional.numberOfRvaAndSizes = this._u32(bytes, optOff + 92);
+    }
+
+    pe.optional.subsystemStr = PeRenderer.SUBSYSTEM[pe.optional.subsystem] || 'Unknown (' + pe.optional.subsystem + ')';
+    pe.optional.dllCharFlags = this._decodeFlags(pe.optional.dllCharacteristics, PeRenderer.DLL_CHARS);
+    pe.optional.linkerStr = pe.optional.majorLinkerVer + '.' + pe.optional.minorLinkerVer;
+
+    // Security features from DllCharacteristics
+    const dc = pe.optional.dllCharacteristics;
+    pe.security = {
+      aslr: !!(dc & 0x0040),
+      highEntropyAslr: !!(dc & 0x0020),
+      dep: !!(dc & 0x0100),
+      cfg: !!(dc & 0x4000),
+      noSeh: !!(dc & 0x0400),
+      forceIntegrity: !!(dc & 0x0080),
+      appContainer: !!(dc & 0x1000),
+    };
+
+    // ── Data Directories ───────────────────────────────────────────────
+    const ddOff = is64 ? optOff + 112 : optOff + 96;
+    const numDD = Math.min(pe.optional.numberOfRvaAndSizes || 0, 16);
+    pe.dataDirectories = [];
+    for (let i = 0; i < numDD; i++) {
+      const off = ddOff + i * 8;
+      if (off + 8 > bytes.length) break;
+      pe.dataDirectories.push({
+        name: PeRenderer.DATA_DIR_NAMES[i] || 'Directory ' + i,
+        rva: this._u32(bytes, off),
+        size: this._u32(bytes, off + 4),
+      });
+    }
+
+    // ── Section Table ──────────────────────────────────────────────────
+    const secOff = optOff + optHeaderSize;
+    pe.sections = [];
+    for (let i = 0; i < numSections; i++) {
+      const so = secOff + i * 40;
+      if (so + 40 > bytes.length) break;
+      const name = this._str(bytes, so, 8);
+      const virtualSize = this._u32(bytes, so + 8);
+      const virtualAddress = this._u32(bytes, so + 12);
+      const rawDataSize = this._u32(bytes, so + 16);
+      const rawDataOffset = this._u32(bytes, so + 20);
+      const chars = this._u32(bytes, so + 36);
+      const entropy = this._entropy(bytes, rawDataOffset, rawDataSize);
+
+      pe.sections.push({
+        name, virtualSize, virtualAddress, rawDataSize, rawDataOffset,
+        characteristics: chars,
+        charFlags: this._decodeFlags(chars, PeRenderer.SEC_CHARS),
+        entropy,
+        isExecutable: !!(chars & 0x20000000),
+        isWritable: !!(chars & 0x80000000),
+        isReadable: !!(chars & 0x40000000),
+        packerMatch: PeRenderer.PACKER_SECTIONS[name] || null,
+      });
+    }
+
+    // ── Import Table ───────────────────────────────────────────────────
+    pe.imports = this._parseImports(bytes, pe.dataDirectories, pe.sections, is64);
+
+    // ── Export Table ───────────────────────────────────────────────────
+    pe.exports = this._parseExports(bytes, pe.dataDirectories, pe.sections);
+
+    // ── Resources ──────────────────────────────────────────────────────
+    pe.resources = this._parseResources(bytes, pe.dataDirectories, pe.sections);
+
+    // ── Strings ────────────────────────────────────────────────────────
+    pe.strings = this._extractStrings(bytes, 6);
+
+    return pe;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Rich Header parser
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _parseRichHeader(bytes, peOffset) {
+    // Search for "Rich" marker backwards from PE header
+    let richOff = -1;
+    for (let i = peOffset - 4; i >= 0x80; i -= 4) {
+      if (bytes[i] === 0x52 && bytes[i + 1] === 0x69 && bytes[i + 2] === 0x63 && bytes[i + 3] === 0x68) {
+        richOff = i;
+        break;
+      }
+    }
+    if (richOff < 0) return null;
+
+    const key = this._u32(bytes, richOff + 4);
+
+    // Find "DanS" signature by XOR-decoding backwards
+    let danSOff = -1;
+    for (let i = richOff - 4; i >= 0; i -= 4) {
+      if ((this._u32(bytes, i) ^ key) === 0x536E6144) { // "DanS"
+        danSOff = i;
+        break;
+      }
+    }
+    if (danSOff < 0) return null;
+
+    // Decode entries (skip first 4 DWORDs: DanS + 3 padding)
+    const entries = [];
+    for (let i = danSOff + 16; i < richOff; i += 8) {
+      const val1 = this._u32(bytes, i) ^ key;
+      const val2 = this._u32(bytes, i + 4) ^ key;
+      const compId = val1 >> 16;
+      const buildId = val1 & 0xFFFF;
+      const count = val2;
+      if (compId === 0 && buildId === 0 && count === 0) continue;
+      entries.push({ compId, buildId, count });
+    }
+
+    return { xorKey: key, entries };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Import Table parser
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _parseImports(bytes, dataDirs, sections, is64) {
+    if (!dataDirs[1] || dataDirs[1].rva === 0 || dataDirs[1].size === 0) return [];
+
+    const impOff = this._rvaToOffset(dataDirs[1].rva, sections);
+    if (impOff + 20 > bytes.length) return [];
+
+    const imports = [];
+    const maxDlls = 256; // Safety limit
+    let descOff = impOff;
+
+    for (let d = 0; d < maxDlls; d++) {
+      if (descOff + 20 > bytes.length) break;
+
+      const iltRva = this._u32(bytes, descOff);
+      const nameRva = this._u32(bytes, descOff + 12);
+      const iatRva = this._u32(bytes, descOff + 16);
+
+      // End of import descriptors (all zeros)
+      if (iltRva === 0 && nameRva === 0 && iatRva === 0) break;
+
+      // Read DLL name
+      const nameOff = this._rvaToOffset(nameRva, sections);
+      const dllName = (nameOff < bytes.length) ? this._str(bytes, nameOff, 256) : '(unknown)';
+
+      // Read imported functions from ILT (or IAT if ILT is 0)
+      const lookupRva = iltRva || iatRva;
+      const lookupOff = this._rvaToOffset(lookupRva, sections);
+      const functions = [];
+      const maxFuncs = 4096; // Safety limit
+
+      if (lookupOff < bytes.length) {
+        const entrySize = is64 ? 8 : 4;
+        const ordFlag = is64 ? 0x8000000000000000 : 0x80000000;
+
+        for (let f = 0; f < maxFuncs; f++) {
+          const fOff = lookupOff + f * entrySize;
+          if (fOff + entrySize > bytes.length) break;
+
+          let entry;
+          if (is64) {
+            entry = this._u64(bytes, fOff);
+          } else {
+            entry = this._u32(bytes, fOff);
+          }
+          if (entry === 0) break;
+
+          if (is64 ? (entry >= ordFlag) : (entry & ordFlag)) {
+            // Import by ordinal
+            const ordinal = entry & 0xFFFF;
+            functions.push({ name: `Ordinal #${ordinal}`, ordinal, isSuspicious: false });
+          } else {
+            // Import by name
+            const hintRva = is64 ? (entry & 0x7FFFFFFF) : (entry & 0x7FFFFFFF);
+            const hintOff = this._rvaToOffset(hintRva, sections);
+            if (hintOff + 2 < bytes.length) {
+              const funcName = this._str(bytes, hintOff + 2, 256);
+              const suspiciousInfo = PeRenderer.SUSPICIOUS_APIS[funcName] || null;
+              functions.push({ name: funcName, isSuspicious: !!suspiciousInfo, suspiciousInfo });
+            }
+          }
+        }
+      }
+
+      imports.push({ dllName, functions });
+      descOff += 20;
+    }
+
+    return imports;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Export Table parser
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _parseExports(bytes, dataDirs, sections) {
+    if (!dataDirs[0] || dataDirs[0].rva === 0 || dataDirs[0].size === 0) return null;
+
+    const expOff = this._rvaToOffset(dataDirs[0].rva, sections);
+    if (expOff + 40 > bytes.length) return null;
+
+    const nameRva = this._u32(bytes, expOff + 12);
+    const ordinalBase = this._u32(bytes, expOff + 16);
+    const numFunctions = this._u32(bytes, expOff + 20);
+    const numNames = this._u32(bytes, expOff + 24);
+    const funcRva = this._u32(bytes, expOff + 28);
+    const nameRvaTable = this._u32(bytes, expOff + 32);
+    const ordinalRvaTable = this._u32(bytes, expOff + 36);
+
+    const nameOff = this._rvaToOffset(nameRva, sections);
+    const dllName = (nameOff < bytes.length) ? this._str(bytes, nameOff, 256) : '(unknown)';
+
+    const names = [];
+    const namesOff = this._rvaToOffset(nameRvaTable, sections);
+    const ordinalsOff = this._rvaToOffset(ordinalRvaTable, sections);
+
+    const maxNames = Math.min(numNames, 4096);
+    for (let i = 0; i < maxNames; i++) {
+      const nOff = namesOff + i * 4;
+      if (nOff + 4 > bytes.length) break;
+      const nRva = this._u32(bytes, nOff);
+      const nFileOff = this._rvaToOffset(nRva, sections);
+      const funcName = (nFileOff < bytes.length) ? this._str(bytes, nFileOff, 256) : '';
+
+      let ordinal = ordinalBase;
+      const oOff = ordinalsOff + i * 2;
+      if (oOff + 2 <= bytes.length) {
+        ordinal = this._u16(bytes, oOff) + ordinalBase;
+      }
+
+      names.push({ name: funcName, ordinal });
+    }
+
+    return { dllName, ordinalBase, numFunctions, numNames, names };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Resource Directory parser (top-level enumeration)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _parseResources(bytes, dataDirs, sections) {
+    if (!dataDirs[2] || dataDirs[2].rva === 0 || dataDirs[2].size === 0) return [];
+
+    const resOff = this._rvaToOffset(dataDirs[2].rva, sections);
+    if (resOff + 16 > bytes.length) return [];
+
+    const resources = [];
+    try {
+      const numNamed = this._u16(bytes, resOff + 12);
+      const numId = this._u16(bytes, resOff + 14);
+      const total = numNamed + numId;
+
+      for (let i = 0; i < total && i < 64; i++) {
+        const entryOff = resOff + 16 + i * 8;
+        if (entryOff + 8 > bytes.length) break;
+
+        const id = this._u32(bytes, entryOff);
+        const dataOrDir = this._u32(bytes, entryOff + 4);
+        const isDir = !!(dataOrDir & 0x80000000);
+
+        let typeName;
+        if (id & 0x80000000) {
+          // Named resource — read name string
+          const nameOff = resOff + (id & 0x7FFFFFFF);
+          if (nameOff + 2 < bytes.length) {
+            const nameLen = this._u16(bytes, nameOff);
+            typeName = '';
+            for (let c = 0; c < nameLen && nameOff + 2 + c * 2 + 1 < bytes.length; c++) {
+              typeName += String.fromCharCode(this._u16(bytes, nameOff + 2 + c * 2));
+            }
+          } else {
+            typeName = 'Named(' + (id & 0x7FFFFFFF) + ')';
+          }
+        } else {
+          typeName = PeRenderer.RES_TYPE[id] || 'Type ' + id;
+        }
+
+        // Count sub-entries if this is a directory
+        let count = 0;
+        if (isDir) {
+          const subDirOff = resOff + (dataOrDir & 0x7FFFFFFF);
+          if (subDirOff + 16 <= bytes.length) {
+            count = this._u16(bytes, subDirOff + 12) + this._u16(bytes, subDirOff + 14);
+          }
+        }
+
+        resources.push({ id: id & 0x7FFFFFFF, typeName, isDir, count });
+      }
+    } catch (e) { /* resource parsing is best-effort */ }
+
+    return resources;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  String extraction (ASCII + Unicode)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _extractStrings(bytes, minLen) {
+    const strings = { ascii: [], unicode: [] };
+    const maxStrings = 10000;
+    const maxScan = Math.min(bytes.length, 8 * 1024 * 1024); // Cap at 8MB scan
+
+    // ASCII strings
+    let current = '';
+    for (let i = 0; i < maxScan && strings.ascii.length < maxStrings; i++) {
+      const b = bytes[i];
+      if (b >= 0x20 && b < 0x7F) {
+        current += String.fromCharCode(b);
+      } else {
+        if (current.length >= minLen) strings.ascii.push(current);
+        current = '';
+      }
+    }
+    if (current.length >= minLen && strings.ascii.length < maxStrings) strings.ascii.push(current);
+
+    // Unicode (UTF-16LE) strings
+    let ucurrent = '';
+    for (let i = 0; i < maxScan - 1 && strings.unicode.length < maxStrings; i += 2) {
+      const c = bytes[i] | (bytes[i + 1] << 8);
+      if (c >= 0x20 && c < 0x7F) {
+        ucurrent += String.fromCharCode(c);
+      } else {
+        if (ucurrent.length >= minLen && !strings.ascii.includes(ucurrent)) {
+          strings.unicode.push(ucurrent);
+        }
+        ucurrent = '';
+      }
+    }
+    if (ucurrent.length >= minLen && !strings.ascii.includes(ucurrent) && strings.unicode.length < maxStrings) {
+      strings.unicode.push(ucurrent);
+    }
+
+    return strings;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Flag decoder helper
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _decodeFlags(value, flagMap) {
+    const flags = [];
+    for (const [bit, label] of Object.entries(flagMap)) {
+      if (value & Number(bit)) flags.push(label);
+    }
+    return flags;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  DOM render
+  // ═══════════════════════════════════════════════════════════════════════
+
+  render(buffer, fileName) {
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+    this._bytes = bytes;
+    const wrap = document.createElement('div');
+    wrap.className = 'pe-view';
+
+    try {
+      const pe = this._parse(bytes);
+
+      // ── Banner ─────────────────────────────────────────────────────
+      const banner = document.createElement('div');
+      banner.className = 'doc-extraction-banner';
+      const bType = pe.coff.isDLL ? 'DLL' : pe.coff.isSystem ? 'System Driver' : 'Executable';
+      const bArch = pe.optional.magicStr;
+      banner.innerHTML = `<strong>PE Analysis — ${this._esc(bType)}</strong> ` +
+        `<span class="doc-meta-tag">${this._esc(bArch)}</span> ` +
+        `<span class="doc-meta-tag">${this._esc(pe.coff.machineStr)}</span> ` +
+        `<span class="doc-meta-tag">${pe.sections.length} sections</span> ` +
+        `<span class="doc-meta-tag">${pe.imports.length} imported DLLs</span>` +
+        (pe.exports ? ` <span class="doc-meta-tag">${pe.exports.numNames} exports</span>` : '');
+      wrap.appendChild(banner);
+
+      // ── File Headers ───────────────────────────────────────────────
+      wrap.appendChild(this._renderSection('📋 PE Headers', this._renderHeaders(pe)));
+
+      // ── Security Features ──────────────────────────────────────────
+      wrap.appendChild(this._renderSection('🛡 Security Features', this._renderSecurity(pe)));
+
+      // ── Section Table ──────────────────────────────────────────────
+      wrap.appendChild(this._renderSection('📦 Sections (' + pe.sections.length + ')', this._renderSections(pe)));
+
+      // ── Imports ────────────────────────────────────────────────────
+      if (pe.imports.length > 0) {
+        const totalFuncs = pe.imports.reduce((s, d) => s + d.functions.length, 0);
+        wrap.appendChild(this._renderSection(
+          '📥 Imports (' + pe.imports.length + ' DLLs, ' + totalFuncs + ' functions)',
+          this._renderImports(pe)
+        ));
+      }
+
+      // ── Exports ────────────────────────────────────────────────────
+      if (pe.exports && pe.exports.names.length > 0) {
+        wrap.appendChild(this._renderSection(
+          '📤 Exports (' + pe.exports.names.length + ')',
+          this._renderExports(pe)
+        ));
+      }
+
+      // ── Resources ──────────────────────────────────────────────────
+      if (pe.resources.length > 0) {
+        wrap.appendChild(this._renderSection('🗂 Resources (' + pe.resources.length + ' types)', this._renderResources(pe)));
+      }
+
+      // ── Rich Header ────────────────────────────────────────────────
+      if (pe.richHeader && pe.richHeader.entries.length > 0) {
+        wrap.appendChild(this._renderSection('🔑 Rich Header (' + pe.richHeader.entries.length + ' entries)', this._renderRichHeader(pe)));
+      }
+
+      // ── Data Directories ───────────────────────────────────────────
+      wrap.appendChild(this._renderSection('📂 Data Directories', this._renderDataDirs(pe)));
+
+      // ── Strings ────────────────────────────────────────────────────
+      const totalStrings = pe.strings.ascii.length + pe.strings.unicode.length;
+      if (totalStrings > 0) {
+        wrap.appendChild(this._renderSection(
+          '🔤 Strings (' + totalStrings + ')',
+          this._renderStrings(pe)
+        ));
+      }
+
+    } catch (err) {
+      const errBox = document.createElement('div');
+      errBox.className = 'pe-error';
+      errBox.textContent = 'PE parsing error: ' + err.message;
+      wrap.appendChild(errBox);
+    }
+
+    return wrap;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Section renderers (DOM builders)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _renderSection(title, contentEl, rowCount) {
+    const sec = document.createElement('details');
+    sec.className = 'pe-section';
+    const collapse = rowCount && rowCount > 50;
+    sec.open = !collapse;
+    const sum = document.createElement('summary');
+    sum.innerHTML = this._esc(title) + (collapse ? ` <span class="bin-collapse-note">${rowCount} rows — click to expand</span>` : '');
+    sec.appendChild(sum);
+    sec.appendChild(contentEl);
+    return sec;
+  }
+
+  _renderHeaders(pe) {
+    const rows = [
+      ['Type', pe.coff.isDLL ? 'Dynamic Link Library (DLL)' : pe.coff.isSystem ? 'System Driver' : 'Executable'],
+      ['Architecture', pe.optional.magicStr],
+      ['Machine', pe.coff.machineStr],
+      ['Entry Point', this._hex(pe.optional.entryPoint, 8)],
+      ['Image Base', this._hex(pe.optional.imageBase, pe.is64 ? 16 : 8)],
+      ['Linker Version', pe.optional.linkerStr],
+      ['Timestamp', pe.coff.timestampStr],
+      ['Subsystem', pe.optional.subsystemStr],
+      ['Size of Image', (pe.optional.sizeOfImage || 0).toLocaleString() + ' bytes'],
+      ['Size of Code', (pe.optional.sizeOfCode || 0).toLocaleString() + ' bytes'],
+      ['Checksum', this._hex(pe.optional.checksum, 8)],
+      ['Sections', pe.coff.numSections.toString()],
+      ['COFF Flags', pe.coff.characteristicsFlags.join(', ') || 'None'],
+      ['DLL Characteristics', pe.optional.dllCharFlags.join(', ') || 'None'],
+    ];
+    return this._buildTable(['Field', 'Value'], rows);
+  }
+
+  _renderSecurity(pe) {
+    const s = pe.security;
+    const features = [
+      ['ASLR (Address Space Layout Randomization)', s.aslr, 'Randomizes memory addresses to prevent exploitation'],
+      ['High Entropy ASLR', s.highEntropyAslr, 'Uses full 64-bit address space for ASLR'],
+      ['DEP / NX (Data Execution Prevention)', s.dep, 'Prevents code execution from data pages'],
+      ['CFG (Control Flow Guard)', s.cfg, 'Validates indirect call targets'],
+      ['SEH Protection', s.noSeh, 'Exception handler overwrite protection (NO_SEH flag)'],
+      ['Force Integrity', s.forceIntegrity, 'Requires code signing verification at load time'],
+      ['AppContainer', s.appContainer, 'Runs in AppContainer sandbox'],
+    ];
+
+    // Check for authenticode (Certificate Table data directory)
+    const hasCert = pe.dataDirectories[4] && pe.dataDirectories[4].rva !== 0 && pe.dataDirectories[4].size !== 0;
+
+    const div = document.createElement('div');
+    div.className = 'pe-security-grid';
+
+    for (const [name, enabled, desc] of features) {
+      const row = document.createElement('div');
+      row.className = 'pe-sec-row' + (enabled ? ' pe-sec-on' : ' pe-sec-off');
+      row.innerHTML = `<span class="pe-sec-icon">${enabled ? '✅' : '❌'}</span>` +
+        `<span class="pe-sec-name">${this._esc(name)}</span>` +
+        `<span class="pe-sec-desc">${this._esc(desc)}</span>`;
+      div.appendChild(row);
+    }
+
+    // Authenticode
+    const certRow = document.createElement('div');
+    certRow.className = 'pe-sec-row' + (hasCert ? ' pe-sec-on' : ' pe-sec-off');
+    certRow.innerHTML = `<span class="pe-sec-icon">${hasCert ? '✅' : '⚠️'}</span>` +
+      `<span class="pe-sec-name">Authenticode Signature</span>` +
+      `<span class="pe-sec-desc">${hasCert ? 'Digital signature present (Certificate Table exists)' : 'No digital signature detected'}</span>`;
+    div.appendChild(certRow);
+
+    return div;
+  }
+
+  _renderSections(pe) {
+    const frag = document.createElement('div');
+
+    const rows = pe.sections.map(s => {
+      const flags = [];
+      if (s.isReadable) flags.push('R');
+      if (s.isWritable) flags.push('W');
+      if (s.isExecutable) flags.push('X');
+
+      const anomalies = [];
+      if (s.isWritable && s.isExecutable) anomalies.push('⚠️ W+X');
+      if (s.entropy > 7.0) anomalies.push('🔒 High entropy (packed?)');
+      if (s.packerMatch) anomalies.push('📦 ' + s.packerMatch);
+
+      return [
+        s.name || '(empty)',
+        this._hex(s.virtualAddress, 8),
+        s.virtualSize.toLocaleString(),
+        s.rawDataSize.toLocaleString(),
+        flags.join(''),
+        this._renderEntropyBar(s.entropy),
+        anomalies.join(' '),
+      ];
+    });
+
+    const table = this._buildTable(
+      ['Name', 'VirtAddr', 'VirtSize', 'RawSize', 'Flags', 'Entropy', 'Anomalies'],
+      rows, true
+    );
+
+    // Make section rows clickable → inline hex dump
+    const tbody = table.querySelector('tbody');
+    if (tbody) {
+      const trs = Array.from(tbody.querySelectorAll('tr'));
+      trs.forEach((tr, i) => {
+        const sec = pe.sections[i];
+        if (!sec || sec.rawDataSize === 0) return;
+        tr.classList.add('bin-clickable');
+        tr.addEventListener('click', () => {
+          const next = tr.nextElementSibling;
+          if (next && next.classList.contains('bin-hexdump-row')) {
+            next.remove();
+            tr.classList.remove('bin-expanded');
+          } else {
+            const hexRow = document.createElement('tr');
+            hexRow.className = 'bin-hexdump-row';
+            const td = document.createElement('td');
+            td.colSpan = 7;
+            td.appendChild(this._renderHexDump(sec.rawDataOffset, sec.rawDataSize));
+            hexRow.appendChild(td);
+            tr.after(hexRow);
+            tr.classList.add('bin-expanded');
+          }
+        });
+      });
+    }
+
+    frag.appendChild(table);
+    return frag;
+  }
+
+  _renderEntropyBar(entropy) {
+    // Returns an HTML string for inline use in table
+    const pct = Math.min(entropy / 8 * 100, 100);
+    const color = entropy > 7.0 ? '#e74c3c' : entropy > 6.0 ? '#f39c12' : '#27ae60';
+    return `<div class="pe-entropy-bar"><div class="pe-entropy-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>` +
+      `<span class="pe-entropy-val">${entropy.toFixed(3)}</span>`;
+  }
+
+  _renderImports(pe) {
+    const div = document.createElement('div');
+    div.className = 'pe-imports';
+
+    // Search bar filters DLL-level <details> elements; risk toggle shows only DLLs with suspicious imports
+    this._addSearchBar(div, () => Array.from(div.querySelectorAll('.pe-import-dll')), 'Filter imports…', '.pe-import-warn');
+
+    for (const imp of pe.imports) {
+      const detail = document.createElement('details');
+      detail.className = 'pe-import-dll';
+
+      const suspCount = imp.functions.filter(f => f.isSuspicious).length;
+      const sum = document.createElement('summary');
+      sum.innerHTML = `<strong>${this._esc(imp.dllName)}</strong>` +
+        ` <span class="pe-import-count">(${imp.functions.length} functions)</span>` +
+        (suspCount > 0 ? ` <span class="pe-import-warn">⚠️ ${suspCount} suspicious</span>` : '');
+      detail.appendChild(sum);
+
+      if (imp.functions.length > 0) {
+        const list = document.createElement('div');
+        list.className = 'pe-import-list';
+
+        for (const fn of imp.functions) {
+          const item = document.createElement('span');
+          item.className = 'pe-import-func' + (fn.isSuspicious ? ' pe-suspicious' : '');
+          item.textContent = fn.name;
+          if (fn.isSuspicious) {
+            item.title = '';
+            item.style.cursor = 'pointer';
+            item.addEventListener('click', (e) => {
+              e.stopPropagation();
+              // Remove any existing tooltip globally
+              const old = document.querySelector('.bin-tooltip');
+              if (old) { const wasThis = old._forFunc === fn.name; old.remove(); if (wasThis) return; }
+              const cat = this._categorizeApi(fn.name);
+              const detail = PeRenderer.SUSPICIOUS_APIS_DETAIL[fn.name];
+              const tip = document.createElement('div');
+              tip.className = 'bin-tooltip';
+              tip._forFunc = fn.name;
+
+              // Build enriched tooltip content
+              let html = `<strong>${this._esc(fn.name)}</strong>`;
+              if (cat) html += ` <span class="bin-info-card-cat ${cat.cls}">${this._esc(cat.cat)}</span>`;
+              if (detail) {
+                html += `<div class="bin-tooltip-section"><span class="bin-tooltip-label">What it does</span>${this._esc(detail.desc)}</div>`;
+                html += `<div class="bin-tooltip-section"><span class="bin-tooltip-label">⚠ Why suspicious</span>${this._esc(detail.context)}</div>`;
+                if (detail.mitre) html += `<div class="bin-tooltip-mitre">🔗 MITRE ATT&CK: ${this._esc(detail.mitre)}</div>`;
+              } else {
+                html += `<div class="bin-tooltip-desc">${this._esc(fn.suspiciousInfo)}</div>`;
+              }
+              tip.innerHTML = html;
+
+              // Use fixed positioning to avoid clipping by parent overflow
+              document.body.appendChild(tip);
+              const rect = item.getBoundingClientRect();
+              const tipH = tip.offsetHeight;
+              const tipW = tip.offsetWidth;
+              let top = rect.bottom + 6;
+              let left = rect.left;
+              let flipped = false;
+              // Flip above if it would overflow viewport bottom
+              if (top + tipH > window.innerHeight - 8) {
+                top = rect.top - tipH - 6;
+                flipped = true;
+              }
+              // Keep within horizontal bounds
+              if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+              if (left < 8) left = 8;
+              tip.style.left = left + 'px';
+              tip.style.top = top + 'px';
+              if (flipped) tip.classList.add('bin-tooltip-flip');
+
+              // Dismiss on click outside or scroll
+              const cleanup = () => { tip.remove(); document.removeEventListener('click', clickDismiss, true); window.removeEventListener('scroll', scrollDismiss, true); };
+              const clickDismiss = (ev) => { if (!tip.contains(ev.target) && ev.target !== item) cleanup(); };
+              const scrollDismiss = () => cleanup();
+              setTimeout(() => document.addEventListener('click', clickDismiss, true), 0);
+              window.addEventListener('scroll', scrollDismiss, true);
+              const scrollParent = item.closest('.pe-section');
+              if (scrollParent) scrollParent.addEventListener('scroll', scrollDismiss, { once: true, capture: true });
+            });
+          }
+          list.appendChild(item);
+        }
+        detail.appendChild(list);
+      }
+
+      // Auto-collapse DLLs with many functions
+      if (imp.functions.length > 50) {
+        const note = document.createElement('span');
+        note.className = 'bin-collapse-note';
+        note.textContent = imp.functions.length + ' functions';
+        sum.appendChild(document.createTextNode(' '));
+        sum.appendChild(note);
+      }
+
+      div.appendChild(detail);
+    }
+
+    return div;
+  }
+
+  _renderExports(pe) {
+    const rows = pe.exports.names.map(e => [e.ordinal.toString(), e.name]);
+    const div = document.createElement('div');
+
+    const info = document.createElement('div');
+    info.className = 'pe-export-info';
+    info.textContent = 'DLL Name: ' + pe.exports.dllName + ' | Ordinal Base: ' + pe.exports.ordinalBase +
+      ' | Total Functions: ' + pe.exports.numFunctions;
+    div.appendChild(info);
+
+    div.appendChild(this._buildTable(['Ordinal', 'Name'], rows));
+    return div;
+  }
+
+  _renderResources(pe) {
+    const rows = pe.resources.map(r => [
+      r.typeName,
+      r.id.toString(),
+      r.count > 0 ? r.count + ' entries' : 'leaf',
+    ]);
+    return this._buildTable(['Type', 'ID', 'Contents'], rows);
+  }
+
+  _renderRichHeader(pe) {
+    const div = document.createElement('div');
+
+    const info = document.createElement('div');
+    info.className = 'pe-rich-info';
+    info.textContent = 'XOR Key: ' + this._hex(pe.richHeader.xorKey, 8);
+    div.appendChild(info);
+
+    const rows = pe.richHeader.entries.map(e => [
+      e.compId.toString(),
+      e.buildId.toString(),
+      e.count.toString(),
+    ]);
+    div.appendChild(this._buildTable(['Comp ID', 'Build ID', 'Count'], rows));
+    return div;
+  }
+
+  _renderDataDirs(pe) {
+    const rows = pe.dataDirectories.map(dd => [
+      dd.name,
+      dd.rva === 0 ? '—' : this._hex(dd.rva, 8),
+      dd.size === 0 ? '—' : dd.size.toLocaleString(),
+    ]);
+    return this._buildTable(['Directory', 'RVA', 'Size'], rows);
+  }
+
+  _renderStrings(pe) {
+    const div = document.createElement('div');
+    div.className = 'pe-strings';
+
+    const buildStringList = (strings, label) => {
+      const listDiv = document.createElement('div');
+      listDiv.className = 'pe-strings-list';
+      for (const s of strings) {
+        const line = document.createElement('div');
+        line.className = 'pe-string-item';
+        line.textContent = s;
+        listDiv.appendChild(line);
+      }
+
+      // Search bar for this string section
+      this._addSearchBar(listDiv, () => Array.from(listDiv.querySelectorAll('.pe-string-item')), 'Filter strings…');
+      return listDiv;
+    };
+
+    // Tabbed interface for ASCII / Unicode strings
+    const hasAscii = pe.strings.ascii.length > 0;
+    const hasUnicode = pe.strings.unicode.length > 0;
+    const tabs = [];
+    const panes = [];
+    if (hasAscii) {
+      tabs.push({ label: `ASCII (${pe.strings.ascii.length})`, key: 'ascii' });
+      panes.push(buildStringList(pe.strings.ascii, 'ASCII Strings'));
+    }
+    if (hasUnicode) {
+      tabs.push({ label: `Unicode (${pe.strings.unicode.length})`, key: 'unicode' });
+      panes.push(buildStringList(pe.strings.unicode, 'Unicode Strings'));
+    }
+    if (tabs.length > 1) {
+      const tabBar = document.createElement('div');
+      tabBar.className = 'bin-tab-bar';
+      tabs.forEach((t, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'bin-tab' + (i === 0 ? ' active' : '');
+        btn.textContent = t.label;
+        btn.addEventListener('click', () => {
+          tabBar.querySelectorAll('.bin-tab').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          panes.forEach((p, j) => { p.style.display = j === i ? '' : 'none'; });
+        });
+        tabBar.appendChild(btn);
+      });
+      div.appendChild(tabBar);
+      panes.forEach((p, i) => { p.style.display = i === 0 ? '' : 'none'; div.appendChild(p); });
+    } else {
+      panes.forEach(p => div.appendChild(p));
+    }
+
+    return div;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Table builder helper
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _buildTable(headers, rows, allowHtml) {
+    const table = document.createElement('table');
+    table.className = 'pe-table';
+    const thead = document.createElement('thead');
+    const tr = document.createElement('tr');
+    for (const h of headers) {
+      const th = document.createElement('th');
+      th.textContent = h;
+      tr.appendChild(th);
+    }
+    thead.appendChild(tr);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const row of rows) {
+      const rtr = document.createElement('tr');
+      for (const cell of row) {
+        const td = document.createElement('td');
+        if (allowHtml && typeof cell === 'string' && cell.includes('<')) {
+          td.innerHTML = cell;
+        } else {
+          td.textContent = String(cell);
+        }
+        rtr.appendChild(td);
+      }
+      tbody.appendChild(rtr);
+    }
+    table.appendChild(tbody);
+    return table;
+  }
+
+  _esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Interactive helpers — hex dump, search bar, info cards
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _renderHexDump(offset, size, maxInitial) {
+    maxInitial = maxInitial || 4096;
+    const bytes = this._bytes;
+    const end = Math.min(offset + size, bytes.length);
+    const totalBytes = end - offset;
+    if (totalBytes <= 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bin-hexdump';
+      empty.textContent = '(empty section)';
+      return empty;
+    }
+
+    const container = document.createElement('div');
+    let shown = Math.min(totalBytes, maxInitial);
+
+    const buildLines = (start, count) => {
+      const frag = document.createDocumentFragment();
+      const lineEnd = Math.min(start + count, totalBytes);
+      for (let i = start; i < lineEnd; i += 16) {
+        const line = document.createElement('div');
+        line.className = 'bin-hexdump-line';
+        const offSpan = document.createElement('span');
+        offSpan.className = 'bin-hexdump-offset';
+        offSpan.textContent = (offset + i).toString(16).toUpperCase().padStart(8, '0');
+        line.appendChild(offSpan);
+
+        let hexStr = '';
+        let ascStr = '';
+        for (let j = 0; j < 16; j++) {
+          if (i + j < totalBytes) {
+            const b = bytes[offset + i + j];
+            hexStr += b ? `<span class="bin-nz">${b.toString(16).padStart(2,'0').toUpperCase()}</span> ` : '00 ';
+            ascStr += (b >= 0x20 && b < 0x7F) ? String.fromCharCode(b) : '.';
+          } else {
+            hexStr += '   ';
+            ascStr += ' ';
+          }
+          if (j === 7) hexStr += ' ';
+        }
+        const hexSpan = document.createElement('span');
+        hexSpan.className = 'bin-hexdump-hex';
+        hexSpan.innerHTML = hexStr;
+        line.appendChild(hexSpan);
+
+        const ascSpan = document.createElement('span');
+        ascSpan.className = 'bin-hexdump-ascii';
+        ascSpan.textContent = ascStr;
+        line.appendChild(ascSpan);
+        frag.appendChild(line);
+      }
+      return frag;
+    };
+
+    const dump = document.createElement('div');
+    dump.className = 'bin-hexdump';
+    dump.appendChild(buildLines(0, shown));
+    container.appendChild(dump);
+
+    if (totalBytes > shown) {
+      const btn = document.createElement('button');
+      btn.className = 'bin-hexdump-show-more';
+      btn.textContent = `Show more (${(totalBytes - shown).toLocaleString()} bytes remaining)`;
+      btn.addEventListener('click', () => {
+        const next = Math.min(shown + 4096, totalBytes);
+        dump.appendChild(buildLines(shown, next - shown));
+        shown = next;
+        if (shown >= totalBytes) btn.remove();
+        else btn.textContent = `Show more (${(totalBytes - shown).toLocaleString()} bytes remaining)`;
+      });
+      container.appendChild(btn);
+    }
+    return container;
+  }
+
+  _addSearchBar(container, getItems, placeholder, riskSelector) {
+    const wrap = document.createElement('div');
+    wrap.className = 'bin-search-wrap';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = placeholder || 'Search…';
+    const count = document.createElement('span');
+    count.className = 'bin-search-count';
+    wrap.appendChild(input);
+
+    let riskOnly = false;
+    let riskBtn = null;
+    if (riskSelector) {
+      riskBtn = document.createElement('button');
+      riskBtn.className = 'bin-risk-toggle';
+      riskBtn.textContent = '⚠ Risky';
+      riskBtn.title = 'Show only risky/suspicious items';
+      wrap.appendChild(riskBtn);
+    }
+
+    wrap.appendChild(count);
+
+    const applyFilter = () => {
+      const q = input.value.toLowerCase().trim();
+      const items = getItems();
+      let visible = 0;
+      for (const item of items) {
+        const text = item.textContent.toLowerCase();
+        const matchText = !q || text.includes(q);
+        const matchRisk = !riskOnly || item.querySelector(riskSelector) || item.matches(riskSelector);
+        const show = matchText && matchRisk;
+        item.classList.toggle('bin-hidden', !show);
+        if (show) visible++;
+      }
+      count.textContent = (q || riskOnly) ? `${visible}/${items.length}` : '';
+    };
+
+    input.addEventListener('input', applyFilter);
+    if (riskBtn) {
+      riskBtn.addEventListener('click', () => {
+        riskOnly = !riskOnly;
+        riskBtn.classList.toggle('active', riskOnly);
+        container.classList.toggle('risk-filter-active', riskOnly);
+        applyFilter();
+      });
+    }
+
+    container.insertBefore(wrap, container.firstChild);
+    return wrap;
+  }
+
+  _categorizeApi(name) {
+    const info = PeRenderer.SUSPICIOUS_APIS[name];
+    if (!info) return null;
+    const lower = info.toLowerCase();
+    if (/injection|hollowing|remote.*thread|write.*process|apc|hijack|unmap/i.test(lower))
+      return { cat: 'Process Injection', cls: 'cat-inject' };
+    if (/debug|sandbox|evasion|vm detection|timing/i.test(lower))
+      return { cat: 'Anti-Debug / Evasion', cls: 'cat-antidebug' };
+    if (/credential|lsa|sam|dpapi/i.test(lower))
+      return { cat: 'Credential Theft', cls: 'cat-cred' };
+    if (/c2|download|http|internet|winsock|url/i.test(lower))
+      return { cat: 'Networking / C2', cls: 'cat-network' };
+    if (/ransomware|encrypt|decrypt|crypto|key/i.test(lower))
+      return { cat: 'Cryptography', cls: 'cat-crypto' };
+    if (/registry|persistence|service/i.test(lower))
+      return { cat: 'Persistence', cls: 'cat-file' };
+    if (/process creation|shell|exec|command/i.test(lower))
+      return { cat: 'Execution', cls: 'cat-exec' };
+    if (/dynamic|load.*library|getproc/i.test(lower))
+      return { cat: 'Dynamic Loading', cls: 'cat-recon' };
+    return { cat: 'Suspicious', cls: 'cat-inject' };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Security analysis (for sidebar)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  analyzeForSecurity(buffer, fileName) {
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+    const findings = {
+      risk: 'low',
+      hasMacros: false,
+      macroSize: 0,
+      macroHash: '',
+      autoExec: [],
+      modules: [],
+      externalRefs: [],
+      metadata: {},
+      interestingStrings: [],
+      peInfo: null,
+    };
+
+    try {
+      const pe = this._parse(bytes);
+      findings.peInfo = pe;
+
+      const issues = [];
+      let riskScore = 0;
+
+      // ── File type context ──────────────────────────────────────────
+      const ext = ((fileName || '').split('.').pop() || '').toLowerCase();
+      findings.metadata = {
+        'Type': pe.coff.isDLL ? 'DLL' : pe.coff.isSystem ? 'Driver' : 'Executable',
+        'Architecture': pe.optional.magicStr,
+        'Machine': pe.coff.machineStr,
+        'Subsystem': pe.optional.subsystemStr,
+        'Compiled': pe.coff.timestampStr,
+        'Entry Point': this._hex(pe.optional.entryPoint, 8),
+        'Linker': pe.optional.linkerStr,
+        'Sections': pe.coff.numSections.toString(),
+      };
+
+      if (pe.exports) {
+        findings.metadata['Export DLL Name'] = pe.exports.dllName;
+        findings.metadata['Exported Functions'] = pe.exports.numNames.toString();
+      }
+
+      // ── Security feature checks ────────────────────────────────────
+      if (!pe.security.aslr) { issues.push('ASLR disabled — vulnerable to memory exploitation'); riskScore += 1; }
+      if (!pe.security.dep) { issues.push('DEP/NX disabled — data pages can execute code'); riskScore += 1; }
+      if (!pe.security.cfg) { issues.push('CFG disabled — no control flow integrity'); riskScore += 0.5; }
+
+      const hasCert = pe.dataDirectories[4] && pe.dataDirectories[4].rva !== 0 && pe.dataDirectories[4].size !== 0;
+      if (!hasCert) { issues.push('No Authenticode signature'); riskScore += 1; }
+
+      // ── Timestamp anomalies ────────────────────────────────────────
+      const ts = pe.coff.timestamp;
+      if (ts === 0) { issues.push('Compilation timestamp is epoch zero (likely zeroed)'); riskScore += 1; }
+      else if (ts === 0xFFFFFFFF) { issues.push('Compilation timestamp is invalid (0xFFFFFFFF)'); riskScore += 1; }
+      else {
+        const now = Date.now() / 1000;
+        if (ts > now + 86400) { issues.push('Compilation timestamp is in the future'); riskScore += 2; }
+        if (ts < 946684800) { issues.push('Compilation timestamp is before year 2000 (possibly forged)'); riskScore += 0.5; }
+      }
+
+      // ── Section anomalies ──────────────────────────────────────────
+      let packerDetected = false;
+      for (const sec of pe.sections) {
+        if (sec.isWritable && sec.isExecutable) {
+          issues.push(`Section "${sec.name}" is W+X (writable and executable) — code injection risk`);
+          riskScore += 2;
+        }
+        if (sec.entropy > 7.0) {
+          issues.push(`Section "${sec.name}" has very high entropy (${sec.entropy.toFixed(3)}) — likely packed or encrypted`);
+          riskScore += 1.5;
+        }
+        if (sec.packerMatch) {
+          issues.push(`Section "${sec.name}" matches known packer: ${sec.packerMatch}`);
+          packerDetected = true;
+          riskScore += 2;
+        }
+      }
+
+      // Low import count + high entropy = likely packed
+      const totalImportFuncs = pe.imports.reduce((s, d) => s + d.functions.length, 0);
+      if (totalImportFuncs < 10 && pe.sections.some(s => s.entropy > 6.5)) {
+        if (!packerDetected) {
+          issues.push('Very few imports (' + totalImportFuncs + ') with high-entropy sections — likely packed');
+          riskScore += 2;
+        }
+      }
+
+      // ── Suspicious imports ─────────────────────────────────────────
+      const suspiciousImports = [];
+      for (const imp of pe.imports) {
+        for (const fn of imp.functions) {
+          if (fn.isSuspicious) {
+            suspiciousImports.push({ dll: imp.dllName, func: fn.name, info: fn.suspiciousInfo });
+          }
+        }
+      }
+
+      if (suspiciousImports.length > 0) {
+        riskScore += Math.min(suspiciousImports.length * 0.5, 5);
+
+        // Categorize suspicious API patterns
+        const hasInjection = suspiciousImports.some(s =>
+          /injection|hollowing|remote.*thread|WriteProcessMemory/i.test(s.info));
+        const hasCredTheft = suspiciousImports.some(s =>
+          /credential|LSA|SAM|DPAPI/i.test(s.info));
+        const hasAntiDebug = suspiciousImports.some(s =>
+          /debug|sandbox|evasion/i.test(s.info));
+        const hasNetworking = suspiciousImports.some(s =>
+          /C2|download|HTTP|Internet|Winsock/i.test(s.info));
+        const hasCrypto = suspiciousImports.some(s =>
+          /ransomware|encryption|crypto/i.test(s.info));
+
+        if (hasInjection) { issues.push('Imports process injection APIs (VirtualAlloc/WriteProcessMemory/CreateRemoteThread)'); riskScore += 2; }
+        if (hasCredTheft) { issues.push('Imports credential theft APIs'); riskScore += 2; }
+        if (hasAntiDebug) { issues.push('Imports anti-debugging / sandbox evasion APIs'); riskScore += 1; }
+        if (hasNetworking) { issues.push('Imports networking APIs (C2 / download capability)'); riskScore += 1; }
+        if (hasCrypto) { issues.push('Imports cryptographic APIs (potential ransomware)'); riskScore += 1.5; }
+      }
+
+      // ── Extract IOCs from strings ──────────────────────────────────
+      const allStrings = [...pe.strings.ascii, ...pe.strings.unicode].join('\n');
+      if (typeof IOC !== 'undefined') {
+        const urlMatch = allStrings.match(IOC.PATTERN);
+        if (urlMatch) {
+          const unique = [...new Set(urlMatch)];
+          for (const url of unique.slice(0, 50)) {
+            findings.interestingStrings.push({ type: 'url', url });
+          }
+        }
+        const uncMatch = allStrings.match(IOC.UNC_PATH);
+        if (uncMatch) {
+          const unique = [...new Set(uncMatch)];
+          for (const unc of unique.slice(0, 20)) {
+            findings.interestingStrings.push({ type: 'unc_path', url: unc });
+          }
+        }
+      }
+
+      // ── Risk assessment ────────────────────────────────────────────
+      findings.autoExec = issues;
+      if (riskScore >= 8) findings.risk = 'critical';
+      else if (riskScore >= 5) findings.risk = 'high';
+      else if (riskScore >= 2) findings.risk = 'medium';
+      else findings.risk = 'low';
+
+    } catch (e) {
+      findings.risk = 'medium';
+      findings.autoExec = ['PE parsing partially failed: ' + e.message];
+    }
+
+    return findings;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// elf-renderer.js — Linux ELF (ELF32/ELF64) binary parser + analysis view
+// Supports: executables, shared objects, relocatable objects, core dumps
+// Handles both little-endian and big-endian, 32-bit and 64-bit
+// ════════════════════════════════════════════════════════════════
+
+class ElfRenderer {
+
+  // ── Static constant maps ───────────────────────────────────────
+
+  // ELF OS/ABI values
+  static OSABI = {
+    0: 'UNIX System V', 1: 'HP-UX', 2: 'NetBSD', 3: 'Linux',
+    6: 'Solaris', 7: 'AIX', 8: 'IRIX', 9: 'FreeBSD',
+    10: 'Tru64', 11: 'Novell Modesto', 12: 'OpenBSD',
+    64: 'ARM EABI', 97: 'ARM', 255: 'Standalone',
+  };
+
+  // ELF type
+  static TYPE = {
+    0: 'NONE', 1: 'REL (Relocatable)', 2: 'EXEC (Executable)',
+    3: 'DYN (Shared Object)', 4: 'CORE (Core Dump)',
+  };
+
+  // Machine architecture
+  static MACHINE = {
+    0: 'None', 2: 'SPARC', 3: 'x86 (i386)', 6: 'Motorola 68000',
+    7: 'Motorola 88000', 8: 'Intel MCU', 9: 'Intel 80860',
+    10: 'MIPS', 15: 'HP PA-RISC', 20: 'PowerPC', 21: 'PowerPC64',
+    22: 'S390', 40: 'ARM', 42: 'SuperH', 43: 'SPARC V9',
+    50: 'IA-64', 62: 'x86-64 (AMD64)', 183: 'AArch64 (ARM64)',
+    243: 'RISC-V', 247: 'eBPF',
+  };
+
+  // Program header types
+  static PT_TYPE = {
+    0: 'NULL', 1: 'LOAD', 2: 'DYNAMIC', 3: 'INTERP', 4: 'NOTE',
+    5: 'SHLIB', 6: 'PHDR', 7: 'TLS',
+    0x6474E550: 'GNU_EH_FRAME', 0x6474E551: 'GNU_STACK',
+    0x6474E552: 'GNU_RELRO', 0x6474E553: 'GNU_PROPERTY',
+    0x70000001: 'PROC_SPECIFIC',
+  };
+
+  // Section header types
+  static SHT_TYPE = {
+    0: 'NULL', 1: 'PROGBITS', 2: 'SYMTAB', 3: 'STRTAB', 4: 'RELA',
+    5: 'HASH', 6: 'DYNAMIC', 7: 'NOTE', 8: 'NOBITS', 9: 'REL',
+    10: 'SHLIB', 11: 'DYNSYM', 14: 'INIT_ARRAY', 15: 'FINI_ARRAY',
+    16: 'PREINIT_ARRAY', 17: 'GROUP', 18: 'SYMTAB_SHNDX',
+    0x6FFFFFF6: 'GNU_HASH', 0x6FFFFFFD: 'VERDEF',
+    0x6FFFFFFE: 'VERNEED', 0x6FFFFFFF: 'VERSYM',
+  };
+
+  // Section flags
+  static SHF = {
+    0x1: 'WRITE', 0x2: 'ALLOC', 0x4: 'EXECINSTR',
+    0x10: 'MERGE', 0x20: 'STRINGS', 0x40: 'INFO_LINK',
+    0x80: 'LINK_ORDER', 0x100: 'OS_NONCONFORMING',
+    0x200: 'GROUP', 0x400: 'TLS',
+  };
+
+  // Dynamic tag types
+  static DT_TAG = {
+    0: 'NULL', 1: 'NEEDED', 2: 'PLTRELSZ', 3: 'PLTGOT',
+    4: 'HASH', 5: 'STRTAB', 6: 'SYMTAB', 7: 'RELA',
+    8: 'RELASZ', 9: 'RELAENT', 10: 'STRSZ', 11: 'SYMENT',
+    12: 'INIT', 13: 'FINI', 14: 'SONAME', 15: 'RPATH',
+    16: 'SYMBOLIC', 17: 'REL', 18: 'RELSZ', 19: 'RELENT',
+    20: 'PLTREL', 21: 'DEBUG', 22: 'TEXTREL', 23: 'JMPREL',
+    24: 'BIND_NOW', 25: 'INIT_ARRAY', 26: 'FINI_ARRAY',
+    27: 'INIT_ARRAYSZ', 28: 'FINI_ARRAYSZ', 29: 'RUNPATH',
+    30: 'FLAGS', 32: 'PREINIT_ARRAY',
+    0x6FFFFFFB: 'FLAGS_1', 0x6FFFFFFE: 'VERNEED',
+    0x6FFFFFFF: 'VERNEEDNUM', 0x6FFFFFF0: 'VERSYM',
+    0x6FFFFFFA: 'RELCOUNT', 0x6FFFFFF9: 'RELACOUNT',
+    0x6FFFFFF5: 'GNU_HASH',
+  };
+
+  // Symbol binding
+  static STB = { 0: 'LOCAL', 1: 'GLOBAL', 2: 'WEAK', 10: 'LOOS', 13: 'HIOS' };
+
+  // Symbol type
+  static STT = {
+    0: 'NOTYPE', 1: 'OBJECT', 2: 'FUNC', 3: 'SECTION',
+    4: 'FILE', 5: 'COMMON', 6: 'TLS', 10: 'LOOS',
+  };
+
+  // Symbol visibility
+  static STV = { 0: 'DEFAULT', 1: 'INTERNAL', 2: 'HIDDEN', 3: 'PROTECTED' };
+
+  // ── Detailed symbol info (description, context, MITRE ATT&CK) ─────────
+  static SUSPICIOUS_SYMBOLS_DETAIL = {
+    ptrace: {
+      desc: 'Traces or controls another process — can read/write memory and registers.',
+      context: 'Used for anti-debugging: a process calls ptrace on itself to prevent debuggers from attaching.',
+      mitre: 'T1622 — Debugger Evasion',
+    },
+    dlopen: {
+      desc: 'Opens a shared library and returns a handle for dlsym lookups.',
+      context: 'Runtime loading of libraries enables plugin-based malware or evasion of static analysis.',
+      mitre: 'T1129 — Shared Modules',
+    },
+    dlsym: {
+      desc: 'Resolves a symbol (function/variable) from a dynamically loaded library.',
+      context: 'Combined with dlopen, allows API-hiding by resolving functions at runtime instead of via the symbol table.',
+      mitre: 'T1106 — Native API',
+    },
+    execve: {
+      desc: 'Replaces the current process image with a new program.',
+      context: 'Core execution primitive in Linux. Combined with socket+dup2, forms a reverse shell.',
+      mitre: 'T1059 — Command and Scripting Interpreter',
+    },
+    execvp: {
+      desc: 'Searches PATH and executes a program, replacing the current process.',
+      context: 'Convenient execution primitive often used to launch shell commands.',
+      mitre: 'T1059 — Command and Scripting Interpreter',
+    },
+    system: {
+      desc: 'Executes a shell command string via /bin/sh -c.',
+      context: 'Simplest command execution — frequently used by malware for downloading payloads or running exploits.',
+      mitre: 'T1059.004 — Unix Shell',
+    },
+    popen: {
+      desc: 'Executes a shell command and returns a pipe for reading/writing.',
+      context: 'Enables command execution with output capture — used for reconnaissance or data exfiltration.',
+      mitre: 'T1059.004 — Unix Shell',
+    },
+    fork: {
+      desc: 'Creates a child process that is a copy of the parent.',
+      context: 'Used to daemonize malware, create persistent backdoors, or fork-bomb a system.',
+      mitre: 'T1106 — Native API',
+    },
+    socket: {
+      desc: 'Creates a network communication endpoint (TCP, UDP, raw).',
+      context: 'Foundation for all network communication — C2 channels, data exfiltration, and reverse shells.',
+      mitre: 'T1071 — Application Layer Protocol',
+    },
+    connect: {
+      desc: 'Initiates a connection on a socket to a remote address.',
+      context: 'Outbound connection to C2 server or callback host. Part of the reverse shell triad (socket+connect+dup2+exec).',
+      mitre: 'T1071 — Application Layer Protocol',
+    },
+    bind: {
+      desc: 'Assigns a local address/port to a socket.',
+      context: 'Creates a network listener — indicator of a bind shell or backdoor accepting remote connections.',
+      mitre: 'T1571 — Non-Standard Port',
+    },
+    listen: {
+      desc: 'Marks a socket as a passive listener for incoming connections.',
+      context: 'Server-side socket that waits for attacker connections — classic backdoor pattern.',
+      mitre: 'T1571 — Non-Standard Port',
+    },
+    mmap: {
+      desc: 'Maps files or anonymous memory into the process address space.',
+      context: 'Can create RWX memory regions for in-memory code execution, bypassing file-based detection.',
+      mitre: 'T1055.009 — Proc Memory',
+    },
+    mprotect: {
+      desc: 'Changes memory protection flags on mapped pages.',
+      context: 'Used to make data pages executable at runtime — enables shellcode execution from heap/stack.',
+      mitre: 'T1055.009 — Proc Memory',
+    },
+    memfd_create: {
+      desc: 'Creates an anonymous file in memory backed by RAM, not disk.',
+      context: 'Key fileless execution technique — load and execute binaries without touching the filesystem.',
+      mitre: 'T1620 — Reflective Code Loading',
+    },
+    fexecve: {
+      desc: 'Executes a program referenced by a file descriptor rather than a path.',
+      context: 'Enables fileless execution when combined with memfd_create — runs binaries from memory.',
+      mitre: 'T1620 — Reflective Code Loading',
+    },
+    process_vm_readv: {
+      desc: 'Reads memory from another process without ptrace.',
+      context: 'Enables credential/secret theft from other process memory or cross-process data harvesting.',
+      mitre: 'T1003 — OS Credential Dumping',
+    },
+    process_vm_writev: {
+      desc: 'Writes to another process\'s memory without ptrace.',
+      context: 'Code injection into a running process — can modify execution flow or inject shellcode.',
+      mitre: 'T1055 — Process Injection',
+    },
+    init_module: {
+      desc: 'Loads a kernel module (LKM) from a memory buffer.',
+      context: 'Rootkit installation technique — loads malicious code directly into the kernel.',
+      mitre: 'T1547.006 — Kernel Modules and Extensions',
+    },
+    finit_module: {
+      desc: 'Loads a kernel module from a file descriptor.',
+      context: 'Modern rootkit installation — loads kernel modules with optional flag control.',
+      mitre: 'T1547.006 — Kernel Modules and Extensions',
+    },
+    setuid: {
+      desc: 'Sets the effective user ID of the calling process.',
+      context: 'Privilege escalation — used by SUID binaries or exploits to gain root privileges.',
+      mitre: 'T1548.001 — Setuid and Setgid',
+    },
+    setgid: {
+      desc: 'Sets the effective group ID of the calling process.',
+      context: 'Privilege escalation via group membership changes.',
+      mitre: 'T1548.001 — Setuid and Setgid',
+    },
+    chroot: {
+      desc: 'Changes the root directory for the calling process.',
+      context: 'Can be used in container/sandbox escape attacks by pivoting the filesystem root.',
+      mitre: 'T1611 — Escape to Host',
+    },
+    dup2: {
+      desc: 'Duplicates a file descriptor to a specified target FD number.',
+      context: 'Critical in reverse shells — redirects stdin/stdout/stderr to a network socket.',
+      mitre: 'T1059 — Command and Scripting Interpreter',
+    },
+    unlink: {
+      desc: 'Removes a file or directory entry from the filesystem.',
+      context: 'Anti-forensics: malware deletes itself after execution to remove evidence.',
+      mitre: 'T1070.004 — File Deletion',
+    },
+    keyctl: {
+      desc: 'Manipulates the kernel keyring (add, read, search keys).',
+      context: 'Access to kernel keyring can expose cryptographic keys, certificates, and cached credentials.',
+      mitre: 'T1552 — Unsecured Credentials',
+    },
+    kexec_load: {
+      desc: 'Loads a new kernel image for later execution (warm reboot).',
+      context: 'Extreme persistence/rootkit technique — replaces the running kernel without a full reboot.',
+      mitre: 'T1542 — Pre-OS Boot',
+    },
+    personality: {
+      desc: 'Sets the process execution domain (e.g., Linux, SVR4).',
+      context: 'Can disable ASLR for the process (ADDR_NO_RANDOMIZE flag), weakening exploit mitigations.',
+      mitre: 'T1497.001 — System Checks',
+    },
+  };
+
+  // ── Suspicious symbol/function names for ELF binaries ──────────
+  static SUSPICIOUS_SYMBOLS = {
+    'ptrace': 'Anti-debugging — can detect/prevent debugger attachment',
+    'dlopen': 'Dynamic library loading — runtime code injection',
+    'dlsym': 'Dynamic symbol resolution — runtime function lookup',
+    'execve': 'Process execution — can launch arbitrary commands',
+    'execvp': 'Process execution — can launch arbitrary commands',
+    'execl': 'Process execution — can launch arbitrary commands',
+    'system': 'Shell command execution — arbitrary command execution',
+    'popen': 'Shell command execution via pipe',
+    'fork': 'Process creation — can spawn child processes',
+    'clone': 'Process/thread creation — low-level spawning',
+    'socket': 'Network socket creation — potential C2/data exfiltration',
+    'connect': 'Network connection — outbound communication',
+    'bind': 'Network binding — potential backdoor/listener',
+    'listen': 'Network listener — potential backdoor',
+    'accept': 'Network accept — server-side connection handling',
+    'send': 'Network send — data exfiltration capability',
+    'recv': 'Network receive — command reception capability',
+    'sendto': 'UDP send — data exfiltration capability',
+    'recvfrom': 'UDP receive — command reception capability',
+    'mmap': 'Memory mapping — can map executable memory regions',
+    'mprotect': 'Memory permission change — can make data executable',
+    'memfd_create': 'Anonymous file in memory — fileless execution technique',
+    'fexecve': 'Execute from file descriptor — fileless execution',
+    'process_vm_readv': 'Read another process memory — credential/data theft',
+    'process_vm_writev': 'Write another process memory — code injection',
+    'keyctl': 'Kernel keyring access — credential access',
+    'init_module': 'Kernel module loading — rootkit installation',
+    'finit_module': 'Kernel module loading — rootkit installation',
+    'delete_module': 'Kernel module removal — rootkit cleanup',
+    'mount': 'Filesystem mount — persistence/privilege escalation',
+    'umount': 'Filesystem unmount — anti-forensics',
+    'chroot': 'Change root — container/sandbox escape',
+    'setuid': 'Set user ID — privilege escalation',
+    'setgid': 'Set group ID — privilege escalation',
+    'setreuid': 'Set real/effective UID — privilege escalation',
+    'setregid': 'Set real/effective GID — privilege escalation',
+    'capset': 'Set process capabilities — privilege manipulation',
+    'prctl': 'Process control — can rename process, set dumpable flag',
+    'unlink': 'File deletion — anti-forensics / self-deletion',
+    'unlinkat': 'File deletion — anti-forensics / self-deletion',
+    'inotify_init': 'File monitoring — surveillance capability',
+    'fanotify_init': 'Filesystem monitoring — surveillance capability',
+    'kexec_load': 'Load new kernel — extreme persistence/rootkit',
+    'dup2': 'File descriptor duplication — used in reverse shells',
+    'shmget': 'Shared memory — IPC / covert communication',
+    'msgget': 'Message queue — IPC / covert communication',
+    'personality': 'Execution domain — can disable ASLR',
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Binary read helpers (endian-aware)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _u8(b, o) { return b[o]; }
+
+  _u16(b, o) {
+    return this._le
+      ? b[o] | (b[o + 1] << 8)
+      : (b[o] << 8) | b[o + 1];
+  }
+
+  _u32(b, o) {
+    return this._le
+      ? (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0
+      : ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
+  }
+
+  // Returns a BigInt-safe 64-bit value as a Number (loses precision above 2^53)
+  _u64(b, o) {
+    if (this._le) {
+      const lo = this._u32(b, o);
+      const hi = this._u32(b, o + 4);
+      return hi * 0x100000000 + lo;
+    } else {
+      const hi = this._u32(b, o);
+      const lo = this._u32(b, o + 4);
+      return hi * 0x100000000 + lo;
+    }
+  }
+
+  // Read address/offset (4 or 8 bytes depending on class)
+  _uAddr(b, o) {
+    return this._is64 ? this._u64(b, o) : this._u32(b, o);
+  }
+
+  // Address size in bytes
+  get _addrSize() { return this._is64 ? 8 : 4; }
+
+  _str(b, o, maxLen) {
+    let s = '';
+    for (let i = 0; i < maxLen && o + i < b.length; i++) {
+      if (b[o + i] === 0) break;
+      s += String.fromCharCode(b[o + i]);
+    }
+    return s;
+  }
+
+  _hex(v, digits) {
+    if (typeof v === 'number') return '0x' + v.toString(16).toUpperCase().padStart(digits || 8, '0');
+    return '0x0';
+  }
+
+  _entropy(b, offset, length) {
+    if (length <= 0 || offset + length > b.length) return 0;
+    const freq = new Uint32Array(256);
+    const end = Math.min(offset + length, b.length);
+    const actual = end - offset;
+    for (let i = offset; i < end; i++) freq[b[i]]++;
+    let ent = 0;
+    for (let i = 0; i < 256; i++) {
+      if (freq[i] === 0) continue;
+      const p = freq[i] / actual;
+      ent -= p * Math.log2(p);
+    }
+    return ent;
+  }
+
+  _esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  String table reader — read null-terminated string from string table
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _readStringTable(bytes, strtabOffset, strtabSize, nameIndex) {
+    if (nameIndex === 0 || nameIndex >= strtabSize) return '';
+    const start = strtabOffset + nameIndex;
+    if (start >= bytes.length) return '';
+    return this._str(bytes, start, Math.min(256, bytes.length - start));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Core ELF parser
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _parse(bytes) {
+    // ── Validate ELF magic ────────────────────────────────────────
+    if (bytes.length < 64 ||
+        bytes[0] !== 0x7F || bytes[1] !== 0x45 || bytes[2] !== 0x4C || bytes[3] !== 0x46) {
+      throw new Error('Not a valid ELF file (bad magic)');
+    }
+
+    const elf = {};
+
+    // ── ELF identification ────────────────────────────────────────
+    const ei_class = bytes[4]; // 1=32-bit, 2=64-bit
+    const ei_data = bytes[5];  // 1=LE, 2=BE
+    const ei_version = bytes[6];
+    const ei_osabi = bytes[7];
+    const ei_abiversion = bytes[8];
+
+    this._is64 = ei_class === 2;
+    this._le = ei_data === 1;
+
+    elf.ident = {
+      class: ei_class,
+      classStr: ei_class === 1 ? 'ELF32' : ei_class === 2 ? 'ELF64' : 'Unknown',
+      data: ei_data,
+      dataStr: ei_data === 1 ? 'Little Endian' : ei_data === 2 ? 'Big Endian' : 'Unknown',
+      version: ei_version,
+      osabi: ei_osabi,
+      osabiStr: ElfRenderer.OSABI[ei_osabi] || `Unknown (${ei_osabi})`,
+      abiVersion: ei_abiversion,
+    };
+
+    // ── ELF header fields ─────────────────────────────────────────
+    elf.type = this._u16(bytes, 16);
+    elf.typeStr = ElfRenderer.TYPE[elf.type] || `Unknown (${elf.type})`;
+    elf.machine = this._u16(bytes, 18);
+    elf.machineStr = ElfRenderer.MACHINE[elf.machine] || `Unknown (${elf.machine})`;
+    elf.version = this._u32(bytes, 20);
+
+    if (this._is64) {
+      elf.entry = this._u64(bytes, 24);
+      elf.phoff = this._u64(bytes, 32);
+      elf.shoff = this._u64(bytes, 40);
+      elf.flags = this._u32(bytes, 48);
+      elf.ehsize = this._u16(bytes, 52);
+      elf.phentsize = this._u16(bytes, 54);
+      elf.phnum = this._u16(bytes, 56);
+      elf.shentsize = this._u16(bytes, 58);
+      elf.shnum = this._u16(bytes, 60);
+      elf.shstrndx = this._u16(bytes, 62);
+    } else {
+      elf.entry = this._u32(bytes, 24);
+      elf.phoff = this._u32(bytes, 28);
+      elf.shoff = this._u32(bytes, 32);
+      elf.flags = this._u32(bytes, 36);
+      elf.ehsize = this._u16(bytes, 40);
+      elf.phentsize = this._u16(bytes, 42);
+      elf.phnum = this._u16(bytes, 44);
+      elf.shentsize = this._u16(bytes, 46);
+      elf.shnum = this._u16(bytes, 48);
+      elf.shstrndx = this._u16(bytes, 50);
+    }
+
+    // Determine file sub-type
+    elf.isExec = elf.type === 2;
+    elf.isDyn = elf.type === 3;
+    elf.isRel = elf.type === 1;
+    elf.isCore = elf.type === 4;
+
+    // ── Program headers (segments) ────────────────────────────────
+    elf.segments = [];
+    const maxSegments = Math.min(elf.phnum, 256); // Safety cap
+    for (let i = 0; i < maxSegments; i++) {
+      const off = elf.phoff + i * elf.phentsize;
+      if (off + elf.phentsize > bytes.length) break;
+
+      const seg = {};
+      seg.type = this._u32(bytes, off);
+      seg.typeStr = ElfRenderer.PT_TYPE[seg.type] || `0x${seg.type.toString(16).toUpperCase()}`;
+
+      if (this._is64) {
+        seg.flags = this._u32(bytes, off + 4);
+        seg.offset = this._u64(bytes, off + 8);
+        seg.vaddr = this._u64(bytes, off + 16);
+        seg.paddr = this._u64(bytes, off + 24);
+        seg.filesz = this._u64(bytes, off + 32);
+        seg.memsz = this._u64(bytes, off + 40);
+        seg.align = this._u64(bytes, off + 48);
+      } else {
+        seg.offset = this._u32(bytes, off + 4);
+        seg.vaddr = this._u32(bytes, off + 8);
+        seg.paddr = this._u32(bytes, off + 12);
+        seg.filesz = this._u32(bytes, off + 16);
+        seg.memsz = this._u32(bytes, off + 20);
+        seg.flags = this._u32(bytes, off + 24);
+        seg.align = this._u32(bytes, off + 28);
+      }
+
+      // Decode permission flags
+      seg.permR = !!(seg.flags & 4);
+      seg.permW = !!(seg.flags & 2);
+      seg.permX = !!(seg.flags & 1);
+      seg.permStr = (seg.permR ? 'R' : '-') + (seg.permW ? 'W' : '-') + (seg.permX ? 'X' : '-');
+
+      elf.segments.push(seg);
+    }
+
+    // ── Section headers ───────────────────────────────────────────
+    elf.sections = [];
+    const maxSections = Math.min(elf.shnum, 256); // Safety cap
+
+    // First, locate section header string table
+    let shstrtabOff = 0, shstrtabSize = 0;
+    if (elf.shstrndx < maxSections && elf.shoff > 0) {
+      const stOff = elf.shoff + elf.shstrndx * elf.shentsize;
+      if (stOff + elf.shentsize <= bytes.length) {
+        if (this._is64) {
+          shstrtabOff = this._u64(bytes, stOff + 24);
+          shstrtabSize = this._u64(bytes, stOff + 32);
+        } else {
+          shstrtabOff = this._u32(bytes, stOff + 16);
+          shstrtabSize = this._u32(bytes, stOff + 20);
+        }
+      }
+    }
+
+    for (let i = 0; i < maxSections; i++) {
+      const off = elf.shoff + i * elf.shentsize;
+      if (off + elf.shentsize > bytes.length) break;
+
+      const sec = {};
+      sec.nameIdx = this._u32(bytes, off);
+      sec.type = this._u32(bytes, off + 4);
+
+      if (this._is64) {
+        sec.flags = this._u64(bytes, off + 8);
+        sec.addr = this._u64(bytes, off + 16);
+        sec.offset = this._u64(bytes, off + 24);
+        sec.size = this._u64(bytes, off + 32);
+        sec.link = this._u32(bytes, off + 40);
+        sec.info = this._u32(bytes, off + 44);
+        sec.addralign = this._u64(bytes, off + 48);
+        sec.entsize = this._u64(bytes, off + 56);
+      } else {
+        sec.flags = this._u32(bytes, off + 8);
+        sec.addr = this._u32(bytes, off + 12);
+        sec.offset = this._u32(bytes, off + 16);
+        sec.size = this._u32(bytes, off + 20);
+        sec.link = this._u32(bytes, off + 24);
+        sec.info = this._u32(bytes, off + 28);
+        sec.addralign = this._u32(bytes, off + 32);
+        sec.entsize = this._u32(bytes, off + 36);
+      }
+
+      // Read section name from string table
+      sec.name = this._readStringTable(bytes, shstrtabOff, shstrtabSize, sec.nameIdx);
+      sec.typeStr = ElfRenderer.SHT_TYPE[sec.type] || `0x${sec.type.toString(16).toUpperCase()}`;
+
+      // Decode section flags
+      sec.flagsList = [];
+      for (const [bit, name] of Object.entries(ElfRenderer.SHF)) {
+        if (sec.flags & Number(bit)) sec.flagsList.push(name);
+      }
+      sec.flagsStr = sec.flagsList.join(' | ') || 'None';
+
+      sec.isWritable = !!(sec.flags & 0x1);
+      sec.isAlloc = !!(sec.flags & 0x2);
+      sec.isExec = !!(sec.flags & 0x4);
+
+      // Calculate entropy for allocated sections with file content
+      if (sec.size > 0 && sec.type !== 8 /* NOBITS */ && sec.offset + sec.size <= bytes.length) {
+        sec.entropy = this._entropy(bytes, sec.offset, Math.min(sec.size, 1048576));
+      } else {
+        sec.entropy = 0;
+      }
+
+      elf.sections.push(sec);
+    }
+
+    // ── Interpreter (PT_INTERP) ───────────────────────────────────
+    elf.interpreter = '';
+    const interpSeg = elf.segments.find(s => s.type === 3); // PT_INTERP
+    if (interpSeg && interpSeg.offset + interpSeg.filesz <= bytes.length) {
+      elf.interpreter = this._str(bytes, interpSeg.offset, interpSeg.filesz);
+    }
+
+    // ── Dynamic section parsing ───────────────────────────────────
+    elf.dynamic = [];
+    elf.neededLibs = [];
+    elf.soname = '';
+    elf.rpath = '';
+    elf.runpath = '';
+    elf.dynamicFlags = 0;
+    elf.dynamicFlags1 = 0;
+
+    const dynSeg = elf.segments.find(s => s.type === 2); // PT_DYNAMIC
+    if (dynSeg && dynSeg.offset + dynSeg.filesz <= bytes.length) {
+      // First find the STRTAB address so we can resolve DT_NEEDED names
+      let dynStrtabAddr = 0;
+      let dynStrtabSize = 0;
+      const entSize = this._is64 ? 16 : 8;
+      const maxDynEntries = Math.min(Math.floor(dynSeg.filesz / entSize), 2000);
+
+      // First pass: find STRTAB
+      for (let i = 0; i < maxDynEntries; i++) {
+        const eoff = dynSeg.offset + i * entSize;
+        if (eoff + entSize > bytes.length) break;
+        const tag = this._is64 ? this._u64(bytes, eoff) : this._u32(bytes, eoff);
+        const val = this._is64 ? this._u64(bytes, eoff + 8) : this._u32(bytes, eoff + 4);
+        if (tag === 0) break; // DT_NULL
+        if (tag === 5) dynStrtabAddr = val; // DT_STRTAB
+        if (tag === 10) dynStrtabSize = val; // DT_STRSZ
+      }
+
+      // Resolve strtab address to file offset
+      let dynStrtabOff = 0;
+      if (dynStrtabAddr > 0) {
+        // Find which segment contains the strtab address
+        for (const seg of elf.segments) {
+          if (seg.type === 1 && dynStrtabAddr >= seg.vaddr && dynStrtabAddr < seg.vaddr + seg.filesz) {
+            dynStrtabOff = seg.offset + (dynStrtabAddr - seg.vaddr);
+            break;
+          }
+        }
+        // Fallback: try sections
+        if (dynStrtabOff === 0) {
+          for (const sec of elf.sections) {
+            if (sec.name === '.dynstr' && sec.offset > 0) {
+              dynStrtabOff = sec.offset;
+              dynStrtabSize = sec.size;
+              break;
+            }
+          }
+        }
+      }
+
+      // Second pass: parse all entries
+      for (let i = 0; i < maxDynEntries; i++) {
+        const eoff = dynSeg.offset + i * entSize;
+        if (eoff + entSize > bytes.length) break;
+        const tag = this._is64 ? this._u64(bytes, eoff) : this._u32(bytes, eoff);
+        const val = this._is64 ? this._u64(bytes, eoff + 8) : this._u32(bytes, eoff + 4);
+        if (tag === 0) break; // DT_NULL
+
+        const tagName = ElfRenderer.DT_TAG[tag] || `0x${tag.toString(16).toUpperCase()}`;
+        let valStr = this._hex(val, this._is64 ? 16 : 8);
+
+        // Resolve string values
+        if ((tag === 1 || tag === 14 || tag === 15 || tag === 29) && dynStrtabOff > 0) {
+          // DT_NEEDED, DT_SONAME, DT_RPATH, DT_RUNPATH
+          const name = this._readStringTable(bytes, dynStrtabOff, dynStrtabSize || 0x10000, val);
+          if (name) valStr = name;
+          if (tag === 1) elf.neededLibs.push(name);
+          if (tag === 14) elf.soname = name;
+          if (tag === 15) elf.rpath = name;
+          if (tag === 29) elf.runpath = name;
+        }
+
+        if (tag === 30) elf.dynamicFlags = val;  // DT_FLAGS
+        if (tag === 0x6FFFFFFB) elf.dynamicFlags1 = val; // DT_FLAGS_1
+
+        elf.dynamic.push({ tag, tagName, val, valStr });
+      }
+    }
+
+    // ── Symbol tables ─────────────────────────────────────────────
+    elf.dynsyms = [];
+    elf.symtab = [];
+
+    this._parseSymbolTable(bytes, elf, '.dynsym', '.dynstr', elf.dynsyms);
+    this._parseSymbolTable(bytes, elf, '.symtab', '.strtab', elf.symtab);
+
+    // ── Note sections ─────────────────────────────────────────────
+    elf.notes = [];
+    for (const seg of elf.segments) {
+      if (seg.type !== 4) continue; // PT_NOTE
+      this._parseNotes(bytes, seg.offset, seg.filesz, elf.notes);
+    }
+    // Also check SHT_NOTE sections if no PT_NOTE found
+    if (elf.notes.length === 0) {
+      for (const sec of elf.sections) {
+        if (sec.type !== 7) continue; // SHT_NOTE
+        this._parseNotes(bytes, sec.offset, sec.size, elf.notes);
+      }
+    }
+
+    // ── Security features ─────────────────────────────────────────
+    elf.security = this._detectSecurity(elf);
+
+    // ── String extraction ─────────────────────────────────────────
+    elf.strings = this._extractStrings(bytes, elf);
+
+    return elf;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Symbol table parser
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _parseSymbolTable(bytes, elf, symSecName, strSecName, dest) {
+    const symSec = elf.sections.find(s => s.name === symSecName);
+    const strSec = elf.sections.find(s => s.name === strSecName);
+    if (!symSec || !strSec) return;
+
+    const entSize = this._is64 ? 24 : 16;
+    const count = symSec.entsize > 0 ? Math.floor(symSec.size / symSec.entsize) : Math.floor(symSec.size / entSize);
+    const maxSyms = Math.min(count, 10000); // Safety cap
+
+    for (let i = 0; i < maxSyms; i++) {
+      const off = symSec.offset + i * entSize;
+      if (off + entSize > bytes.length) break;
+
+      const sym = {};
+      if (this._is64) {
+        sym.nameIdx = this._u32(bytes, off);
+        sym.info = bytes[off + 4];
+        sym.other = bytes[off + 5];
+        sym.shndx = this._u16(bytes, off + 6);
+        sym.value = this._u64(bytes, off + 8);
+        sym.size = this._u64(bytes, off + 16);
+      } else {
+        sym.nameIdx = this._u32(bytes, off);
+        sym.value = this._u32(bytes, off + 4);
+        sym.size = this._u32(bytes, off + 8);
+        sym.info = bytes[off + 12];
+        sym.other = bytes[off + 13];
+        sym.shndx = this._u16(bytes, off + 14);
+      }
+
+      sym.bind = sym.info >> 4;
+      sym.type = sym.info & 0xF;
+      sym.visibility = sym.other & 0x3;
+
+      sym.bindStr = ElfRenderer.STB[sym.bind] || `${sym.bind}`;
+      sym.typeStr = ElfRenderer.STT[sym.type] || `${sym.type}`;
+      sym.visStr = ElfRenderer.STV[sym.visibility] || `${sym.visibility}`;
+
+      // Read name from string table
+      sym.name = this._readStringTable(bytes, strSec.offset, strSec.size, sym.nameIdx);
+
+      // Skip empty/null symbols
+      if (sym.name || sym.value || sym.type) {
+        dest.push(sym);
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Note section parser
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _parseNotes(bytes, offset, size, dest) {
+    if (offset + size > bytes.length) return;
+    const maxNotes = 32; // Safety cap
+    let pos = offset;
+    const end = offset + size;
+    let count = 0;
+
+    while (pos + 12 <= end && count < maxNotes) {
+      const namesz = this._u32(bytes, pos);
+      const descsz = this._u32(bytes, pos + 4);
+      const type = this._u32(bytes, pos + 8);
+      pos += 12;
+
+      const nameEnd = pos + namesz;
+      if (nameEnd > end) break;
+      const name = namesz > 0 ? this._str(bytes, pos, namesz) : '';
+      pos = (nameEnd + 3) & ~3; // Align to 4 bytes
+
+      const descStart = pos;
+      const descEnd = pos + descsz;
+      if (descEnd > end) break;
+
+      const note = { name, type, descsz };
+
+      // Interpret known note types
+      if (name === 'GNU' && type === 1 && descsz >= 16) {
+        // NT_GNU_ABI_TAG
+        const os = this._u32(bytes, descStart);
+        const major = this._u32(bytes, descStart + 4);
+        const minor = this._u32(bytes, descStart + 8);
+        const patch = this._u32(bytes, descStart + 12);
+        const osName = os === 0 ? 'Linux' : os === 1 ? 'GNU' : os === 2 ? 'Solaris' : os === 3 ? 'FreeBSD' : `OS(${os})`;
+        note.desc = `ABI: ${osName} ${major}.${minor}.${patch}`;
+        note.typeStr = 'GNU_ABI_TAG';
+      } else if (name === 'GNU' && type === 3 && descsz > 0) {
+        // NT_GNU_BUILD_ID
+        const idBytes = bytes.subarray(descStart, Math.min(descStart + descsz, descStart + 40));
+        note.desc = 'Build ID: ' + Array.from(idBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        note.typeStr = 'GNU_BUILD_ID';
+      } else if (name === 'GNU' && type === 5) {
+        note.desc = 'GNU property note';
+        note.typeStr = 'GNU_PROPERTY';
+      } else {
+        note.desc = `${name} type=${type} (${descsz} bytes)`;
+        note.typeStr = `TYPE_${type}`;
+      }
+
+      dest.push(note);
+      pos = (descEnd + 3) & ~3;
+      count++;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Security feature detection
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _detectSecurity(elf) {
+    const sec = {};
+
+    // RELRO: Partial = has PT_GNU_RELRO, Full = also has BIND_NOW
+    const hasRelro = elf.segments.some(s => s.type === 0x6474E552); // PT_GNU_RELRO
+    const hasBindNow = !!(elf.dynamicFlags & 0x8) || // DF_BIND_NOW
+                       !!(elf.dynamicFlags1 & 0x1);  // DF_1_NOW
+    sec.relro = hasRelro ? (hasBindNow ? 'Full' : 'Partial') : 'None';
+
+    // Stack canary: presence of __stack_chk_fail in dynamic symbols
+    sec.stackCanary = elf.dynsyms.some(s => s.name === '__stack_chk_fail' || s.name === '__stack_chk_guard');
+
+    // NX (non-executable stack): PT_GNU_STACK without execute flag
+    const gnuStack = elf.segments.find(s => s.type === 0x6474E551); // PT_GNU_STACK
+    if (gnuStack) {
+      sec.nx = !gnuStack.permX; // NX enabled if stack is NOT executable
+    } else {
+      sec.nx = false; // No GNU_STACK means default (may be executable on some systems)
+    }
+
+    // PIE: ELF type is DYN and has INTERP (shared object used as executable)
+    // Pure shared libraries are DYN but without INTERP
+    const hasInterp = elf.segments.some(s => s.type === 3); // PT_INTERP
+    if (elf.isDyn && hasInterp) {
+      sec.pie = true;
+    } else if (elf.isDyn && !hasInterp) {
+      sec.pie = 'DSO'; // Dynamic shared object (always position-independent)
+    } else {
+      sec.pie = false;
+    }
+
+    // FORTIFY: presence of *_chk symbols
+    sec.fortify = elf.dynsyms.some(s => s.name && /_chk(@|$)/.test(s.name));
+    sec.fortifyCount = elf.dynsyms.filter(s => s.name && /_chk(@|$)/.test(s.name)).length;
+
+    // RPATH/RUNPATH (security concern — can be hijacked)
+    sec.rpath = elf.rpath;
+    sec.runpath = elf.runpath;
+
+    return sec;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  String extraction
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _extractStrings(bytes, elf) {
+    const strings = [];
+    const seen = new Set();
+    const maxStrings = 10000;
+    const minLen = 4;
+
+    // Extract from loadable sections that are likely to contain readable content
+    const stringSections = elf.sections.filter(s =>
+      s.size > 0 && s.type !== 8 /* NOBITS */ && s.offset + s.size <= bytes.length &&
+      (s.name === '.rodata' || s.name === '.data' || s.name === '.comment' ||
+       s.name === '.note.gnu.build-id' || s.name === '.note.ABI-tag' ||
+       (s.isAlloc && !s.isExec && s.type === 1 /* PROGBITS */))
+    );
+
+    // If no recognized sections, scan all PROGBITS with ALLOC flag
+    const scanSections = stringSections.length > 0
+      ? stringSections
+      : elf.sections.filter(s => s.size > 0 && s.type === 1 && s.offset + s.size <= bytes.length);
+
+    for (const sec of scanSections) {
+      if (strings.length >= maxStrings) break;
+      let current = '';
+      const end = Math.min(sec.offset + sec.size, bytes.length);
+
+      for (let i = sec.offset; i < end; i++) {
+        const c = bytes[i];
+        if (c >= 0x20 && c < 0x7F) {
+          current += String.fromCharCode(c);
+        } else {
+          if (current.length >= minLen && !seen.has(current)) {
+            seen.add(current);
+            strings.push(current);
+            if (strings.length >= maxStrings) break;
+          }
+          current = '';
+        }
+      }
+      if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
+        seen.add(current);
+        strings.push(current);
+      }
+    }
+
+    return strings;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Render — builds DOM for viewer pane
+  // ═══════════════════════════════════════════════════════════════════════
+
+  render(buffer, fileName) {
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+    this._bytes = bytes;
+    const wrap = document.createElement('div');
+    wrap.className = 'elf-view';
+
+    try {
+      const elf = this._parse(bytes);
+
+      // ── Banner ─────────────────────────────────────────────────────
+      const banner = document.createElement('div');
+      banner.className = 'doc-extraction-banner';
+      const bType = elf.isDyn && elf.interpreter ? 'PIE Executable' : elf.isDyn ? 'Shared Object' : elf.isExec ? 'Executable' : elf.isRel ? 'Relocatable' : elf.isCore ? 'Core Dump' : 'ELF';
+      banner.innerHTML = `<strong>ELF Analysis — ${this._esc(bType)}</strong> ` +
+        `<span class="doc-meta-tag">${this._esc(elf.ident.classStr)}</span> ` +
+        `<span class="doc-meta-tag">${this._esc(elf.machineStr)}</span> ` +
+        `<span class="doc-meta-tag">${this._esc(elf.ident.dataStr)}</span> ` +
+        `<span class="doc-meta-tag">${elf.sections.length} sections</span> ` +
+        `<span class="doc-meta-tag">${elf.segments.length} segments</span>` +
+        (elf.neededLibs.length > 0 ? ` <span class="doc-meta-tag">${elf.neededLibs.length} libraries</span>` : '');
+      wrap.appendChild(banner);
+
+      // ── ELF Header ──────────────────────────────────────────────
+      wrap.appendChild(this._renderSection('📋 ELF Header', this._renderHeaders(elf)));
+
+      // ── Security Features ───────────────────────────────────────
+      wrap.appendChild(this._renderSection('🛡 Security Features', this._renderSecurity(elf)));
+
+      // ── Program Headers (Segments) ──────────────────────────────
+      if (elf.segments.length > 0) {
+        wrap.appendChild(this._renderSection(
+          '📦 Segments (' + elf.segments.length + ')',
+          this._renderSegments(elf)
+        ));
+      }
+
+      // ── Section Headers ─────────────────────────────────────────
+      if (elf.sections.length > 0) {
+        wrap.appendChild(this._renderSection(
+          '📑 Sections (' + elf.sections.length + ')',
+          this._renderSections(elf)
+        ));
+      }
+
+      // ── Dynamic Libraries ───────────────────────────────────────
+      if (elf.neededLibs.length > 0 || elf.soname || elf.dynamic.length > 0) {
+        wrap.appendChild(this._renderSection(
+          '📚 Dynamic Linking' + (elf.neededLibs.length > 0 ? ' (' + elf.neededLibs.length + ' libraries)' : ''),
+          this._renderDynamic(elf)
+        ));
+      }
+
+      // ── Symbols ─────────────────────────────────────────────────
+      const importSyms = elf.dynsyms.filter(s => s.name && s.shndx === 0 && (s.type === 2 || s.bind === 1 || s.bind === 2));
+      const exportSyms = elf.dynsyms.filter(s => s.name && s.shndx !== 0 && (s.bind === 1 || s.bind === 2));
+
+      if (importSyms.length > 0) {
+        wrap.appendChild(this._renderSection(
+          '📥 Imported Symbols (' + importSyms.length + ')',
+          this._renderSymbols(importSyms, true),
+          importSyms.length
+        ));
+      }
+
+      if (exportSyms.length > 0) {
+        wrap.appendChild(this._renderSection(
+          '📤 Exported Symbols (' + exportSyms.length + ')',
+          this._renderSymbols(exportSyms, false),
+          exportSyms.length
+        ));
+      }
+
+      // ── Notes ───────────────────────────────────────────────────
+      if (elf.notes.length > 0) {
+        wrap.appendChild(this._renderSection(
+          '📝 Notes (' + elf.notes.length + ')',
+          this._renderNotes(elf)
+        ));
+      }
+
+      // ── Strings ─────────────────────────────────────────────────
+      if (elf.strings.length > 0) {
+        wrap.appendChild(this._renderSection(
+          '🔤 Strings (' + elf.strings.length + ')',
+          this._renderStrings(elf)
+        ));
+      }
+
+    } catch (err) {
+      const errBox = document.createElement('div');
+      errBox.className = 'elf-error';
+      errBox.textContent = 'ELF parsing error: ' + err.message;
+      wrap.appendChild(errBox);
+    }
+
+    return wrap;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Section renderers (DOM builders)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _renderSection(title, contentEl, rowCount) {
+    const sec = document.createElement('details');
+    sec.className = 'elf-section';
+    const collapse = rowCount && rowCount > 100;
+    sec.open = !collapse;
+    const sum = document.createElement('summary');
+    sum.innerHTML = this._esc(title) + (collapse ? ` <span class="bin-collapse-note">${rowCount} rows — click to expand</span>` : '');
+    sec.appendChild(sum);
+    sec.appendChild(contentEl);
+    return sec;
+  }
+
+  _renderHeaders(elf) {
+    const digits = this._is64 ? 16 : 8;
+    const rows = [
+      ['Class', elf.ident.classStr],
+      ['Endianness', elf.ident.dataStr],
+      ['OS/ABI', elf.ident.osabiStr],
+      ['Type', elf.typeStr],
+      ['Machine', elf.machineStr],
+      ['Entry Point', this._hex(elf.entry, digits)],
+      ['Flags', this._hex(elf.flags, 8)],
+      ['Program Headers', `${elf.phnum} entries × ${elf.phentsize} bytes (offset ${this._hex(elf.phoff, digits)})`],
+      ['Section Headers', `${elf.shnum} entries × ${elf.shentsize} bytes (offset ${this._hex(elf.shoff, digits)})`],
+      ['Header Size', `${elf.ehsize} bytes`],
+    ];
+    if (elf.interpreter) {
+      rows.push(['Interpreter', elf.interpreter]);
+    }
+    if (elf.soname) {
+      rows.push(['SONAME', elf.soname]);
+    }
+    return this._buildTable(['Field', 'Value'], rows);
+  }
+
+  _renderSecurity(elf) {
+    const s = elf.security;
+    const div = document.createElement('div');
+    div.className = 'elf-security-grid';
+
+    const features = [
+      ['RELRO (Relocation Read-Only)', s.relro !== 'None', s.relro === 'Full'
+        ? 'Full RELRO — GOT is read-only, prevents GOT overwrite attacks'
+        : s.relro === 'Partial'
+          ? 'Partial RELRO — some sections read-only after relocation'
+          : 'No RELRO — GOT is writable, vulnerable to GOT overwrite'],
+      ['Stack Canary', s.stackCanary, s.stackCanary
+        ? 'Stack canary enabled — buffer overflow protection via __stack_chk_fail'
+        : 'No stack canary detected — vulnerable to stack buffer overflows'],
+      ['NX (Non-Executable Stack)', s.nx, s.nx
+        ? 'NX enabled — stack is non-executable, prevents shellcode on stack'
+        : 'NX disabled — stack is executable, shellcode can run from stack'],
+      ['PIE (Position Independent)', s.pie === true || s.pie === 'DSO', s.pie === true
+        ? 'PIE enabled — full ASLR for executable'
+        : s.pie === 'DSO'
+          ? 'Shared object — inherently position-independent'
+          : 'Not PIE — fixed load address, limited ASLR'],
+      ['FORTIFY_SOURCE', s.fortify, s.fortify
+        ? `FORTIFY enabled — ${s.fortifyCount} hardened function(s) detected`
+        : 'No FORTIFY detected — standard libc functions used'],
+    ];
+
+    for (const [name, enabled, desc] of features) {
+      const row = document.createElement('div');
+      row.className = 'elf-sec-row' + (enabled ? ' elf-sec-on' : ' elf-sec-off');
+      const icon = name.includes('RELRO') && s.relro === 'Partial' ? '⚠️' : (enabled ? '✅' : '❌');
+      row.innerHTML = `<span class="elf-sec-icon">${icon}</span>` +
+        `<span class="elf-sec-name">${this._esc(name)}</span>` +
+        `<span class="elf-sec-desc">${this._esc(desc)}</span>`;
+      div.appendChild(row);
+    }
+
+    // RPATH/RUNPATH warning
+    if (s.rpath || s.runpath) {
+      const rpathRow = document.createElement('div');
+      rpathRow.className = 'elf-sec-row elf-sec-off';
+      const path = s.rpath || s.runpath;
+      const label = s.rpath ? 'RPATH' : 'RUNPATH';
+      rpathRow.innerHTML = `<span class="elf-sec-icon">⚠️</span>` +
+        `<span class="elf-sec-name">${label}</span>` +
+        `<span class="elf-sec-desc">${label} set to "${this._esc(path)}" — potential library hijacking vector</span>`;
+      div.appendChild(rpathRow);
+    }
+
+    return div;
+  }
+
+  _renderSegments(elf) {
+    const digits = this._is64 ? 16 : 8;
+    const rows = elf.segments.map((seg, i) => [
+      i.toString(),
+      seg.typeStr,
+      this._hex(seg.offset, digits),
+      this._hex(seg.vaddr, digits),
+      seg.filesz.toLocaleString(),
+      seg.memsz.toLocaleString(),
+      seg.permStr,
+      this._hex(seg.align, 4),
+    ]);
+    const table = this._buildTable(['#', 'Type', 'Offset', 'VirtAddr', 'FileSize', 'MemSize', 'Flags', 'Align'], rows,
+      (row, i) => {
+        if (elf.segments[i].permW && elf.segments[i].permX) row.classList.add('elf-highlight');
+        const seg = elf.segments[i];
+        if (seg.filesz > 0) {
+          row.classList.add('bin-clickable');
+          row.addEventListener('click', () => {
+            const next = row.nextElementSibling;
+            if (next && next.classList.contains('bin-hexdump-row')) {
+              next.remove(); row.classList.remove('bin-expanded');
+            } else {
+              const hr = document.createElement('tr'); hr.className = 'bin-hexdump-row';
+              const td = document.createElement('td'); td.colSpan = 8;
+              td.appendChild(this._renderHexDump(seg.offset, seg.filesz));
+              hr.appendChild(td); row.after(hr); row.classList.add('bin-expanded');
+            }
+          });
+        }
+      }
+    );
+    return table;
+  }
+
+  _renderSections(elf) {
+    const digits = this._is64 ? 16 : 8;
+    const rows = elf.sections.map((sec, i) => [
+      i.toString(),
+      sec.name || '(null)',
+      sec.typeStr,
+      this._hex(sec.addr, digits),
+      this._hex(sec.offset, digits),
+      sec.size.toLocaleString(),
+      sec.flagsStr,
+      sec.entropy > 0 ? sec.entropy.toFixed(3) : '—',
+    ]);
+    return this._buildTable(['#', 'Name', 'Type', 'Address', 'Offset', 'Size', 'Flags', 'Entropy'], rows,
+      (row, i) => {
+        const sec = elf.sections[i];
+        if (sec.entropy > 7.0) row.classList.add('elf-highlight');
+        if (sec.isWritable && sec.isExec) row.classList.add('elf-highlight');
+        if (sec.size > 0 && sec.offset > 0) {
+          row.classList.add('bin-clickable');
+          row.addEventListener('click', () => {
+            const next = row.nextElementSibling;
+            if (next && next.classList.contains('bin-hexdump-row')) {
+              next.remove(); row.classList.remove('bin-expanded');
+            } else {
+              const hr = document.createElement('tr'); hr.className = 'bin-hexdump-row';
+              const td = document.createElement('td'); td.colSpan = 8;
+              td.appendChild(this._renderHexDump(sec.offset, sec.size));
+              hr.appendChild(td); row.after(hr); row.classList.add('bin-expanded');
+            }
+          });
+        }
+      }
+    );
+  }
+
+  _renderDynamic(elf) {
+    const div = document.createElement('div');
+
+    // Needed libraries
+    if (elf.neededLibs.length > 0) {
+      const libDiv = document.createElement('div');
+      libDiv.className = 'elf-lib-list';
+      const h = document.createElement('h4');
+      h.textContent = 'Required Libraries';
+      h.style.margin = '0 0 6px 0';
+      libDiv.appendChild(h);
+      for (const lib of elf.neededLibs) {
+        const item = document.createElement('div');
+        item.className = 'elf-lib-item';
+        item.textContent = lib;
+        libDiv.appendChild(item);
+      }
+      div.appendChild(libDiv);
+    }
+
+    // SONAME
+    if (elf.soname) {
+      const p = document.createElement('p');
+      p.innerHTML = `<strong>SONAME:</strong> ${this._esc(elf.soname)}`;
+      p.style.margin = '8px 0';
+      div.appendChild(p);
+    }
+
+    // RPATH / RUNPATH
+    if (elf.rpath) {
+      const p = document.createElement('p');
+      p.innerHTML = `<strong>RPATH:</strong> <span class="elf-warn-text">${this._esc(elf.rpath)}</span>`;
+      p.style.margin = '4px 0';
+      div.appendChild(p);
+    }
+    if (elf.runpath) {
+      const p = document.createElement('p');
+      p.innerHTML = `<strong>RUNPATH:</strong> <span class="elf-warn-text">${this._esc(elf.runpath)}</span>`;
+      p.style.margin = '4px 0';
+      div.appendChild(p);
+    }
+
+    // Dynamic section entries (collapsed by default)
+    if (elf.dynamic.length > 0) {
+      const details = document.createElement('details');
+      details.style.marginTop = '10px';
+      const sum = document.createElement('summary');
+      sum.textContent = `All Dynamic Entries (${elf.dynamic.length})`;
+      sum.style.cursor = 'pointer';
+      details.appendChild(sum);
+
+      const rows = elf.dynamic.map(d => [d.tagName, d.valStr]);
+      details.appendChild(this._buildTable(['Tag', 'Value'], rows));
+      div.appendChild(details);
+    }
+
+    return div;
+  }
+
+  _renderSymbols(syms, isImport) {
+    const digits = this._is64 ? 16 : 8;
+    const suspMap = ElfRenderer.SUSPICIOUS_SYMBOLS;
+
+    const rows = syms.map(sym => {
+      const suspicious = suspMap[sym.name];
+      const nameHtml = suspicious
+        ? `<span class="elf-suspicious-sym" title="${this._esc(suspicious)}">${this._esc(sym.name)} ⚠️</span>`
+        : this._esc(sym.name);
+      return [
+        nameHtml,
+        sym.typeStr,
+        sym.bindStr,
+        sym.visStr,
+        isImport ? '—' : this._hex(sym.value, digits),
+        suspicious ? `<span class="elf-suspicious-desc">${this._esc(suspicious)}</span>` : '',
+      ];
+    });
+
+    const table = this._buildTable(
+      ['Name', 'Type', 'Bind', 'Vis', 'Value', isImport ? 'Risk' : 'Info'],
+      rows,
+      (row, i) => {
+        if (suspMap[syms[i].name]) {
+          row.classList.add('elf-suspicious-row');
+          // Clickable info card for suspicious symbols
+          row.style.cursor = 'pointer';
+          row.addEventListener('click', () => {
+            const next = row.nextElementSibling;
+            if (next && next.classList.contains('bin-info-card-row')) {
+              next.remove(); return;
+            }
+            const info = suspMap[syms[i].name];
+            const detail = ElfRenderer.SUSPICIOUS_SYMBOLS_DETAIL[syms[i].name];
+            const cat = this._categorizeElfSymbol(syms[i].name);
+            const cardRow = document.createElement('tr'); cardRow.className = 'bin-info-card-row';
+            const td = document.createElement('td'); td.colSpan = 6;
+            const card = document.createElement('div'); card.className = 'bin-info-card';
+            let html = `<strong>${this._esc(syms[i].name)}</strong>` +
+              (cat ? ` <span class="bin-info-card-cat ${cat.cls}">${this._esc(cat.cat)}</span>` : ` <span class="bin-info-card-cat cat-inject">Suspicious</span>`);
+            if (detail) {
+              html += `<div class="bin-tooltip-section"><span class="bin-tooltip-label">What it does</span>${this._esc(detail.desc)}</div>`;
+              html += `<div class="bin-tooltip-section"><span class="bin-tooltip-label">⚠ Why suspicious</span>${this._esc(detail.context)}</div>`;
+              if (detail.mitre) html += `<div class="bin-tooltip-mitre">🔗 MITRE ATT&CK: ${this._esc(detail.mitre)}</div>`;
+            } else {
+              html += `<p class="bin-info-card-desc">${this._esc(info)}</p>`;
+            }
+            card.innerHTML = html;
+            td.appendChild(card); cardRow.appendChild(td); row.after(cardRow);
+          });
+        }
+      },
+      true
+    );
+
+    // Wrap table in a container for search bar
+    const wrapper = document.createElement('div');
+    this._addSearchBar(wrapper, () => Array.from(table.querySelectorAll('tbody tr:not(.bin-info-card-row)')), 'Filter symbols…', '.elf-suspicious-row');
+    wrapper.appendChild(table);
+    return wrapper;
+  }
+
+  _renderNotes(elf) {
+    const rows = elf.notes.map(n => [n.typeStr, n.name, n.desc, `${n.descsz} bytes`]);
+    return this._buildTable(['Type', 'Owner', 'Description', 'Size'], rows);
+  }
+
+  _renderStrings(elf) {
+    const div = document.createElement('div');
+    div.className = 'elf-strings-container';
+
+    const list = document.createElement('div');
+    list.className = 'elf-strings-list';
+
+    for (const s of elf.strings) {
+      const item = document.createElement('div');
+      item.className = 'elf-string-item';
+      item.textContent = s;
+      list.appendChild(item);
+    }
+
+    // Search bar for strings
+    this._addSearchBar(div, () => Array.from(list.querySelectorAll('.elf-string-item')), 'Filter strings…');
+    div.appendChild(list);
+    return div;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Interactive helpers — hex dump, search bar
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _renderHexDump(offset, size, maxInitial) {
+    maxInitial = maxInitial || 4096;
+    const bytes = this._bytes;
+    const end = Math.min(offset + size, bytes.length);
+    const totalBytes = end - offset;
+    if (totalBytes <= 0) {
+      const empty = document.createElement('div');
+      empty.className = 'bin-hexdump';
+      empty.textContent = '(empty section)';
+      return empty;
+    }
+    const container = document.createElement('div');
+    let shown = Math.min(totalBytes, maxInitial);
+    const buildLines = (start, count) => {
+      const frag = document.createDocumentFragment();
+      const lineEnd = Math.min(start + count, totalBytes);
+      for (let i = start; i < lineEnd; i += 16) {
+        const line = document.createElement('div'); line.className = 'bin-hexdump-line';
+        const offSpan = document.createElement('span'); offSpan.className = 'bin-hexdump-offset';
+        offSpan.textContent = (offset + i).toString(16).toUpperCase().padStart(8, '0');
+        line.appendChild(offSpan);
+        let hexStr = '', ascStr = '';
+        for (let j = 0; j < 16; j++) {
+          if (i + j < totalBytes) {
+            const b = bytes[offset + i + j];
+            hexStr += b ? `<span class="bin-nz">${b.toString(16).padStart(2,'0').toUpperCase()}</span> ` : '00 ';
+            ascStr += (b >= 0x20 && b < 0x7F) ? String.fromCharCode(b) : '.';
+          } else { hexStr += '   '; ascStr += ' '; }
+          if (j === 7) hexStr += ' ';
+        }
+        const hexSpan = document.createElement('span'); hexSpan.className = 'bin-hexdump-hex';
+        hexSpan.innerHTML = hexStr; line.appendChild(hexSpan);
+        const ascSpan = document.createElement('span'); ascSpan.className = 'bin-hexdump-ascii';
+        ascSpan.textContent = ascStr; line.appendChild(ascSpan);
+        frag.appendChild(line);
+      }
+      return frag;
+    };
+    const dump = document.createElement('div'); dump.className = 'bin-hexdump';
+    dump.appendChild(buildLines(0, shown)); container.appendChild(dump);
+    if (totalBytes > shown) {
+      const btn = document.createElement('button'); btn.className = 'bin-hexdump-show-more';
+      btn.textContent = `Show more (${(totalBytes - shown).toLocaleString()} bytes remaining)`;
+      btn.addEventListener('click', () => {
+        const next = Math.min(shown + 4096, totalBytes);
+        dump.appendChild(buildLines(shown, next - shown)); shown = next;
+        if (shown >= totalBytes) btn.remove();
+        else btn.textContent = `Show more (${(totalBytes - shown).toLocaleString()} bytes remaining)`;
+      });
+      container.appendChild(btn);
+    }
+    return container;
+  }
+
+  _addSearchBar(container, getItems, placeholder, riskSelector) {
+    const wrap = document.createElement('div'); wrap.className = 'bin-search-wrap';
+    const input = document.createElement('input'); input.type = 'text';
+    input.placeholder = placeholder || 'Search…';
+    const count = document.createElement('span'); count.className = 'bin-search-count';
+    wrap.appendChild(input);
+    let riskOnly = false, riskBtn = null;
+    if (riskSelector) {
+      riskBtn = document.createElement('button');
+      riskBtn.className = 'bin-risk-toggle';
+      riskBtn.textContent = '⚠ Risky';
+      riskBtn.title = 'Show only risky/suspicious items';
+      wrap.appendChild(riskBtn);
+    }
+    wrap.appendChild(count);
+    const applyFilter = () => {
+      const q = input.value.toLowerCase().trim();
+      const items = getItems();
+      let visible = 0;
+      for (const item of items) {
+        const text = item.textContent.toLowerCase();
+        const matchText = !q || text.includes(q);
+        const matchRisk = !riskOnly || item.querySelector(riskSelector) || item.matches(riskSelector);
+        const show = matchText && matchRisk;
+        item.classList.toggle('bin-hidden', !show);
+        if (show) visible++;
+      }
+      count.textContent = (q || riskOnly) ? `${visible}/${items.length}` : '';
+    };
+    input.addEventListener('input', applyFilter);
+    if (riskBtn) {
+      riskBtn.addEventListener('click', () => {
+        riskOnly = !riskOnly;
+        riskBtn.classList.toggle('active', riskOnly);
+        applyFilter();
+      });
+    }
+    container.insertBefore(wrap, container.firstChild);
+    return wrap;
+  }
+
+  _categorizeElfSymbol(name) {
+    const info = ElfRenderer.SUSPICIOUS_SYMBOLS[name];
+    if (!info) return null;
+    const lower = info.toLowerCase();
+    if (/debug|prevent/i.test(lower)) return { cat: 'Anti-Debug', cls: 'cat-antidebug' };
+    if (/injection|another.*process|process_vm/i.test(lower)) return { cat: 'Process Injection', cls: 'cat-inject' };
+    if (/execution|command|shell|exec/i.test(lower)) return { cat: 'Execution', cls: 'cat-exec' };
+    if (/network|socket|C2|exfiltration|backdoor|listener|connection|send|recv/i.test(lower)) return { cat: 'Networking', cls: 'cat-network' };
+    if (/privilege|setuid|setgid|capability|capset/i.test(lower)) return { cat: 'Privilege Escalation', cls: 'cat-cred' };
+    if (/rootkit|kernel.*module/i.test(lower)) return { cat: 'Rootkit', cls: 'cat-inject' };
+    if (/fileless|memfd|memory.*map|executable.*mem/i.test(lower)) return { cat: 'Fileless Execution', cls: 'cat-crypto' };
+    if (/deletion|forensic|self.*delet/i.test(lower)) return { cat: 'Anti-Forensics', cls: 'cat-file' };
+    if (/dynamic|dlopen|dlsym/i.test(lower)) return { cat: 'Dynamic Loading', cls: 'cat-recon' };
+    if (/mount|chroot|container|sandbox/i.test(lower)) return { cat: 'Sandbox Escape', cls: 'cat-antidebug' };
+    if (/monitor|surveillance|inotify|fanotify/i.test(lower)) return { cat: 'Surveillance', cls: 'cat-recon' };
+    if (/memory|mmap|mprotect/i.test(lower)) return { cat: 'Memory Manipulation', cls: 'cat-inject' };
+    if (/IPC|shared.*mem|message.*queue/i.test(lower)) return { cat: 'IPC', cls: 'cat-network' };
+    if (/process|fork|clone|spawn/i.test(lower)) return { cat: 'Process Control', cls: 'cat-exec' };
+    if (/ASLR|personality/i.test(lower)) return { cat: 'Evasion', cls: 'cat-antidebug' };
+    if (/dup2|descriptor/i.test(lower)) return { cat: 'FD Manipulation', cls: 'cat-exec' };
+    if (/keyctl|credential|keyring/i.test(lower)) return { cat: 'Credential Access', cls: 'cat-cred' };
+    if (/kexec|kernel/i.test(lower)) return { cat: 'Persistence', cls: 'cat-file' };
+    return { cat: 'Suspicious', cls: 'cat-inject' };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Table builder
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _buildTable(headers, rows, rowCallback, allowHtml) {
+    const tbl = document.createElement('table');
+    tbl.className = 'elf-table';
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    for (const h of headers) {
+      const th = document.createElement('th');
+      th.textContent = h;
+      hr.appendChild(th);
+    }
+    thead.appendChild(hr);
+    tbl.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    rows.forEach((cols, i) => {
+      const tr = document.createElement('tr');
+      for (const c of cols) {
+        const td = document.createElement('td');
+        if (allowHtml && typeof c === 'string' && c.includes('<')) {
+          td.innerHTML = c;
+        } else {
+          td.textContent = c;
+        }
+        tr.appendChild(td);
+      }
+      if (rowCallback) rowCallback(tr, i);
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    return tbl;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Security analysis — returns standard findings object
+  // ═══════════════════════════════════════════════════════════════════════
+
+  analyzeForSecurity(buffer, fileName) {
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+    const findings = {
+      risk: 'low',
+      hasMacros: false,
+      macroSize: 0,
+      macroHash: '',
+      autoExec: [],
+      modules: [],
+      externalRefs: [],
+      metadata: {},
+      interestingStrings: [],
+      elfInfo: null,
+    };
+
+    try {
+      const elf = this._parse(bytes);
+      findings.elfInfo = elf;
+
+      const issues = [];
+      let riskScore = 0;
+
+      // ── File type context ──────────────────────────────────────────
+      const bType = elf.isDyn && elf.interpreter ? 'PIE Executable' : elf.isDyn ? 'Shared Object' : elf.isExec ? 'Executable' : elf.isRel ? 'Relocatable' : elf.isCore ? 'Core Dump' : 'ELF';
+      findings.metadata = {
+        'Type': bType,
+        'Class': elf.ident.classStr,
+        'Endianness': elf.ident.dataStr,
+        'Machine': elf.machineStr,
+        'OS/ABI': elf.ident.osabiStr,
+        'Entry Point': this._hex(elf.entry, this._is64 ? 16 : 8),
+        'Segments': elf.segments.length.toString(),
+        'Sections': elf.sections.length.toString(),
+      };
+
+      if (elf.interpreter) findings.metadata['Interpreter'] = elf.interpreter;
+      if (elf.soname) findings.metadata['SONAME'] = elf.soname;
+      if (elf.neededLibs.length > 0) findings.metadata['Libraries'] = elf.neededLibs.length.toString();
+
+      // ── Security feature checks ────────────────────────────────────
+      if (elf.security.relro === 'None') {
+        issues.push('No RELRO — GOT is writable, vulnerable to GOT overwrite attacks');
+        riskScore += 1;
+      } else if (elf.security.relro === 'Partial') {
+        issues.push('Partial RELRO — GOT still partially writable');
+        riskScore += 0.5;
+      }
+
+      if (!elf.security.stackCanary) {
+        issues.push('No stack canary — vulnerable to stack buffer overflows');
+        riskScore += 1;
+      }
+
+      if (!elf.security.nx) {
+        issues.push('NX disabled — stack is executable, shellcode can run from stack');
+        riskScore += 1.5;
+      }
+
+      if (elf.security.pie === false && elf.isExec) {
+        issues.push('Not PIE — fixed load address, limited ASLR effectiveness');
+        riskScore += 0.5;
+      }
+
+      if (elf.security.rpath) {
+        issues.push(`RPATH set to "${elf.security.rpath}" — potential library hijacking vector`);
+        riskScore += 1;
+      }
+
+      if (elf.security.runpath) {
+        issues.push(`RUNPATH set to "${elf.security.runpath}" — potential library hijacking vector`);
+        riskScore += 0.5;
+      }
+
+      // ── Section anomalies ──────────────────────────────────────────
+      for (const sec of elf.sections) {
+        if (sec.isWritable && sec.isExec) {
+          issues.push(`Section "${sec.name}" is W+X (writable and executable) — code injection risk`);
+          riskScore += 2;
+        }
+        if (sec.entropy > 7.0 && sec.size > 1024) {
+          issues.push(`Section "${sec.name}" has very high entropy (${sec.entropy.toFixed(3)}) — likely packed or encrypted`);
+          riskScore += 1.5;
+        }
+      }
+
+      // ── Segment anomalies ──────────────────────────────────────────
+      for (const seg of elf.segments) {
+        if (seg.type === 1 && seg.permW && seg.permX) { // LOAD segment W+X
+          issues.push(`LOAD segment at ${this._hex(seg.vaddr, 8)} is W+X — unusual, potential shellcode region`);
+          riskScore += 2;
+        }
+      }
+
+      // ── Suspicious symbol analysis ─────────────────────────────────
+      const suspMap = ElfRenderer.SUSPICIOUS_SYMBOLS;
+      const suspiciousImports = elf.dynsyms.filter(s =>
+        s.name && s.shndx === 0 && suspMap[s.name]
+      );
+
+      if (suspiciousImports.length > 0) {
+        riskScore += Math.min(suspiciousImports.length * 0.3, 4);
+
+        // Categorize suspicious patterns
+        const hasExec = suspiciousImports.some(s =>
+          /execution|command|launch/i.test(suspMap[s.name]));
+        const hasInjection = suspiciousImports.some(s =>
+          /injection|another.*process/i.test(suspMap[s.name]));
+        const hasNetwork = suspiciousImports.some(s =>
+          /network|socket|C2|exfiltration|backdoor/i.test(suspMap[s.name]));
+        const hasPrivesc = suspiciousImports.some(s =>
+          /privilege|setuid|setgid|capability/i.test(suspMap[s.name]));
+        const hasAntiDebug = suspiciousImports.some(s =>
+          /debug|prevent/i.test(suspMap[s.name]));
+        const hasRootkit = suspiciousImports.some(s =>
+          /rootkit|kernel.*module/i.test(suspMap[s.name]));
+        const hasFileless = suspiciousImports.some(s =>
+          /fileless|memfd|memory/i.test(suspMap[s.name]));
+        const hasAntiForensic = suspiciousImports.some(s =>
+          /forensic|deletion|self.*delet/i.test(suspMap[s.name]));
+
+        if (hasExec) { issues.push('Imports command execution functions (execve/system/popen)'); riskScore += 1; }
+        if (hasInjection) { issues.push('Imports process memory manipulation APIs'); riskScore += 2; }
+        if (hasNetwork) { issues.push('Imports network socket APIs — potential C2/backdoor capability'); riskScore += 1; }
+        if (hasPrivesc) { issues.push('Imports privilege escalation functions (setuid/setgid)'); riskScore += 1.5; }
+        if (hasAntiDebug) { issues.push('Imports anti-debugging function (ptrace)'); riskScore += 1; }
+        if (hasRootkit) { issues.push('Imports kernel module loading functions — potential rootkit'); riskScore += 3; }
+        if (hasFileless) { issues.push('Imports fileless execution functions (memfd_create/fexecve)'); riskScore += 2; }
+        if (hasAntiForensic) { issues.push('Imports file deletion functions — potential self-deletion'); riskScore += 0.5; }
+
+        // Check for reverse shell pattern: socket + dup2 + execve
+        const hasSocket = suspiciousImports.some(s => s.name === 'socket');
+        const hasDup2 = suspiciousImports.some(s => s.name === 'dup2');
+        const hasExecve = suspiciousImports.some(s => s.name === 'execve' || s.name === 'execvp' || s.name === 'execl');
+        if (hasSocket && hasDup2 && hasExecve) {
+          issues.push('Reverse shell pattern detected: socket + dup2 + exec combination');
+          riskScore += 3;
+        }
+
+        // Check for RWX memory pattern: mmap + mprotect
+        const hasMmap = suspiciousImports.some(s => s.name === 'mmap');
+        const hasMprotect = suspiciousImports.some(s => s.name === 'mprotect');
+        if (hasMmap && hasMprotect) {
+          issues.push('Runtime code generation pattern: mmap + mprotect — can create executable memory');
+          riskScore += 1;
+        }
+      }
+
+      // ── Stripped binary check ──────────────────────────────────────
+      const hasSymtab = elf.sections.some(s => s.name === '.symtab');
+      if (!hasSymtab) {
+        findings.metadata['Stripped'] = 'Yes (no .symtab)';
+      } else {
+        findings.metadata['Stripped'] = 'No';
+      }
+
+      // ── Static linking check ───────────────────────────────────────
+      if (!elf.interpreter && elf.isExec) {
+        issues.push('Statically linked executable — unusual for modern binaries, may be obfuscated/packed');
+        riskScore += 1;
+        findings.metadata['Linking'] = 'Static';
+      } else if (elf.interpreter) {
+        findings.metadata['Linking'] = 'Dynamic';
+      }
+
+      // ── Extract IOCs from strings ──────────────────────────────────
+      const allStrings = elf.strings.join('\n');
+      if (typeof IOC !== 'undefined') {
+        const urlMatch = allStrings.match(IOC.PATTERN);
+        if (urlMatch) {
+          const unique = [...new Set(urlMatch)];
+          for (const url of unique.slice(0, 50)) {
+            findings.interestingStrings.push({ type: 'url', url });
+          }
+        }
+        const uncMatch = allStrings.match(IOC.UNC_PATH);
+        if (uncMatch) {
+          const unique = [...new Set(uncMatch)];
+          for (const unc of unique.slice(0, 20)) {
+            findings.interestingStrings.push({ type: 'unc_path', url: unc });
+          }
+        }
+      }
+
+      // ── Risk assessment ────────────────────────────────────────────
+      findings.autoExec = issues;
+      if (riskScore >= 8) findings.risk = 'critical';
+      else if (riskScore >= 5) findings.risk = 'high';
+      else if (riskScore >= 2) findings.risk = 'medium';
+      else findings.risk = 'low';
+
+    } catch (e) {
+      findings.risk = 'medium';
+      findings.autoExec = ['ELF parsing partially failed: ' + e.message];
+    }
+
+    return findings;
+  }
+}
+
+'use strict';
+// ════════════════════════════════════════════════════════════════════════════
 // image-renderer.js — Renders image files (PNG, JPEG, GIF, BMP, WEBP, ICO)
 // Shows the image with metadata and checks for steganography indicators.
 // Depends on: constants.js (IOC)
@@ -29608,6 +34481,14 @@ Object.assign(App.prototype, {
         const r = new ImageRenderer();
         this.findings = r.analyzeForSecurity(buffer, file.name);
         docEl = r.render(buffer, file.name);
+      } else if (['exe', 'dll', 'sys', 'scr', 'cpl', 'ocx', 'drv', 'com'].includes(ext)) {
+        const r = new PeRenderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        docEl = r.render(buffer, file.name);
+      } else if (['elf', 'so', 'o'].includes(ext)) {
+        const r = new ElfRenderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        docEl = r.render(buffer, file.name);
       } else {
         // ── Content-based detection fallback for extensionless/unknown files ──
         // Detect file type by magic bytes when extension is missing or unrecognized
@@ -29752,6 +34633,14 @@ Object.assign(App.prototype, {
           docEl = r.render(buffer, file.name);
         } else if (detectedType === 'onenote') {
           const r = new OneNoteRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'pe') {
+          const r = new PeRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'elf') {
+          const r = new ElfRenderer();
           this.findings = r.analyzeForSecurity(buffer, file.name);
           docEl = r.render(buffer, file.name);
         } else {
@@ -30052,6 +34941,14 @@ Object.assign(App.prototype, {
     if (bytes[0] === 0x37 && bytes[1] === 0x7A && bytes[2] === 0xBC && bytes[3] === 0xAF)
       return 'zip'; // Route to ZipRenderer
     
+    // PE Executable (MZ header)
+    if (bytes[0] === 0x4D && bytes[1] === 0x5A)
+      return 'pe';
+    
+    // ELF Binary
+    if (bytes[0] === 0x7F && bytes[1] === 0x45 && bytes[2] === 0x4C && bytes[3] === 0x46)
+      return 'elf';
+    
     // Gzip
     if (bytes[0] === 0x1F && bytes[1] === 0x8B)
       return 'zip'; // Route to ZipRenderer which handles gzip
@@ -30304,7 +35201,8 @@ Object.assign(App.prototype, {
       }
     }
     for (const m of full.matchAll(/[A-Za-z]:\\(?:[\w\-. ]+\\)+[\w\-. ]{2,}/g)) {
-      add(IOC.FILE_PATH, m[0], 'medium', null, { offset: m.index, length: m[0].length });
+      const path = _trimPathExtGarbage(m[0]);
+      add(IOC.FILE_PATH, path, 'medium', null, { offset: m.index, length: path.length });
     }
     for (const m of full.matchAll(/\\\\[\w.\-]{2,}(?:\\[\w.\-]{1,})+/g)) {
       add(IOC.UNC_PATH, m[0], 'medium', null, { offset: m.index, length: m[0].length });
@@ -30451,23 +35349,23 @@ Object.assign(App.prototype, {
     // 1. File Info (collapsed by default)
     this._renderFileInfoSection(body, fileName);
 
-    // 2. Macros (only if detected; auto-opens when auto-exec found)
-    if (f.hasMacros) {
-      this._renderMacrosSection(body, analyzer);
-    }
-
-    // 3. Deobfuscation (only if detected)
-    if (f.encodedContent && f.encodedContent.length) {
-      this._renderEncodedContentSection(body, f.encodedContent, fileName);
-    }
-
-    // 4. Detections (YARA matches, patterns, info) & 5. IOCs (URLs, IPs, hashes, etc.)
+    // 2. Detections (YARA matches, patterns, info) & 3. IOCs (URLs, IPs, hashes, etc.)
     const allRefs = [...(f.externalRefs || []), ...(f.interestingStrings || [])];
     const _DETECTION_TYPES = new Set([IOC.YARA, IOC.PATTERN, IOC.INFO]);
     const detections = allRefs.filter(r => _DETECTION_TYPES.has(r.type));
     const iocRefs = allRefs.filter(r => !_DETECTION_TYPES.has(r.type));
     this._renderFindingsTableSection(body, detections, fileName, '🚨', 'Detections', '✅ No detections triggered.');
     this._renderFindingsTableSection(body, iocRefs, fileName, '📡', 'IOCs', '✅ No indicators of compromise found.');
+
+    // 4. Macros (only if detected; auto-opens when auto-exec found)
+    if (f.hasMacros) {
+      this._renderMacrosSection(body, analyzer);
+    }
+
+    // 5. Deobfuscation (only if detected)
+    if (f.encodedContent && f.encodedContent.length) {
+      this._renderEncodedContentSection(body, f.encodedContent, fileName);
+    }
 
     // Show sidebar
     if (!this.sidebarOpen) this._toggleSidebar();
@@ -32643,7 +37541,7 @@ Object.assign(App.prototype, {
     dz.className = ''; dz.innerHTML = '';
     const icon = document.createElement('span'); icon.className = 'dz-icon'; icon.textContent = '📄'; dz.appendChild(icon);
     const txt = document.createElement('div'); txt.className = 'dz-text'; txt.textContent = 'Drop a file here to analyse'; dz.appendChild(txt);
-    const sub = document.createElement('div'); sub.className = 'dz-sub'; sub.textContent = 'docx · xlsx · pptx · pdf · doc · msg · eml · lnk · hta · csv · and any file · 100% offline'; dz.appendChild(sub);
+    const sub = document.createElement('div'); sub.className = 'dz-sub'; sub.textContent = 'Office documents · PDFs · executables · emails · archives · event logs · scripts · any file · 100% offline'; dz.appendChild(sub);
     // Hide file info + close button + viewer toolbar
     document.getElementById('file-info').textContent = '';
     document.getElementById('btn-close').classList.add('hidden');

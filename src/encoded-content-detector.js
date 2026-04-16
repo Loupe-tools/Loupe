@@ -1009,7 +1009,7 @@ class EncodedContentDetector {
       if (parts.every(p => p <= 255) && !m[0].startsWith('0.')) add(IOC.IP, m[0], 'high');
     }
     for (const m of text.matchAll(/[A-Za-z]:\\(?:[\w\-. ]+\\)+[\w\-. ]{2,}/g))
-      add(IOC.FILE_PATH, m[0], 'medium');
+      add(IOC.FILE_PATH, _trimPathExtGarbage(m[0]), 'medium');
     for (const m of text.matchAll(/\\\\[\w.\-]{2,}(?:\\[\w.\-]{1,})+/g))
       add(IOC.UNC_PATH, m[0], 'medium');
 

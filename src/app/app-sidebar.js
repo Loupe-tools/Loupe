@@ -34,23 +34,23 @@ Object.assign(App.prototype, {
     // 1. File Info (collapsed by default)
     this._renderFileInfoSection(body, fileName);
 
-    // 2. Macros (only if detected; auto-opens when auto-exec found)
-    if (f.hasMacros) {
-      this._renderMacrosSection(body, analyzer);
-    }
-
-    // 3. Deobfuscation (only if detected)
-    if (f.encodedContent && f.encodedContent.length) {
-      this._renderEncodedContentSection(body, f.encodedContent, fileName);
-    }
-
-    // 4. Detections (YARA matches, patterns, info) & 5. IOCs (URLs, IPs, hashes, etc.)
+    // 2. Detections (YARA matches, patterns, info) & 3. IOCs (URLs, IPs, hashes, etc.)
     const allRefs = [...(f.externalRefs || []), ...(f.interestingStrings || [])];
     const _DETECTION_TYPES = new Set([IOC.YARA, IOC.PATTERN, IOC.INFO]);
     const detections = allRefs.filter(r => _DETECTION_TYPES.has(r.type));
     const iocRefs = allRefs.filter(r => !_DETECTION_TYPES.has(r.type));
     this._renderFindingsTableSection(body, detections, fileName, '🚨', 'Detections', '✅ No detections triggered.');
     this._renderFindingsTableSection(body, iocRefs, fileName, '📡', 'IOCs', '✅ No indicators of compromise found.');
+
+    // 4. Macros (only if detected; auto-opens when auto-exec found)
+    if (f.hasMacros) {
+      this._renderMacrosSection(body, analyzer);
+    }
+
+    // 5. Deobfuscation (only if detected)
+    if (f.encodedContent && f.encodedContent.length) {
+      this._renderEncodedContentSection(body, f.encodedContent, fileName);
+    }
 
     // Show sidebar
     if (!this.sidebarOpen) this._toggleSidebar();

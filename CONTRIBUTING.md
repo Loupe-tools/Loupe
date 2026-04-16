@@ -31,14 +31,16 @@ src/styles/viewers.css                 # All format-specific viewer styles
 
 ```
 src/rules/office-macros.yar            # Office/VBA macro detection (33 rules)
-src/rules/script-threats.yar           # Script threats: PS, JS, VBS, CMD, Python (64 rules)
-src/rules/document-threats.yar         # PDF, RTF, OLE, HTML, SVG, OneNote (39 rules)
-src/rules/windows-threats.yar          # LNK, HTA, MSI, registry, LOLBins (126 rules)
+src/rules/script-threats.yar           # Script threats: PS, JS, VBS, CMD, Python (61 rules)
+src/rules/document-threats.yar         # PDF, RTF, OLE, HTML, SVG, OneNote (42 rules)
+src/rules/windows-threats.yar          # LNK, HTA, MSI, registry, LOLBins (129 rules)
 src/rules/archive-threats.yar          # Archive format threats (11 rules)
 src/rules/encoding-threats.yar         # Base64, hex, obfuscation patterns (28 rules)
-src/rules/network-indicators.yar       # UNC, WebDAV, credential theft (3 rules)
-src/rules/suspicious-patterns.yar      # General suspicious patterns (7 rules)
+src/rules/network-indicators.yar       # UNC, WebDAV, credential theft (8 rules)
+src/rules/suspicious-patterns.yar      # General suspicious patterns (10 rules)
 src/rules/file-analysis.yar            # PE, image, forensic analysis (5 rules)
+src/rules/pe-threats.yar               # PE executable threats: packers, malware toolkits (26 rules)
+src/rules/elf-threats.yar              # ELF binary threats: Mirai, cryptominers, rootkits (17 rules)
 ```
 
 ### JS Concatenation Order
@@ -82,6 +84,8 @@ src/renderers/lnk-renderer.js         # LnkRenderer — Windows Shell Link (.lnk
 src/renderers/hta-renderer.js          # HtaRenderer — HTA source viewer + security scanner
 src/renderers/html-renderer.js         # HtmlRenderer — sandboxed HTML preview + source view
 src/renderers/pdf-renderer.js          # PdfRenderer — PDF page renderer + security scanner
+src/renderers/pe-renderer.js           # PeRenderer — PE32/PE32+ executable analyser
+src/renderers/elf-renderer.js          # ElfRenderer — ELF32/ELF64 binary analyser
 src/renderers/image-renderer.js        # ImageRenderer — image preview + stego/polyglot detection
 src/renderers/plaintext-renderer.js    # PlainTextRenderer — catch-all text/hex viewer
 src/app/app-core.js                    # App class — constructor, init, drop-zone, toolbar
@@ -115,8 +119,8 @@ GloveBox/
 │   └── highlight.min.js            # highlight.js — syntax highlighting
 ├── src/
 │   ├── styles/                     # CSS (split for manageable file sizes)
-│   │   ├── core.css                # Base theme, toolbar, sidebar, dialogs (1,729 lines)
-│   │   └── viewers.css             # Format-specific viewer styles (3,274 lines)
+│   │   ├── core.css                # Base theme, toolbar, sidebar, dialogs (1,751 lines)
+│   │   └── viewers.css             # Format-specific viewer styles (4,104 lines)
 │   ├── rules/                      # YARA rules (split by threat category)
 │   │   ├── office-macros.yar       # Office/VBA macro detection
 │   │   ├── script-threats.yar      # PS, JS, VBS, CMD, Python threats
@@ -126,7 +130,9 @@ GloveBox/
 │   │   ├── encoding-threats.yar    # Encoding/obfuscation patterns
 │   │   ├── network-indicators.yar  # UNC, WebDAV, credential theft
 │   │   ├── suspicious-patterns.yar # General suspicious patterns
-│   │   └── file-analysis.yar       # PE, image, forensic analysis
+│   │   ├── file-analysis.yar       # PE, image, forensic analysis
+│   │   ├── pe-threats.yar          # PE executable threats
+│   │   └── elf-threats.yar         # ELF binary threats
 │   ├── constants.js                # Shared constants, DOM helpers, unit converters, sanitizers
 │   ├── vba-utils.js                # Shared VBA binary decoder + auto-exec pattern scanner
 │   ├── yara-engine.js              # YaraEngine — in-browser YARA rule parser + matcher
@@ -164,6 +170,8 @@ GloveBox/
 │   │   ├── hta-renderer.js         # HtaRenderer
 │   │   ├── html-renderer.js        # HtmlRenderer — sandboxed HTML preview
 │   │   ├── pdf-renderer.js         # PdfRenderer
+│   │   ├── pe-renderer.js          # PeRenderer — PE32/PE32+ executable analyser
+│   │   ├── elf-renderer.js         # ElfRenderer — ELF32/ELF64 binary analyser
 │   │   ├── image-renderer.js       # ImageRenderer — image preview + stego detection
 │   │   └── plaintext-renderer.js   # PlainTextRenderer
 │   └── app/
@@ -184,7 +192,7 @@ GloveBox is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, et
 - **`.clinerules`** — Instructions for AI agents: architecture overview, patterns to follow, files to avoid, and context budget tips.
 - **`CODEMAP.md`** — Auto-generated code map with precise line numbers for every class, method, CSS section, and YARA rule. Agents can read this file first (~24K tokens) and then use `read_file(path, start_line=X, end_line=Y)` for surgical edits without consuming their entire context window.
 - **`generate-codemap.py`** — Regenerate `CODEMAP.md` after any code changes: `python generate-codemap.py`
-- **Split CSS/YARA** — CSS and YARA rules are split into multiple files by category, keeping each file under 3,300 lines. No single file dominates the context budget.
+- **Split CSS/YARA** — CSS and YARA rules are split into multiple files by category, keeping each file manageable. No single file dominates the context budget.
 
 ---
 
@@ -204,6 +212,8 @@ GloveBox is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, et
 - **Image analysis** — `ImageRenderer` renders image previews and checks for steganography indicators, polyglot file structures, and suspicious embedded data.
 - **Archive drill-down** — `ZipRenderer` lists archive contents with threat flagging, and allows clicking individual entries to extract and open them for full analysis, with Back navigation.
 - **Encoded content detection** — `EncodedContentDetector` scans file text for Base64, hex, and Base32 encoded blobs plus embedded compressed streams (gzip/deflate). High-confidence patterns (PE headers, gzip magic, PowerShell `-EncodedCommand`) are decoded eagerly; other candidates offer a manual "Decode" button. Decoded payloads are classified, IOCs are extracted, and a "Load for analysis" button feeds decoded content back through the full analysis pipeline with breadcrumb navigation.
+- **PE analysis** — `PeRenderer` parses PE32/PE32+ binaries (EXE, DLL, SYS, etc.) — DOS/COFF/Optional headers, section table with entropy analysis, imports with suspicious API flagging (~140 APIs), exports, resources, Rich header, string extraction, and security feature detection (ASLR, DEP, CFG, SEH, Authenticode).
+- **ELF analysis** — `ElfRenderer` parses ELF32/ELF64 binaries (LE/BE) — ELF header, program headers, section headers, dynamic linking (NEEDED, SONAME, RPATH/RUNPATH), symbol tables with suspicious symbol flagging, note sections, and security feature detection (RELRO, Stack Canary, NX, PIE, FORTIFY_SOURCE).
 - **Catch-all viewer** — `PlainTextRenderer` accepts any file type. Text files get line-numbered display; binary files get a hex dump. Both paths run IOC extraction and YARA scanning.
 
 ---

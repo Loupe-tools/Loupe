@@ -250,6 +250,14 @@ Object.assign(App.prototype, {
         const r = new ImageRenderer();
         this.findings = r.analyzeForSecurity(buffer, file.name);
         docEl = r.render(buffer, file.name);
+      } else if (['exe', 'dll', 'sys', 'scr', 'cpl', 'ocx', 'drv', 'com'].includes(ext)) {
+        const r = new PeRenderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        docEl = r.render(buffer, file.name);
+      } else if (['elf', 'so', 'o'].includes(ext)) {
+        const r = new ElfRenderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        docEl = r.render(buffer, file.name);
       } else {
         // ── Content-based detection fallback for extensionless/unknown files ──
         // Detect file type by magic bytes when extension is missing or unrecognized
@@ -394,6 +402,14 @@ Object.assign(App.prototype, {
           docEl = r.render(buffer, file.name);
         } else if (detectedType === 'onenote') {
           const r = new OneNoteRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'pe') {
+          const r = new PeRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'elf') {
+          const r = new ElfRenderer();
           this.findings = r.analyzeForSecurity(buffer, file.name);
           docEl = r.render(buffer, file.name);
         } else {
@@ -694,6 +710,14 @@ Object.assign(App.prototype, {
     if (bytes[0] === 0x37 && bytes[1] === 0x7A && bytes[2] === 0xBC && bytes[3] === 0xAF)
       return 'zip'; // Route to ZipRenderer
     
+    // PE Executable (MZ header)
+    if (bytes[0] === 0x4D && bytes[1] === 0x5A)
+      return 'pe';
+    
+    // ELF Binary
+    if (bytes[0] === 0x7F && bytes[1] === 0x45 && bytes[2] === 0x4C && bytes[3] === 0x46)
+      return 'elf';
+    
     // Gzip
     if (bytes[0] === 0x1F && bytes[1] === 0x8B)
       return 'zip'; // Route to ZipRenderer which handles gzip
@@ -946,7 +970,8 @@ Object.assign(App.prototype, {
       }
     }
     for (const m of full.matchAll(/[A-Za-z]:\\(?:[\w\-. ]+\\)+[\w\-. ]{2,}/g)) {
-      add(IOC.FILE_PATH, m[0], 'medium', null, { offset: m.index, length: m[0].length });
+      const path = _trimPathExtGarbage(m[0]);
+      add(IOC.FILE_PATH, path, 'medium', null, { offset: m.index, length: path.length });
     }
     for (const m of full.matchAll(/\\\\[\w.\-]{2,}(?:\\[\w.\-]{1,})+/g)) {
       add(IOC.UNC_PATH, m[0], 'medium', null, { offset: m.index, length: m[0].length });
