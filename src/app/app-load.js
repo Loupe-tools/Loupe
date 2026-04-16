@@ -246,6 +246,10 @@ Object.assign(App.prototype, {
         const r = new PdfRenderer();
         this.findings = await r.analyzeForSecurity(buffer, file.name);
         docEl = await r.render(buffer);
+      } else if (['pem', 'der', 'crt', 'cer', 'p12', 'pfx'].includes(ext)) {
+        const r = new X509Renderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        docEl = r.render(buffer, file.name);
       } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'ico', 'tif', 'tiff', 'avif'].includes(ext)) {
         const r = new ImageRenderer();
         this.findings = r.analyzeForSecurity(buffer, file.name);
@@ -432,7 +436,8 @@ Object.assign(App.prototype, {
       // Use ._rawText if available (PlainTextRenderer provides clean decoded text
       // instead of hex dump output that would break IOC extraction)
       const analysisText = docEl._rawText || docEl.textContent;
-      this.findings.interestingStrings = this._extractInterestingStrings(analysisText, this.findings);
+      const rendererIOCs = this.findings.interestingStrings || [];
+      this.findings.interestingStrings = [...rendererIOCs, ...this._extractInterestingStrings(analysisText, this.findings)];
 
       // ── Encoded content detection ─────────────────────────────────────
       try {
@@ -631,6 +636,12 @@ Object.assign(App.prototype, {
     // OneNote magic
     if (bytes.length >= 16 && bytes[0] === 0xE4 && bytes[1] === 0x52 && bytes[2] === 0x5C && bytes[3] === 0x7B)
       return { hex: h(4), label: 'OneNote Document' };
+    // PEM certificate (text-based: -----BEGIN ...)
+    if (head.startsWith('-----BEGIN '))
+      return { hex: h(11), label: 'PEM Encoded Data' };
+    // DER certificate (ASN.1 SEQUENCE with long-form length)
+    if (bytes[0] === 0x30 && bytes[1] === 0x82)
+      return { hex: h(4), label: 'DER / ASN.1 Data' };
     return { hex: h(Math.min(4, bytes.length)), label: 'Unknown' };
   },
 
@@ -913,7 +924,7 @@ Object.assign(App.prototype, {
 
   // ── Interesting string extraction ────────────────────────────────────────
   _extractInterestingStrings(text, findings) {
-    const seen = new Set((findings.externalRefs || []).map(r => r.url));
+    const seen = new Set([...(findings.externalRefs || []), ...(findings.interestingStrings || [])].map(r => r.url));
     const results = [];
 
     // Enhanced add function that tracks source location for click-to-highlight

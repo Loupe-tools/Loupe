@@ -4263,3 +4263,302 @@ body.dark .bin-match { background: rgba(0,200,255,0.1); }
   font-size: 16px;
   color: #666;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   X.509 Certificate Viewer
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.x509-view {
+  padding: 16px 24px 40px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+/* Banner */
+.x509-banner {
+  background: linear-gradient(135deg, #1a5276 0%, #2e86c1 100%);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.x509-pkcs12-banner {
+  background: linear-gradient(135deg, #7d3c98 0%, #a569bd 100%);
+}
+body.dark .x509-banner {
+  background: linear-gradient(135deg, #1b4f72 0%, #2471a3 100%);
+}
+body.dark .x509-pkcs12-banner {
+  background: linear-gradient(135deg, #6c3483 0%, #8e44ad 100%);
+}
+
+/* Certificate block */
+.x509-block {
+  background: #fff;
+  border: 1px solid #dce1e6;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+body.dark .x509-block {
+  background: #1e2530;
+  border-color: #2d3748;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Certificate header */
+.x509-cert-header {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a5276;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #2e86c1;
+}
+.x509-cert-header.x509-generic {
+  color: #7d6608;
+  border-bottom-color: #d4ac0d;
+}
+body.dark .x509-cert-header {
+  color: #5dade2;
+  border-bottom-color: #2471a3;
+}
+body.dark .x509-cert-header.x509-generic {
+  color: #f9e79f;
+  border-bottom-color: #d4ac0d;
+}
+
+/* Badges */
+.x509-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.x509-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.x509-badge-version   { background: #eaf2f8; color: #2e86c1; }
+.x509-badge-self-signed { background: #fdebd0; color: #b9770e; }
+.x509-badge-ca        { background: #d5f5e3; color: #1e8449; }
+.x509-badge-key       { background: #e8daef; color: #6c3483; }
+.x509-badge-valid     { background: #d5f5e3; color: #1e8449; }
+.x509-badge-expired   { background: #fadbd8; color: #c0392b; }
+.x509-badge-not-yet   { background: #fdebd0; color: #b9770e; }
+.x509-badge-weak      { background: #fadbd8; color: #c0392b; }
+.x509-badge-wildcard  { background: #fef9e7; color: #7d6608; }
+
+body.dark .x509-badge-version   { background: #1b4f72; color: #85c1e9; }
+body.dark .x509-badge-self-signed { background: #7e5109; color: #fad7a0; }
+body.dark .x509-badge-ca        { background: #196f3d; color: #abebc6; }
+body.dark .x509-badge-key       { background: #4a235a; color: #d2b4de; }
+body.dark .x509-badge-valid     { background: #196f3d; color: #abebc6; }
+body.dark .x509-badge-expired   { background: #78281f; color: #f5b7b1; }
+body.dark .x509-badge-not-yet   { background: #7e5109; color: #fad7a0; }
+body.dark .x509-badge-weak      { background: #78281f; color: #f5b7b1; }
+body.dark .x509-badge-wildcard  { background: #7d6608; color: #f9e79f; }
+
+/* Info table */
+.x509-info-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.x509-info-table tr {
+  border-bottom: 1px solid #eee;
+}
+body.dark .x509-info-table tr {
+  border-bottom-color: #2d3748;
+}
+.x509-info-table td {
+  padding: 6px 8px;
+  vertical-align: top;
+}
+.x509-lbl {
+  width: 170px;
+  min-width: 130px;
+  font-weight: 600;
+  color: #555;
+  white-space: nowrap;
+}
+body.dark .x509-lbl {
+  color: #a0aec0;
+}
+.x509-val {
+  color: #222;
+  word-break: break-all;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+}
+body.dark .x509-val {
+  color: #e2e8f0;
+}
+
+/* Validity status spans */
+.x509-valid      { color: #1e8449; }
+.x509-expired    { color: #c0392b; font-weight: 600; }
+.x509-not-yet-valid { color: #b9770e; font-weight: 600; }
+body.dark .x509-valid      { color: #58d68d; }
+body.dark .x509-expired    { color: #ec7063; }
+body.dark .x509-not-yet-valid { color: #f0b27a; }
+
+/* Fingerprint cells */
+.x509-fingerprint {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+/* Extensions section */
+.x509-extensions {
+  margin-top: 12px;
+}
+.x509-extensions > summary {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2e4057;
+  cursor: pointer;
+  padding: 6px 0;
+  user-select: none;
+}
+body.dark .x509-extensions > summary {
+  color: #a0b4c8;
+}
+.x509-ext-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.x509-ext-table tr {
+  border-bottom: 1px solid #f0f0f0;
+}
+body.dark .x509-ext-table tr {
+  border-bottom-color: #2a3441;
+}
+.x509-ext-table td {
+  padding: 5px 8px;
+  vertical-align: top;
+}
+.x509-ext-name {
+  width: 200px;
+  min-width: 160px;
+  font-weight: 500;
+  color: #444;
+}
+body.dark .x509-ext-name {
+  color: #8fa4b8;
+}
+.x509-ext-val {
+  color: #333;
+  word-break: break-all;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11.5px;
+}
+body.dark .x509-ext-val {
+  color: #cbd5e0;
+}
+
+/* Critical badge */
+.x509-critical {
+  display: inline-block;
+  background: #c0392b;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+body.dark .x509-critical {
+  background: #e74c3c;
+}
+
+/* SAN entries */
+.x509-san-entry {
+  margin-bottom: 2px;
+}
+.x509-san-type {
+  display: inline-block;
+  background: #eaf2f8;
+  color: #2471a3;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 4px;
+}
+body.dark .x509-san-type {
+  background: #1b4f72;
+  color: #85c1e9;
+}
+
+/* PKCS#12 notice */
+.x509-pkcs12-notice {
+  background: #fef9e7;
+  border: 1px solid #f9e79f;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  color: #7d6608;
+  font-size: 13px;
+}
+body.dark .x509-pkcs12-notice {
+  background: #3d3200;
+  border-color: #7d6608;
+  color: #f9e79f;
+}
+
+/* Error display */
+.x509-error {
+  background: #fdedec;
+  border: 1px solid #fadbd8;
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: #c0392b;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+body.dark .x509-error {
+  background: #3d1414;
+  border-color: #78281f;
+  color: #f5b7b1;
+}
+
+/* Hex dump */
+.x509-hex, .x509-hex pre {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #555;
+  background: #f8f9fa;
+  padding: 10px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+body.dark .x509-hex, body.dark .x509-hex pre {
+  color: #a0aec0;
+  background: #171e28;
+}
+
+.x509-hex-details > summary {
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+body.dark .x509-hex-details > summary {
+  color: #8899aa;
+}

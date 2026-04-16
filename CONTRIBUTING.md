@@ -41,6 +41,7 @@ src/rules/suspicious-patterns.yar      # General suspicious patterns (10 rules)
 src/rules/file-analysis.yar            # PE, image, forensic analysis (5 rules)
 src/rules/pe-threats.yar               # PE executable threats: packers, malware toolkits (26 rules)
 src/rules/elf-threats.yar              # ELF binary threats: Mirai, cryptominers, rootkits (17 rules)
+src/rules/macho-threats.yar            # Mach-O binary threats: macOS stealers, RATs, persistence (17 rules)
 ```
 
 ### JS Concatenation Order
@@ -86,6 +87,8 @@ src/renderers/html-renderer.js         # HtmlRenderer — sandboxed HTML preview
 src/renderers/pdf-renderer.js          # PdfRenderer — PDF page renderer + security scanner
 src/renderers/pe-renderer.js           # PeRenderer — PE32/PE32+ executable analyser
 src/renderers/elf-renderer.js          # ElfRenderer — ELF32/ELF64 binary analyser
+src/renderers/macho-renderer.js        # MachoRenderer — Mach-O / Universal Binary analyser
+src/renderers/x509-renderer.js         # X509Renderer — X.509 certificate / PEM / DER / PKCS#12 viewer
 src/renderers/image-renderer.js        # ImageRenderer — image preview + stego/polyglot detection
 src/renderers/plaintext-renderer.js    # PlainTextRenderer — catch-all text/hex viewer
 src/app/app-core.js                    # App class — constructor, init, drop-zone, toolbar
@@ -103,81 +106,84 @@ Vendor libraries (`vendor/jszip.min.js`, `vendor/xlsx.full.min.js`, `vendor/pdf.
 
 ```
 GloveBox/
-├── build.py                        # Build script — reads src/, writes docs/index.html
-├── generate-codemap.py             # Generates CODEMAP.md (AI agent navigation map)
-├── CODEMAP.md                      # Auto-generated code map with line-level symbol index
+├── build.py                         # Build script — reads src/, writes docs/index.html
+├── generate-codemap.py              # Generates CODEMAP.md (AI agent navigation map)
+├── CODEMAP.md                       # Auto-generated code map with line-level symbol index
 ├── README.md
 ├── CONTRIBUTING.md
 ├── docs/
 │   └── index.html                   # Built output (GitHub Pages) — DO NOT EDIT
 ├── vendor/
-│   ├── jszip.min.js                # JSZip — ZIP parsing for DOCX/XLSX/PPTX
-│   ├── xlsx.full.min.js            # SheetJS — spreadsheet parsing
-│   ├── pdf.min.js                  # pdf.js — PDF rendering (Mozilla)
-│   ├── pdf.worker.min.js           # pdf.js worker — PDF parsing backend
+│   ├── jszip.min.js                 # JSZip — ZIP parsing for DOCX/XLSX/PPTX
+│   ├── xlsx.full.min.js             # SheetJS — spreadsheet parsing
+│   ├── pdf.min.js                   # pdf.js — PDF rendering (Mozilla)
+│   ├── pdf.worker.min.js            # pdf.js worker — PDF parsing backend
 │   └── highlight.min.js             # highlight.js — syntax highlighting
 ├── src/
-│   ├── styles/                     # CSS (split for manageable file sizes)
-│   │   ├── core.css                # Base theme, toolbar, sidebar, dialogs (1,751 lines)
-│   │   └── viewers.css             # Format-specific viewer styles (4,104 lines)
-│   ├── rules/                      # YARA rules (split by threat category)
-│   │   ├── office-macros.yar       # Office/VBA macro detection
-│   │   ├── script-threats.yar      # PS, JS, VBS, CMD, Python threats
-│   │   ├── document-threats.yar    # PDF, RTF, OLE, HTML, SVG threats
-│   │   ├── windows-threats.yar     # LNK, HTA, MSI, registry, LOLBins
-│   │   ├── archive-threats.yar     # Archive format threats
-│   │   ├── encoding-threats.yar    # Encoding/obfuscation patterns
-│   │   ├── network-indicators.yar  # UNC, WebDAV, credential theft
-│   │   ├── suspicious-patterns.yar # General suspicious patterns
-│   │   ├── file-analysis.yar       # PE, image, forensic analysis
-│   │   ├── pe-threats.yar          # PE executable threats
-│   │   └── elf-threats.yar         # ELF binary threats
-│   ├── constants.js                # Shared constants, DOM helpers, unit converters, sanitizers
-│   ├── vba-utils.js                # Shared VBA binary decoder + auto-exec pattern scanner
-│   ├── yara-engine.js              # YaraEngine — in-browser YARA rule parser + matcher
-│   ├── decompressor.js             # Decompressor — gzip/deflate/raw via DecompressionStream
-│   ├── encoded-content-detector.js # EncodedContentDetector — encoded blob scanner
-│   ├── docx-parser.js              # DocxParser class
-│   ├── style-resolver.js           # StyleResolver class
-│   ├── numbering-resolver.js       # NumberingResolver class
-│   ├── content-renderer.js         # ContentRenderer class
-│   ├── security-analyzer.js        # SecurityAnalyzer class
+│   ├── styles/                      # CSS (split for manageable file sizes)
+│   │   ├── core.css                 # Base theme, toolbar, sidebar, dialogs (1,752 lines)
+│   │   └── viewers.css              # Format-specific viewer styles (4,564 lines)
+│   ├── rules/                       # YARA rules (split by threat category)
+│   │   ├── office-macros.yar        # Office/VBA macro detection
+│   │   ├── script-threats.yar       # PS, JS, VBS, CMD, Python threats
+│   │   ├── document-threats.yar     # PDF, RTF, OLE, HTML, SVG threats
+│   │   ├── windows-threats.yar      # LNK, HTA, MSI, registry, LOLBins
+│   │   ├── archive-threats.yar      # Archive format threats
+│   │   ├── encoding-threats.yar     # Encoding/obfuscation patterns
+│   │   ├── network-indicators.yar   # UNC, WebDAV, credential theft
+│   │   ├── suspicious-patterns.yar  # General suspicious patterns
+│   │   ├── file-analysis.yar        # PE, image, forensic analysis
+│   │   ├── pe-threats.yar           # PE executable threats
+│   │   ├── elf-threats.yar          # ELF binary threats
+│   │   └── macho-threats.yar        # Mach-O binary threats
+│   ├── constants.js                 # Shared constants, DOM helpers, unit converters, sanitizers
+│   ├── vba-utils.js                 # Shared VBA binary decoder + auto-exec pattern scanner
+│   ├── yara-engine.js               # YaraEngine — in-browser YARA rule parser + matcher
+│   ├── decompressor.js              # Decompressor — gzip/deflate/raw via DecompressionStream
+│   ├── encoded-content-detector.js  # EncodedContentDetector — encoded blob scanner
+│   ├── docx-parser.js               # DocxParser class
+│   ├── style-resolver.js            # StyleResolver class
+│   ├── numbering-resolver.js        # NumberingResolver class
+│   ├── content-renderer.js          # ContentRenderer class
+│   ├── security-analyzer.js         # SecurityAnalyzer class
 │   ├── renderers/
-│   │   ├── ole-cfb-parser.js       # OleCfbParser — CFB compound file parser
-│   │   ├── xlsx-renderer.js        # XlsxRenderer
-│   │   ├── pptx-renderer.js        # PptxRenderer
-│   │   ├── odt-renderer.js         # OdtRenderer — OpenDocument text
-│   │   ├── odp-renderer.js         # OdpRenderer — OpenDocument presentation
-│   │   ├── ppt-renderer.js         # PptRenderer — legacy .ppt
-│   │   ├── rtf-renderer.js         # RtfRenderer — RTF + OLE analysis
-│   │   ├── zip-renderer.js         # ZipRenderer — archive listing
-│   │   ├── iso-renderer.js         # IsoRenderer — ISO 9660 filesystem
-│   │   ├── url-renderer.js         # UrlRenderer — .url / .webloc shortcuts
-│   │   ├── onenote-renderer.js     # OneNoteRenderer — .one files
-│   │   ├── iqy-slk-renderer.js     # IqySlkRenderer — .iqy / .slk files
-│   │   ├── wsf-renderer.js         # WsfRenderer — Windows Script Files
-│   │   ├── reg-renderer.js         # RegRenderer — .reg registry files
-│   │   ├── inf-renderer.js         # InfSctRenderer — .inf / .sct files
-│   │   ├── msi-renderer.js         # MsiRenderer — .msi installer packages
-│   │   ├── csv-renderer.js         # CsvRenderer
-│   │   ├── evtx-renderer.js        # EvtxRenderer — .evtx parser (2,852 lines)
-│   │   ├── sqlite-renderer.js      # SqliteRenderer — SQLite + browser history
-│   │   ├── doc-renderer.js         # DocBinaryRenderer
-│   │   ├── msg-renderer.js         # MsgRenderer
-│   │   ├── eml-renderer.js         # EmlRenderer
-│   │   ├── lnk-renderer.js         # LnkRenderer
-│   │   ├── hta-renderer.js         # HtaRenderer
-│   │   ├── html-renderer.js        # HtmlRenderer — sandboxed HTML preview
-│   │   ├── pdf-renderer.js         # PdfRenderer
-│   │   ├── pe-renderer.js          # PeRenderer — PE32/PE32+ executable analyser
-│   │   ├── elf-renderer.js         # ElfRenderer — ELF32/ELF64 binary analyser
-│   │   ├── image-renderer.js       # ImageRenderer — image preview + stego detection
+│   │   ├── ole-cfb-parser.js        # OleCfbParser — CFB compound file parser
+│   │   ├── xlsx-renderer.js         # XlsxRenderer
+│   │   ├── pptx-renderer.js         # PptxRenderer
+│   │   ├── odt-renderer.js          # OdtRenderer — OpenDocument text
+│   │   ├── odp-renderer.js          # OdpRenderer — OpenDocument presentation
+│   │   ├── ppt-renderer.js          # PptRenderer — legacy .ppt
+│   │   ├── rtf-renderer.js          # RtfRenderer — RTF + OLE analysis
+│   │   ├── zip-renderer.js          # ZipRenderer — archive listing
+│   │   ├── iso-renderer.js          # IsoRenderer — ISO 9660 filesystem
+│   │   ├── url-renderer.js          # UrlRenderer — .url / .webloc shortcuts
+│   │   ├── onenote-renderer.js      # OneNoteRenderer — .one files
+│   │   ├── iqy-slk-renderer.js      # IqySlkRenderer — .iqy / .slk files
+│   │   ├── wsf-renderer.js          # WsfRenderer — Windows Script Files
+│   │   ├── reg-renderer.js          # RegRenderer — .reg registry files
+│   │   ├── inf-renderer.js          # InfSctRenderer — .inf / .sct files
+│   │   ├── msi-renderer.js          # MsiRenderer — .msi installer packages
+│   │   ├── csv-renderer.js          # CsvRenderer
+│   │   ├── evtx-renderer.js         # EvtxRenderer — .evtx parser (2,852 lines)
+│   │   ├── sqlite-renderer.js       # SqliteRenderer — SQLite + browser history
+│   │   ├── doc-renderer.js          # DocBinaryRenderer
+│   │   ├── msg-renderer.js          # MsgRenderer
+│   │   ├── eml-renderer.js          # EmlRenderer
+│   │   ├── lnk-renderer.js          # LnkRenderer
+│   │   ├── hta-renderer.js          # HtaRenderer
+│   │   ├── html-renderer.js         # HtmlRenderer — sandboxed HTML preview
+│   │   ├── pdf-renderer.js          # PdfRenderer
+│   │   ├── pe-renderer.js           # PeRenderer — PE32/PE32+ executable analyser
+│   │   ├── elf-renderer.js          # ElfRenderer — ELF32/ELF64 binary analyser
+│   │   ├── macho-renderer.js        # MachoRenderer — Mach-O / Universal Binary analyser
+│   │   ├── x509-renderer.js         # X509Renderer — X.509 certificate viewer
+│   │   ├── image-renderer.js        # ImageRenderer — image preview + stego detection
 │   │   └── plaintext-renderer.js    # PlainTextRenderer
 │   └── app/
-│       ├── app-core.js             # App class definition + setup methods
-│       ├── app-load.js             # File loading, hashing, IOC extraction
-│       ├── app-sidebar.js          # Sidebar rendering (risk bar + collapsible panes)
-│       ├── app-yara.js             # YARA rule editor, scanning, result display
+│       ├── app-core.js              # App class definition + setup methods
+│       ├── app-load.js              # File loading, hashing, IOC extraction
+│       ├── app-sidebar.js           # Sidebar rendering (risk bar + collapsible panes)
+│       ├── app-yara.js              # YARA rule editor, scanning, result display
 │       └── app-ui.js                # UI helpers + DOMContentLoaded bootstrap
 └── examples/                        # Sample files for testing various formats
 ```
@@ -212,6 +218,8 @@ GloveBox is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, et
 - **Encoded content detection** — `EncodedContentDetector` scans file text for Base64, hex, and Base32 encoded blobs plus embedded compressed streams (gzip/deflate). High-confidence patterns (PE headers, gzip magic, PowerShell `-EncodedCommand`) are decoded eagerly; other candidates offer a manual "Decode" button. Decoded payloads are classified, IOCs are extracted, and a "Load for analysis" button feeds decoded content back through the full analysis pipeline with breadcrumb navigation.
 - **PE analysis** — `PeRenderer` parses PE32/PE32+ binaries (EXE, DLL, SYS, etc.) — DOS/COFF/Optional headers, section table with entropy analysis, imports with suspicious API flagging (~140 APIs), exports, resources, Rich header, string extraction, and security feature detection (ASLR, DEP, CFG, SEH, Authenticode).
 - **ELF analysis** — `ElfRenderer` parses ELF32/ELF64 binaries (LE/BE) — ELF header, program headers, section headers, dynamic linking (NEEDED, SONAME, RPATH/RUNPATH), symbol tables with suspicious symbol flagging, note sections, and security feature detection (RELRO, Stack Canary, NX, PIE, FORTIFY_SOURCE).
+- **Mach-O analysis** — `MachoRenderer` parses Mach-O 32/64-bit and Fat/Universal binaries — header, load commands, segments with section-level entropy, symbol tables with suspicious symbol flagging (~30 macOS APIs), dynamic libraries, RPATH, code signature (CodeDirectory, entitlements, CMS), and security feature detection (PIE, NX, Stack Canary, ARC, Hardened Runtime, Library Validation).
+- **X.509 certificate analysis** — `X509Renderer` provides a pure-JS ASN.1/DER parser with ~80 OID mappings. Parses PEM/DER certificates and PKCS#12 containers — subject/issuer DN, validity period, public key details, extensions (SAN, Key Usage, EKU, CRL Distribution Points, AIA), fingerprints. Flags self-signed, expired, weak keys/signatures, and extracts IOCs from SANs and CRL/AIA URIs.
 - **Catch-all viewer** — `PlainTextRenderer` accepts any file type. Text files get line-numbered display; binary files get a hex dump. Both paths run IOC extraction and YARA scanning.
 
 ---
