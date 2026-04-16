@@ -179,7 +179,7 @@ Object.assign(App.prototype, {
 
   /** Run YARA scan against currently loaded file. */
   _yaraRunScan() {
-    if (!this._fileBuffer) {
+    if (!this._fileBuffer && !this._yaraBuffer) {
       this._yaraSetStatus('No file loaded — open a file first, then scan', 'error');
       return;
     }
@@ -207,7 +207,7 @@ Object.assign(App.prototype, {
     setTimeout(() => {
       try {
         const t0 = performance.now();
-        const results = YaraEngine.scan(this._fileBuffer, rules);
+        const results = YaraEngine.scan(this._yaraBuffer || this._fileBuffer, rules);
         const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
 
         if (results.length === 0) {
@@ -311,7 +311,7 @@ Object.assign(App.prototype, {
 
   /** Auto-run YARA scan when a file is loaded (uses saved or default rules). */
   _autoYaraScan() {
-    if (!this._fileBuffer) return;
+    if (!this._fileBuffer && !this._yaraBuffer) return;
     let source = '';
     try { source = localStorage.getItem('glovebox_yara_rules') || ''; } catch (_) { }
     if (!source) source = YaraEngine.EXAMPLE_RULES;
@@ -321,7 +321,7 @@ Object.assign(App.prototype, {
     if (!rules.length) return;
 
     try {
-      const results = YaraEngine.scan(this._fileBuffer, rules);
+      const results = YaraEngine.scan(this._yaraBuffer || this._fileBuffer, rules);
       this._yaraResults = results;
       if (this.findings) this._updateSidebarWithYara(results);
     } catch (_) { /* silently ignore scan errors during auto-scan */ }

@@ -5,7 +5,7 @@ class App {
   constructor() {
     this.zoom = 100; this.dark = true; this.findings = null;
     this.fileHashes = null; this.sidebarOpen = false; this.activeTab = 'summary';
-    this._fileBuffer = null; this._yaraResults = null; this._yaraEscHandler = null;
+    this._fileBuffer = null; this._yaraBuffer = null; this._yaraResults = null; this._yaraEscHandler = null;
   }
 
   init() {

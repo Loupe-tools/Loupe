@@ -135,7 +135,7 @@ Object.assign(App.prototype, {
     document.getElementById('sb-risk-title').textContent = 'No threats detected';
     // Reset state
     this.findings = null; this.fileHashes = null;
-    this._fileBuffer = null; this._yaraResults = null;
+    this._fileBuffer = null; this._yaraBuffer = null; this._yaraResults = null;
     this._fileMeta = null;
     // Clear navigation stack and hide back button
     this._navStack = [];

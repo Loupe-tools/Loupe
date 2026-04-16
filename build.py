@@ -39,6 +39,7 @@ YARA_FILES = [
     'src/rules/elf-threats.yar',
     'src/rules/macho-threats.yar',
     'src/rules/jar-threats.yar',
+    'src/rules/svg-threats.yar',
 ]
 yar_rules = '\n'.join(read(f) for f in YARA_FILES)
 # Escape backticks and backslashes for JS template literal
@@ -88,6 +89,7 @@ JS_FILES = [
     'src/renderers/macho-renderer.js',
     'src/renderers/x509-renderer.js',
     'src/renderers/jar-renderer.js',
+    'src/renderers/svg-renderer.js',
     'src/renderers/image-renderer.js',
     'src/renderers/plaintext-renderer.js',
     'src/app/app-core.js',

@@ -79,7 +79,8 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 | **Scripts** | `.wsf` `.wsc` `.wsh` (Windows Script Files — parsed) · `.vbs` `.ps1` `.bat` `.cmd` `.js` |
 | **Forensics** | `.evtx` (Windows Event Log) · `.sqlite` `.db` (SQLite — Chrome/Firefox/Edge history auto-detect) |
 | **Data** | `.csv` `.tsv` · `.iqy` (Internet Query) · `.slk` (Symbolic Link) |
-| **Images** | `.jpg` `.jpeg` `.png` `.gif` `.bmp` `.webp` `.ico` `.tif` `.tiff` `.avif` `.svg` — preview + steganography/polyglot detection |
+| **Images** | `.jpg` `.jpeg` `.png` `.gif` `.bmp` `.webp` `.ico` `.tif` `.tiff` `.avif` — preview + steganography/polyglot detection |
+| **SVG** | `.svg` — sandboxed preview + source view, deep SVG-specific security analysis (script extraction, foreignObject/form detection, event handlers, data URI payloads, animate href manipulation, XXE, obfuscation) |
 | **Catch-all** | *Any file* — plain-text view with line numbers, or hex dump for binary data |
 
 ### Security Analysis
@@ -106,6 +107,7 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 | **Mach-O / macOS binary analysis** | Parses Mach-O 32/64-bit and Fat/Universal binaries — header, load commands, segments with section-level entropy, symbol tables (imported/exported with suspicious symbol flagging for ~30 macOS APIs), dynamic libraries, RPATH, code signature (CodeDirectory, entitlements, CMS), LC_BUILD_VERSION; security feature detection (PIE, NX Stack/Heap, Stack Canary, ARC, Code Signature, Hardened Runtime, Library Validation, Encrypted); 18 YARA rules for macOS stealers (Atomic, AMOS), reverse shells, RATs, privilege escalation, persistence (LaunchAgent/LoginItem), anti-debug/VM detection, and packed binaries |
 | **X.509 certificate analysis** | Parses PEM/DER X.509 certificates and PKCS#12 containers — subject/issuer DN, validity period with expiry status, public key details (algorithm, key size, curve), extensions (SAN, Key Usage, Extended Key Usage, Basic Constraints, AKI/SKI, CRL Distribution Points, Authority Info Access, Certificate Policies), serial number, signature algorithm, SHA-1/SHA-256 fingerprints; flags self-signed certificates, expired/not-yet-valid, weak keys (<2048-bit RSA), weak signature algorithms (SHA-1/MD5), long validity periods, missing SAN, embedded private keys; IOC extraction from SANs, CRL/AIA URIs |
 | **JAR / Java analysis** | Parses JAR/WAR/EAR archives and standalone `.class` files — Java class file header (magic, version, constant pool), MANIFEST.MF with Main-Class and permissions, class listing with package tree, dependency extraction, constant pool string analysis with ~45 suspicious Java API patterns (deserialization, JNDI, reflection, command execution, networking) mapped to MITRE ATT&CK; obfuscation detection (Allatori, ZKM, ProGuard, short-name heuristics); clickable inner file extraction; 18 YARA rules for deserialization gadgets, JNDI injection, reverse shells, RAT patterns, cryptominers, security manager bypass, and credential theft |
+| **SVG security analysis** | Parses SVG as XML with regex fallback — embedded `<script>` extraction (inline + external href), `<foreignObject>` detection (credential harvesting forms, password fields, iframes, embedded HTML), event handler scanning (~30 on* attributes), Base64/data URI payload analysis (script MIME types, decoded content inspection), URL extraction from attributes + `<style>` blocks, SVG-specific vectors (`<use>` external refs, `<animate>`/`<set>` href manipulation, `<feImage>` external filters), XML entity/DTD/XXE detection, JavaScript obfuscation patterns (eval, atob, fromCharCode, document.cookie, location redirect, fetch/XHR), meta refresh redirects; 19 YARA rules for SVG phishing (script injection, foreignObject forms, credential harvesting, Base64 payloads, event handlers, obfuscation, cookie theft, redirects, external resource loading, animate href manipulation, XXE, multi-indicator phishing) |
 | **Encoded content detection** | Scans for Base64, hex, Base32 encoded blobs and compressed streams (gzip/zlib/deflate); decodes, classifies payloads (PE, script, URL list, etc.), extracts IOCs, and offers "Load for analysis" to drill into decoded content |
 | **Archive drill-down** | Click entries inside ZIP/archive listings to open and analyse inner files, with Back navigation |
 | **Document metadata** | Author, title, dates, revision count extracted from `docProps/core.xml` |
@@ -148,6 +150,7 @@ The [`examples/`](examples/) directory contains sample files for every supported
 - [`example.eml`](examples/example.eml) — email with MIME parts and headers
 - [`example.hta`](examples/example.hta) — HTML Application with embedded scripts
 - [`example-selfsigned.pem`](examples/example-selfsigned.pem) — self-signed X.509 certificate with suspicious SANs
+- [`example-malicious.svg`](examples/example-malicious.svg) — SVG with embedded scripts, foreignObject phishing form, event handlers, and data URI payloads
 - [`example-with-key.pem`](examples/example-with-key.pem) — certificate with embedded private key + weak 1024-bit RSA key
 
 ---

@@ -247,11 +247,18 @@ Object.assign(App.prototype, {
             this._loadFile(innerFile);
           }
         });
-      } else if (['html', 'htm', 'mht', 'mhtml', 'xhtml', 'svg'].includes(ext)) {
+      } else if (ext === 'svg') {
+        const r = new SvgRenderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        if (this.findings.augmentedBuffer) {
+          this._yaraBuffer = this.findings.augmentedBuffer;
+        }
+        docEl = r.render(buffer, file.name);
+      } else if (['html', 'htm', 'mht', 'mhtml', 'xhtml'].includes(ext)) {
         const r = new HtmlRenderer();
         this.findings = r.analyzeForSecurity(buffer, file.name);
         if (this.findings.augmentedBuffer) {
-          this._fileBuffer = this.findings.augmentedBuffer;
+          this._yaraBuffer = this.findings.augmentedBuffer;
         }
         docEl = r.render(buffer, file.name);
       } else if (ext === 'pdf') {
@@ -385,7 +392,7 @@ Object.assign(App.prototype, {
           const r = new HtmlRenderer();
           this.findings = r.analyzeForSecurity(buffer, file.name);
           if (this.findings.augmentedBuffer) {
-            this._fileBuffer = this.findings.augmentedBuffer;
+            this._yaraBuffer = this.findings.augmentedBuffer;
           }
           docEl = r.render(buffer, file.name);
         } else if (detectedType === 'hta') {
@@ -443,6 +450,13 @@ Object.assign(App.prototype, {
               this._loadFile(innerFile);
             }
           });
+        } else if (detectedType === 'svg') {
+          const r = new SvgRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          if (this.findings.augmentedBuffer) {
+            this._yaraBuffer = this.findings.augmentedBuffer;
+          }
+          docEl = r.render(buffer, file.name);
         } else if (detectedType === 'macho') {
           const r = new MachoRenderer();
           this.findings = r.analyzeForSecurity(buffer, file.name);
@@ -806,6 +820,15 @@ Object.assign(App.prototype, {
     
     // RTF
     if (head.startsWith('{\\rtf')) return 'rtf';
+    
+    // SVG (check before HTML — SVG is valid XML that starts with <?xml or <svg)
+    if (head.startsWith('<svg') || head.includes('<svg'))
+      return 'svg';
+    // SVG with XML declaration — check more bytes
+    if (head.startsWith('<?xml')) {
+      const head200 = String.fromCharCode(...bytes.subarray(0, Math.min(200, bytes.length)));
+      if (/<svg[\s>]/i.test(head200)) return 'svg';
+    }
     
     // HTML / HTA
     if (head.startsWith('<!DOCTYPE') || head.startsWith('<html') || head.startsWith('<HTML'))

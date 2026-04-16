@@ -42,6 +42,8 @@ src/rules/file-analysis.yar            # PE, image, forensic analysis (5 rules)
 src/rules/pe-threats.yar               # PE executable threats: packers, malware toolkits (26 rules)
 src/rules/elf-threats.yar              # ELF binary threats: Mirai, cryptominers, rootkits (17 rules)
 src/rules/macho-threats.yar            # Mach-O binary threats: macOS stealers, RATs, persistence (17 rules)
+src/rules/jar-threats.yar              # JAR/Java threats: deserialization, JNDI, reverse shells (18 rules)
+src/rules/svg-threats.yar              # SVG threats: script injection, phishing, XXE (19 rules)
 ```
 
 ### JS Concatenation Order
@@ -89,6 +91,8 @@ src/renderers/pe-renderer.js           # PeRenderer — PE32/PE32+ executable an
 src/renderers/elf-renderer.js          # ElfRenderer — ELF32/ELF64 binary analyser
 src/renderers/macho-renderer.js        # MachoRenderer — Mach-O / Universal Binary analyser
 src/renderers/x509-renderer.js         # X509Renderer — X.509 certificate / PEM / DER / PKCS#12 viewer
+src/renderers/jar-renderer.js          # JarRenderer — JAR/WAR/EAR archive + .class file analyser
+src/renderers/svg-renderer.js          # SvgRenderer — SVG sandboxed preview + security analyser
 src/renderers/image-renderer.js        # ImageRenderer — image preview + stego/polyglot detection
 src/renderers/plaintext-renderer.js    # PlainTextRenderer — catch-all text/hex viewer
 src/app/app-core.js                    # App class — constructor, init, drop-zone, toolbar
@@ -135,7 +139,9 @@ GloveBox/
 │   │   ├── file-analysis.yar        # PE, image, forensic analysis
 │   │   ├── pe-threats.yar           # PE executable threats
 │   │   ├── elf-threats.yar          # ELF binary threats
-│   │   └── macho-threats.yar        # Mach-O binary threats
+│   │   ├── macho-threats.yar        # Mach-O binary threats
+│   │   ├── jar-threats.yar          # JAR/Java threats
+│   │   └── svg-threats.yar          # SVG threats
 │   ├── constants.js                 # Shared constants, DOM helpers, unit converters, sanitizers
 │   ├── vba-utils.js                 # Shared VBA binary decoder + auto-exec pattern scanner
 │   ├── yara-engine.js               # YaraEngine — in-browser YARA rule parser + matcher
@@ -177,6 +183,8 @@ GloveBox/
 │   │   ├── elf-renderer.js          # ElfRenderer — ELF32/ELF64 binary analyser
 │   │   ├── macho-renderer.js        # MachoRenderer — Mach-O / Universal Binary analyser
 │   │   ├── x509-renderer.js         # X509Renderer — X.509 certificate viewer
+│   │   ├── jar-renderer.js          # JarRenderer — JAR/WAR/EAR + .class analyser
+│   │   ├── svg-renderer.js          # SvgRenderer — SVG preview + security analyser
 │   │   ├── image-renderer.js        # ImageRenderer — image preview + stego detection
 │   │   └── plaintext-renderer.js    # PlainTextRenderer
 │   └── app/
@@ -220,6 +228,8 @@ GloveBox is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, et
 - **ELF analysis** — `ElfRenderer` parses ELF32/ELF64 binaries (LE/BE) — ELF header, program headers, section headers, dynamic linking (NEEDED, SONAME, RPATH/RUNPATH), symbol tables with suspicious symbol flagging, note sections, and security feature detection (RELRO, Stack Canary, NX, PIE, FORTIFY_SOURCE).
 - **Mach-O analysis** — `MachoRenderer` parses Mach-O 32/64-bit and Fat/Universal binaries — header, load commands, segments with section-level entropy, symbol tables with suspicious symbol flagging (~30 macOS APIs), dynamic libraries, RPATH, code signature (CodeDirectory, entitlements, CMS), and security feature detection (PIE, NX, Stack Canary, ARC, Hardened Runtime, Library Validation).
 - **X.509 certificate analysis** — `X509Renderer` provides a pure-JS ASN.1/DER parser with ~80 OID mappings. Parses PEM/DER certificates and PKCS#12 containers — subject/issuer DN, validity period, public key details, extensions (SAN, Key Usage, EKU, CRL Distribution Points, AIA), fingerprints. Flags self-signed, expired, weak keys/signatures, and extracts IOCs from SANs and CRL/AIA URIs.
+- **JAR / Java analysis** — `JarRenderer` parses JAR/WAR/EAR archives and standalone `.class` files — class file headers, MANIFEST.MF, package tree, dependency extraction, constant pool string analysis with ~45 suspicious Java API patterns mapped to MITRE ATT&CK, obfuscation detection, and clickable inner file extraction.
+- **SVG analysis** — `SvgRenderer` provides a sandboxed iframe preview and source-code view with line numbers. `analyzeForSecurity()` performs deep SVG-specific analysis: `<script>` extraction, `<foreignObject>` detection, event handler scanning, Base64/data URI payload analysis, SVG-specific vectors (`<use>`, `<animate>`/`<set>` href manipulation, `<feImage>` external filters), XXE detection, and JavaScript obfuscation patterns. Augmented buffer is stored separately in `_yaraBuffer` to avoid contaminating Copy/Save.
 - **Catch-all viewer** — `PlainTextRenderer` accepts any file type. Text files get line-numbered display; binary files get a hex dump. Both paths run IOC extraction and YARA scanning.
 
 ---

@@ -4997,3 +4997,108 @@ body.dark .jar-search-input {
   border-color: #64b5f6;
   box-shadow: 0 0 0 2px #64b5f622;
 }
+
+/* ══════════════════════════════════════════════════════
+   SVG Security Viewer
+   ══════════════════════════════════════════════════════ */
+.svg-view {
+  padding: 8px;
+  max-width: 1100px;
+}
+
+.svg-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fafafa;
+}
+body.dark .svg-toolbar {
+  background: #1a1a2e;
+  border-color: #2a2a3e;
+}
+
+.svg-view-btn {
+  font-size: 13px;
+  padding: 4px 14px;
+  border-radius: 4px;
+  transition: background .15s, color .15s;
+}
+.svg-view-btn.active {
+  background: #0d6efd;
+  color: #fff;
+}
+body.dark .svg-view-btn.active {
+  background: #4dabf7;
+  color: #111;
+}
+
+/* Preview pane */
+.svg-preview-pane {
+  position: relative;
+  min-height: 400px;
+  min-width: 800px;
+}
+
+.svg-iframe {
+  width: 100%;
+  min-height: 500px;
+  border: none;
+  border-radius: 0 0 8px 8px;
+  background: repeating-conic-gradient(#f0f0f0 0% 25%, white 0% 50%) 50% / 20px 20px;
+}
+body.dark .svg-iframe {
+  background: repeating-conic-gradient(#1a1a2e 0% 25%, #12131c 0% 50%) 50% / 20px 20px;
+}
+
+.svg-drag-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: default;
+}
+
+/* Source pane */
+.svg-source-pane {
+  border: 1px solid #e0e0e0;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  overflow: auto;
+  max-height: 80vh;
+}
+body.dark .svg-source-pane {
+  border-color: #2a2a3e;
+}
+
+.svg-source-code {
+  margin: 0;
+  padding: 12px 16px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: #fcfcfc;
+  color: #333;
+  tab-size: 4;
+  overflow-x: auto;
+  white-space: pre;
+}
+body.dark .svg-source-code {
+  background: #12131c;
+  color: #d4d4d4;
+}
+
+.svg-ln {
+  display: inline-block;
+  width: 3.5em;
+  text-align: right;
+  padding-right: 12px;
+  margin-right: 12px;
+  border-right: 1px solid #e0e0e0;
+  color: #aaa;
+  user-select: none;
+  font-size: 11.5px;
+}
+body.dark .svg-ln {
+  border-color: #2a2a3e;
+  color: #555;
+}

