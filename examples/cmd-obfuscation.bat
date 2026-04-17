@@ -1,5 +1,5 @@
 @echo off
-REM === GloveBox Test File: CMD Obfuscation Examples ===
+REM === Loupe Test File: CMD Obfuscation Examples ===
 REM This file contains various CMD obfuscation techniques for testing detection.
 REM WARNING: This is a HARMLESS test file. No actual malicious actions are performed.
 

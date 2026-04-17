@@ -1,9 +1,9 @@
-# 🧤📦 GloveBox
+# 🕵🏻 Loupe
 
 **A 100% offline, single-file security analyser for suspicious files.**  
 No server, no uploads, no tracking — just drop a file and inspect it.
 
-> **<a href="https://sam-dowling.github.io/GloveBox/" target="_blank">▶ Try it online here</a>**
+> **<a href="https://loupe.tools/" target="_blank">▶ Try it online here</a>**
 
 
 ![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)
@@ -12,16 +12,16 @@ No server, no uploads, no tracking — just drop a file and inspect it.
 ![Browser Based](https://img.shields.io/badge/Runs_In-Browser-blueviolet)
 
 <p align="center">
-<img src="screenshots/hero.png" alt="GloveBox interface — 100% offline static analysis" width="800">
+<img src="screenshots/hero.png" alt="Loupe interface — 100% offline static analysis" width="800">
 <br>
-<em>GloveBox — drop a file, inspect it safely, entirely in your browser.</em>
+<em>Loupe — drop a file, inspect it safely, entirely in your browser.</em>
 </p>
 
 ---
 
 ## 📑 Table of Contents
 
-- [Why GloveBox?](#-why-glovebox)
+- [Why Loupe?](#-why-loupe)
 - [Quick Start](#-quick-start)
 - [Features](#-features)
 - [In Action](#-in-action)
@@ -32,9 +32,9 @@ No server, no uploads, no tracking — just drop a file and inspect it.
 
 ---
 
-## 🤔 Why GloveBox?
+## 🤔 Why Loupe?
 
-SOC analysts, incident responders, and security-conscious users need a way to safely inspect suspicious files without uploading them to third-party services or spinning up a sandbox. GloveBox runs entirely in your browser — **nothing ever leaves your machine**.
+SOC analysts, incident responders, and security-conscious users need a way to safely inspect suspicious files without uploading them to third-party services or spinning up a sandbox. Loupe runs entirely in your browser — **nothing ever leaves your machine**.
 
 - **Zero network access** — a strict Content-Security-Policy blocks all external fetches.
 - **Single HTML file** — no install, no dependencies, works on any OS with a modern browser.
@@ -44,11 +44,11 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 
 ## 🚀 Quick Start
 
-[⬇️ **Download latest glovebox.html**](https://github.com/Sam-Dowling/GloveBox/releases/latest/download/glovebox.html)
+[⬇️ **Download latest loupe.html**](https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html)
 
 > `build.py` generates `docs/index.html` — the complete, ready-to-use application served by GitHub Pages (see [CONTRIBUTING.md](CONTRIBUTING.md) for rebuild instructions).
 
-1. **Download** — grab `glovebox.html` from the release link above, or clone the repo and open `docs/index.html`.
+1. **Download** — grab `loupe.html` from the release link above, or clone the repo and open `docs/index.html`.
 2. **Open** — double-click the file or open it in any modern browser (Chrome, Firefox, Edge, Safari). No server needed.
 3. **Drop a file** — drag a suspicious file onto the drop zone, click **📁 Open File**, or paste with **Ctrl+V**.
 4. **Inspect** — the file renders in the viewer. Press **S** to toggle the security sidebar with risk assessment, IOCs, and YARA matches. Press **Y** to open the YARA rule editor. Use **🌙** to switch themes.
@@ -134,15 +134,15 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 
 ### Nested Encoding Detection — Double Base64 C2 Discovery
 
-GloveBox automatically peels back layers of encoding to reveal hidden threats. In this demo a double Base64-encoded PowerShell download cradle is loaded — GloveBox decodes both layers, reconstructs the original command, and extracts the embedded C2 IP address as an IOC, all entirely in the browser.
+Loupe automatically peels back layers of encoding to reveal hidden threats. In this demo a double Base64-encoded PowerShell download cradle is loaded — Loupe decodes both layers, reconstructs the original command, and extracts the embedded C2 IP address as an IOC, all entirely in the browser.
 
 <p align="center">
-<img src="screenshots/usage.gif" alt="GloveBox in action — nested Base64 decoding and C2 IP extraction" width="800">
+<img src="screenshots/usage.gif" alt="Loupe in action — nested Base64 decoding and C2 IP extraction" width="800">
 </p>
 
 ### Try It Yourself
 
-The [`examples/`](examples/) directory contains sample files for every supported format — try dropping them into GloveBox to explore:
+The [`examples/`](examples/) directory contains sample files for every supported format — try dropping them into Loupe to explore:
 
 - [`nested-double-b64-ip.txt`](examples/nested-double-b64-ip.txt) — double Base64-encoded PowerShell with hidden C2 IP (as shown in the demo above)
 - [`encoded-zlib-base64.txt`](examples/encoded-zlib-base64.txt) — nested encoded content with compressed payloads
@@ -165,13 +165,13 @@ The [`examples/`](examples/) directory contains sample files for every supported
 
 ## ⚠️ Limitations
 
-GloveBox is a **static-analysis triage tool** — it extracts, decodes, and displays file contents for human review but **does not execute** macros, JavaScript, scripts, or any embedded code. It is not a replacement for dynamic analysis sandboxes (e.g., Any.Run, Joe Sandbox) or full malware reverse-engineering workflows. For files that warrant deeper investigation, use GloveBox for initial triage and IOC extraction, then escalate to a dedicated sandbox or disassembly environment.
+Loupe is a **static-analysis triage tool** — it extracts, decodes, and displays file contents for human review but **does not execute** macros, JavaScript, scripts, or any embedded code. It is not a replacement for dynamic analysis sandboxes (e.g., Any.Run, Joe Sandbox) or full malware reverse-engineering workflows. For files that warrant deeper investigation, use Loupe for initial triage and IOC extraction, then escalate to a dedicated sandbox or disassembly environment.
 
 ---
 
 ## 🔒 Security Model
 
-GloveBox is designed to be safe to use on potentially malicious files:
+Loupe is designed to be safe to use on potentially malicious files:
 
 | Layer | Protection |
 |---|---|
@@ -199,7 +199,7 @@ Requires support for Web Crypto API (SHA-1/SHA-256), `async`/`await`, and `<canv
 
 ## 🤝 Get Involved
 
-GloveBox is open source under the [GNU General Public License v3.0](LICENSE). Contributions are welcome!
+Loupe is open source under the [GNU General Public License v3.0](LICENSE). Contributions are welcome!
 
 - ⭐ **Star the repo** — helps others discover the project
 - 🐛 **Open an issue** — bug reports, feature requests, and format support suggestions

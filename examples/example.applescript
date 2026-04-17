@@ -1,4 +1,4 @@
--- Example AppleScript with suspicious patterns for GloveBox testing
+-- Example AppleScript with suspicious patterns for Loupe testing
 -- This file demonstrates credential harvesting, shell execution, and persistence
 
 -- Credential harvesting via display dialog

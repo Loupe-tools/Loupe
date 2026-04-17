@@ -1,4 +1,4 @@
-# === GloveBox Test File: PowerShell Obfuscation Examples ===
+# === Loupe Test File: PowerShell Obfuscation Examples ===
 # This file contains various PowerShell obfuscation techniques for testing detection.
 # WARNING: This is a HARMLESS test file. No actual malicious actions are performed.
 

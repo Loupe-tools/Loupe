@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- GloveBox sample Windows Script File -->
+<!-- Loupe sample Windows Script File -->
 <package>
-  <job id="GloveBoxInfo">
-    <comment>Display system information for GloveBox testing</comment>
+  <job id="LoupeInfo">
+    <comment>Display system information for Loupe testing</comment>
     <runtime>
-      <description>GloveBox sample WSF script</description>
+      <description>Loupe sample WSF script</description>
       <named name="verbose" helpstring="Enable verbose output" type="boolean" required="false"/>
     </runtime>
     <object id="shell" progid="WScript.Shell"/>
@@ -24,7 +24,7 @@
       <![CDATA[
         // Main entry point
         var verbose = WScript.Arguments.Named.Exists("verbose");
-        WScript.Echo("GloveBox WSF Sample v1.0");
+        WScript.Echo("Loupe WSF Sample v1.0");
         WScript.Echo("========================");
         if (verbose) {
           WScript.Echo(GetSystemInfo());

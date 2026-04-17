@@ -1,6 +1,6 @@
-# Contributing to GloveBox
+# Contributing to Loupe
 
-> Developer guide for GloveBox. See [README.md](README.md) for end-user documentation.
+> Developer guide for Loupe. See [README.md](README.md) for end-user documentation.
 > For AI coding agents see [`CODEMAP.md`](CODEMAP.md).
 
 ---
@@ -113,7 +113,7 @@ Vendor libraries (`vendor/jszip.min.js`, `vendor/xlsx.full.min.js`, `vendor/pdf.
 ## Project Structure
 
 ```
-GloveBox/
+Loupe/
 ├── build.py                         # Build script — reads src/, writes docs/index.html
 ├── generate-codemap.py              # Generates CODEMAP.md (AI agent navigation map)
 ├── CODEMAP.md                       # Auto-generated code map with line-level symbol index
@@ -208,7 +208,7 @@ GloveBox/
 
 ## AI Agent Support
 
-GloveBox is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, etc.):
+Loupe is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, etc.):
 
 - **`CODEMAP.md`** — Auto-generated code map with precise line numbers for every class, method, CSS section, and YARA rule. Agents can read this file first (~24K tokens) and then use `read_file(path, start_line=X, end_line=Y)` for surgical edits without consuming their entire context window.
 - **`generate-codemap.py`** — Regenerate `CODEMAP.md` after any code changes: `python generate-codemap.py`

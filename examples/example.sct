@@ -1,10 +1,10 @@
 <?XML version="1.0"?>
-<!-- GloveBox sample SCT (Script Component) file -->
+<!-- Loupe sample SCT (Script Component) file -->
 <!-- This is a benign example for testing the InfSctRenderer -->
 <scriptlet>
   <registration
-    description="GloveBox Sample Component"
-    progid="GloveBox.SampleComponent"
+    description="Loupe Sample Component"
+    progid="Loupe.SampleComponent"
     version="1.0"
     classid="{AAAABBBB-CCCC-DDDD-EEEE-FFFFFFFFFFFF}"
     remotable="false">
@@ -27,7 +27,7 @@
     }
 
     function get_AppName() {
-      return "GloveBox";
+      return "Loupe";
     }
 
     function AnalyzeFile(filePath) {

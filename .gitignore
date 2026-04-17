@@ -17,7 +17,7 @@ desktop.ini
 *~
 
 # Build output (only docs/index.html is committed)
-glovebox.html
+loupe.html
 
 # Generated files (optional machine-readable codemap)
 codemap.json

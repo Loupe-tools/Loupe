@@ -1,12 +1,12 @@
 From: Alice Johnson <alice.johnson@example.com>
 To: Bob Smith <bob.smith@example.com>
 Cc: security-team@example.com
-Subject: GloveBox Analysis Report - Q1 2025
+Subject: Loupe Analysis Report - Q1 2025
 Date: Tue, 15 Jan 2025 09:30:00 +0000
 Message-ID: <abc123@mail.example.com>
 MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="----=_Part_001"
-X-Mailer: GloveBox Mail/1.0
+X-Mailer: Loupe Mail/1.0
 
 ------=_Part_001
 Content-Type: text/plain; charset="UTF-8"
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 7bit
 
 Hi Bob,
 
-Please find attached the Q1 2025 security analysis report from GloveBox.
+Please find attached the Q1 2025 security analysis report from Loupe.
 
 Key findings:
 - 47 files analysed
@@ -31,7 +31,7 @@ Content-Transfer-Encoding: 7bit
 <html>
 <body>
 <p>Hi Bob,</p>
-<p>Please find attached the Q1 2025 security analysis report from GloveBox.</p>
+<p>Please find attached the Q1 2025 security analysis report from Loupe.</p>
 <p><strong>Key findings:</strong></p>
 <ul>
 <li>47 files analysed</li>
