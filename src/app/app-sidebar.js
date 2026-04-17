@@ -1039,52 +1039,53 @@ Object.assign(App.prototype, {
 
     const pc = document.getElementById('page-container');
 
-    // ── YARA match: inline highlight with cycling ───────────────────────────
+    // ── YARA match: highlight ALL matches with click cycling ───────────────
+    //
+    // Click behaviour:
+    //   • First click (no active highlights):
+    //       - Reset index to 0, highlight *all* matches, scroll to the first
+    //         match *only if none are currently in view*.
+    //   • Subsequent clicks (while highlights still active):
+    //       - Advance index, re-highlight *all* matches, always scroll the
+    //         newly focused match into view.
+    //   • Highlights clear automatically ~5s after the last click.
     if (ref.type === IOC.YARA && ref._yaraMatches && ref._yaraMatches.length > 0) {
       const docEl = pc && pc.firstElementChild;
       const sourceText = docEl && docEl._rawText;
       const plaintextTable = pc && pc.querySelector('.plaintext-table');
+      const matches = ref._yaraMatches;
+      const totalMatches = matches.length;
+
+      // First click = no current index tracked; subsequent clicks advance.
+      const isFirstClick = (ref._currentMatchIndex === undefined);
+      if (isFirstClick) {
+        ref._currentMatchIndex = 0;
+      } else {
+        ref._currentMatchIndex = (ref._currentMatchIndex + 1) % totalMatches;
+      }
+      const focusIdx = ref._currentMatchIndex;
+      const focusMatch = matches[focusIdx];
+
+      // Match counter toast
+      this._toast(`Match ${focusIdx + 1}/${totalMatches}: ${focusMatch.stringId}`);
 
       if (plaintextTable && sourceText) {
-        const matches = ref._yaraMatches;
-
-        // Track current match index on the ref object for cycling
-        if (ref._currentMatchIndex === undefined) ref._currentMatchIndex = 0;
-        else ref._currentMatchIndex = (ref._currentMatchIndex + 1) % matches.length;
-
-        const match = matches[ref._currentMatchIndex];
-        const totalMatches = matches.length;
-        const currentNum = ref._currentMatchIndex + 1;
-
-        // Show match counter toast
-        this._toast(`Match ${currentNum}/${totalMatches}: ${match.stringId}`);
-
-        // Highlight the match inline
-        this._highlightYaraMatchInline(plaintextTable, sourceText, match.offset, match.length);
+        this._highlightYaraMatchesInline(
+          plaintextTable, sourceText, matches, focusIdx, /* forceScroll = */ !isFirstClick, ref
+        );
         return;
       }
 
       // ── YARA match in CSV view: highlight in detail pane ──────────────────
       const csvView = pc && pc.querySelector('.csv-view');
       if (csvView && csvView._csvFilters && sourceText) {
-        const matches = ref._yaraMatches;
-
-        // Track current match index on the ref object for cycling
-        if (ref._currentMatchIndex === undefined) ref._currentMatchIndex = 0;
-        else ref._currentMatchIndex = (ref._currentMatchIndex + 1) % matches.length;
-
-        const match = matches[ref._currentMatchIndex];
-        const totalMatches = matches.length;
-        const currentNum = ref._currentMatchIndex + 1;
-
-        // Show match counter toast
-        this._toast(`Match ${currentNum}/${totalMatches}: ${match.stringId}`);
-
-        // Highlight the match in the CSV detail pane
-        this._highlightYaraMatchInCsv(csvView, sourceText, match.offset, match.length);
+        this._highlightYaraMatchesInCsv(
+          csvView, sourceText, matches, focusIdx, /* forceScroll = */ !isFirstClick, ref
+        );
         return;
       }
     }
+
 
     // Check if we have an EVTX view with filter controls
     const evtxView = pc && pc.querySelector('.evtx-view');
@@ -1366,61 +1367,133 @@ Object.assign(App.prototype, {
     }
   },
 
-  // ── Highlight YARA match inline with character-level precision ──────────
-  _highlightYaraMatchInline(table, sourceText, offset, length) {
-    // Clear any existing YARA highlights
+  // ── Highlight ALL YARA matches inline (character-level precision) ──────
+  //
+  // `matches` is the full array of {offset, length, stringId, ...} entries.
+  // `focusIdx` is the index of the match that should be scrolled to.
+  // `forceScroll` is true when the user has cycled (always scroll the focus
+  //   match into view); when false (first click), we only scroll if *no*
+  //   currently-wrapped match is already visible in the viewport.
+  // `ref` is the IOC ref so the 5-second timer can reset _currentMatchIndex.
+  _highlightYaraMatchesInline(table, sourceText, matches, focusIdx, forceScroll, ref) {
+    // Clear any existing YARA highlights + pending clear-timer first.
     this._clearYaraHighlight();
 
-    // Calculate which line the offset falls on
-    const beforeText = sourceText.substring(0, offset);
-    const lineIndex = (beforeText.match(/\n/g) || []).length;  // 0-indexed
-
-    // Calculate character position within the line
-    const lastNewline = beforeText.lastIndexOf('\n');
-    const charPos = lastNewline === -1 ? offset : offset - lastNewline - 1;
-
     const rows = table.rows;
-    if (lineIndex >= rows.length) return;
 
-    const row = rows[lineIndex];
-    const codeCell = row.querySelector('.plaintext-code');
-    if (!codeCell) return;
+    // ── 1. Compute (lineIndex, charPos, length) for each match ──────────
+    //    and group them by line so each line only gets a single rewrite.
+    const perMatch = [];
+    const matchesByLine = new Map(); // lineIndex -> array of {charPos, length, matchIdx}
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      if (m.offset == null || !m.length) continue;
+      const beforeText = sourceText.substring(0, m.offset);
+      const lineIndex = (beforeText.match(/\n/g) || []).length;
+      const lastNewline = beforeText.lastIndexOf('\n');
+      const charPos = lastNewline === -1 ? m.offset : m.offset - lastNewline - 1;
+      if (lineIndex >= rows.length) continue;
+      perMatch.push({ matchIdx: i, lineIndex, charPos, length: m.length });
+      let arr = matchesByLine.get(lineIndex);
+      if (!arr) { arr = []; matchesByLine.set(lineIndex, arr); }
+      arr.push({ charPos, length: m.length, matchIdx: i });
+    }
+    if (!perMatch.length) return;
 
-    // Check if syntax highlighting is applied (HTML content)
-    const hasHighlighting = codeCell.innerHTML !== codeCell.textContent;
+    // ── 2. For each affected line, insert <mark> elements for every match.
+    //    Sort by charPos so we can walk the line text left-to-right.
+    //    The generated <mark>s are tagged with data-yara-match="<matchIdx>"
+    //    so we can later locate the focus match for scrolling.
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    if (hasHighlighting) {
-      // For syntax-highlighted content, we need to walk text nodes
-      this._highlightInHtmlNode(codeCell, charPos, length);
-    } else {
-      // For plain text, we can use simple string manipulation
-      const cellText = codeCell.textContent;
-      const before = cellText.substring(0, charPos);
-      const matched = cellText.substring(charPos, charPos + length);
-      const after = cellText.substring(charPos + length);
+    for (const [lineIndex, lineMatches] of matchesByLine) {
+      const row = rows[lineIndex];
+      const codeCell = row.querySelector('.plaintext-code');
+      if (!codeCell) continue;
 
-      // Escape HTML entities
-      const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Sort left-to-right and drop overlapping matches (keep the first).
+      lineMatches.sort((a, b) => a.charPos - b.charPos);
+      const nonOverlapping = [];
+      let cursor = -1;
+      for (const lm of lineMatches) {
+        if (lm.charPos >= cursor) {
+          nonOverlapping.push(lm);
+          cursor = lm.charPos + lm.length;
+        }
+      }
 
-      codeCell.innerHTML = esc(before) +
-        `<mark class="yara-highlight yara-highlight-flash">${esc(matched)}</mark>` +
-        esc(after);
+      const hasHighlighting = codeCell.innerHTML !== codeCell.textContent;
+
+      if (hasHighlighting) {
+        // Syntax-highlighted HTML: insert marks via TreeWalker for each match
+        // in reverse order so earlier offsets stay valid.
+        for (let i = nonOverlapping.length - 1; i >= 0; i--) {
+          const lm = nonOverlapping[i];
+          this._highlightInHtmlNode(codeCell, lm.charPos, lm.length, lm.matchIdx);
+        }
+      } else {
+        // Plain text cell: build a single innerHTML in one pass.
+        const cellText = codeCell.textContent;
+        let out = '';
+        let pos = 0;
+        for (const lm of nonOverlapping) {
+          if (lm.charPos > cellText.length) break;
+          const end = Math.min(lm.charPos + lm.length, cellText.length);
+          if (lm.charPos > pos) out += esc(cellText.substring(pos, lm.charPos));
+          const matchedText = cellText.substring(lm.charPos, end);
+          out += `<mark class="yara-highlight yara-highlight-flash" data-yara-match="${lm.matchIdx}">${esc(matchedText)}</mark>`;
+          pos = end;
+        }
+        if (pos < cellText.length) out += esc(cellText.substring(pos));
+        codeCell.innerHTML = out;
+      }
+
+      row.classList.add('yara-line-highlight');
     }
 
-    // Scroll the row into view
-    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // ── 3. Determine whether to scroll. ──────────────────────────────────
+    //    On first click (forceScroll=false) we only scroll if *no* mark is
+    //    currently visible in the viewport. On subsequent clicks we always
+    //    scroll the focused match.
+    const pc = document.getElementById('page-container');
+    const allMarks = Array.from((pc || document).querySelectorAll('mark.yara-highlight'));
+    const focusMark = allMarks.find(m => m.dataset.yaraMatch === String(focusIdx)) || allMarks[0];
 
-    // Also add a subtle line highlight
-    row.classList.add('yara-line-highlight');
+    let shouldScroll = forceScroll;
+    if (!forceScroll) {
+      // Check if any mark intersects the current viewport.
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      const vw = window.innerWidth || document.documentElement.clientWidth;
+      const anyInView = allMarks.some(m => {
+        const r = m.getBoundingClientRect();
+        return r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw && r.width > 0 && r.height > 0;
+      });
+      shouldScroll = !anyInView;
+    }
 
-    // Remove highlights after animation
-    setTimeout(() => {
+    if (shouldScroll && focusMark) {
+      focusMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // ── 4. Schedule the 5-second clear timer. ────────────────────────────
+    //    Any new click resets the timer (we cleared the previous one at the
+    //    top of this method). When it fires, we remove all highlights and
+    //    reset the ref's _currentMatchIndex so the NEXT click counts as a
+    //    fresh "first click".
+    this._yaraHighlightTimer = setTimeout(() => {
       this._clearYaraHighlight();
-    }, 3000);
+      if (ref) ref._currentMatchIndex = undefined;
+      this._yaraHighlightTimer = null;
+    }, 5000);
   },
 
+
   // ── Highlight within syntax-highlighted HTML content ────────────────────
-  _highlightInHtmlNode(container, charPos, length) {
+  //
+  // Optional `matchIdx` is stamped on the resulting <mark> as
+  // `data-yara-match="<idx>"` so _highlightYaraMatchesInline can locate the
+  // focus match for scrolling.
+  _highlightInHtmlNode(container, charPos, length, matchIdx) {
     // Walk through text nodes to find the correct position
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     let currentPos = 0;
@@ -1450,6 +1523,14 @@ Object.assign(App.prototype, {
 
     if (!startNode) return;  // Could not find position
 
+    const makeMark = (text) => {
+      const mark = document.createElement('mark');
+      mark.className = 'yara-highlight yara-highlight-flash';
+      if (matchIdx !== undefined) mark.dataset.yaraMatch = String(matchIdx);
+      mark.textContent = text;
+      return mark;
+    };
+
     // If start and end are in the same node, simple case
     if (startNode === endNode) {
       const text = startNode.textContent;
@@ -1459,12 +1540,7 @@ Object.assign(App.prototype, {
 
       const frag = document.createDocumentFragment();
       if (before) frag.appendChild(document.createTextNode(before));
-
-      const mark = document.createElement('mark');
-      mark.className = 'yara-highlight yara-highlight-flash';
-      mark.textContent = matched;
-      frag.appendChild(mark);
-
+      frag.appendChild(makeMark(matched));
       if (after) frag.appendChild(document.createTextNode(after));
 
       startNode.parentNode.replaceChild(frag, startNode);
@@ -1477,18 +1553,22 @@ Object.assign(App.prototype, {
 
       const frag = document.createDocumentFragment();
       if (before) frag.appendChild(document.createTextNode(before));
-
-      const mark = document.createElement('mark');
-      mark.className = 'yara-highlight yara-highlight-flash';
-      mark.textContent = matched;
-      frag.appendChild(mark);
+      frag.appendChild(makeMark(matched));
 
       startNode.parentNode.replaceChild(frag, startNode);
     }
   },
 
+
   // ── Clear YARA inline highlights ────────────────────────────────────────
   _clearYaraHighlight() {
+    // Cancel any pending auto-clear timer so it doesn't fire later and
+    // reset an unrelated ref's _currentMatchIndex.
+    if (this._yaraHighlightTimer) {
+      clearTimeout(this._yaraHighlightTimer);
+      this._yaraHighlightTimer = null;
+    }
+
     const pc = document.getElementById('page-container');
     if (!pc) return;
 
@@ -1497,6 +1577,7 @@ Object.assign(App.prototype, {
     for (const el of highlighted) {
       el.classList.remove('yara-line-highlight');
     }
+
 
     // Remove inline mark elements and restore text
     const marks = pc.querySelectorAll('mark.yara-highlight');
@@ -1524,113 +1605,160 @@ Object.assign(App.prototype, {
     }
   },
 
-  // ── Highlight YARA match in CSV detail pane ─────────────────────────────
-  _highlightYaraMatchInCsv(csvView, sourceText, offset, length) {
-    // Clear any existing highlights first
+  // ── Highlight YARA matches in CSV detail pane ──────────────────────────
+  //
+  // Same contract as _highlightYaraMatchesInline but for the CSV virtualised
+  // view. We expand the focus match's row, and after the virtual scroll has
+  // rendered, highlight *all* matches that fall within any currently rendered
+  // detail pane (typically this is just the focus row's pane plus any other
+  // rows the user has already expanded). Matches in off-screen virtualised
+  // rows can't be highlighted simultaneously without expanding many rows —
+  // cycling through clicks will visit each focus row in turn.
+  _highlightYaraMatchesInCsv(csvView, sourceText, matches, focusIdx, forceScroll, ref) {
+    // Clear existing YARA highlights + pending timer first.
     this._clearYaraHighlight();
 
     const filters = csvView._csvFilters;
     if (!filters || !filters.dataRows) return;
 
-    // Find which row contains this offset
-    let targetRow = null;
+    const focusMatch = matches[focusIdx];
+    if (!focusMatch) return;
+
+    // Find which row the focus match belongs to.
+    let focusRow = null;
     for (const r of filters.dataRows) {
-      if (offset >= r.offsetStart && offset < r.offsetEnd) {
-        targetRow = r;
+      if (focusMatch.offset >= r.offsetStart && focusMatch.offset < r.offsetEnd) {
+        focusRow = r;
         break;
       }
     }
+    if (!focusRow) return;
 
-    if (!targetRow) return;
+    const dataIdx = focusRow.dataIndex;
 
-    const matchText = sourceText.substring(offset, offset + length);
-    const dataIdx = targetRow.dataIndex;
+    // Helper: escape HTML entities.
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    // Use virtual scrolling API to scroll to and expand the row
-    if (filters.scrollToRow) {
-      filters.scrollToRow(dataIdx, false); // Don't use default highlight, we'll do YARA-specific highlight
+    // Helper: highlight all matches inside a given detail pane.
+    // Returns the <mark> element corresponding to focusIdx (or null).
+    const highlightPane = (detailPane, rowMatches) => {
+      let focusMarkEl = null;
+      const detailVals = detailPane.querySelectorAll('.csv-detail-val');
+      for (const valEl of detailVals) {
+        // For each cell, find every match string that occurs in it and wrap
+        // them in <mark>. Multiple matches per cell are supported; overlaps
+        // are resolved by taking earliest position wins.
+        const cellText = valEl.textContent;
+        if (!cellText) continue;
 
-      // Wait for virtual scroll to render, then highlight the match
-      setTimeout(() => {
-        // Find the rendered row element
-        const tbody = csvView.querySelector('tbody');
-        const tr = tbody && tbody.querySelector(`tr[data-idx="${dataIdx}"]`);
-        if (!tr) return;
-
-        // Add row highlight
-        tr.classList.add('csv-yara-row-highlight');
-
-        // Find the detail row (next sibling)
-        const detailTr = tr.nextElementSibling;
-        if (!detailTr || !detailTr.classList.contains('csv-detail-row')) return;
-
-        // Find and highlight the match in the detail pane
-        const detailPane = detailTr.querySelector('.csv-detail-pane');
-        if (detailPane) {
-          const detailVals = detailPane.querySelectorAll('.csv-detail-val');
-          let found = false;
-          for (const valEl of detailVals) {
-            if (found) break;
-            const cellText = valEl.textContent;
-            
-            // Try exact match first, then case-insensitive (for nocase YARA rules)
-            let matchIdx = cellText.indexOf(matchText);
-            let actualMatch = matchText;
-            if (matchIdx === -1) {
-              matchIdx = cellText.toLowerCase().indexOf(matchText.toLowerCase());
-              if (matchIdx !== -1) {
-                actualMatch = cellText.substring(matchIdx, matchIdx + matchText.length);
-              }
-            }
-            
-            if (matchIdx !== -1) {
-              // Found the match - highlight it
-              const before = cellText.substring(0, matchIdx);
-              const matched = cellText.substring(matchIdx, matchIdx + actualMatch.length);
-              const after = cellText.substring(matchIdx + actualMatch.length);
-
-              // Escape HTML entities
-              const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-              valEl.innerHTML = esc(before) +
-                `<mark class="csv-yara-highlight csv-yara-highlight-flash">${esc(matched)}</mark>` +
-                esc(after);
-
-              // Scroll the highlighted element into view within the detail pane
-              const mark = valEl.querySelector('.csv-yara-highlight');
-              if (mark) {
-                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-              found = true;
-            }
+        // Find all (cellStart, cellEnd, matchIdx) hits within this cell.
+        const hits = [];
+        for (const rm of rowMatches) {
+          const matchStr = sourceText.substring(rm.offset, rm.offset + rm.length);
+          if (!matchStr) continue;
+          let idx = cellText.indexOf(matchStr);
+          if (idx === -1) {
+            idx = cellText.toLowerCase().indexOf(matchStr.toLowerCase());
+          }
+          if (idx !== -1) {
+            hits.push({ start: idx, end: idx + matchStr.length, matchIdx: rm._matchIdx });
           }
         }
+        if (!hits.length) continue;
 
-        // Remove highlights after animation
-        setTimeout(() => {
-          tr.classList.remove('csv-yara-row-highlight');
-          const marks = csvView.querySelectorAll('mark.csv-yara-highlight');
-          for (const mark of marks) {
-            mark.classList.remove('csv-yara-highlight-flash');
-          }
-        }, 3000);
+        hits.sort((a, b) => a.start - b.start);
+        // Drop overlaps.
+        const keep = [];
+        let cursor = -1;
+        for (const h of hits) {
+          if (h.start >= cursor) { keep.push(h); cursor = h.end; }
+        }
 
-        // Clean up mark elements after longer delay
-        setTimeout(() => {
-          const marks = csvView.querySelectorAll('mark.csv-yara-highlight');
-          for (const mark of marks) {
-            const textNode = document.createTextNode(mark.textContent);
-            mark.parentNode.replaceChild(textNode, mark);
-          }
-          // Normalize
-          const detailVals = csvView.querySelectorAll('.csv-detail-val');
-          for (const cell of detailVals) {
-            cell.normalize();
-          }
-        }, 5000);
-      }, 400); // Wait for virtual scroll to complete
+        // Build innerHTML in one pass.
+        let out = '';
+        let pos = 0;
+        for (const h of keep) {
+          if (h.start > pos) out += esc(cellText.substring(pos, h.start));
+          const matchedText = cellText.substring(h.start, h.end);
+          out += `<mark class="csv-yara-highlight csv-yara-highlight-flash" data-yara-match="${h.matchIdx}">${esc(matchedText)}</mark>`;
+          pos = h.end;
+        }
+        if (pos < cellText.length) out += esc(cellText.substring(pos));
+        valEl.innerHTML = out;
+
+        // Locate focus mark if present.
+        if (!focusMarkEl) {
+          focusMarkEl = valEl.querySelector(`mark.csv-yara-highlight[data-yara-match="${focusIdx}"]`);
+        }
+      }
+      return focusMarkEl;
+    };
+
+    // Group matches by which CSV row they belong to (by offset range).
+    // Attach original matchIdx so we can locate the focus mark.
+    const matchesByRowIdx = new Map(); // dataIndex -> [{offset, length, _matchIdx}, ...]
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      if (m.offset == null || !m.length) continue;
+      for (const r of filters.dataRows) {
+        if (m.offset >= r.offsetStart && m.offset < r.offsetEnd) {
+          let arr = matchesByRowIdx.get(r.dataIndex);
+          if (!arr) { arr = []; matchesByRowIdx.set(r.dataIndex, arr); }
+          arr.push({ offset: m.offset, length: m.length, _matchIdx: i });
+          break;
+        }
+      }
     }
+
+    // Scroll the focus row into view & expand it (virtual scroll).
+    if (filters.scrollToRow) {
+      filters.scrollToRow(dataIdx, false);
+    }
+
+    // Wait for virtual scroll to render, then apply highlights.
+    setTimeout(() => {
+      const tbody = csvView.querySelector('tbody');
+      if (!tbody) return;
+
+      // Highlight every currently-rendered detail pane whose row has matches.
+      let focusMarkEl = null;
+      for (const [rowDataIdx, rowMatches] of matchesByRowIdx) {
+        const tr = tbody.querySelector(`tr[data-idx="${rowDataIdx}"]`);
+        if (!tr) continue;
+        tr.classList.add('csv-yara-row-highlight');
+        const detailTr = tr.nextElementSibling;
+        if (!detailTr || !detailTr.classList.contains('csv-detail-row')) continue;
+        const detailPane = detailTr.querySelector('.csv-detail-pane');
+        if (!detailPane) continue;
+        const fm = highlightPane(detailPane, rowMatches);
+        if (fm && !focusMarkEl) focusMarkEl = fm;
+      }
+
+      // Decide whether to scroll the focus mark into view.
+      let shouldScroll = forceScroll;
+      if (!forceScroll && focusMarkEl) {
+        const vh = window.innerHeight || document.documentElement.clientHeight;
+        const vw = window.innerWidth || document.documentElement.clientWidth;
+        const allMarks = csvView.querySelectorAll('mark.csv-yara-highlight');
+        const anyInView = Array.from(allMarks).some(m => {
+          const rc = m.getBoundingClientRect();
+          return rc.bottom > 0 && rc.top < vh && rc.right > 0 && rc.left < vw && rc.width > 0 && rc.height > 0;
+        });
+        shouldScroll = !anyInView;
+      }
+      if (shouldScroll && focusMarkEl) {
+        focusMarkEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      // Schedule the 5-second auto-clear timer.
+      this._yaraHighlightTimer = setTimeout(() => {
+        this._clearYaraHighlight();
+        if (ref) ref._currentMatchIndex = undefined;
+        this._yaraHighlightTimer = null;
+      }, 5000);
+    }, 400); // Wait for virtual scroll to complete
   },
+
 
   // ── Update overall risk from encoded content severity ──────────────────
   _updateRiskFromEncodedContent() {

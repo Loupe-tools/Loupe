@@ -34,14 +34,16 @@ receives security fixes. There are no LTS branches.
 
 ## Reporting a Vulnerability
 
-If you discover a security issue in Loupe, please report it **privately**:
+Security reports are taken seriously but are
+handled as time permits.
+
+Please report vulnerabilities **privately** via one of:
 
 1. **GitHub Security Advisories (preferred)**
-   → [Open a draft advisory](https://github.com/AuroraSec-dev/Loupe/security/advisories/new)
+   → [Open a draft advisory](https://github.com/Loupe-tools/Loupe/security/advisories/new)
 
-2. **Email**
-   → Send details to the maintainer address listed in the repository's
-   GitHub profile. Encrypt with the PGP key published there if available.
+2. **Email** → `security@loupe.tools`
+   Encryption with the PGP key below is encouraged for sensitive reports.
 
 Please include:
 
@@ -49,16 +51,32 @@ Please include:
 - Steps to reproduce, or a proof-of-concept file if applicable.
 - The Loupe version or commit hash you tested against.
 
-### What to expect
+Reporters will be credited in the release notes unless they prefer anonymity.
+Please allow reasonable time for a fix before public disclosure — coordinated
+disclosure is appreciated.
 
-| Step | Timeframe |
-|------|-----------|
-| Acknowledgement of your report | **≤ 48 hours** |
-| Initial triage and severity assessment | **≤ 7 days** |
-| Fix shipped (or mitigation documented) | **≤ 30 days** for critical/high; best-effort for lower severity |
-| Public disclosure | Coordinated with reporter; default **90 days** after report |
+### PGP Public Key
 
-We will credit reporters in the release notes unless they prefer anonymity.
+Fingerprint: `D8F0 2D60 C620 0F36 81F9 385D 7D97 7413 62BE B570`
+```
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+xjMEaeIpSBYJKwYBBAHaRw8BAQdAdoz/JXwpuFYGLjbxtxzztKAmQeKVca48
+5CVcw9VvVAHNK3NlY3VyaXR5QGxvdXBlLnRvb2xzIDxzZWN1cml0eUBsb3Vw
+ZS50b29scz7CwBEEExYKAIMFgmniKUgDCwkHCRB9l3QTYr61cEUUAAAAAAAc
+ACBzYWx0QG5vdGF0aW9ucy5vcGVucGdwanMub3JnyLj9VpdXQ+HglRdVlIv8
+S2BYnxJWOsRE3B2RLF+CbVMDFQoIBBYAAgECGQECmwMCHgEWIQTY8C1gxiAP
+NoH5OF19l3QTYr61cAAAEfABAOcwmZf2BCsrWPIkJt1MxUCiUNmwGUl2gOgT
+bgTfraBmAP95wE67+URHPOOwSkMOoxtAzzhv6cgbteW3s1oXqkgSDs44BGni
+KUgSCisGAQQBl1UBBQEBB0DrCfs0hafJhkk/JfGS/8nUDKiOr2gezMEVvyvF
+J08OfwMBCAfCvgQYFgoAcAWCaeIpSAkQfZd0E2K+tXBFFAAAAAAAHAAgc2Fs
+dEBub3RhdGlvbnMub3BlbnBncGpzLm9yZzmMwPOCTte11fi9i8212wUGk9WX
+dQBvj9U/P9mcnBXDApsMFiEE2PAtYMYgDzaB+ThdfZd0E2K+tXAAAGroAP0W
+LCTQfYKVR/BsSTwCXga1BV1w3RMf1vaMWhB0nJQSRgEA2wjBKwwepSNHlarD
+8GHT8gI55JyTOA2ar15Zi1pwMA8=
+=2zDT
+-----END PGP PUBLIC KEY BLOCK-----
+```
 
 ---
 

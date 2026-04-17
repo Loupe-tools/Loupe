@@ -114,6 +114,7 @@ JS_FILES = [
     'src/renderers/elf-renderer.js',
     'src/renderers/macho-renderer.js',
     'src/renderers/x509-renderer.js',
+    'src/renderers/pgp-renderer.js',
     'src/renderers/jar-renderer.js',
     'src/renderers/svg-renderer.js',
     'src/renderers/osascript-renderer.js',
@@ -128,6 +129,24 @@ JS_FILES = [
 ]
 
 app_js = '\n'.join(read(f) for f in JS_FILES)
+
+# File extensions accepted by the open-file input. Keep as a list for sanity.
+ACCEPT_EXTS = [
+    '.docx','.docm','.xlsx','.xlsm','.xls','.ods','.pptx','.pptm','.ppt','.odt','.odp',
+    '.csv','.tsv','.doc','.msg','.eml','.lnk','.hta','.rtf','.pdf',
+    '.zip','.gz','.gzip','.tar','.tgz','.rar','.7z','.cab','.iso','.img','.one',
+    '.url','.webloc','.iqy','.slk','.wsf','.wsc','.wsh','.reg','.inf','.sct','.msi',
+    '.html','.htm','.mht','.xml','.vbs','.vbe','.js','.jse','.ps1','.bat','.cmd',
+    '.ics','.vcf','.txt','.log','.json','.ini','.cfg','.yml','.yaml',
+    '.jpg','.jpeg','.png','.gif','.bmp','.webp','.ico','.tif','.tiff','.avif','.svg',
+    '.evtx','.sqlite','.db','.exe','.dll','.sys','.scr','.cpl','.ocx','.drv','.com',
+    '.elf','.so','.o','.dylib','.bundle',
+    '.pem','.der','.crt','.cer','.p12','.pfx','.key',
+    '.pgp','.gpg','.asc','.sig',
+    '.jar','.war','.ear','.class',
+    '.applescript','.jxa','.scpt','.scptd','.plist',
+]
+accept_attr = ','.join(ACCEPT_EXTS)
 
 HTML = f"""<!DOCTYPE html>
 <html lang="en">
@@ -161,7 +180,7 @@ HTML = f"""<!DOCTYPE html>
     <button class="tb-btn tb-icon-btn" id="btn-security" title="Toggle security sidebar (S)">🛡</button>
     <button class="tb-btn tb-icon-btn" id="btn-help" title="Help &amp; About (?)">?</button>
     <button class="tb-btn tb-icon-btn" id="btn-theme" title="Toggle dark mode">🌙</button>
-    <input type="file" id="file-input" accept=".docx,.docm,.xlsx,.xlsm,.xls,.ods,.pptx,.pptm,.ppt,.odt,.odp,.csv,.tsv,.doc,.msg,.eml,.lnk,.hta,.rtf,.pdf,.zip,.gz,.gzip,.tar,.tgz,.rar,.7z,.cab,.iso,.img,.one,.url,.webloc,.iqy,.slk,.wsf,.wsc,.wsh,.reg,.inf,.sct,.msi,.html,.htm,.mht,.xml,.vbs,.vbe,.js,.jse,.ps1,.bat,.cmd,.ics,.vcf,.txt,.log,.json,.ini,.cfg,.yml,.yaml,.jpg,.jpeg,.png,.gif,.bmp,.webp,.ico,.tif,.tiff,.avif,.svg,.evtx,.sqlite,.db,.exe,.dll,.sys,.scr,.cpl,.ocx,.drv,.com,.elf,.so,.o,.dylib,.bundle,.pem,.der,.crt,.cer,.p12,.pfx,.jar,.war,.ear,.class,.applescript,.jxa,.scpt,.scptd,.plist" style="display:none">
+    <input type="file" id="file-input" accept="{accept_attr}" style="display:none">
   </div>
 
   <!-- ── Main area (viewer + sidebar side-by-side) ──────────────────── -->

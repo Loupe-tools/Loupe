@@ -268,7 +268,13 @@ Object.assign(App.prototype, {
         const r = new PdfRenderer();
         this.findings = await r.analyzeForSecurity(buffer, file.name);
         docEl = await r.render(buffer);
-      } else if (['pem', 'der', 'crt', 'cer', 'p12', 'pfx'].includes(ext)) {
+      } else if (['pgp', 'gpg', 'asc', 'sig'].includes(ext) ||
+                 (['key', 'pem', 'crt', 'cer', 'der'].includes(ext) &&
+                  this._looksLikePgp(new Uint8Array(buffer)))) {
+        const r = new PgpRenderer();
+        this.findings = r.analyzeForSecurity(buffer, file.name);
+        docEl = r.render(buffer, file.name);
+      } else if (['pem', 'der', 'crt', 'cer', 'p12', 'pfx', 'key'].includes(ext)) {
         const r = new X509Renderer();
         this.findings = r.analyzeForSecurity(buffer, file.name);
         docEl = r.render(buffer, file.name);
@@ -492,6 +498,10 @@ Object.assign(App.prototype, {
             this._yaraBuffer = this.findings.augmentedBuffer;
           }
           docEl = r.render(buffer, file.name);
+        } else if (detectedType === 'pgp') {
+          const r = new PgpRenderer();
+          this.findings = r.analyzeForSecurity(buffer, file.name);
+          docEl = r.render(buffer, file.name);
         } else {
           // Catch-all: plain text or hex dump for any unrecognised format
           const r = new PlainTextRenderer();
@@ -711,14 +721,44 @@ Object.assign(App.prototype, {
     if (bytes.length >= 8 && bytes[0] === 0x62 && bytes[1] === 0x70 && bytes[2] === 0x6C &&
         bytes[3] === 0x69 && bytes[4] === 0x73 && bytes[5] === 0x74)
       return { hex: h(8), label: 'Binary Property List (bplist)' };
+    // OpenPGP ASCII armor (text-based: -----BEGIN PGP ...)
+    if (head.startsWith('-----BEGIN PGP'))
+      return { hex: h(14), label: 'OpenPGP ASCII-Armored Data' };
     // PEM certificate (text-based: -----BEGIN ...)
     if (head.startsWith('-----BEGIN '))
       return { hex: h(11), label: 'PEM Encoded Data' };
+    // OpenPGP binary packet stream: Public-Key (0x99 / 0xC6), Secret-Key (0x95 / 0xC5),
+    // Public-Subkey (0xB9 / 0xCE), Secret-Subkey (0x9D / 0xC7) — followed by a version
+    // byte in {3,4,5,6}. Check tight byte patterns to avoid false positives.
+    if (bytes.length >= 3 &&
+        [0x99, 0x95, 0xB9, 0x9D, 0xC6, 0xC5, 0xCE, 0xC7].includes(bytes[0])) {
+      // For old-format packets (0x9X / 0xBX) the version byte is at offset 3 (after 2-byte length);
+      // for new-format (0xCX) it follows the length byte(s). We accept either if we see a plausible version in the first 8 bytes.
+      const scan = bytes.subarray(0, Math.min(8, bytes.length));
+      if ([3, 4, 5, 6].some(v => Array.from(scan).includes(v))) {
+        return { hex: h(4), label: 'OpenPGP Binary Key / Signature' };
+      }
+    }
     // DER certificate (ASN.1 SEQUENCE with long-form length)
     if (bytes[0] === 0x30 && bytes[1] === 0x82)
       return { hex: h(4), label: 'DER / ASN.1 Data' };
     return { hex: h(Math.min(4, bytes.length)), label: 'Unknown' };
   },
+
+  // ── Heuristic: does this buffer look like OpenPGP data? ─────────────────
+  // Used to disambiguate .key between X.509 private key (PEM) and PGP key.
+  _looksLikePgp(bytes) {
+    if (!bytes || bytes.length < 4) return false;
+    // ASCII-armored
+    const head = String.fromCharCode(...bytes.subarray(0, Math.min(64, bytes.length)));
+    if (head.includes('-----BEGIN PGP ')) return true;
+    // Binary OpenPGP packet headers (Public-Key, Secret-Key, their subkey variants,
+    // both old-format and new-format)
+    const first = bytes[0];
+    if ([0x99, 0x95, 0xB9, 0x9D, 0xC6, 0xC5, 0xCE, 0xC7].includes(first)) return true;
+    return false;
+  },
+
 
   // ── OLE/CFB disambiguation (determine doc/xls/ppt/msg/msi from OLE compound) ──
   _tryOleCfbDisambiguation(buffer) {
@@ -859,6 +899,15 @@ Object.assign(App.prototype, {
     if (bytes[0] === 0x46 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x54)
       return 'scpt';
     
+    // Binary OpenPGP packet stream — first byte is an OpenPGP packet header
+    // (Public-Key, Secret-Key, Public-Subkey, Secret-Subkey in both old+new format).
+    // Check tight byte patterns + plausible version byte to avoid false positives.
+    if ([0x99, 0x95, 0xB9, 0x9D, 0xC6, 0xC5, 0xCE, 0xC7].includes(bytes[0])) {
+      const scan = bytes.subarray(0, Math.min(8, bytes.length));
+      if ([3, 4, 5, 6].some(v => Array.from(scan).includes(v)))
+        return 'pgp';
+    }
+    
     // Text-based detection (check first 20 bytes as string)
     const head = String.fromCharCode(...bytes.subarray(0, Math.min(20, bytes.length)));
     
@@ -887,6 +936,10 @@ Object.assign(App.prototype, {
     // URL shortcut
     if (head.startsWith('[InternetShortcut]'))
       return 'url';
+    
+    // OpenPGP ASCII armor (-----BEGIN PGP PUBLIC KEY BLOCK-----, etc.)
+    if (head.startsWith('-----BEGIN PGP'))
+      return 'pgp';
     
     // Registry files
     if (head.startsWith('REGEDIT4') || head.startsWith('Windows Registry'))

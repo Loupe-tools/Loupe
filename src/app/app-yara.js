@@ -1202,6 +1202,40 @@ Object.assign(App.prototype, {
     dialogEl.appendChild(ov);
   },
 
+  /** Build a byte-offset → JS-char-offset map for the rendered rawText.
+   *  YARA reports byte offsets into the UTF-8 encoded file buffer, but the
+   *  text view (`plaintext-table`) works in JavaScript string (UTF-16 code
+   *  unit) coordinates. For files containing multi-byte UTF-8 characters
+   *  (e.g. `──` U+2500 = 3 bytes / 1 JS char) the two coordinate systems
+   *  diverge, causing highlights to land on the wrong text.
+   *
+   *  Returns a Map<byteOffset, charOffset> with entries at every character
+   *  boundary, plus a final entry at text.length for end-position lookups.
+   *  Returns null if no rawText is available. */
+  _buildYaraByteToCharMap() {
+    const pc = document.getElementById('page-container');
+    const docEl = pc && pc.firstElementChild;
+    const rawText = docEl && docEl._rawText;
+    if (typeof rawText !== 'string' || !rawText.length) return null;
+    const map = new Map();
+    let bi = 0;
+    for (let ci = 0; ci < rawText.length; ci++) {
+      map.set(bi, ci);
+      const code = rawText.charCodeAt(ci);
+      if (code < 0x80) bi += 1;
+      else if (code < 0x800) bi += 2;
+      else if (code >= 0xD800 && code <= 0xDBFF) {
+        // high surrogate: supplementary plane char is 4 UTF-8 bytes,
+        // and spans 2 JS chars (surrogate pair).
+        bi += 4; ci++;
+      } else {
+        bi += 3;
+      }
+    }
+    map.set(bi, rawText.length);
+    return map;
+  },
+
   /** Update sidebar extracted tab with YARA results. */
   _updateSidebarWithYara(results) {
     if (!this.findings) return;
@@ -1211,6 +1245,12 @@ Object.assign(App.prototype, {
     const validSeverities = ['critical', 'high', 'medium', 'low', 'info'];
     let maxSeverity = null;
     const sevRank = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+
+    // Convert YARA's byte offsets → JS char offsets so that downstream
+    // highlighting (which works on _rawText char indices) lands on the
+    // correct text even when the file contains multi-byte UTF-8 sequences.
+    const byteToChar = this._buildYaraByteToCharMap();
+
     for (const r of results) {
       const desc = (r.meta && r.meta.description) ? r.meta.description : null;
       const severity = (r.meta && r.meta.severity) ? r.meta.severity.toLowerCase() : 'high';
@@ -1223,7 +1263,21 @@ Object.assign(App.prototype, {
       const allMatches = [];
       for (const m of r.matches) {
         for (const loc of m.matches) {
-          allMatches.push({ offset: loc.offset, length: loc.length, stringId: m.id, value: m.value });
+          let offset = loc.offset;
+          let length = loc.length;
+          if (byteToChar) {
+            const startChar = byteToChar.get(loc.offset);
+            const endChar = byteToChar.get(loc.offset + loc.length);
+            // Only remap when both endpoints fall on char boundaries.
+            // If they don't (e.g. a hex-pattern match straddles a multi-byte
+            // char), fall back to the raw byte offsets — highlighting may be
+            // imprecise but at least won't be catastrophically wrong.
+            if (startChar !== undefined && endChar !== undefined) {
+              offset = startChar;
+              length = endChar - startChar;
+            }
+          }
+          allMatches.push({ offset, length, stringId: m.id, value: m.value });
         }
       }
       allMatches.sort((a, b) => a.offset - b.offset);

@@ -1558,11 +1558,18 @@ body.dark .plaintext-table tr.ioc-highlight-line > td {
 }
 
 /* ── YARA match inline highlight ── */
+/* IMPORTANT: <mark> elements must NOT alter layout metrics of the matched
+   text, otherwise wrapping the text in a mark (on click) can re-wrap words
+   and shift surrounding content. Use zero padding/border and inherit font
+   so only colour/background change. Outline/box-shadow are painted but do
+   not affect layout. */
 mark.yara-highlight {
   background: rgba(34, 211, 238, .4);
-  border-radius: 2px;
-  padding: 0 2px;
   color: inherit;
+  font: inherit;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
 }
 
 mark.yara-highlight-flash {
@@ -1600,11 +1607,15 @@ body.dark .plaintext-table tr.yara-line-highlight > td {
 }
 
 /* ── CSV YARA match highlight ── */
+/* Same rule as mark.yara-highlight — no padding/border so the mark doesn't
+   change text metrics and cause the surrounding content to re-flow. */
 mark.csv-yara-highlight {
   background: rgba(34, 211, 238, .4);
-  border-radius: 2px;
-  padding: 1px 3px;
   color: inherit;
+  font: inherit;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
 }
 
 mark.csv-yara-highlight-flash {
