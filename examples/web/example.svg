@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Loupe benign SVG baseline — no scripts, no foreignObject, no event handlers -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <title>Loupe Benign SVG Sample</title>
+  <desc>A harmless vector graphic used to verify the SVG renderer's safe-path output.</desc>
+  <rect x="10" y="10" width="180" height="180" fill="#0ea5e9" stroke="#0369a1" stroke-width="4" rx="12"/>
+  <circle cx="100" cy="100" r="60" fill="#fef3c7" stroke="#b45309" stroke-width="3"/>
+  <text x="100" y="108" font-family="sans-serif" font-size="24" text-anchor="middle" fill="#0f172a">Loupe</text>
+</svg>

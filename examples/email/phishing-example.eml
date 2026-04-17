@@ -1,0 +1,39 @@
+Received: from mail.suspicious-sender.example (unknown [185.220.101.45])
+	by mx.example.com with ESMTPS id abc123; Tue, 14 Jan 2026 08:30:00 +0000
+Received-SPF: fail (example.com: domain of it-support@microsoft-security.example does not
+	designate 185.220.101.45 as permitted sender)
+Authentication-Results: mx.example.com;
+	spf=fail smtp.mailfrom=it-support@microsoft-security.example;
+	dkim=fail (signature verification failed) header.d=microsoft-security.example;
+	dmarc=fail (p=reject) header.from=microsoft.com
+From: "Microsoft Security" <it-support@microsoft-security.example>
+Reply-To: attacker@evil.example.com
+To: victim@example.com
+Subject: [URGENT] Your Microsoft 365 password expires today — action required
+Date: Tue, 14 Jan 2026 08:30:00 +0000
+Message-ID: <phish-001@microsoft-security.example>
+X-Mailer: Loupe Test Phishing Sample
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="----=_PhishBoundary"
+
+------=_PhishBoundary
+Content-Type: text/plain; charset="utf-8"
+
+Your Microsoft 365 password expires in 1 hour. Verify your identity now:
+http://microsoft-security-verify.example.com/login?user=victim@example.com
+
+Failure to act will lock your account.
+-- Microsoft Security Team
+
+------=_PhishBoundary
+Content-Type: text/html; charset="utf-8"
+
+<html><body>
+<p>Dear victim,</p>
+<p>Your Microsoft 365 password expires in <b>1 hour</b>. Click below to verify:</p>
+<p><a href="http://microsoft-security-verify.example.com/login?user=victim@example.com">Verify Identity Now</a></p>
+<img src="http://tracker.evil.example.com/pixel.gif?id=victim-001" width="1" height="1" style="display:none">
+<p>-- Microsoft Security Team</p>
+</body></html>
+
+------=_PhishBoundary--
