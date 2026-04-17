@@ -8,7 +8,46 @@
 
 const MSI_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB - show simplified view above this
 
+// ── MSI CustomAction type code classification ───────────────────────────────
+// The CustomAction.Type column is a bit-field. The low 6 bits (mask 0x3F)
+// identify the action source/target. Upper bits control scheduling, impersonation,
+// synchronisation, etc. See:
+//   https://learn.microsoft.com/en-us/windows/win32/msi/custom-action-reference
+const MSI_CA_TYPES = Object.freeze({
+  0x01: { label: 'DLL stored in Binary table',             sev: 'high' },
+  0x02: { label: 'EXE stored in Binary table',             sev: 'critical' },
+  0x05: { label: 'JScript stored in Binary table',         sev: 'critical' },
+  0x06: { label: 'VBScript stored in Binary table',        sev: 'critical' },
+  0x11: { label: 'DLL installed with product',             sev: 'high' },
+  0x12: { label: 'EXE installed with product',             sev: 'high' },
+  0x15: { label: 'JScript referenced by installed file',   sev: 'critical' },
+  0x16: { label: 'VBScript referenced by installed file',  sev: 'critical' },
+  0x22: { label: 'EXE with command-line (existing file)',  sev: 'critical' },
+  0x23: { label: 'Directory set by formatted text',        sev: 'info' },
+  0x25: { label: 'JScript from property',                  sev: 'critical' },
+  0x26: { label: 'VBScript from property',                 sev: 'critical' },
+  0x32: { label: 'EXE command-line via Directory',         sev: 'critical' },
+  0x33: { label: 'Property set from formatted text',       sev: 'info' },
+  0x35: { label: 'JScript with formatted source+target',   sev: 'critical' },
+  0x36: { label: 'VBScript with formatted source+target',  sev: 'critical' },
+  0x37: { label: 'JScript from nested CA source',          sev: 'critical' },
+  0x38: { label: 'VBScript from nested CA source',         sev: 'critical' },
+  0x3E: { label: 'Concurrent advertisement (nested)',      sev: 'medium' },
+});
+const MSI_CA_FLAGS = Object.freeze([
+  { mask: 0x0040, label: 'Continue-on-error' },
+  { mask: 0x0080, label: 'Async (no wait)' },
+  { mask: 0x0100, label: 'Return-code ignored' },
+  { mask: 0x0400, label: 'First-sequence' },
+  { mask: 0x0800, label: 'Once-per-process' },
+  { mask: 0x1000, label: 'Commit-phase' },
+  { mask: 0x2000, label: 'Rollback-phase' },
+  { mask: 0x4000, label: 'Deferred execution' },
+  { mask: 0x3000, label: 'In-script (deferred)' },
+]);
+
 class MsiRenderer {
+
 
   render(buffer, fileName) {
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
@@ -242,6 +281,9 @@ class MsiRenderer {
       severity: 'high'
     });
 
+    const rankSev = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
+    const bumpRisk = (s) => { if ((rankSev[s] || 0) > (rankSev[f.risk] || 0)) f.risk = s; };
+
     try {
       // Use metadata-only parsing for security analysis too
       const ole = new OleCfbParser(bytes.buffer).parseMetadataOnly();
@@ -275,7 +317,7 @@ class MsiRenderer {
           url: 'CustomAction table present — installer can execute arbitrary code',
           severity: 'high'
         });
-        f.risk = 'high';
+        bumpRisk('high');
       }
 
       if (hasBinary) {
@@ -292,7 +334,7 @@ class MsiRenderer {
           url: 'ServiceInstall table — MSI will install Windows service(s)',
           severity: 'high'
         });
-        if (f.risk !== 'critical') f.risk = 'high';
+        bumpRisk('high');
       }
 
       if (hasRegistry) {
@@ -305,8 +347,122 @@ class MsiRenderer {
 
       // Escalate to high if multiple concerning tables
       const concernCount = [hasCustomAction, hasBinary, hasServiceInstall].filter(Boolean).length;
-      if (concernCount >= 2 && f.risk !== 'critical') {
-        f.risk = 'high';
+      if (concernCount >= 2) bumpRisk('high');
+
+      // ── Deep decode: string pool + CustomAction rows + Binary streams ───
+      const stringPool = this._parseStringPool(ole);
+      if (stringPool) {
+        f.metadata.stringPoolEntries = stringPool.length;
+
+        // CustomAction rows — per-row type classification
+        if (hasCustomAction) {
+          const rows = this._parseCustomActionRows(ole, stringPool);
+          if (rows && rows.length) {
+            f.metadata.customActionCount = rows.length;
+            const typeSummary = new Map();
+            for (const row of rows) {
+              const lowType = row.type & 0x3F;
+              const info = MSI_CA_TYPES[lowType];
+              const flagBits = [];
+              for (const fl of MSI_CA_FLAGS) {
+                if ((row.type & fl.mask) === fl.mask) flagBits.push(fl.label);
+              }
+              const typeLabel = info ? info.label : `unknown CA type 0x${lowType.toString(16)}`;
+              const sev = info ? info.sev : 'medium';
+              const key = `${lowType}:${row.source || ''}`;
+              if (!typeSummary.has(key)) typeSummary.set(key, 0);
+              typeSummary.set(key, typeSummary.get(key) + 1);
+              const noteParts = [
+                `CustomAction "${row.action}"`,
+                `type 0x${row.type.toString(16).padStart(4, '0')} (${typeLabel})`,
+              ];
+              if (row.source) noteParts.push(`source="${this._truncateStr(row.source, 48)}"`);
+              if (row.target) noteParts.push(`target="${this._truncateStr(row.target, 96)}"`);
+              if (flagBits.length) noteParts.push(`flags=[${flagBits.join(', ')}]`);
+              const isInScript = (row.type & 0x3000) !== 0;
+              const finalSev = isInScript && sev === 'high' ? 'critical' : sev;
+              f.externalRefs.push({
+                type: IOC.COMMAND_LINE,
+                url: noteParts.join(' · '),
+                severity: finalSev
+              });
+              bumpRisk(finalSev);
+
+              // Surface likely command-line payloads as raw IOCs too
+              if (row.target && [0x02, 0x12, 0x22, 0x32].includes(lowType)) {
+                f.externalRefs.push({
+                  type: IOC.COMMAND_LINE,
+                  url: row.target,
+                  severity: 'critical'
+                });
+                bumpRisk('critical');
+              }
+              // JScript/VBScript payload body
+              if (row.target && [0x05, 0x06, 0x15, 0x16, 0x25, 0x26, 0x35, 0x36, 0x37, 0x38].includes(lowType)) {
+                f.externalRefs.push({
+                  type: IOC.PATTERN,
+                  url: `Inline script body (${lowType === 0x05 || lowType === 0x15 || lowType === 0x25 || lowType === 0x35 || lowType === 0x37 ? 'JScript' : 'VBScript'}): ${this._truncateStr(row.target, 160)}`,
+                  severity: 'critical'
+                });
+                bumpRisk('critical');
+              }
+            }
+          }
+        }
+
+        // Binary stream enumeration — sniff magic bytes of each Binary.{name}
+        if (hasBinary) {
+          const binStreams = this._enumerateBinaryStreams(ole);
+          if (binStreams.length) {
+            f.metadata.binaryStreamCount = binStreams.length;
+            const sniffTypes = [];
+            let cabCount = 0;
+            for (const bs of binStreams) {
+              sniffTypes.push(`${bs.name}(${bs.magic.type})`);
+              if (bs.magic.isCab) cabCount++;
+              const sevMap = {
+                'PE Executable': 'high',
+                'DLL': 'high',
+                'Microsoft Cabinet': 'high',
+                'JScript/VBScript': 'critical',
+                'Batch/Shell Script': 'high',
+                'PowerShell Script': 'critical',
+                'ZIP Archive': 'medium',
+                '7z Archive': 'medium',
+                'Unknown/Data': 'info',
+              };
+              const sev = sevMap[bs.magic.type] || 'medium';
+              f.externalRefs.push({
+                type: IOC.PATTERN,
+                url: `Binary stream "${bs.name}" (${this._fmtBytes(bs.size)}) — magic: ${bs.magic.type}`,
+                severity: sev
+              });
+              if (sev === 'high' || sev === 'critical') bumpRisk(sev);
+            }
+            if (cabCount) {
+              f.metadata.embeddedCabs = cabCount;
+              f.externalRefs.push({
+                type: IOC.PATTERN,
+                url: `${cabCount} embedded Microsoft Cabinet (CAB) archive(s) in Binary table — payloads inside are not recursively unpacked`,
+                severity: 'high'
+              });
+              bumpRisk('high');
+            }
+            if (sniffTypes.length <= 20) f.metadata.binaryStreamSniff = sniffTypes;
+          }
+        }
+      }
+
+      // ── Authenticode signature verdict ────────────────────────────────
+      const sigVerdict = this._checkAuthenticode(ole);
+      if (sigVerdict) {
+        f.metadata.authenticode = sigVerdict.summary;
+        f.externalRefs.push({
+          type: IOC.PATTERN,
+          url: sigVerdict.note,
+          severity: sigVerdict.severity
+        });
+        if (sigVerdict.severity === 'high') bumpRisk('high');
       }
 
     } catch (e) {
@@ -627,7 +783,245 @@ class MsiRenderer {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Deep MSI decoding — string pool, CustomAction rows, Binary streams,
+  // Authenticode signature verdict. Called by analyzeForSecurity only.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Parse the MSI _StringPool + _StringData streams into a flat array of
+   * strings indexed by string-id (1-based; index 0 = empty/null).
+   *
+   *   _StringPool: u16 recordCount; records of (u16 len, u16 refCount)
+   *                — a zero-length record followed by a non-zero len means
+   *                  the previous record was a long-string high-word.
+   *   _StringData: concatenated UTF-8 bytes for each record's length.
+   *
+   * Returns null if either stream is absent or malformed.
+   */
+  _parseStringPool(ole) {
+    const pool = this._findMsiStream(ole, '_StringPool');
+    const data = this._findMsiStream(ole, '_StringData');
+    if (!pool || !data) return null;
+    const strings = [''];
+    try {
+      const dv = new DataView(pool.buffer, pool.byteOffset, pool.byteLength);
+      const dec = new TextDecoder('utf-8', { fatal: false });
+      // First record is the codepage/header at offset 0 (u32). Skip it.
+      let p = 4;
+      let d = 0;
+      const dataLen = data.length;
+      while (p + 4 <= pool.byteLength && strings.length < 200000) {
+        let len = dv.getUint16(p, true);
+        p += 2;
+        const refCount = dv.getUint16(p, true);
+        p += 2;
+        // Long-string encoding: len==0 with refCount != 0 means the next
+        // record's len field is actually the high word of a 32-bit length.
+        if (len === 0 && refCount !== 0) {
+          if (p + 4 > pool.byteLength) break;
+          const loLen = dv.getUint16(p, true);
+          const hiRef = dv.getUint16(p + 2, true);
+          p += 4;
+          len = (refCount << 16) | loLen;
+          // (hiRef is the real refCount for this long record — unused here)
+        }
+        if (len === 0) {
+          strings.push('');
+          continue;
+        }
+        if (d + len > dataLen) break;
+        const s = dec.decode(data.subarray(d, d + len));
+        strings.push(s);
+        d += len;
+      }
+    } catch (_) { return null; }
+    return strings;
+  }
+
+  /**
+   * Parse the CustomAction table. The MSI table format stores columns as
+   * parallel arrays: the stream contains column 0's values for all rows,
+   * then column 1's values, etc. Strings are stored as string-pool IDs
+   * (u16 or u32 depending on pool size). CustomAction has 4 columns:
+   *   Action (Identifier, string), Type (Integer, u16), Source (string?),
+   *   Target (string?). An optional 5th ExtendedType column exists on
+   *   newer MSIs but isn't critical here.
+   */
+  _parseCustomActionRows(ole, pool) {
+    const stream = this._findMsiStream(ole, 'CustomAction');
+    if (!stream) return null;
+    const wide = pool.length >= 0x10000; // use u32 string IDs if pool is huge
+    const strSize = wide ? 4 : 2;
+    const rowSize = strSize + 2 + strSize + strSize; // Action+Type+Source+Target
+    const nRows = Math.floor(stream.length / rowSize);
+    if (!nRows) return null;
+    const dv = new DataView(stream.buffer, stream.byteOffset, stream.byteLength);
+    const readStr = (off) => {
+      if (off + strSize > stream.length) return '';
+      const id = wide ? dv.getUint32(off, true) : dv.getUint16(off, true);
+      if (id === 0 || id >= pool.length) return '';
+      return pool[id] || '';
+    };
+    // Column offsets (each column stores nRows entries contiguously)
+    const col0 = 0;                   // Action
+    const col1 = col0 + strSize * nRows; // Type
+    const col2 = col1 + 2 * nRows;    // Source
+    const col3 = col2 + strSize * nRows; // Target
+    if (col3 + strSize * nRows > stream.length) {
+      // Fall back: treat the stream as row-major if column-major decode
+      // would overrun. Extremely rare, but keeps us resilient.
+      const rows = [];
+      for (let r = 0; r < nRows && rows.length < 200; r++) {
+        const base = r * rowSize;
+        rows.push({
+          action: readStr(base),
+          type:   dv.getUint16(base + strSize, true),
+          source: readStr(base + strSize + 2),
+          target: readStr(base + strSize + 2 + strSize),
+        });
+      }
+      return rows;
+    }
+    const rows = [];
+    for (let r = 0; r < nRows && rows.length < 200; r++) {
+      rows.push({
+        action: readStr(col0 + r * strSize),
+        type:   dv.getUint16(col1 + r * 2, true),
+        source: readStr(col2 + r * strSize),
+        target: readStr(col3 + r * strSize),
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * Enumerate Binary.* streams, sniff magic bytes of each. Returns array of
+   *   { name, size, magic: { type, isCab } }
+   */
+  _enumerateBinaryStreams(ole) {
+    const out = [];
+    for (const [rawName, meta] of ole.streamMeta) {
+      if (!rawName || rawName.charAt(0) === '\x05' || rawName.charAt(0) === '\x01') continue;
+      const decoded = this._decodeMsiStreamName(rawName);
+      if (!/^Binary\./i.test(decoded)) continue;
+      const data = ole.getStream(rawName);
+      if (!data || data.length < 2) continue;
+      out.push({
+        name: decoded,
+        size: meta.size,
+        magic: this._sniffBinaryMagic(data),
+      });
+      if (out.length >= 50) break;
+    }
+    return out;
+  }
+
+  _sniffBinaryMagic(bytes) {
+    const n = bytes.length;
+    if (n >= 2 && bytes[0] === 0x4D && bytes[1] === 0x5A) {
+      // PE — check Characteristics for DLL bit at IMAGE_FILE_HEADER
+      try {
+        const dv = new DataView(bytes.buffer, bytes.byteOffset, Math.min(n, 256));
+        const peOff = dv.getUint32(0x3C, true);
+        if (peOff + 24 < n && dv.getUint32(peOff, true) === 0x00004550) {
+          const chars = dv.getUint16(peOff + 4 + 18, true);
+          if (chars & 0x2000) return { type: 'DLL', isCab: false };
+        }
+      } catch (_) { }
+      return { type: 'PE Executable', isCab: false };
+    }
+    if (n >= 4 && bytes[0] === 0x4D && bytes[1] === 0x53 && bytes[2] === 0x43 && bytes[3] === 0x46) {
+      return { type: 'Microsoft Cabinet', isCab: true };
+    }
+    if (n >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04) {
+      return { type: 'ZIP Archive', isCab: false };
+    }
+    if (n >= 4 && bytes[0] === 0x37 && bytes[1] === 0x7A && bytes[2] === 0xBC && bytes[3] === 0xAF) {
+      return { type: '7z Archive', isCab: false };
+    }
+    // Text sniff on first 512 bytes
+    try {
+      const sample = new TextDecoder('utf-8', { fatal: false })
+        .decode(bytes.subarray(0, Math.min(n, 512)));
+      if (/^\s*#!/i.test(sample) || /^\s*@echo\s+off/i.test(sample) || /^\s*echo\s+off/i.test(sample)) {
+        return { type: 'Batch/Shell Script', isCab: false };
+      }
+      if (/^\s*(?:param\s*\(|function\s+\w+|\$[A-Za-z_])/i.test(sample) ||
+          /Invoke-Expression|IEX\s*\(|FromBase64String/i.test(sample)) {
+        return { type: 'PowerShell Script', isCab: false };
+      }
+      if (/\b(?:WScript|CreateObject|MsgBox|Sub\s+\w+\s*\(|Function\s+\w+\s*\()/i.test(sample) ||
+          /\bvar\s+\w+\s*=|document\.|window\./i.test(sample)) {
+        return { type: 'JScript/VBScript', isCab: false };
+      }
+    } catch (_) { }
+    return { type: 'Unknown/Data', isCab: false };
+  }
+
+  /**
+   * Locate the Binary/CustomAction/_StringPool etc. stream by MSI-encoded name.
+   */
+  _findMsiStream(ole, logicalName) {
+    for (const [rawName] of ole.streamMeta) {
+      if (!rawName) continue;
+      if (rawName.charAt(0) === '\x05' || rawName.charAt(0) === '\x01') continue;
+      const decoded = this._decodeMsiStreamName(rawName);
+      if (decoded === logicalName) return ole.getStream(rawName);
+    }
+    return null;
+  }
+
+  /**
+   * Detect Authenticode / MsiDigitalSignature stream presence. This is a
+   * list-only verdict — we report whether the PKCS#7 signature blob is
+   * present and its length, without verifying the cert chain (offline, no
+   * CRL/OCSP). An absent signature is surfaced as an info-level finding.
+   */
+  _checkAuthenticode(ole) {
+    // MSI signatures live in these possible streams:
+    //   \x05DigitalSignature       — root-level Authenticode blob (PKCS#7)
+    //   \x05MsiDigitalSignatureEx  — extended/hash-of-substorages variant
+    //   MsiDigitalSignature        — MSI table (per-row signatures)
+    const candidates = ['\x05DigitalSignature', '\x05MsiDigitalSignatureEx'];
+    let sigBlob = null;
+    let sigName = null;
+    for (const c of candidates) {
+      const lower = c.toLowerCase();
+      for (const [rawName] of ole.streamMeta) {
+        if (rawName.toLowerCase() === lower) {
+          sigBlob = ole.getStream(rawName);
+          sigName = c;
+          break;
+        }
+      }
+      if (sigBlob) break;
+    }
+    if (!sigBlob || sigBlob.length < 16) {
+      return {
+        summary: 'unsigned',
+        note: 'Unsigned MSI — no Authenticode \x05DigitalSignature stream present',
+        severity: 'medium',
+      };
+    }
+    // Sniff the signature bytes — PKCS#7 SignedData starts with a SEQUENCE
+    // (0x30) followed by a length. We don't chain-validate (offline), just
+    // report presence + length.
+    const looksPkcs7 = sigBlob[0] === 0x30;
+    return {
+      summary: `signed (${this._fmtBytes(sigBlob.length)}${looksPkcs7 ? '' : ', malformed'})`,
+      note: `Authenticode signature present — ${sigName} stream (${this._fmtBytes(sigBlob.length)}, PKCS#7 ${looksPkcs7 ? 'SEQUENCE' : 'unrecognised'}). Signature validity is not verified offline.`,
+      severity: 'info',
+    };
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
+
+  _truncateStr(s, maxLen) {
+    if (!s) return '';
+    const str = String(s);
+    return str.length > maxLen ? str.substring(0, maxLen) + '…' : str;
+  }
 
   _fmtBytes(n) {
     if (n < 1024) return n + ' B';
