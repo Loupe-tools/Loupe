@@ -1251,11 +1251,26 @@ Object.assign(App.prototype, {
     // correct text even when the file contains multi-byte UTF-8 sequences.
     const byteToChar = this._buildYaraByteToCharMap();
 
+    // Build "has structural finding" signal: if the renderer emitted an
+    // equivalent structural finding (e.g. OOXML oleObject/attachedTemplate
+    // rel), the matching YARA rule is suppressed from externalRefs to avoid
+    // duplicate sidebar noise. The YARA match remains visible in the YARA
+    // results dialog — only the sidebar IOC row is dropped.
+    const hasStructuralRel = (this.findings.externalRefs || []).some(r =>
+      r && r.note && /attachedtemplate|oleobject|externallink|externallinkpath|subdocument|frame|package/i.test(r.note)
+    );
+
     for (const r of results) {
+      // Suppress YARA rule if its structural equivalent already fired
+      if (typeof YARA_SUPPRESS_IF_STRUCTURAL !== 'undefined' &&
+          YARA_SUPPRESS_IF_STRUCTURAL.has(r.ruleName) && hasStructuralRel) {
+        continue;
+      }
       const desc = (r.meta && r.meta.description) ? r.meta.description : null;
       const severity = (r.meta && r.meta.severity) ? r.meta.severity.toLowerCase() : 'high';
       const sev = validSeverities.includes(severity) ? severity : 'high';
       const strings = r.matches.map(m => m.id + '=' + m.value).join(', ');
+
       let text = '';
       if (desc) text += desc + ' \u2014 ';
       text += r.matches.length + ' string(s) matched: ' + strings;

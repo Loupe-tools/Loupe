@@ -114,9 +114,24 @@ class XlsxRenderer {
           }
         }
       }
+      // Deep scan _rels/*.rels for every .xlsx-family package (runs even
+      // without macros — catches attachedTemplate, DDE/oleObject links,
+      // externalLink, and UNC paths used for NTLM credential theft).
+      if (['xlsx', 'xlsm', 'xltx', 'xltm', 'xlam', 'xlsb'].includes(ext)) {
+        try {
+          const zip = await JSZip.loadAsync(buffer);
+          const relRefs = await OoxmlRelScanner.scan(zip);
+          for (const r of relRefs) {
+            f.externalRefs.push(r);
+            if (r.severity === 'high') f.risk = 'high';
+            else if (r.severity === 'medium' && f.risk === 'low') f.risk = 'medium';
+          }
+        } catch (e) { /* ignore */ }
+      }
     } catch (e) { }
     return f;
   }
+
 
   _err(wrap, title, msg) {
     const b = document.createElement('div'); b.className = 'error-box';

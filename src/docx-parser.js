@@ -17,8 +17,29 @@ class DocxParser {
     const footers = await this._parseFooters(zip);
     const media = await this._extractMedia(zip);
     const macros = await this._extractMacros(zip);
-    return { document, styles, numbering, rels, metadata, headers, footers, media, macros };
+    // Collect every _rels/*.rels file for deep external-reference analysis
+    const allRels = await this._parseAllRels(zip);
+    return { document, styles, numbering, rels, metadata, headers, footers, media, macros, allRels };
   }
+
+  // Walk every *.rels entry in the package and return [{path, owner, dom}, …].
+  // `owner` is the XML part the rels file describes (e.g. 'word/document.xml'
+  // for 'word/_rels/document.xml.rels'; '[Content_Types]' for the top rels).
+  async _parseAllRels(zip) {
+    const out = [];
+    for (const p of Object.keys(zip.files)) {
+      if (zip.files[p].dir) continue;
+      if (!/(^|\/)_rels\/[^/]+\.rels$/.test(p)) continue;
+      const dom = await this._xml(zip, p);
+      if (!dom) continue;
+      // Derive the owning part path: strip "_rels/" and the trailing ".rels"
+      const m = p.match(/^(.*)_rels\/([^/]+)\.rels$/);
+      const owner = m ? (m[1] + m[2]) : p;
+      out.push({ path: p, owner, dom });
+    }
+    return out;
+  }
+
 
   async _xml(zip, path) {
     try {

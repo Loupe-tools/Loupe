@@ -199,19 +199,15 @@ class PptxRenderer {
         const g = (ns, n) => core.getElementsByTagNameNS(ns, n)[0]?.textContent?.trim() || '';
         f.metadata = { title: g(DC, 'title'), subject: g(DC, 'subject'), creator: g(DC, 'creator'), lastModifiedBy: g(DCP, 'lastModifiedBy'), created: g(DCP, 'created'), modified: g(DCP, 'modified') };
       }
-      for (const [p, file] of Object.entries(zip.files)) {
-        if (!p.endsWith('.rels') || file.dir) continue;
-        const rXml = new DOMParser().parseFromString(await file.async('string'), 'text/xml');
-        for (const r of rXml.getElementsByTagNameNS(PKG, 'Relationship')) {
-          const mode = r.getAttribute('TargetMode'), target = r.getAttribute('Target');
-          if (mode === 'External' && target) {
-            const t = (r.getAttribute('Type') || '').split('/').pop();
-            const sv = t === 'hyperlink' ? 'info' : 'medium';
-            f.externalRefs.push({ type: t === 'hyperlink' ? 'Hyperlink' : 'External', url: target, severity: sv });
-            if (sv !== 'info' && f.risk === 'low') f.risk = 'medium';
-          }
-        }
+      // Deep scan every _rels/*.rels via the shared OoxmlRelScanner —
+      // catches attachedTemplate, oleObject, external links, UNC paths.
+      const relRefs = await OoxmlRelScanner.scan(zip);
+      for (const r of relRefs) {
+        f.externalRefs.push(r);
+        if (r.severity === 'high') f.risk = 'high';
+        else if (r.severity === 'medium' && f.risk === 'low') f.risk = 'medium';
       }
+
     } catch (e) { }
     return f;
   }
