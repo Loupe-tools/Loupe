@@ -850,9 +850,29 @@ Object.assign(App.prototype, {
       const tag = e.target.tagName;
       if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'A' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.target.closest('.zoom-fab') || e.target.closest('.tb-btn') || e.target.closest('.copy-url-btn')) return;
-      // Don't pan on plaintext views (they have their own scrolling)
-      if (e.target.closest('.plaintext-scroll') || e.target.closest('.sheet-content-area') || e.target.closest('.csv-scroll')) return;
+      // Don't pan when the user is starting a text selection on any
+      // text-centric viewer. These containers have their own scrolling and
+      // should let the browser's native text-select gesture win.
+      if (
+        e.target.closest('.plaintext-scroll') ||
+        e.target.closest('.sheet-content-area') ||
+        e.target.closest('.csv-scroll') ||
+        e.target.closest('.evtx-scroll') ||
+        e.target.closest('.evtx-detail-pane') ||
+        e.target.closest('.csv-detail-pane') ||
+        e.target.closest('.sqlite-scroll') ||
+        e.target.closest('.eml-body') ||
+        e.target.closest('.rtf-text') ||
+        e.target.closest('.doc-text') ||
+        e.target.closest('.msg-body') ||
+        e.target.closest('.user-select-text') ||
+        e.target.closest('pre') ||
+        e.target.closest('code')
+      ) return;
+      // Never start a pan if the user is already in a drag-select gesture.
+      if (window.getSelection && window.getSelection().toString().length > 0) return;
       isPanning = true;
+
       startX = e.clientX; startY = e.clientY;
       scrollL = viewer.scrollLeft; scrollT = viewer.scrollTop;
       viewer.classList.add('panning');

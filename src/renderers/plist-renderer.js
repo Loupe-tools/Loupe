@@ -674,8 +674,15 @@ class PlistRenderer {
       wrap.appendChild(scr);
     }
 
-    // Store raw text for YARA/IOC scanning
-    wrap._rawText = root ? this._toText(root) : xmlSource || '';
+    // Store raw text for YARA/IOC scanning.
+    // Prefer the actual XML source when available so that match offsets returned
+    // by YARA and the IOC extractor line up with the displayed XML source in the
+    // plaintext-table. Falling back to the serialised tree would cause clicks
+    // on findings to highlight the wrong line (e.g. a URL finding would land on
+    // the first string leaf in the serialised tree rather than on the XML line
+    // containing the URL). For binary plists there is no xmlSource and no
+    // plaintext-table, so the tree serialisation is a harmless fallback.
+    wrap._rawText = xmlSource || (root ? this._toText(root) : '');
     return wrap;
   }
 
@@ -1150,14 +1157,27 @@ class PlistRenderer {
     }
 
     // ── Augmented buffer for YARA scanning ───────────────────────────────
-    let augmented = allText;
-    if (findings.externalRefs.length > 0) {
-      augmented += '\n=== EXTRACTED PLIST IOCS ===\n';
-      for (const ref of findings.externalRefs) {
-        augmented += ref.url + '\n';
+    // For XML plists, YARA must scan the *same* bytes that are shown in the
+    // "XML Source" viewer (and stored on wrap._rawText). If we scanned a
+    // synthesised string-dump instead, the byte offsets YARA reports would
+    // not correspond to positions in the XML, and clicking a finding would
+    // highlight the wrong line. For binary plists there is no displayed
+    // source, so scanning the string-dump of the parsed tree is fine.
+    let augBytes;
+    if (format.type === 'xml') {
+      const encoding = format.encoding || 'utf-8';
+      const xml = new TextDecoder(encoding, { fatal: false }).decode(bytes);
+      augBytes = new TextEncoder().encode(xml);
+    } else {
+      let augmented = allText;
+      if (findings.externalRefs.length > 0) {
+        augmented += '\n=== EXTRACTED PLIST IOCS ===\n';
+        for (const ref of findings.externalRefs) {
+          augmented += ref.url + '\n';
+        }
       }
+      augBytes = new TextEncoder().encode(augmented);
     }
-    const augBytes = new TextEncoder().encode(augmented);
     findings.augmentedBuffer = augBytes.buffer;
 
     return findings;

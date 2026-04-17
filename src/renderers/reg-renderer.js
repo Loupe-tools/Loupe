@@ -107,6 +107,8 @@ class RegRenderer {
     }
     scr.appendChild(table); wrap.appendChild(scr);
 
+    // Expose raw text for IOC extraction, YARA match highlighting and click-to-scroll
+    wrap._rawText = text;
     return wrap;
   }
 
@@ -114,7 +116,7 @@ class RegRenderer {
     const f = {
       risk: 'high', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
-      signatureMatches: []
+      signatureMatches: [], interestingStrings: []
     };
 
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
@@ -144,7 +146,76 @@ class RegRenderer {
     const highCount = analysis.warnings.filter(w => w.sev === 'high' || w.sev === 'critical').length;
     if (highCount >= 3) f.risk = 'critical';
 
+    // Emit FILE_PATH / PROCESS / REGISTRY_KEY IOCs from parsed values.
+    // Values in .reg files use doubled backslashes ("C:\\Program Files\\...")
+    // which the generic scanner's path regex doesn't match, so we unescape
+    // them here and feed the clean form into interestingStrings.
+    this._emitRegIocs(f, text, analysis);
+
     return f;
+  }
+
+  // Emit IOCs parsed from registry values. We already unescape REG_SZ data in
+  // _analyze(), so here we just classify each value.
+  _emitRegIocs(f, text, analysis) {
+    const seen = new Set((f.interestingStrings || []).map(r => r.url));
+    const exeRe = /\.(exe|dll|bat|cmd|vbs|js|ps1|hta|scr|com|pif|sys|ocx|cpl)\b/i;
+    const drivePathRe = /^[A-Za-z]:[\\/]/;
+    const uncPathRe = /^\\\\[\w.\-]+\\/;
+
+    const add = (type, val, sev) => {
+      const v = (val || '').trim();
+      if (!v || seen.has(v)) return;
+      seen.add(v);
+      const entry = { type, url: v, severity: sev };
+      // Source highlight: locate either the unescaped string or, failing that,
+      // the escaped form (doubled backslashes + escaped quotes) in the text.
+      let offset = text.indexOf(v);
+      let length = v.length;
+      if (offset < 0) {
+        const escaped = v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        offset = text.indexOf(escaped);
+        if (offset >= 0) length = escaped.length;
+      }
+      if (offset >= 0) { entry._sourceOffset = offset; entry._sourceLength = length; }
+      f.interestingStrings.push(entry);
+    };
+
+    // Registry key paths themselves are first-class IOCs
+    for (const key of analysis.keys) {
+      add(IOC.REGISTRY_KEY, key.path, key.isSuspicious ? 'high' : 'medium');
+    }
+
+    // Scan each value's unescaped data for paths and executables
+    for (const v of analysis.values) {
+      if (v.isDeletion || !v.data) continue;
+      // Only scan string-type values (REG_SZ / REG_EXPAND_SZ); hex/dword
+      // types aren't meaningful paths without decoding.
+      if (v.type !== 'REG_SZ' && v.type !== 'REG_EXPAND_SZ') continue;
+      const data = v.data;
+
+      // Full drive-letter path → FILE_PATH + PROCESS if it ends in an exe
+      if (drivePathRe.test(data)) {
+        // The path may be followed by command-line args; split to the first
+        // executable and use that as the canonical file path.
+        const m = data.match(/^[A-Za-z]:[\\/][^"*?<>|\r\n]+?\.(?:exe|dll|bat|cmd|vbs|js|ps1|hta|scr|com|pif|sys|ocx|cpl)\b/i);
+        if (m) {
+          add(IOC.FILE_PATH, m[0], v.isSuspicious ? 'high' : 'medium');
+          // Also add bare filename as PROCESS
+          const fn = m[0].split(/[\\/]/).pop();
+          if (fn) add(IOC.PROCESS, fn, v.isSuspicious ? 'high' : 'medium');
+        } else {
+          // Directory path
+          add(IOC.FILE_PATH, data, v.isSuspicious ? 'high' : 'medium');
+        }
+      } else if (uncPathRe.test(data)) {
+        add(IOC.UNC_PATH, data, 'high');
+      } else if (exeRe.test(data)) {
+        // Bare executable reference with no drive letter
+        const m = data.match(/[\w.\-]+\.(?:exe|dll|bat|cmd|vbs|js|ps1|hta|scr|com|pif|sys|ocx|cpl)\b/i);
+        if (m) add(IOC.PROCESS, m[0], v.isSuspicious ? 'high' : 'medium');
+      }
+    }
   }
 
   // ── Registry file analysis ──────────────────────────────────────────────
@@ -215,6 +286,8 @@ class RegRenderer {
             if (rawData.startsWith('"')) {
               type = 'REG_SZ';
               data = rawData.slice(1, rawData.lastIndexOf('"'));
+              // Unescape REG_SZ string: \\ → \ and \" → "
+              data = data.replace(/\\\\/g, '\\').replace(/\\"/g, '"');
             } else if (rawData.startsWith('dword:')) {
               type = 'REG_DWORD';
               data = rawData.slice(6);

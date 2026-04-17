@@ -768,6 +768,8 @@ Object.assign(App.prototype, {
     dialog.addEventListener('drop', (e) => {
       _yaraDragCounter = 0;
       dialog.classList.remove('drag-over');
+      const mainDz = document.getElementById('drop-zone');
+      if (mainDz) mainDz.classList.remove('drag-over');
       const files = e.dataTransfer?.files;
       if (!files || !files.length) return;
       const file = files[0];
@@ -807,6 +809,9 @@ Object.assign(App.prototype, {
       document.removeEventListener('keydown', this._yaraEscHandler);
       this._yaraEscHandler = null;
     }
+    // Belt-and-braces: clear any stuck drag-over on the main drop-zone
+    const mainDz = document.getElementById('drop-zone');
+    if (mainDz) mainDz.classList.remove('drag-over');
   },
 
   // ═══════════════════════════════════════════════════════════════════════

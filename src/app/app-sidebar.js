@@ -3,6 +3,14 @@
 // ════════════════════════════════════════════════════════════════════════════
 Object.assign(App.prototype, {
 
+  // Truncate a string shown inside a match toast to keep the notification
+  // compact. IOCs extracted from decoded blobs can be kilobytes long.
+  _truncateToast(s, max) {
+    if (!s) return '';
+    max = max || 80;
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+  },
+
   _renderSidebar(fileName, analyzer) {
     // Clear any lingering encoded-content highlights from previous view
     this._clearEncodedHighlight();
@@ -1074,7 +1082,7 @@ Object.assign(App.prototype, {
       const focusMatch = matches[focusIdx];
 
       // Match counter toast
-      this._toast(`Match ${focusIdx + 1}/${totalMatches}: ${focusMatch.stringId}`);
+      this._toast(`Match ${focusIdx + 1}/${totalMatches}: ${this._truncateToast(focusMatch.stringId)}`);
 
       if (plaintextTable && sourceText) {
         this._highlightMatchesInline(
@@ -1122,6 +1130,8 @@ Object.assign(App.prototype, {
             filterBar.classList.add('evtx-filter-flash');
             setTimeout(() => filterBar.classList.remove('evtx-filter-flash'), 1000);
           }
+          // Subtle highlight of matched text inside expanded detail panes
+          this._highlightIocInEvtxRows(evtxView, 'Event ' + eidMatch[1], ref);
           return;
         }
       }
@@ -1155,6 +1165,8 @@ Object.assign(App.prototype, {
           filterBar.classList.add('evtx-filter-flash');
           setTimeout(() => filterBar.classList.remove('evtx-filter-flash'), 1000);
         }
+        // Subtle highlight of matched text inside expanded detail panes
+        this._highlightIocInEvtxRows(evtxView, searchTerm, ref);
         return;
       }
     }
@@ -1178,7 +1190,7 @@ Object.assign(App.prototype, {
           if (r.searchText && r.searchText.includes(term)) {
             // Use the new scrollToRow method for virtual scrolling
             if (filters.scrollToRow) {
-              filters.scrollToRow(r.dataIndex, true);
+              this._highlightIocInCsvRow(csvView, searchTerm, r.dataIndex, ref);
             } else {
               // Fallback for non-virtual scrolling (shouldn't happen)
               filters.expandRow(r);
@@ -1193,7 +1205,7 @@ Object.assign(App.prototype, {
           for (const r of filters.dataRows) {
             if (r.searchText && r.searchText.includes(shortTerm)) {
               if (filters.scrollToRow) {
-                filters.scrollToRow(r.dataIndex, true);
+                this._highlightIocInCsvRow(csvView, shortTerm, r.dataIndex, ref);
               } else {
                 filters.expandRow(r);
               }
@@ -1259,8 +1271,8 @@ Object.assign(App.prototype, {
           ref._currentMatchIndex = (ref._currentMatchIndex + 1) % totalMatches;
         }
         const focusIdx = ref._currentMatchIndex;
-        const focusValue = iocMatches[focusIdx].value || ref.url;
-        this._toast(`Match ${focusIdx + 1}/${totalMatches}: ${focusValue}`);
+        const focusValue = ref.url || iocMatches[focusIdx].value || '';
+        this._toast(`Match ${focusIdx + 1}/${totalMatches}: ${this._truncateToast(focusValue)}`);
 
         this._highlightMatchesInline(
           plaintextTable, sourceText, iocMatches, focusIdx,
@@ -1513,71 +1525,53 @@ Object.assign(App.prototype, {
     const flashClass = isIoc ? 'ioc-highlight-flash' : 'yara-highlight-flash';
     const datasetKey = isIoc ? 'iocMatch'            : 'yaraMatch';
 
-    // Walk through text nodes to find the correct position
+    // Collect every text node in the container with its running character
+    // offset so we can locate which node(s) any match range intersects. This
+    // correctly handles matches that span multiple text nodes — a common
+    // situation when highlight.js tokenises paths like `C:\temp\update.exe`
+    // into separate <span>s for each punctuation character.
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-    let currentPos = 0;
-    let node;
-    let startNode = null, startOffset = 0;
-    let endNode = null, endOffset = 0;
-
-    while ((node = walker.nextNode())) {
-      const nodeLen = node.textContent.length;
-      const nodeEnd = currentPos + nodeLen;
-
-      // Find start position
-      if (!startNode && charPos < nodeEnd) {
-        startNode = node;
-        startOffset = charPos - currentPos;
-      }
-
-      // Find end position
-      if (startNode && charPos + length <= nodeEnd) {
-        endNode = node;
-        endOffset = charPos + length - currentPos;
-        break;
-      }
-
-      currentPos = nodeEnd;
+    const segments = [];
+    let runningPos = 0;
+    let n;
+    while ((n = walker.nextNode())) {
+      const len = n.nodeValue.length;
+      segments.push({ node: n, start: runningPos, end: runningPos + len });
+      runningPos += len;
     }
 
-    if (!startNode) return;  // Could not find position
+    const matchEnd = charPos + length;
+    const hits = [];
+    for (const s of segments) {
+      if (s.end <= charPos) continue;
+      if (s.start >= matchEnd) break;
+      const localStart = Math.max(0, charPos - s.start);
+      const localEnd   = Math.min(s.end - s.start, matchEnd - s.start);
+      if (localEnd > localStart) hits.push({ seg: s, localStart, localEnd });
+    }
+    if (!hits.length) return;
 
-    const makeMark = (text) => {
+    // Wrap each intersecting slice in its own <mark>, walking in reverse so
+    // splitText() calls on earlier nodes don't invalidate offsets of later
+    // hits. All generated marks share the same matchIdx/dataset attribute so
+    // focus-scrolling + cross-flash can locate any of them.
+    for (let i = hits.length - 1; i >= 0; i--) {
+      const h = hits[i];
+      const tn = h.seg.node;
+      // Detach the tail that lies after the match region, if any.
+      if (h.localEnd < tn.nodeValue.length) tn.splitText(h.localEnd);
+      // Detach the head that lies before the match region, if any; the
+      // returned node then represents exactly the matched slice.
+      let targetNode = tn;
+      if (h.localStart > 0) targetNode = tn.splitText(h.localStart);
       const mark = document.createElement('mark');
       mark.className = markClass + ' ' + flashClass;
       if (matchIdx !== undefined) mark.dataset[datasetKey] = String(matchIdx);
-      mark.textContent = text;
-      return mark;
-    };
-
-
-    // If start and end are in the same node, simple case
-    if (startNode === endNode) {
-      const text = startNode.textContent;
-      const before = text.substring(0, startOffset);
-      const matched = text.substring(startOffset, endOffset);
-      const after = text.substring(endOffset);
-
-      const frag = document.createDocumentFragment();
-      if (before) frag.appendChild(document.createTextNode(before));
-      frag.appendChild(makeMark(matched));
-      if (after) frag.appendChild(document.createTextNode(after));
-
-      startNode.parentNode.replaceChild(frag, startNode);
-    } else {
-      // Multi-node match: wrap from startNode to endNode
-      // For simplicity, just highlight the first node portion and line
-      const text = startNode.textContent;
-      const before = text.substring(0, startOffset);
-      const matched = text.substring(startOffset);
-
-      const frag = document.createDocumentFragment();
-      if (before) frag.appendChild(document.createTextNode(before));
-      frag.appendChild(makeMark(matched));
-
-      startNode.parentNode.replaceChild(frag, startNode);
+      targetNode.parentNode.insertBefore(mark, targetNode);
+      mark.appendChild(targetNode);
     }
   },
+
 
 
   // ── Clear YARA + IOC inline highlights ──────────────────────────────────
@@ -1879,6 +1873,129 @@ Object.assign(App.prototype, {
       rows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
       setTimeout(() => { for (const tr of rows) tr.classList.remove('ioc-encoded-flash'); }, 1500);
     }, 50);
+  },
+
+  // ── IOC subtle-highlight inside CSV expanded row ────────────────────────
+  //
+  // Complements _highlightYaraMatchesInCsv but for simple IOC navigation:
+  // scroll the matching row into view, expand it, and wrap every occurrence
+  // of `searchTerm` inside each .csv-detail-val cell in a subtle yellow
+  // <mark>. Auto-clears after 5 seconds.
+  _highlightIocInCsvRow(csvView, searchTerm, dataIdx, ref) {
+    this._clearIocCsvHighlight();
+    const filters = csvView && csvView._csvFilters;
+    if (!filters || !filters.scrollToRow || !searchTerm) return;
+    filters.scrollToRow(dataIdx, false);
+
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const termLower = searchTerm.toLowerCase();
+
+    setTimeout(() => {
+      const tbody = csvView.querySelector('tbody');
+      if (!tbody) return;
+      const tr = tbody.querySelector(`tr[data-idx="${dataIdx}"]`);
+      if (!tr) return;
+      tr.classList.add('csv-ioc-row-highlight');
+      const detailTr = tr.nextElementSibling;
+      if (!detailTr || !detailTr.classList.contains('csv-detail-row')) return;
+      const valEls = detailTr.querySelectorAll('.csv-detail-val');
+      let firstMark = null;
+      for (const valEl of valEls) {
+        const text = valEl.textContent;
+        if (!text) continue;
+        const idx = text.toLowerCase().indexOf(termLower);
+        if (idx === -1) continue;
+        const before = esc(text.slice(0, idx));
+        const matched = esc(text.slice(idx, idx + searchTerm.length));
+        const after = esc(text.slice(idx + searchTerm.length));
+        valEl.innerHTML = `${before}<mark class="csv-ioc-highlight csv-ioc-highlight-flash">${matched}</mark>${after}`;
+        if (!firstMark) firstMark = valEl.querySelector('mark.csv-ioc-highlight');
+      }
+      if (firstMark) firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      this._iocCsvHighlightTimer = setTimeout(() => {
+        this._clearIocCsvHighlight();
+        if (ref) ref._currentMatchIndex = undefined;
+        this._iocCsvHighlightTimer = null;
+      }, 5000);
+    }, 400);
+  },
+
+  _clearIocCsvHighlight() {
+    if (this._iocCsvHighlightTimer) {
+      clearTimeout(this._iocCsvHighlightTimer);
+      this._iocCsvHighlightTimer = null;
+    }
+    document.querySelectorAll('mark.csv-ioc-highlight').forEach(m => {
+      const parent = m.parentNode;
+      if (!parent) return;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize();
+    });
+    document.querySelectorAll('tr.csv-ioc-row-highlight').forEach(tr => {
+      tr.classList.remove('csv-ioc-row-highlight');
+    });
+  },
+
+  // ── IOC subtle-highlight inside EVTX expanded detail panes ──────────────
+  //
+  // After filters+expandAll renders the relevant rows, walk every visible
+  // detail pane and wrap the first occurrence of `searchTerm` (per text node)
+  // in a subtle yellow <mark>. Auto-clears after 5 seconds.
+  _highlightIocInEvtxRows(evtxView, searchTerm, ref) {
+    this._clearIocEvtxHighlight();
+    if (!searchTerm || !evtxView) return;
+    const termLower = searchTerm.toLowerCase();
+
+    requestAnimationFrame(() => {
+      const panes = evtxView.querySelectorAll('.evtx-detail-pane, .evtx-record-readable');
+      let firstMark = null;
+      for (const pane of panes) {
+        const walker = document.createTreeWalker(pane, NodeFilter.SHOW_TEXT, null);
+        const nodes = [];
+        let n;
+        while ((n = walker.nextNode())) {
+          // Skip text already inside a <mark> (defensive)
+          if (n.parentNode && n.parentNode.tagName === 'MARK') continue;
+          nodes.push(n);
+        }
+        for (const tn of nodes) {
+          const text = tn.nodeValue;
+          const idx = text.toLowerCase().indexOf(termLower);
+          if (idx === -1) continue;
+          // Split and wrap (work on tail → mid so offsets stay valid)
+          tn.splitText(idx + searchTerm.length);
+          const mid = tn.splitText(idx);
+          const mark = document.createElement('mark');
+          mark.className = 'evtx-ioc-highlight evtx-ioc-highlight-flash';
+          mid.parentNode.insertBefore(mark, mid);
+          mark.appendChild(mid);
+          if (!firstMark) firstMark = mark;
+        }
+      }
+      if (firstMark) firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      this._iocEvtxHighlightTimer = setTimeout(() => {
+        this._clearIocEvtxHighlight();
+        if (ref) ref._currentMatchIndex = undefined;
+        this._iocEvtxHighlightTimer = null;
+      }, 5000);
+    });
+  },
+
+  _clearIocEvtxHighlight() {
+    if (this._iocEvtxHighlightTimer) {
+      clearTimeout(this._iocEvtxHighlightTimer);
+      this._iocEvtxHighlightTimer = null;
+    }
+    document.querySelectorAll('mark.evtx-ioc-highlight').forEach(m => {
+      const parent = m.parentNode;
+      if (!parent) return;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize();
+    });
   },
 
   // ── Get deepest decoded finding in innerFindings tree ───────────────────

@@ -86,6 +86,9 @@ class InfSctRenderer {
 
     // Full source
     this._appendSource(wrap, text, bytes);
+
+    // Expose raw text for IOC extraction, YARA match highlighting and click-to-scroll
+    wrap._rawText = text;
     return wrap;
   }
 
@@ -161,6 +164,9 @@ class InfSctRenderer {
 
     // Full source
     this._appendSource(wrap, text, bytes);
+
+    // Expose raw text for IOC extraction, YARA match highlighting and click-to-scroll
+    wrap._rawText = text;
     return wrap;
   }
 
@@ -170,7 +176,7 @@ class InfSctRenderer {
     const f = {
       risk: 'high', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
-      signatureMatches: []
+      signatureMatches: [], interestingStrings: []
     };
 
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
@@ -215,9 +221,65 @@ class InfSctRenderer {
       }
       const highCount = analysis.warnings.filter(w => w.sev === 'high' || w.sev === 'critical').length;
       if (highCount >= 3) f.risk = 'critical';
+
+      // Emit IOCs that the generic scanner won't catch (bare filenames, DIRID paths)
+      this._emitInfIocs(f, text, analysis);
     }
 
     return f;
+  }
+
+  // Emit FILE_PATH / PROCESS IOCs from parsed INF directives and entries.
+  // The generic regex in app-load.js only catches drive-letter paths
+  // (/[A-Za-z]:\\.../), so bare filenames like "loupe.exe" in [SourceDisksFiles]
+  // and DIRID-expansion paths like "%01%\loupe.exe" never get picked up.
+  _emitInfIocs(f, text, analysis) {
+    const seen = new Set((f.interestingStrings || []).map(r => r.url));
+    const exeRe = /^[\w.\-]+\.(exe|dll|bat|cmd|vbs|js|ps1|hta|scr|com|pif|sys|ocx|cpl)$/i;
+    const add = (type, val, sev) => {
+      const v = (val || '').trim();
+      if (!v || seen.has(v)) return;
+      seen.add(v);
+      const offset = text.indexOf(v);
+      const entry = { type, url: v, severity: sev };
+      if (offset >= 0) { entry._sourceOffset = offset; entry._sourceLength = v.length; }
+      f.interestingStrings.push(entry);
+    };
+
+    // Walk every directive / entry that the parser found
+    for (const sec of analysis.sections) {
+      for (const entry of sec.entries) {
+        // Key=Value form — value may be a filename, DIRID path or command line
+        if (entry.key) {
+          const val = (entry.value || '').trim();
+          if (!val) continue;
+          // DIRID-expansion paths: %01%\loupe.exe, %11%\file.dll, etc.
+          if (/^%\d+%/.test(val)) {
+            add(IOC.FILE_PATH, val, 'high');
+            const tail = val.split(/[\\\/]/).pop();
+            if (tail && exeRe.test(tail)) add(IOC.PROCESS, tail, 'high');
+            continue;
+          }
+          // Pure executable filename
+          if (exeRe.test(val)) {
+            add(IOC.PROCESS, val, 'medium');
+            continue;
+          }
+          // Embedded exe reference (e.g. ServiceBinary=foo\loupe.exe,bar)
+          const m = val.match(/[\w.\-]+\.(?:exe|dll|bat|cmd|vbs|js|ps1|hta|scr|com|pif|sys|ocx|cpl)\b/i);
+          if (m) add(IOC.PROCESS, m[0], 'medium');
+        } else if (entry.line) {
+          // Bare-line entries (e.g. "loupe.exe,,,0x00000004" in [CopyFiles])
+          const head = entry.line.split(/[,\s]/)[0];
+          if (head && exeRe.test(head)) add(IOC.PROCESS, head, 'medium');
+        }
+      }
+    }
+
+    // [SourceDisksFiles] style: "loupe.exe=1" — the key is the filename
+    for (const dir of analysis.directives) {
+      if (exeRe.test(dir.key)) add(IOC.PROCESS, dir.key, 'medium');
+    }
   }
 
   // ── INF analysis ─────────────────────────────────────────────────────────

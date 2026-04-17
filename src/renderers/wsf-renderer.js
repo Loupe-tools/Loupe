@@ -96,6 +96,10 @@ class WsfRenderer {
     }
     scr.appendChild(table); wrap.appendChild(scr);
 
+    // Expose raw source text so the sidebar's click-to-highlight logic can
+    // locate YARA/IOC matches inside the rendered `.plaintext-table`.
+    wrap._rawText = text;
+
     return wrap;
   }
 

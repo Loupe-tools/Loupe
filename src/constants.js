@@ -81,10 +81,12 @@ const IOC = Object.freeze({
   HOSTNAME: 'Hostname',
   USERNAME: 'Username',
   REGISTRY_KEY: 'Registry Key',
+  MAC: 'MAC Address',
 });
 
 /** IOC types whose values are directly copyable in the sidebar. */
-const IOC_COPYABLE = new Set([IOC.URL, IOC.EMAIL, IOC.IP, IOC.FILE_PATH, IOC.UNC_PATH, IOC.HASH, IOC.COMMAND_LINE, IOC.PROCESS, IOC.HOSTNAME, IOC.USERNAME, IOC.REGISTRY_KEY]);
+const IOC_COPYABLE = new Set([IOC.URL, IOC.EMAIL, IOC.IP, IOC.FILE_PATH, IOC.UNC_PATH, IOC.HASH, IOC.COMMAND_LINE, IOC.PROCESS, IOC.HOSTNAME, IOC.USERNAME, IOC.REGISTRY_KEY, IOC.MAC]);
+
 
 // ── String helpers ────────────────────────────────────────────────────────────
 function escHtml(s) {

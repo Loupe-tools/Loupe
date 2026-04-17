@@ -1183,7 +1183,7 @@ Object.assign(App.prototype, {
     for (const m of full.matchAll(/\b[a-zA-Z0-9._%+\-]{2,}@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,6}\b/g)) {
       add(IOC.EMAIL, m[0], 'info', null, { offset: m.index, length: m[0].length });
     }
-    for (const m of full.matchAll(/\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g)) {
+    for (const m of full.matchAll(/(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?![\d.])/g)) {
       const parts = m[0].split('.').map(Number);
       if (parts.every(p => p <= 255) && !m[0].startsWith('0.')) {
         add(IOC.IP, m[0], 'medium', null, { offset: m.index, length: m[0].length });
@@ -1247,7 +1247,7 @@ Object.assign(App.prototype, {
     }
 
     // Defanged IPs: 192[.]168[.]1[.]1
-    const defangedIpRe = /\b\d{1,3}\[\.\]\d{1,3}\[\.\]\d{1,3}\[\.\]\d{1,3}\b/g;
+    const defangedIpRe = /(?<![\d.])\d{1,3}\[\.\]\d{1,3}\[\.\]\d{1,3}\[\.\]\d{1,3}(?![\d.])/g;
     for (const m of full.matchAll(defangedIpRe)) {
       const result = _refangString(m[0]);
       if (result) {

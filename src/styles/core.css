@@ -853,6 +853,7 @@ body.dark .sev-filter-active {
 .type-filter-command-line  { color: #be123c; background: rgba(190, 18, 60, .1); }
 .type-filter-process       { color: #be123c; background: rgba(190, 18, 60, .1); }
 .type-filter-hostname      { color: #0891b2; background: rgba(8, 145, 178, .1); }
+.type-filter-mac-address   { color: #0891b2; background: rgba(8, 145, 178, .1); }
 .type-filter-username      { color: #0891b2; background: rgba(8, 145, 178, .1); }
 .type-filter-attachment    { color: #d97706; background: rgba(217, 119, 6, .1); }
 .type-filter-pattern       { color: #64748b; background: rgba(100, 116, 139, .1); }
@@ -869,6 +870,7 @@ body.dark .sev-filter-active {
 .type-filter-command-line.type-filter-active  { background: rgba(190, 18, 60, .25); }
 .type-filter-process.type-filter-active       { background: rgba(190, 18, 60, .25); }
 .type-filter-hostname.type-filter-active      { background: rgba(8, 145, 178, .25); }
+.type-filter-mac-address.type-filter-active   { background: rgba(8, 145, 178, .25); }
 .type-filter-username.type-filter-active      { background: rgba(8, 145, 178, .25); }
 .type-filter-attachment.type-filter-active    { background: rgba(217, 119, 6, .25); }
 .type-filter-pattern.type-filter-active       { background: rgba(100, 116, 139, .25); }
@@ -885,6 +887,7 @@ body.dark .type-filter-hash          { color: #94a3b8; background: rgba(148, 163
 body.dark .type-filter-command-line  { color: #fb7185; background: rgba(251, 113, 133, .15); }
 body.dark .type-filter-process       { color: #fb7185; background: rgba(251, 113, 133, .15); }
 body.dark .type-filter-hostname      { color: #22d3ee; background: rgba(34, 211, 238, .15); }
+body.dark .type-filter-mac-address   { color: #22d3ee; background: rgba(34, 211, 238, .15); }
 body.dark .type-filter-username      { color: #22d3ee; background: rgba(34, 211, 238, .15); }
 body.dark .type-filter-attachment    { color: #fbbf24; background: rgba(251, 191, 36, .15); }
 body.dark .type-filter-pattern       { color: #94a3b8; background: rgba(148, 163, 184, .15); }
@@ -901,6 +904,7 @@ body.dark .type-filter-hash.type-filter-active          { background: rgba(148, 
 body.dark .type-filter-command-line.type-filter-active  { background: rgba(251, 113, 133, .3); }
 body.dark .type-filter-process.type-filter-active       { background: rgba(251, 113, 133, .3); }
 body.dark .type-filter-hostname.type-filter-active      { background: rgba(34, 211, 238, .3); }
+body.dark .type-filter-mac-address.type-filter-active   { background: rgba(34, 211, 238, .3); }
 body.dark .type-filter-username.type-filter-active      { background: rgba(34, 211, 238, .3); }
 body.dark .type-filter-attachment.type-filter-active    { background: rgba(251, 191, 36, .3); }
 body.dark .type-filter-pattern.type-filter-active       { background: rgba(148, 163, 184, .3); }
@@ -991,6 +995,7 @@ body.dark .ioc-decoded-from {
 .ext-table td.ioc-type-command-line     { border-left-color: #be123c; color: #be123c; }
 .ext-table td.ioc-type-process          { border-left-color: #be123c; color: #be123c; }
 .ext-table td.ioc-type-hostname         { border-left-color: #0891b2; color: #0891b2; }
+.ext-table td.ioc-type-mac-address      { border-left-color: #0891b2; color: #0891b2; }
 .ext-table td.ioc-type-username         { border-left-color: #0891b2; color: #0891b2; }
 .ext-table td.ioc-type-attachment       { border-left-color: #d97706; color: #d97706; }
 .ext-table td.ioc-type-pattern          { border-left-color: #64748b; color: #64748b; }
@@ -1006,6 +1011,7 @@ body.dark .ext-table td.ioc-type-hash         { border-left-color: #94a3b8; colo
 body.dark .ext-table td.ioc-type-command-line  { border-left-color: #fb7185; color: #fb7185; }
 body.dark .ext-table td.ioc-type-process       { border-left-color: #fb7185; color: #fb7185; }
 body.dark .ext-table td.ioc-type-hostname      { border-left-color: #22d3ee; color: #22d3ee; }
+body.dark .ext-table td.ioc-type-mac-address   { border-left-color: #22d3ee; color: #22d3ee; }
 body.dark .ext-table td.ioc-type-username      { border-left-color: #22d3ee; color: #22d3ee; }
 body.dark .ext-table td.ioc-type-attachment    { border-left-color: #fbbf24; color: #fbbf24; }
 body.dark .ext-table td.ioc-type-pattern       { border-left-color: #94a3b8; color: #94a3b8; }
@@ -1686,6 +1692,77 @@ body.dark mark.csv-yara-highlight-flash {
 body.dark .csv-table tr.csv-yara-row-highlight > td {
   background: rgba(34, 211, 238, .08) !important;
   box-shadow: inset 3px 0 0 rgba(34, 211, 238, .4);
+}
+
+/* ── CSV IOC click-highlight (yellow) ──
+   Subtle yellow match inside the expanded detail pane when the user clicks
+   a non-YARA finding row in the sidebar. Complements csv-yara-highlight. */
+mark.csv-ioc-highlight {
+  background: rgba(255, 200, 50, .45);
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+mark.csv-ioc-highlight-flash {
+  animation: csv-ioc-highlight-pulse 2.5s ease-out forwards;
+}
+@keyframes csv-ioc-highlight-pulse {
+  0%   { background: rgba(255, 200, 50, .75); box-shadow: 0 0 10px rgba(255, 200, 50, .6); }
+  30%  { background: rgba(255, 200, 50, .55); box-shadow: 0 0 6px rgba(255, 200, 50, .4); }
+  100% { background: rgba(255, 200, 50, .30); box-shadow: none; }
+}
+body.dark mark.csv-ioc-highlight {
+  background: rgba(255, 200, 50, .35);
+}
+body.dark mark.csv-ioc-highlight-flash {
+  animation: csv-ioc-highlight-pulse-dark 2.5s ease-out forwards;
+}
+@keyframes csv-ioc-highlight-pulse-dark {
+  0%   { background: rgba(255, 200, 50, .65); box-shadow: 0 0 10px rgba(255, 200, 50, .5); }
+  30%  { background: rgba(255, 200, 50, .45); box-shadow: 0 0 6px rgba(255, 200, 50, .3); }
+  100% { background: rgba(255, 200, 50, .25); box-shadow: none; }
+}
+.csv-table tr.csv-ioc-row-highlight > td {
+  background: rgba(255, 200, 50, .12) !important;
+  box-shadow: inset 3px 0 0 rgba(255, 200, 50, .5);
+  transition: background .3s ease;
+}
+body.dark .csv-table tr.csv-ioc-row-highlight > td {
+  background: rgba(255, 200, 50, .08) !important;
+  box-shadow: inset 3px 0 0 rgba(255, 200, 50, .4);
+}
+
+/* ── EVTX IOC click-highlight (yellow) ──
+   Subtle yellow match wrapping inside expanded EVTX detail panes after the
+   user clicks a finding row that filtered+expanded the EVTX view. */
+mark.evtx-ioc-highlight {
+  background: rgba(255, 200, 50, .45);
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+mark.evtx-ioc-highlight-flash {
+  animation: evtx-ioc-highlight-pulse 2.5s ease-out forwards;
+}
+@keyframes evtx-ioc-highlight-pulse {
+  0%   { background: rgba(255, 200, 50, .75); box-shadow: 0 0 10px rgba(255, 200, 50, .6); }
+  30%  { background: rgba(255, 200, 50, .55); box-shadow: 0 0 6px rgba(255, 200, 50, .4); }
+  100% { background: rgba(255, 200, 50, .30); box-shadow: none; }
+}
+body.dark mark.evtx-ioc-highlight {
+  background: rgba(255, 200, 50, .35);
+}
+body.dark mark.evtx-ioc-highlight-flash {
+  animation: evtx-ioc-highlight-pulse-dark 2.5s ease-out forwards;
+}
+@keyframes evtx-ioc-highlight-pulse-dark {
+  0%   { background: rgba(255, 200, 50, .65); box-shadow: 0 0 10px rgba(255, 200, 50, .5); }
+  30%  { background: rgba(255, 200, 50, .45); box-shadow: 0 0 6px rgba(255, 200, 50, .3); }
+  100% { background: rgba(255, 200, 50, .25); box-shadow: none; }
 }
 
 /* ── Drop zone ── */

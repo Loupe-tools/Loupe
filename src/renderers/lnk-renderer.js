@@ -165,7 +165,58 @@ class LnkRenderer {
       if (info.tracker && info.tracker.droidFile) f.metadata.droidFile = info.tracker.droidFile;
       if (info.darwinProduct) f.metadata.msiProductCode = info.darwinProduct;
 
+      // Emit each path / argument field as a separate IOC instead of
+      // concatenating them into one ugly composite string. This makes the
+      // sidebar navigable one-click-per-field and matches the behaviour the
+      // user expects (each field gets its own row + copy button).
+      const seenVal = new Set();
+      const addField = (val, type, sev, note) => {
+        if (!val) return;
+        const s = String(val).trim();
+        if (!s) return;
+        const key = type + '|' + s;
+        if (seenVal.has(key)) return;
+        seenVal.add(key);
+        const ref = { type, url: s, severity: sev || 'info' };
+        if (note) ref.note = note;
+        f.externalRefs.push(ref);
+      };
+      addField(info.localBasePath || info.netSharePath, IOC.FILE_PATH, 'info', 'Shortcut target');
+      addField(info.relativePath, IOC.FILE_PATH, 'info', 'Relative path');
+      addField(info.workingDir,   IOC.FILE_PATH, 'info', 'Working directory');
+      addField(info.arguments,    IOC.COMMAND_LINE, 'info', 'Shortcut arguments');
+      // Icon location — only emit as plain FILE_PATH when it isn't a UNC/URL
+      // (those variants are handled below with a higher severity).
+      if (info.iconLocation &&
+          !/^\\\\/.test(info.iconLocation) &&
+          !/^https?:\/\//i.test(info.iconLocation)) {
+        addField(info.iconLocation, IOC.FILE_PATH, 'info', 'Icon location');
+      }
+
+      // TrackerDataBlock — originating machine name + MAC burned into the
+      // shortcut at creation time by the Windows Link Tracking Service.
+      // These are high-value pivot IOCs for incident response.
+      if (info.tracker) {
+        if (info.tracker.machineId) {
+          const host = info.tracker.machineId.trim();
+          if (host) {
+            f.externalRefs.push({
+              type: IOC.HOSTNAME, url: host, severity: 'info',
+              note: 'TrackerDataBlock machine ID'
+            });
+          }
+        }
+        const mac = info.tracker.mac || info.tracker.birthMac;
+        if (mac) {
+          f.externalRefs.push({
+            type: IOC.MAC, url: mac, severity: 'info',
+            note: 'TrackerDataBlock MAC address'
+          });
+        }
+      }
+
       const dangers = this._findDangers(info);
+
       for (const d of dangers) {
         f.externalRefs.push({ type: IOC.PATTERN, url: d.label + ': ' + d.detail, severity: d.sev });
         if (d.sev === 'high') f.risk = 'high';
@@ -477,22 +528,60 @@ class LnkRenderer {
       const drv = this._readAnsiFixed(bytes, off + 1, 22) || '';
       return { kind: 'Drive', label: drv.trim() };
     }
-    // File or folder (0x30..0x3F) — ANSI primary name at +14
-    if (cls === 0x30 && len >= 14) {
-      const isFile = (type & 0x02) === 0x02 || (type & 0x01) === 0x00 && (type & 0x02);
-      let name = '';
-      for (let i = off + 14; i < off + len; i++) {
+    // File or folder (0x30..0x3F) — MS-SHLLINK v2 shell item layout
+    // Relative to `off` (the byte after the 2-byte size field):
+    //   +0  u8  type  (0x31 folder, 0x32 file, with 0x40/0x80 Unicode flags)
+    //   +1  u8  unused (0)
+    //   +2  u32 file size (0 for directories)
+    //   +6  u32 DOS last-modified date+time
+    //   +10 u16 file attributes
+    //   +12 ANSI NUL-terminated primary name
+    //   after the name, WORD-aligned: optional BEEF0004 extension block
+    //   containing the UTF-16LE long filename (preferred over ANSI 8.3).
+    if (cls === 0x30 && len >= 12) {
+      const nameStart = off + 12;
+      // ANSI short name (8.3) first — null-terminated.
+      let ansiName = '';
+      let nameEnd = nameStart;
+      for (let i = nameStart; i < off + len; i++) {
         const c = bytes[i];
-        if (c === 0) break;
-        name += String.fromCharCode(c);
+        if (c === 0) { nameEnd = i; break; }
+        ansiName += String.fromCharCode(c);
+        nameEnd = i + 1;
       }
-      // Unicode extension block sometimes follows; try a UTF-16 pass if ANSI looked truncated
-      if (!name || /[\x00-\x08\x0E-\x1F]/.test(name)) {
-        const u = this._readUnicodeStr(bytes, off + 14);
-        if (u) name = u;
+
+      // Look for a BEEF0004 extension block containing the long UTF-16 name.
+      // The extension block starts on a WORD (2-byte) boundary after the
+      // ANSI name's NUL terminator.
+      let extStart = nameEnd + 1;        // skip the ANSI NUL
+      if ((extStart - off) & 1) extStart++; // WORD-align
+      let longName = '';
+      if (extStart + 10 <= off + len) {
+        const extSize = bytes[extStart] | (bytes[extStart + 1] << 8);
+        const extVer  = bytes[extStart + 2] | (bytes[extStart + 3] << 8);
+        const extSig  = bytes[extStart + 4] | (bytes[extStart + 5] << 8) |
+                        (bytes[extStart + 6] << 16) | (bytes[extStart + 7] << 24);
+        if (extSig === 0xBEEF0004 && extSize >= 14 && extStart + extSize <= off + len) {
+          // Primary UTF-16 name offset depends on extension version:
+          //   v7 (Win7+) : offset 0x1E   (after 2B size, 2B ver, 4B sig,
+          //                4B created, 4B accessed, 2B ident, 2B pad,
+          //                8B FileRef, 8B Unknown2)
+          //   v3+        : offset 0x0E
+          const uniOff = extVer >= 7 ? extStart + 0x1E : extStart + 0x0E;
+          if (uniOff + 2 <= extStart + extSize) {
+            for (let i = uniOff; i + 1 < extStart + extSize; i += 2) {
+              const c = bytes[i] | (bytes[i + 1] << 8);
+              if (c === 0) break;
+              longName += String.fromCharCode(c);
+            }
+          }
+        }
       }
-      return { kind: (type & 0x01) ? 'Dir' : 'File', label: name || '(unnamed)' };
+
+      const name = longName || ansiName || '(unnamed)';
+      return { kind: (type & 0x01) ? 'Dir' : 'File', label: name };
     }
+
     // Network location or URI
     if (cls === 0x40 && len >= 5) {
       let s = '';
