@@ -169,6 +169,18 @@ class LnkRenderer {
       // concatenating them into one ugly composite string. This makes the
       // sidebar navigable one-click-per-field and matches the behaviour the
       // user expects (each field gets its own row + copy button).
+      //
+      // NOTE ON SEVERITIES: every per-field LNK IOC emitted here (and the
+      // TrackerDataBlock host/MAC IOCs below) is intentionally severity
+      // 'info'. These are metadata/provenance indicators — target path,
+      // working directory, arguments, originating machine ID, burned-in
+      // MAC — that are valuable for incident-response pivoting but are
+      // not themselves active threat indicators. The actual threat
+      // scoring is driven by `_findDangers()` further down, which emits
+      // high/medium-severity IOC.PATTERN findings for dangerous commands
+      // (PowerShell/cmd/mshta/etc.), UNC credential-theft patterns and
+      // other suspicious target shapes. Those drive the overall risk
+      // rating; the per-field info IOCs are deliberately quiet.
       const seenVal = new Set();
       const addField = (val, type, sev, note) => {
         if (!val) return;

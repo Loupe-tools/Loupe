@@ -318,29 +318,67 @@ class SvgRenderer {
 
     // ── 1. <script> elements ─────────────────────────────────────────────
     const scriptEls = parseError ? [] : doc.querySelectorAll('script');
+    // Pre-locate every raw <script> block in the source for offset attachment.
+    // We pair each DOM <script> with a raw range by looking up a short prefix
+    // of its text content — this is robust against the DOM parser rejecting
+    // malformed scripts (which would otherwise misalign a zip-by-index
+    // pairing against subsequent scripts in the source).
+    const scriptRanges = [];
+    {
+      const re = /<script[\s>][^]*?<\/script>/gi;
+      let mm;
+      while ((mm = re.exec(text)) !== null) {
+        scriptRanges.push({ offset: mm.index, length: mm[0].length, text: mm[0], taken: false });
+      }
+    }
+    const findScriptRange = (content) => {
+      if (!content) return null;
+      // Match on the first non-whitespace-normalised slice of script content.
+      // Fall back to empty-content range lookup if no content (e.g. src-only).
+      const needle = content.slice(0, 64);
+      for (const r of scriptRanges) {
+        if (r.taken) continue;
+        if (!needle || r.text.indexOf(needle) !== -1) {
+          r.taken = true;
+          return r;
+        }
+      }
+      // Last resort: any remaining unclaimed range (preserves old behaviour
+      // for src-only scripts with no text content).
+      for (const r of scriptRanges) {
+        if (!r.taken) { r.taken = true; return r; }
+      }
+      return null;
+    };
     for (const script of scriptEls) {
       const content = script.textContent.trim();
       const src = script.getAttribute('href') || script.getAttribute('xlink:href') || '';
+      const range = findScriptRange(content);
       if (content) {
         refs.push({
           type: IOC.PATTERN,
           url: `Embedded <script> element (${content.length} chars): ${this._truncate(content, 120)}`,
-          severity: 'critical'
+          severity: 'critical',
+          _highlightText: range ? range.text : '<script',
+          _sourceOffset: range ? range.offset : undefined,
+          _sourceLength: range ? range.length : undefined,
         });
         setRisk('critical');
         // Check for obfuscation in script content
-        this._checkJsSuspicious(content, refs, setRisk);
+        this._checkJsSuspicious(content, refs, setRisk, false, text);
       }
       if (src) {
         refs.push({
           type: IOC.URL,
           url: src,
-          severity: 'critical'
+          severity: 'critical',
+          _highlightText: src,
         });
         refs.push({
           type: IOC.PATTERN,
           url: `External script reference: ${src}`,
-          severity: 'critical'
+          severity: 'critical',
+          _highlightText: src,
         });
         setRisk('critical');
       }
@@ -354,7 +392,10 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: `<script> block detected in raw SVG (${scriptMatch[0].length} chars)`,
-          severity: 'critical'
+          severity: 'critical',
+          _highlightText: scriptMatch[0],
+          _sourceOffset: scriptMatch.index,
+          _sourceLength: scriptMatch[0].length,
         });
         setRisk('critical');
       }
@@ -381,10 +422,16 @@ class SvgRenderer {
       for (const [attr, handlers] of Object.entries(grouped)) {
         const sample = handlers[0];
         const suffix = handlers.length > 1 ? ` (+${handlers.length - 1} more)` : '';
+        // Locate the handler attribute in the raw source for precise highlight.
+        const attrRe = new RegExp('\\b' + attr + '\\s*=', 'i');
+        const attrIdx = text.search(attrRe);
         refs.push({
           type: IOC.PATTERN,
           url: `Event handler ${attr} on <${sample.element}>: ${this._truncate(sample.value, 100)}${suffix}`,
-          severity: 'high'
+          severity: 'high',
+          _highlightText: attr,
+          _sourceOffset: attrIdx >= 0 ? attrIdx : undefined,
+          _sourceLength: attrIdx >= 0 ? attr.length : undefined,
         });
         setRisk('high');
         // Check JS content in handlers
@@ -402,7 +449,10 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: `Event handler in raw SVG: ${evtMatch[0].substring(0, 100)}`,
-          severity: 'high'
+          severity: 'high',
+          _highlightText: evtMatch[0],
+          _sourceOffset: evtMatch.index,
+          _sourceLength: evtMatch[0].length,
         });
         setRisk('high');
       }
@@ -410,6 +460,13 @@ class SvgRenderer {
 
     // ── 3. <foreignObject> detection ─────────────────────────────────────
     const foreignObjects = parseError ? [] : doc.querySelectorAll('foreignObject');
+    // Locate the first raw <foreignObject> tag for offset attachment.
+    const foMatch = text.match(/<foreignObject[\s>]/i);
+    const foHL = {
+      _highlightText: '<foreignObject',
+      _sourceOffset: foMatch ? foMatch.index : undefined,
+      _sourceLength: foMatch ? '<foreignObject'.length : undefined,
+    };
     for (const fo of foreignObjects) {
       const html = fo.innerHTML || '';
       const hasForm = /<form[\s>]/i.test(html);
@@ -422,14 +479,16 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: 'Credential harvesting: <foreignObject> contains password input field',
-          severity: 'critical'
+          severity: 'critical',
+          ...foHL,
         });
         setRisk('critical');
       } else if (hasForm) {
         refs.push({
           type: IOC.PATTERN,
           url: 'Phishing form: <foreignObject> contains HTML form',
-          severity: 'high'
+          severity: 'high',
+          ...foHL,
         });
         setRisk('high');
       }
@@ -437,7 +496,8 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: '<foreignObject> contains <iframe> — potential redirect/phishing',
-          severity: 'high'
+          severity: 'high',
+          ...foHL,
         });
         setRisk('high');
       }
@@ -445,7 +505,8 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: '<foreignObject> contains <embed>/<object> — potential payload delivery',
-          severity: 'high'
+          severity: 'high',
+          ...foHL,
         });
         setRisk('high');
       }
@@ -453,7 +514,8 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: '<foreignObject> contains <script> — embedded JavaScript execution',
-          severity: 'critical'
+          severity: 'critical',
+          ...foHL,
         });
         setRisk('critical');
       }
@@ -461,7 +523,8 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: `<foreignObject> element detected (${html.length} chars of embedded HTML)`,
-          severity: 'medium'
+          severity: 'medium',
+          ...foHL,
         });
         setRisk('medium');
       }
@@ -472,7 +535,8 @@ class SvgRenderer {
       refs.push({
         type: IOC.PATTERN,
         url: '<foreignObject> detected in raw SVG markup',
-        severity: 'medium'
+        severity: 'medium',
+        ...foHL,
       });
       setRisk('medium');
     }
@@ -491,12 +555,20 @@ class SvgRenderer {
       const encoding = (dataMatch[2] || '').toLowerCase();
       const payload = dataMatch[3];
 
+      // Anchor highlights on the start of the data: URI in the raw source.
+      const dataHL = {
+        _highlightText: dataMatch[0].substring(0, Math.min(64, dataMatch[0].length)),
+        _sourceOffset: dataMatch.index,
+        _sourceLength: Math.min(64, dataMatch[0].length),
+      };
+
       // Script MIME types in data URIs
       if (/javascript|ecmascript|jscript|vbscript|html/i.test(mimeType)) {
         refs.push({
           type: IOC.PATTERN,
           url: `Data URI with script MIME type: data:${mimeType} (${payload.length} chars)`,
-          severity: 'critical'
+          severity: 'critical',
+          ...dataHL,
         });
         setRisk('critical');
       }
@@ -508,7 +580,8 @@ class SvgRenderer {
             refs.push({
               type: IOC.PATTERN,
               url: `Base64 data URI decodes to script content: ${this._truncate(decoded, 100)}`,
-              severity: 'critical'
+              severity: 'critical',
+              ...dataHL,
             });
             setRisk('critical');
           }
@@ -520,7 +593,8 @@ class SvgRenderer {
             refs.push({
               type: IOC.PATTERN,
               url: `Data URI base64 blob decodes to ${sniff.type} (${payload.length} chars of base64)`,
-              severity: sniff.sev
+              severity: sniff.sev,
+              ...dataHL,
             });
             setRisk(sniff.sev);
           }
@@ -537,7 +611,8 @@ class SvgRenderer {
               refs.push({
                 type: IOC.PATTERN,
                 url: `Polyglot: declared ${mimeType} but decodes to ${sniff.type}`,
-                severity: 'critical'
+                severity: 'critical',
+                ...dataHL,
               });
               setRisk('critical');
               sniffedBlobTypes.push(`POLYGLOT:${sniff.type}`);
@@ -564,7 +639,10 @@ class SvgRenderer {
           refs.push({
             type: IOC.PATTERN,
             url: `Bare base64 literal decodes to ${sniff.type} (${b64.length} chars, prefix "${prefix}…")`,
-            severity: sniff.sev
+            severity: sniff.sev,
+            _highlightText: b64.substring(0, Math.min(64, b64.length)),
+            _sourceOffset: bareMatch.index,
+            _sourceLength: Math.min(64, b64.length),
           });
           setRisk(sniff.sev);
         }
@@ -615,7 +693,7 @@ class SvgRenderer {
         sev = 'medium';
         setRisk('medium');
       }
-      refs.push({ type: IOC.URL, url, severity: sev });
+      refs.push({ type: IOC.URL, url, severity: sev, _highlightText: url });
     }
 
     // ── 6. SVG-specific attack vectors ───────────────────────────────────
@@ -628,7 +706,8 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: `<use> element loads external resource: ${this._truncate(href, 150)}`,
-          severity: 'medium'
+          severity: 'medium',
+          _highlightText: href,
         });
         setRisk('medium');
       }
@@ -643,7 +722,8 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: `<${anim.tagName.toLowerCase()}> animates "${attrName}" → ${this._truncate(toVal, 100)}`,
-          severity: 'high'
+          severity: 'high',
+          _highlightText: toVal || attrName,
         });
         setRisk('high');
       }
@@ -657,7 +737,8 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: `<feImage> loads external resource: ${this._truncate(href, 150)}`,
-          severity: 'medium'
+          severity: 'medium',
+          _highlightText: href,
         });
         setRisk('medium');
       }
@@ -671,26 +752,35 @@ class SvgRenderer {
         refs.push({
           type: IOC.PATTERN,
           url: `<image> loads external URL: ${this._truncate(href, 150)}`,
-          severity: 'medium'
+          severity: 'medium',
+          _highlightText: href,
         });
         setRisk('medium');
       }
     }
 
     // ── 7. Entity/DTD references in raw text ─────────────────────────────
-    if (/<!ENTITY\s/i.test(text)) {
+    const entityMatch = text.match(/<!ENTITY\s[^>]*>/i);
+    if (entityMatch) {
       refs.push({
         type: IOC.PATTERN,
         url: 'XML entity declaration detected — potential XXE or obfuscation',
-        severity: 'high'
+        severity: 'high',
+        _highlightText: entityMatch[0],
+        _sourceOffset: entityMatch.index,
+        _sourceLength: entityMatch[0].length,
       });
       setRisk('high');
     }
-    if (/<!DOCTYPE[^>]+SYSTEM\s/i.test(text)) {
+    const dtdMatch = text.match(/<!DOCTYPE[^>]+SYSTEM\s[^>]*>/i);
+    if (dtdMatch) {
       refs.push({
         type: IOC.PATTERN,
         url: 'DOCTYPE with SYSTEM reference — potential XXE',
-        severity: 'high'
+        severity: 'high',
+        _highlightText: dtdMatch[0],
+        _sourceOffset: dtdMatch.index,
+        _sourceLength: dtdMatch[0].length,
       });
       setRisk('high');
     }
@@ -713,7 +803,10 @@ class SvgRenderer {
           refs.push({
             type: IOC.PATTERN,
             url: `Obfuscation fingerprint [${fp.key}]: ${fp.label} — "${this._truncate(m[0], 80)}"`,
-            severity: 'high'
+            severity: 'high',
+            _highlightText: m[0],
+            _sourceOffset: m.index,
+            _sourceLength: m[0].length,
           });
           setRisk('high');
           break; // one hit per fingerprint category is enough
@@ -738,12 +831,16 @@ class SvgRenderer {
       refs.push({
         type: IOC.URL,
         url: metaMatch[1],
-        severity: 'high'
+        severity: 'high',
+        _highlightText: metaMatch[1],
       });
       refs.push({
         type: IOC.PATTERN,
         url: `Meta refresh redirect to: ${metaMatch[1]}`,
-        severity: 'high'
+        severity: 'high',
+        _highlightText: metaMatch[0],
+        _sourceOffset: metaMatch.index,
+        _sourceLength: metaMatch[0].length,
       });
       setRisk('high');
     }
@@ -804,20 +901,24 @@ class SvgRenderer {
   // Internal helpers
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /** Check JS content for suspicious patterns and push findings */
-  _checkJsSuspicious(content, refs, setRisk, dedup = false) {
+  /** Check JS content for suspicious patterns and push findings.
+   *  When `rawText` is provided, we also try to pin the finding to an offset
+   *  in the full source for click-to-highlight. */
+  _checkJsSuspicious(content, refs, setRisk, dedup = false, rawText = null) {
     const seen = dedup ? new Set(refs.map(r => r.url)) : null;
     for (const { pattern, label } of SvgRenderer.JS_SUSPICIOUS) {
       pattern.lastIndex = 0;
-      if (pattern.test(content)) {
+      const m = pattern.exec(content);
+      if (m) {
         const msg = `Suspicious JavaScript pattern: ${label}`;
         if (dedup && seen && seen.has(msg)) continue;
         if (dedup && seen) seen.add(msg);
-        refs.push({
-          type: IOC.PATTERN,
-          url: msg,
-          severity: 'high'
-        });
+        const ref = { type: IOC.PATTERN, url: msg, severity: 'high', _highlightText: m[0] };
+        if (rawText) {
+          const idx = rawText.indexOf(m[0]);
+          if (idx >= 0) { ref._sourceOffset = idx; ref._sourceLength = m[0].length; }
+        }
+        refs.push(ref);
         setRisk('high');
       }
     }

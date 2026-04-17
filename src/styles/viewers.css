@@ -7269,3 +7269,55 @@ body.dark .plist-value-date   { color: #80cbc4; }
 body.dark .plist-bool-true    { color: #81c784; }
 body.dark .plist-bool-false   { color: #ef9a9a; }
 body.dark .plist-value-suspicious { color: #ff6b6b; background: rgba(255, 107, 107, .12); }
+
+/* --- HTA / IQY / URL raw source panes (Phases 11-13) ------------------- */
+.hta-source-pane,
+.iqy-source,
+.url-source {
+  margin: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fcfcfc;
+  max-height: 70vh;
+  overflow: auto;
+}
+body.dark .hta-source-pane,
+body.dark .iqy-source,
+body.dark .url-source {
+  border-color: #2a2a3e;
+  background: #12131c;
+}
+.url-raw-details {
+  margin: 12px 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+.url-raw-details > summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: rgba(0,0,0,.55);
+  user-select: none;
+}
+.url-raw-details[open] > summary {
+  border-bottom: 1px solid #e0e0e0;
+}
+body.dark .url-raw-details {
+  border-color: #2a2a3e;
+  background: #181926;
+}
+body.dark .url-raw-details > summary {
+  color: rgba(255,255,255,.55);
+}
+body.dark .url-raw-details[open] > summary {
+  border-bottom-color: #2a2a3e;
+}
+.url-raw-details .url-source {
+  margin: 0;
+  border: none;
+  border-radius: 0 0 6px 6px;
+}

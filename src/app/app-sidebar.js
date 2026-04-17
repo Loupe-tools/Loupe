@@ -1890,14 +1890,28 @@ Object.assign(App.prototype, {
     const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const termLower = searchTerm.toLowerCase();
 
-    setTimeout(() => {
+    // csv-renderer's scrollToRow() schedules its OWN 400ms setTimeout that
+    // renders the virtual row + creates the detail <tr>. If we used a single
+    // matching setTimeout here we'd race with it (broken first click on a
+    // collapsed CSV, works on second click when row is already in DOM).
+    // Instead, poll for the detail row up to ~1.5s.
+    const deadline = performance.now() + 1500;
+    const tryHighlight = () => {
       const tbody = csvView.querySelector('tbody');
-      if (!tbody) return;
-      const tr = tbody.querySelector(`tr[data-idx="${dataIdx}"]`);
-      if (!tr) return;
+      const tr = tbody && tbody.querySelector(`tr[data-idx="${dataIdx}"]`);
+      const detailTr = tr && tr.nextElementSibling;
+      const detailReady = detailTr && detailTr.classList.contains('csv-detail-row');
+      if (!detailReady) {
+        if (performance.now() < deadline) {
+          this._iocCsvHighlightPoll = setTimeout(tryHighlight, 60);
+        } else {
+          this._iocCsvHighlightPoll = null;
+        }
+        return;
+      }
+      this._iocCsvHighlightPoll = null;
+
       tr.classList.add('csv-ioc-row-highlight');
-      const detailTr = tr.nextElementSibling;
-      if (!detailTr || !detailTr.classList.contains('csv-detail-row')) return;
       const valEls = detailTr.querySelectorAll('.csv-detail-val');
       let firstMark = null;
       for (const valEl of valEls) {
@@ -1918,7 +1932,16 @@ Object.assign(App.prototype, {
         if (ref) ref._currentMatchIndex = undefined;
         this._iocCsvHighlightTimer = null;
       }, 5000);
-    }, 400);
+    };
+    // csv-renderer.js::scrollToRow() runs its OWN internal setTimeout(400)
+    // that tears down and rebuilds the entire visible tbody (resets
+    // state.renderedRange and calls renderVisibleRows()). If we wrap a
+    // <mark> before that rebuild happens it gets wiped — the user sees the
+    // row highlight but no cell-level mark (and it only appears on the 2nd
+    // click, when the row is already expanded and the rebuild is a no-op).
+    // Wait 450 ms so our wrap runs AFTER the rebuild finishes; the poll
+    // below then handles any slower renders (up to 1.5 s).
+    this._iocCsvHighlightPoll = setTimeout(tryHighlight, 450);
   },
 
   _clearIocCsvHighlight() {

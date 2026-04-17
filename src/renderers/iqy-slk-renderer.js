@@ -29,6 +29,7 @@ class IqySlkRenderer {
 
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     if (ext === 'iqy') {
       f.externalRefs.push({
@@ -37,12 +38,18 @@ class IqySlkRenderer {
         severity: 'high'
       });
 
-      // Extract the URL from IQY
-      const lines = text.split(/\r?\n/).filter(l => l.trim());
-      for (const line of lines) {
-        if (/^https?:\/\//i.test(line.trim())) {
-          f.externalRefs.push({ type: IOC.URL, url: line.trim(), severity: 'high' });
-        }
+      // Extract the URL from IQY — enrich with offset so clicking jumps to it.
+      for (const m of normalizedText.matchAll(/https?:\/\/\S+/gi)) {
+        const url = m[0].trim();
+        if (!url) continue;
+        f.externalRefs.push({
+          type: IOC.URL,
+          url,
+          severity: 'high',
+          _highlightText: url,
+          _sourceOffset: m.index,
+          _sourceLength: url.length
+        });
       }
     } else {
       f.externalRefs.push({
@@ -51,17 +58,33 @@ class IqySlkRenderer {
         severity: 'high'
       });
 
-      // Check for macro execution in SLK
-      if (/\bEXEC\b/i.test(text) || /\bCALL\b/i.test(text)) {
-        f.externalRefs.push({ type: IOC.PATTERN, url: 'SLK contains EXEC/CALL — macro execution', severity: 'high' });
-      }
-      if (/\bRUN\b/i.test(text)) {
-        f.externalRefs.push({ type: IOC.PATTERN, url: 'SLK contains RUN — macro auto-execution', severity: 'high' });
-      }
+      // Check for macro execution in SLK — pin to first occurrence.
+      const pinPattern = (name, regex, severity, label) => {
+        const m = normalizedText.match(regex);
+        if (!m) return;
+        f.externalRefs.push({
+          type: IOC.PATTERN,
+          url: label,
+          severity,
+          _highlightText: m[0],
+          _sourceOffset: m.index,
+          _sourceLength: m[0].length
+        });
+      };
+      pinPattern('EXEC', /\bEXEC\b/i, 'high', 'SLK contains EXEC — macro execution');
+      pinPattern('CALL', /\bCALL\b/i, 'high', 'SLK contains CALL — DLL function call');
+      pinPattern('RUN',  /\bRUN\b/i,  'high', 'SLK contains RUN — macro auto-execution');
 
       // Extract URLs
-      for (const m of text.matchAll(/https?:\/\/[^\s"';]+/g)) {
-        f.externalRefs.push({ type: IOC.URL, url: m[0], severity: 'high' });
+      for (const m of normalizedText.matchAll(/https?:\/\/[^\s"';]+/g)) {
+        f.externalRefs.push({
+          type: IOC.URL,
+          url: m[0],
+          severity: 'high',
+          _highlightText: m[0],
+          _sourceOffset: m.index,
+          _sourceLength: m[0].length
+        });
       }
     }
 
@@ -115,7 +138,7 @@ class IqySlkRenderer {
     wrap.appendChild(card);
 
     // Raw content
-    this._addRawView(wrap, text, lines.length, bytes.length, 'IQY');
+    this._addRawView(wrap, text, bytes.length, 'IQY');
     return wrap;
   }
 
@@ -185,8 +208,7 @@ class IqySlkRenderer {
     }
 
     // Raw content
-    const lines = text.split('\n');
-    this._addRawView(wrap, text, lines.length, bytes.length, 'SLK');
+    this._addRawView(wrap, text, bytes.length, 'SLK');
     return wrap;
   }
 
@@ -226,23 +248,47 @@ class IqySlkRenderer {
 
   // ── Shared helpers ────────────────────────────────────────────────────────
 
-  _addRawView(wrap, text, lineCount, byteLen, format) {
-    const info = document.createElement('div'); info.className = 'plaintext-info';
-    info.textContent = `${lineCount} line${lineCount !== 1 ? 's' : ''}  ·  ${this._fmtBytes(byteLen)}  ·  ${format} file`;
+  /**
+   * Add a raw source view as a .plaintext-table and expose `_rawText` +
+   * `_showSourcePane` on `wrap` so the shared sidebar highlighter can wrap
+   * <mark>s around YARA/IOC matches.
+   */
+  _addRawView(wrap, text, byteLen, format) {
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalizedText.split('\n');
+
+    const info = document.createElement('div');
+    info.className = 'plaintext-info';
+    info.textContent = `${lines.length} line${lines.length !== 1 ? 's' : ''}  ·  ${this._fmtBytes(byteLen)}  ·  ${format} file`;
     wrap.appendChild(info);
 
-    const scr = document.createElement('div'); scr.className = 'plaintext-scroll';
-    const table = document.createElement('table'); table.className = 'plaintext-table';
-    const lines = text.split('\n');
+    const sourcePane = document.createElement('div');
+    sourcePane.className = 'iqy-source plaintext-scroll';
+
+    const table = document.createElement('table');
+    table.className = 'plaintext-table';
     const maxLines = 5000;
     const count = Math.min(lines.length, maxLines);
     for (let i = 0; i < count; i++) {
       const tr = document.createElement('tr');
-      const tdNum = document.createElement('td'); tdNum.className = 'plaintext-ln'; tdNum.textContent = i + 1;
-      const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code'; tdCode.textContent = lines[i];
-      tr.appendChild(tdNum); tr.appendChild(tdCode); table.appendChild(tr);
+      const tdNum = document.createElement('td');
+      tdNum.className = 'plaintext-ln';
+      tdNum.textContent = i + 1;
+      const tdCode = document.createElement('td');
+      tdCode.className = 'plaintext-code';
+      tdCode.textContent = lines[i];
+      tr.appendChild(tdNum);
+      tr.appendChild(tdCode);
+      table.appendChild(tr);
     }
-    scr.appendChild(table); wrap.appendChild(scr);
+    sourcePane.appendChild(table);
+    wrap.appendChild(sourcePane);
+
+    // Expose for sidebar navigation.
+    wrap._rawText = normalizedText;
+    wrap._showSourcePane = () => {
+      sourcePane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
   }
 
   _fmtBytes(n) {

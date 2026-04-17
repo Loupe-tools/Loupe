@@ -8,6 +8,7 @@ class UrlShortcutRenderer {
   render(buffer, fileName) {
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const ext = (fileName || '').split('.').pop().toLowerCase();
     const wrap = document.createElement('div'); wrap.className = 'url-view';
 
@@ -77,13 +78,51 @@ class UrlShortcutRenderer {
 
     wrap.appendChild(card);
 
-    // Raw file content
-    const details = document.createElement('details'); details.className = 'rtf-raw-details';
-    const summary = document.createElement('summary'); summary.textContent = 'Show Raw File Content';
-    details.appendChild(summary);
-    const rawPre = document.createElement('pre'); rawPre.className = 'rtf-raw-source';
-    rawPre.textContent = text.length > 10000 ? text.slice(0, 10000) + '\n… truncated' : text;
-    details.appendChild(rawPre); wrap.appendChild(details);
+    // ── Collapsible Raw File Content as a .plaintext-table ──────────────────
+    // Uses the same shared highlight surface as SVG/HTA renderers so the
+    // sidebar's `_highlightMatchesInline` can wrap <mark>s around YARA/IOC
+    // matches using character offsets in `wrap._rawText`.
+    const rawDetails = document.createElement('details');
+    rawDetails.className = 'url-raw-details';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Raw File Content';
+    rawDetails.appendChild(summary);
+
+    const sourcePane = document.createElement('div');
+    sourcePane.className = 'url-source plaintext-scroll';
+    const table = document.createElement('table');
+    table.className = 'plaintext-table';
+    const lines = normalizedText.split('\n');
+    const maxLines = 5000;
+    const count = Math.min(lines.length, maxLines);
+    for (let i = 0; i < count; i++) {
+      const tr = document.createElement('tr');
+      const tdNum = document.createElement('td');
+      tdNum.className = 'plaintext-ln';
+      tdNum.textContent = i + 1;
+      const tdCode = document.createElement('td');
+      tdCode.className = 'plaintext-code';
+      tdCode.textContent = lines[i];
+      tr.appendChild(tdNum);
+      tr.appendChild(tdCode);
+      table.appendChild(tr);
+    }
+    sourcePane.appendChild(table);
+    rawDetails.appendChild(sourcePane);
+    wrap.appendChild(rawDetails);
+
+    wrap._rawText = normalizedText;
+    wrap._showSourcePane = () => {
+      rawDetails.open = true;
+      // Wait for the <details> element to finish laying out its now-visible
+      // contents before scrolling. A single requestAnimationFrame can fire
+      // before layout has been applied to newly-opened <details>, so defer
+      // via setTimeout(0) which guarantees we run after the current layout
+      // pass in every browser we target.
+      setTimeout(() => {
+        rawDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 0);
+    };
 
     return wrap;
   }
@@ -97,23 +136,55 @@ class UrlShortcutRenderer {
 
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const ext = (fileName || '').split('.').pop().toLowerCase();
     const parsed = ext === 'webloc' ? this._parseWebloc(text) : this._parseUrlFile(text);
 
+    // Helper — locate `needle` in the raw text and return offset/length (or null).
+    const locate = (needle) => {
+      if (!needle) return null;
+      const idx = normalizedText.indexOf(needle);
+      if (idx === -1) return null;
+      return { offset: idx, length: needle.length };
+    };
+
     if (parsed.url) {
       const risks = this._assessUrl(parsed.url);
+      const loc = locate(parsed.url);
       for (const r of risks) {
-        f.externalRefs.push({ type: IOC.PATTERN, url: r.msg, severity: r.sev });
+        const ref = {
+          type: IOC.PATTERN,
+          url: r.msg,
+          severity: r.sev,
+          _highlightText: parsed.url
+        };
+        if (loc) { ref._sourceOffset = loc.offset; ref._sourceLength = loc.length; }
+        f.externalRefs.push(ref);
         if (r.sev === 'high') f.risk = 'high';
         else if (r.sev === 'medium' && f.risk !== 'high') f.risk = 'medium';
       }
       // Add the URL itself as a finding
       const urlSev = /^\\\\|^file:/i.test(parsed.url) ? 'high' : 'medium';
-      f.externalRefs.push({ type: IOC.URL, url: parsed.url, severity: urlSev });
+      const urlRef = {
+        type: IOC.URL,
+        url: parsed.url,
+        severity: urlSev,
+        _highlightText: parsed.url
+      };
+      if (loc) { urlRef._sourceOffset = loc.offset; urlRef._sourceLength = loc.length; }
+      f.externalRefs.push(urlRef);
     }
 
     if (parsed.iconFile) {
-      f.externalRefs.push({ type: IOC.FILE_PATH, url: parsed.iconFile, severity: 'info' });
+      const loc = locate(parsed.iconFile);
+      const ref = {
+        type: IOC.FILE_PATH,
+        url: parsed.iconFile,
+        severity: 'info',
+        _highlightText: parsed.iconFile
+      };
+      if (loc) { ref._sourceOffset = loc.offset; ref._sourceLength = loc.length; }
+      f.externalRefs.push(ref);
     }
 
     // Pattern detection is handled entirely by YARA (auto-scan on file load)

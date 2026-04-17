@@ -8,6 +8,7 @@ class HtaRenderer {
   render(buffer) {
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const wrap = document.createElement('div');
     wrap.className = 'hta-view';
 
@@ -18,7 +19,7 @@ class HtaRenderer {
     wrap.appendChild(ban);
 
     // HTA:APPLICATION attributes
-    const htaTag = text.match(/<HTA:APPLICATION([^>]*)>/i);
+    const htaTag = normalizedText.match(/<HTA:APPLICATION([^>]*)>/i);
     if (htaTag) {
       const attrs = this._parseAttributes(htaTag[1]);
       if (attrs.length) {
@@ -45,7 +46,7 @@ class HtaRenderer {
     }
 
     // Script block summary
-    const scriptBlocks = this._extractScripts(text);
+    const scriptBlocks = this._extractScripts(normalizedText);
     if (scriptBlocks.length) {
       const sh = document.createElement('div');
       sh.className = 'hta-section-hdr';
@@ -64,20 +65,33 @@ class HtaRenderer {
       }
     }
 
-    // Full source with line numbers
+    // ── Full source rendered as .plaintext-table ────────────────────────────
+    // Modelled on svg-renderer.js so the shared sidebar highlighter
+    // (`_highlightMatchesInline`) can wrap per-line <mark> elements around
+    // YARA/IOC matches using character offsets in `wrap._rawText`.
     const srcH = document.createElement('div');
     srcH.className = 'hta-section-hdr';
     srcH.textContent = 'Full Source';
     wrap.appendChild(srcH);
 
-    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const lines = normalizedText.split('\n');
     const info = document.createElement('div');
     info.className = 'plaintext-info';
     info.textContent = `${lines.length} line${lines.length !== 1 ? 's' : ''}  ·  ${this._fmtBytes(bytes.length)}`;
     wrap.appendChild(info);
 
-    const scr = document.createElement('div');
-    scr.className = 'plaintext-scroll';
+    const sourcePane = document.createElement('div');
+    sourcePane.className = 'hta-source-pane plaintext-scroll';
+
+    // Optional hljs syntax highlighting
+    let highlightedLines = null;
+    if (typeof hljs !== 'undefined' && normalizedText.length <= 200000) {
+      try {
+        const result = hljs.highlight(normalizedText, { language: 'xml', ignoreIllegals: true });
+        highlightedLines = result.value.split('\n');
+      } catch (_) { /* fallback to plain */ }
+    }
+
     const table = document.createElement('table');
     table.className = 'plaintext-table';
     const maxLines = 50000;
@@ -89,13 +103,25 @@ class HtaRenderer {
       tdNum.textContent = i + 1;
       const tdCode = document.createElement('td');
       tdCode.className = 'plaintext-code';
-      tdCode.textContent = lines[i];
+      if (highlightedLines && highlightedLines[i] !== undefined) {
+        tdCode.innerHTML = highlightedLines[i] || '';
+      } else {
+        tdCode.textContent = lines[i];
+      }
       tr.appendChild(tdNum);
       tr.appendChild(tdCode);
       table.appendChild(tr);
     }
-    scr.appendChild(table);
-    wrap.appendChild(scr);
+    sourcePane.appendChild(table);
+    wrap.appendChild(sourcePane);
+
+    // Expose raw text + source-pane helper so the sidebar can scroll to it
+    // before highlighting. HTA's source is always visible (no tab toggle),
+    // so _showSourcePane just scrolls it into view.
+    wrap._rawText = normalizedText;
+    wrap._showSourcePane = () => {
+      sourcePane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     return wrap;
   }
@@ -110,6 +136,7 @@ class HtaRenderer {
 
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     f.externalRefs.push({
       type: IOC.INFO,
@@ -117,17 +144,40 @@ class HtaRenderer {
       severity: 'high'
     });
 
-    // Script block count (structural check)
-    const scriptBlocks = this._extractScripts(text);
+    // Script block count (structural check) — pin to the first <script tag
+    // so clicking the finding scrolls the Source pane to the script region.
+    const scriptBlocks = this._extractScripts(normalizedText);
     if (scriptBlocks.length) {
-      f.externalRefs.push({
+      const firstScriptIdx = normalizedText.search(/<script\b/i);
+      const ref = {
         type: IOC.PATTERN,
         url: `${scriptBlocks.length} embedded <script> block(s): ${scriptBlocks.map(s => s.language || 'unknown').join(', ')}`,
-        severity: 'medium'
+        severity: 'medium',
+        _highlightText: '<script'
+      };
+      if (firstScriptIdx !== -1) {
+        ref._sourceOffset = firstScriptIdx;
+        ref._sourceLength = '<script'.length;
+      }
+      f.externalRefs.push(ref);
+    }
+
+    // HTA:APPLICATION tag — security-relevant attributes worth jumping to.
+    const htaTagMatch = normalizedText.match(/<HTA:APPLICATION\b/i);
+    if (htaTagMatch) {
+      f.externalRefs.push({
+        type: IOC.PATTERN,
+        url: 'HTA:APPLICATION declaration — HTA metadata',
+        severity: 'info',
+        _highlightText: htaTagMatch[0],
+        _sourceOffset: htaTagMatch.index,
+        _sourceLength: htaTagMatch[0].length
       });
     }
 
-    // Pattern detection is handled entirely by YARA (auto-scan on file load)
+    // Pattern detection is handled entirely by YARA (auto-scan on file load).
+    // YARA findings already carry byte offsets → sidebar highlighter resolves
+    // them against wrap._rawText for exact source-pane highlighting.
     return f;
   }
 
