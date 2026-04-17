@@ -134,25 +134,53 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 
 ## 🎬 Try It Yourself
 
-The [`examples/`](examples/) directory contains sample files for every supported format — try dropping them into Loupe to explore:
+The [`examples/`](examples/) directory contains sample files for every supported format — grouped by category — try dropping them into Loupe to explore:
 
-- [`nested-double-b64-ip.txt`](examples/nested-double-b64-ip.txt) — double Base64-encoded PowerShell with hidden C2 IP
-- [`encoded-zlib-base64.txt`](examples/encoded-zlib-base64.txt) — nested encoded content with compressed payloads
-- [`example.lnk`](examples/example.lnk) — Windows shortcut with suspicious target path
-- [`example.xlsm`](examples/example.xlsm) — macro-enabled Excel workbook with VBA
-- [`example.evtx`](examples/example.evtx) — Windows Event Log with security events
-- [`example.eml`](examples/example.eml) — email with MIME parts and headers
-- [`example.hta`](examples/example.hta) — HTML Application with embedded scripts
-- [`example-selfsigned.pem`](examples/example-selfsigned.pem) — self-signed X.509 certificate with suspicious SANs
-- [`example-malicious.svg`](examples/example-malicious.svg) — SVG with embedded scripts, foreignObject phishing form, event handlers, and data URI payloads
-- [`example-with-key.pem`](examples/example-with-key.pem) — certificate with embedded private key + weak 1024-bit RSA key
-- [`example.jar`](examples/example.jar) — Java archive with class files, MANIFEST.MF, and constant pool analysis
-- [`pe-Windows-x64-cmd`](examples/pe-Windows-x64-cmd) — Windows PE executable with imports, sections, and security features
-- [`elf-Linux-x64-bash`](examples/elf-Linux-x64-bash) — Linux ELF binary with symbols, segments, and security checks
-- [`MachO-OSX-x64-ls`](examples/MachO-OSX-x64-ls) — macOS Mach-O binary with load commands and code signature
-- [`example.plist`](examples/example.plist) — macOS property list with LaunchAgent/persistence key detection
-- [`example.applescript`](examples/example.applescript) — AppleScript source with macOS-specific security analysis
-- [`example.key`](examples/example.key) — OpenPGP key block (auto-detected via packet-header heuristics; `.key` is shared with X.509 PEM private keys)
+**Encoded payloads** ([`examples/encoded-payloads/`](examples/encoded-payloads/))
+- [`nested-double-b64-ip.txt`](examples/encoded-payloads/nested-double-b64-ip.txt) — double Base64-encoded PowerShell with hidden C2 IP
+- [`encoded-zlib-base64.txt`](examples/encoded-payloads/encoded-zlib-base64.txt) — nested encoded content with compressed payloads
+- [`mixed-obfuscations.txt`](examples/encoded-payloads/mixed-obfuscations.txt) — kitchen-sink sample combining many obfuscation techniques
+
+**Office** ([`examples/office/`](examples/office/))
+- [`example.docm`](examples/office/example.docm) — macro-enabled Word document with AutoOpen + Shell VBA
+- [`example.xlsm`](examples/office/example.xlsm) — macro-enabled Excel workbook with VBA
+- [`example.pptm`](examples/office/example.pptm) — macro-enabled PowerPoint with VBA
+
+**PDF & email** ([`examples/pdf/`](examples/pdf/), [`examples/email/`](examples/email/))
+- [`javascript-example.pdf`](examples/pdf/javascript-example.pdf) — PDF with `/OpenAction` triggering embedded JavaScript
+- [`example.eml`](examples/email/example.eml) — email with MIME parts and headers
+- [`phishing-example.eml`](examples/email/phishing-example.eml) — phishing email with SPF/DKIM/DMARC failures and a tracking pixel
+
+**Windows shell & forensics** ([`examples/windows-shell/`](examples/windows-shell/), [`examples/forensics/`](examples/forensics/))
+- [`example.lnk`](examples/windows-shell/example.lnk) — Windows shortcut with suspicious target path
+- [`example.hta`](examples/windows-shell/example.hta) — HTML Application with embedded scripts
+- [`example.evtx`](examples/forensics/example.evtx) / [`example-security.evtx`](examples/forensics/example-security.evtx) — Windows Event Logs (general + security events)
+- [`chromehistory-example.sqlite`](examples/forensics/chromehistory-example.sqlite) — Chrome browsing history database
+
+**Native binaries** ([`examples/pe/`](examples/pe/), [`examples/elf/`](examples/elf/), [`examples/macho/`](examples/macho/))
+- [`pe/example.exe`](examples/pe/example.exe) — Windows PE executable with imports, sections, and security features
+- [`pe/signed-example.dll`](examples/pe/signed-example.dll) — Authenticode-signed DLL
+- [`elf/example`](examples/elf/example) — Linux ELF binary with symbols, segments, and security checks
+- [`macho/example`](examples/macho/example) — macOS Mach-O binary with load commands and code signature
+
+**macOS scripts** ([`examples/macos-scripts/`](examples/macos-scripts/))
+- [`example.plist`](examples/macos-scripts/example.plist) — macOS property list with LaunchAgent/persistence key detection
+- [`example.applescript`](examples/macos-scripts/example.applescript) — AppleScript source with macOS-specific security analysis
+
+**Certificates & PGP** ([`examples/certificates/`](examples/certificates/), [`examples/pgp/`](examples/pgp/))
+- [`example-selfsigned.pem`](examples/certificates/example-selfsigned.pem) — self-signed X.509 certificate with suspicious SANs
+- [`example-with-key.pem`](examples/certificates/example-with-key.pem) — certificate with embedded private key + weak 1024-bit RSA key
+- [`example-expired.crt`](examples/certificates/example-expired.crt) — expired X.509 certificate
+- [`example.key`](examples/pgp/example.key) — OpenPGP key block (auto-detected via packet-header heuristics; `.key` is shared with X.509 PEM private keys)
+
+**Web, Java & images** ([`examples/web/`](examples/web/), [`examples/java/`](examples/java/), [`examples/images/`](examples/images/))
+- [`example-malicious.svg`](examples/web/example-malicious.svg) — SVG with embedded scripts, foreignObject phishing form, event handlers, and data URI payloads
+- [`example.jar`](examples/java/example.jar) — Java archive with class files, MANIFEST.MF, and constant pool analysis
+- [`polyglot-example.png`](examples/images/polyglot-example.png) — PNG with a ZIP appended past the IEND marker
+
+**Archives & MSI** ([`examples/archives/`](examples/archives/), [`examples/msi/`](examples/msi/))
+- [`example.zip`](examples/archives/example.zip), [`example.tar`](examples/archives/example.tar), [`example.tar.gz`](examples/archives/example.tar.gz), [`example.gz`](examples/archives/example.gz), [`example.iso`](examples/archives/example.iso) — archive/disk-image samples
+- [`example.msi`](examples/msi/example.msi) — Windows Installer package
 
 ---
 
