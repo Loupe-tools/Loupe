@@ -61,11 +61,11 @@ class HtmlRenderer {
     dragShield.className = 'html-drag-shield';
 
     // ── Drag event handlers ─────────────────────────────────────────────
-    // Capture drag events and dispatch custom events for GloveBox app handling
+    // Capture drag events and dispatch custom events for Loupe app handling
     dragShield.addEventListener('dragenter', e => {
       e.preventDefault();
       e.stopPropagation();
-      window.dispatchEvent(new CustomEvent('glovebox-dragenter'));
+      window.dispatchEvent(new CustomEvent('loupe-dragenter'));
     });
 
     dragShield.addEventListener('dragover', e => {
@@ -77,14 +77,14 @@ class HtmlRenderer {
     dragShield.addEventListener('dragleave', e => {
       e.preventDefault();
       e.stopPropagation();
-      window.dispatchEvent(new CustomEvent('glovebox-dragleave'));
+      window.dispatchEvent(new CustomEvent('loupe-dragleave'));
     });
 
     dragShield.addEventListener('drop', e => {
       e.preventDefault();
       e.stopPropagation();
       if (e.dataTransfer?.files?.length) {
-        window.dispatchEvent(new CustomEvent('glovebox-drop', {
+        window.dispatchEvent(new CustomEvent('loupe-drop', {
           detail: { files: e.dataTransfer.files }
         }));
       }

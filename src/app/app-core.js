@@ -99,12 +99,12 @@ class App {
     // Handles drags that enter directly over sandboxed iframes. The
     // .html-drag-shield element dispatches these custom events because
     // normal drag events go directly to the iframe's content document.
-    window.addEventListener('glovebox-dragenter', () => {
+    window.addEventListener('loupe-dragenter', () => {
       _dragCounter++;
       if (_dragCounter === 1) showOverlay();
     });
 
-    window.addEventListener('glovebox-dragleave', () => {
+    window.addEventListener('loupe-dragleave', () => {
       _dragCounter--;
       if (_dragCounter <= 0) {
         hideOverlay();
@@ -112,7 +112,7 @@ class App {
       }
     });
 
-    window.addEventListener('glovebox-drop', e => {
+    window.addEventListener('loupe-drop', e => {
       hideOverlay();
       dz.classList.remove('drag-over');
       if (e.detail?.files) {

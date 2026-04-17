@@ -999,14 +999,14 @@ Object.assign(App.prototype, {
     // Don't open twice
     if (document.querySelector('.help-overlay')) return;
 
-    const version = typeof GLOVEBOX_VERSION !== 'undefined' ? GLOVEBOX_VERSION : 'dev';
+    const version = typeof LOUPE_VERSION !== 'undefined' ? LOUPE_VERSION : 'dev';
 
     const overlay = document.createElement('div');
     overlay.className = 'help-overlay';
     overlay.innerHTML = `
       <div class="help-dialog">
         <div class="help-header">
-          <span>🧤📦 GloveBox <small>v${version}</small></span>
+          <span>🕵🏻 Loupe <small>v${version}</small></span>
           <button class="help-close" title="Close (Esc)">✕</button>
         </div>
         <div class="help-body">
@@ -1024,15 +1024,15 @@ Object.assign(App.prototype, {
 
           <h3>Links</h3>
           <p>
-            <a href="https://github.com/Sam-Dowling/GloveBox/releases/latest/download/glovebox.html" target="_blank" rel="noopener">Download GloveBox</a>
+            <a href="https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html" target="_blank" rel="noopener">Download Loupe</a>
             ·
-            <a href="https://github.com/Sam-Dowling/GloveBox" target="_blank" rel="noopener">GitHub Repository</a>
+            <a href="https://github.com/Loupe-tools/Loupe" target="_blank" rel="noopener">GitHub Repository</a>
             ·
-            <a href="https://sam-dowling.github.io/GloveBox/" target="_blank" rel="noopener">Live Demo</a>
+            <a href="https://loupe.tools/" target="_blank" rel="noopener">Live Demo</a>
           </p>
 
           <div style="text-align:center;margin-top:12px;">
-            <a class="help-update-btn" href="https://sam-dowling.github.io/GloveBox/?v=v${version}" target="_blank" rel="noopener">🔄 Check for Updates</a>
+            <a class="help-update-btn" href="https://loupe.tools/?v=v${version}" target="_blank" rel="noopener">🔄 Check for Updates</a>
           </div>
 
           <p style="margin-top:1.2em;opacity:0.5;font-size:0.85em;">Licensed under the GNU General Public License v3.0</p>
@@ -1067,7 +1067,7 @@ Object.assign(App.prototype, {
 
     // Strip leading 'v' prefix if present
     const remoteVersion = incoming.replace(/^v/, '');
-    const localVersion = typeof GLOVEBOX_VERSION !== 'undefined' ? GLOVEBOX_VERSION : 'dev';
+    const localVersion = typeof LOUPE_VERSION !== 'undefined' ? LOUPE_VERSION : 'dev';
 
     // Clean the URL so the popup doesn't reappear on refresh
     const cleanUrl = window.location.pathname + window.location.hash;
@@ -1091,7 +1091,7 @@ Object.assign(App.prototype, {
           <button class="update-btn update-btn-close">Close</button>
         </div>`;
     } else {
-      const dlUrl = 'https://github.com/Sam-Dowling/GloveBox/releases/latest/download/glovebox.html';
+      const dlUrl = 'https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html';
       overlay.innerHTML = `
         <div class="update-dialog">
           <div class="update-icon update-icon-new">🔄</div>

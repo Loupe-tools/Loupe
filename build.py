@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build script: assembles glovebox.html from source files."""
+"""Build script: assembles loupe.html from source files."""
 import os
 from datetime import datetime
 
@@ -135,16 +135,16 @@ HTML = f"""<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; frame-src blob:; worker-src blob:;">
-  <meta name="description" content="GloveBox — a 100% offline, single-file security analyser for suspicious files. No server, no uploads, no tracking.">
-  <title>GloveBox</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 100'><text y='.9em' font-size='90'>🧤📦</text></svg>">
+  <meta name="description" content="Loupe — a 100% offline, single-file security analyser for suspicious files. No server, no uploads, no tracking.">
+  <title>Loupe</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 100'><text y='.9em' font-size='90'>🕵🏻</text></svg>">
   <style>{css}</style>
 </head>
 <body>
 
   <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
   <div id="toolbar">
-    <span id="app-title">🧤📦 GloveBox</span>
+    <span id="app-title">🕵🏻 Loupe</span>
     <div class="tb-separator"></div>
     <!-- File operations group -->
     <div class="tb-group" id="file-ops">
@@ -222,7 +222,7 @@ HTML = f"""<!DOCTYPE html>
   <!-- ── Noscript ────────────────────────────────────────────────────── -->
   <noscript>
     <div class="noscript-msg">
-      <h2>🧤📦 GloveBox requires JavaScript</h2>
+      <h2>🕵🏻 Loupe requires JavaScript</h2>
       <p>This is a client-side security analysis tool — all processing happens locally in your browser. Please enable JavaScript to continue.</p>
     </div>
   </noscript>
@@ -254,7 +254,7 @@ HTML = f"""<!DOCTYPE html>
 
   <!-- ── Application ─────────────────────────────────────────────────── -->
   <script>
-const GLOVEBOX_VERSION = '{VERSION}';
+const LOUPE_VERSION = '{VERSION}';
 {default_yara_js}
 {app_js}
   </script>

@@ -12,7 +12,7 @@ const _YARA_KW = new Set([
 ]);
 
 // localStorage key for user-uploaded YARA rules
-const _YARA_UPLOAD_KEY = 'glovebox_uploaded_yara';
+const _YARA_UPLOAD_KEY = 'loupe_uploaded_yara';
 
 Object.assign(App.prototype, {
 
@@ -388,7 +388,7 @@ Object.assign(App.prototype, {
     allItem.addEventListener('click', () => {
       saveMenu.style.display = 'none';
       saveMenuOpen = false;
-      this._yaraSaveFile(this._getAllYaraSource(), 'glovebox-rules-all.yar');
+      this._yaraSaveFile(this._getAllYaraSource(), 'loupe-rules-all.yar');
     });
     saveMenu.appendChild(allItem);
 
@@ -401,7 +401,7 @@ Object.assign(App.prototype, {
       saveMenu.style.display = 'none';
       saveMenuOpen = false;
       const u = this._getUploadedYaraRules();
-      if (u) this._yaraSaveFile(u, 'glovebox-rules-uploaded.yar');
+      if (u) this._yaraSaveFile(u, 'loupe-rules-uploaded.yar');
     });
     saveMenu.appendChild(upItem);
 
@@ -1113,8 +1113,8 @@ Object.assign(App.prototype, {
       ]
     ));
 
-    // ── 6. Severity Levels (GloveBox-specific) ──────────────────────
-    body.appendChild(h('Severity Levels (GloveBox)'));
+    // ── 6. Severity Levels (Loupe-specific) ──────────────────────
+    body.appendChild(h('Severity Levels (Loupe)'));
     const sevNote = document.createElement('p');
     sevNote.textContent = 'Set via meta: severity = "level". Controls badge colour and risk scoring.';
     body.appendChild(sevNote);
@@ -1130,10 +1130,10 @@ Object.assign(App.prototype, {
       true // sevRow class
     ));
 
-    // ── 7. Meta Fields (GloveBox) ───────────────────────────────────
-    body.appendChild(h('Meta Fields (GloveBox)'));
+    // ── 7. Meta Fields (Loupe) ───────────────────────────────────
+    body.appendChild(h('Meta Fields (Loupe)'));
     const metaNote = document.createElement('p');
-    metaNote.textContent = 'GloveBox recognises four standardised meta fields. All are optional but recommended.';
+    metaNote.textContent = 'Loupe recognises four standardised meta fields. All are optional but recommended.';
     body.appendChild(metaNote);
     body.appendChild(table(
       ['Field', 'Type', 'Example', 'Purpose'],
@@ -1149,7 +1149,7 @@ Object.assign(App.prototype, {
     body.appendChild(h('Naming Convention'));
     const nameNote = document.createElement('p');
     nameNote.innerHTML = 'Rule names use <code>Prefix_Words_With_Underscores</code>. '
-      + 'GloveBox automatically converts underscores to spaces for display in the '
+      + 'Loupe automatically converts underscores to spaces for display in the '
       + '<strong>Detections</strong> sidebar &mdash; e.g. <code>Suspicious_PowerShell_Download</code> '
       + '&rarr; <em>Suspicious PowerShell Download</em>.';
     body.appendChild(nameNote);
