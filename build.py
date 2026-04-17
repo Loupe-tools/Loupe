@@ -74,6 +74,7 @@ default_yara_js = f'const DEFAULT_YARA_RULES = `{yar_rules_escaped}`;\n'
 # JS files concatenated in dependency order
 JS_FILES = [
     'src/constants.js',
+    'src/parser-watchdog.js',
     'src/vba-utils.js',
     'src/yara-engine.js',
     'src/decompressor.js',
@@ -134,7 +135,7 @@ HTML = f"""<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; frame-src blob:; worker-src blob:;">
+        content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; frame-src blob:; worker-src blob:; form-action 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none';">
   <meta name="description" content="Loupe — a 100% offline, single-file security analyser for suspicious files. No server, no uploads, no tracking.">
   <title>Loupe</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 100'><text y='.9em' font-size='90'>🕵🏻</text></svg>">

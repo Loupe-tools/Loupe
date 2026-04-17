@@ -4,6 +4,15 @@
 // Loaded first; used by every other module.
 // ════════════════════════════════════════════════════════════════════════════
 
+// ── Parser safety limits ──────────────────────────────────────────────────────
+const PARSER_LIMITS = Object.freeze({
+  MAX_DEPTH:        32,                   // Max recursion / nesting depth
+  MAX_UNCOMPRESSED: 50 * 1024 * 1024,     // 50 MB — max decompressed output
+  MAX_RATIO:        100,                  // Per-entry compression ratio abort
+  MAX_ENTRIES:      10_000,               // Max archive entries before truncation
+  TIMEOUT_MS:       60_000,               // Parser timeout (60 s)
+});
+
 // ── XML namespace constants ───────────────────────────────────────────────────
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';

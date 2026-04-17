@@ -4,8 +4,8 @@
 
 const Decompressor = {
 
-  /** Maximum inflated size allowed (50 MB) — prevents zip-bomb expansion. */
-  MAX_OUTPUT: 50 * 1024 * 1024,
+  /** Maximum inflated size allowed — prevents zip-bomb expansion. Uses shared PARSER_LIMITS. */
+  MAX_OUTPUT: (typeof PARSER_LIMITS !== 'undefined' ? PARSER_LIMITS.MAX_UNCOMPRESSED : 50 * 1024 * 1024),
 
   /**
    * Attempt to decompress `bytes` starting at `offset` using the given format.

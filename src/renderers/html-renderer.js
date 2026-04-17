@@ -50,7 +50,10 @@ class HtmlRenderer {
     iframe.sandbox = 'allow-same-origin';
     // Use srcdoc instead of blob URL - content is inline, works better with
     // allow-same-origin for scroll access across all protocols including file://
-    iframe.srcdoc = text;
+    // Inject an inner CSP to lock down the sandboxed document itself —
+    // blocks scripts, fetches, fonts, objects; allows only inline styles and data: images
+    const innerCSP = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:">';
+    iframe.srcdoc = innerCSP + text;
     iframe.title = 'Sandboxed HTML preview';
 
     // ── Drag shield ──────────────────────────────────────────────────────

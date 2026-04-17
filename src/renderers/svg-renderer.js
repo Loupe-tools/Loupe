@@ -96,7 +96,8 @@ class SvgRenderer {
     // XML internal DTD subsets, causing ]> to render as visible text
     const previewText = text.replace(/<!DOCTYPE[^[>]*\[[^\]]*\]>/gi, '').replace(/<!DOCTYPE[^>]*>/gi, '');
     // Wrap SVG in minimal HTML with dark-mode aware background
-    const wrappedSvg = `<!DOCTYPE html><html><head><style>
+    // Inner CSP locks down the sandboxed document — blocks scripts, fetches, fonts, objects
+    const wrappedSvg = `<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><style>
       html,body{margin:0;padding:16px;display:flex;justify-content:center;align-items:center;min-height:100vh;box-sizing:border-box;
       background:repeating-conic-gradient(#f0f0f0 0% 25%,white 0% 50%) 50%/20px 20px;}
       svg{max-width:100%;max-height:90vh;}

@@ -87,7 +87,7 @@ Object.assign(App.prototype, {
     document.getElementById('file-info').textContent = file.name;
     const ext = file.name.split('.').pop().toLowerCase();
     try {
-      const buffer = await file.arrayBuffer();
+      const buffer = await ParserWatchdog.run(() => file.arrayBuffer());
       // Store buffer for YARA scanning
       this._fileBuffer = buffer;
       // Reset YARA state from previous file to prevent stale results bleeding over
@@ -929,6 +929,13 @@ Object.assign(App.prototype, {
   // ── Navigation stack (for going back from inner archive files) ──────────
   _pushNavState(parentName) {
     if (!this._navStack) this._navStack = [];
+    // Enforce nesting depth limit to prevent recursive archive bombs
+    if (this._navStack.length >= PARSER_LIMITS.MAX_DEPTH) {
+      console.warn(`Nesting depth limit reached (${PARSER_LIMITS.MAX_DEPTH}) — refusing to open inner file`);
+      const toast = document.getElementById('toast');
+      if (toast) { toast.textContent = `⚠ Nesting depth limit (${PARSER_LIMITS.MAX_DEPTH}) reached — cannot open further nested files.`; toast.className = ''; setTimeout(() => toast.className = 'hidden', 4000); }
+      throw new Error('DEPTH_LIMIT');
+    }
     const pc = document.getElementById('page-container');
     const docEl = pc && pc.firstElementChild;
     this._navStack.push({

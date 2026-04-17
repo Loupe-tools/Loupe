@@ -215,7 +215,8 @@ class IsoRenderer {
   }
 
   _readDirectory(bytes, offset, length, prefix, files, blockSize, depth) {
-    if (depth > 10) return; // prevent infinite recursion
+    if (depth > PARSER_LIMITS.MAX_DEPTH) return; // prevent infinite recursion
+    if (files.length >= PARSER_LIMITS.MAX_ENTRIES) return; // entry count cap
     let pos = offset;
     const end = offset + length;
 

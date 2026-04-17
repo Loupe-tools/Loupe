@@ -372,7 +372,7 @@ class ZipRenderer {
     const entries = [];
     let offset = 0;
 
-    while (offset + 512 <= bytes.length) {
+    while (offset + 512 <= bytes.length && entries.length < PARSER_LIMITS.MAX_ENTRIES) {
       // Each tar entry starts with a 512-byte header
       const header = bytes.subarray(offset, offset + 512);
 
@@ -456,15 +456,34 @@ class ZipRenderer {
 
   _renderZipContents(wrap, zip, buffer, fileName) {
     const entries = [];
+    let truncated = false;
     zip.forEach((path, entry) => {
+      if (entries.length >= PARSER_LIMITS.MAX_ENTRIES) { truncated = true; return; }
+      const uncompSize = entry._data ? (entry._data.uncompressedSize || 0) : 0;
+      const compSize = entry._data ? (entry._data.compressedSize || 0) : 0;
+      // Per-entry compression ratio check — skip entries with ratio > MAX_RATIO
+      if (compSize > 0 && uncompSize / compSize > PARSER_LIMITS.MAX_RATIO) {
+        truncated = true; // flag that some entries were skipped
+        return;
+      }
       entries.push({
         path,
         dir: entry.dir,
-        size: entry._data ? (entry._data.uncompressedSize || 0) : 0,
+        size: uncompSize,
         date: entry.date || null,
-        compressed: entry._data ? (entry._data.compressedSize || 0) : 0,
+        compressed: compSize,
       });
     });
+
+    if (truncated) {
+      const warnDiv = document.createElement('div');
+      warnDiv.className = 'zip-warnings';
+      const d = document.createElement('div');
+      d.className = 'zip-warning zip-warning-high';
+      d.textContent = `⚠ Archive processing was limited — entry count capped at ${PARSER_LIMITS.MAX_ENTRIES.toLocaleString()} or entries with compression ratio > ${PARSER_LIMITS.MAX_RATIO}× were skipped (potential zip bomb).`;
+      warnDiv.appendChild(d);
+      wrap.appendChild(warnDiv);
+    }
 
     if (!entries.length) {
       const p = document.createElement('p'); p.style.cssText = 'color:#888;padding:20px;text-align:center';
