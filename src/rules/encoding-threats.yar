@@ -512,8 +512,7 @@ rule Obfuscated_IEX_Invocation
 
     strings:
         $iex1 = /\.\s*\(\s*\$[a-zA-Z]*[eE][nN][vV]:[a-zA-Z]+\[/ ascii
-        $iex2 = /[iI][eE][xX]\s*\(/ ascii
-        $iex3 = /[Ii]nvoke-[Ee]xpression/ ascii
+        $iex2 = /[iI][eE][xX]\s*\(\s*\$/ ascii
         $iex4 = /\.\(\s*'[iI]'\s*\+\s*'[eE]'\s*\+\s*'[xX]'\s*\)/ ascii
         $iex5 = /\$\w+\s*=\s*\[type\]\s*\(\s*'[^']+'\s*\)/ ascii
         $sal = /[sS][aA][lL]\s+\w{1,5}\s+[iI][eE][xX]/ ascii
