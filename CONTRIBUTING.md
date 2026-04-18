@@ -285,9 +285,26 @@ Renderers are self-contained classes exposing a static `render(file, arrayBuffer
 
 If the renderer also emits a `.plaintext-table` (one `<tr>` per line with a `.plaintext-code` cell per line) the sidebar automatically gets character-level match highlighting, line-background cycling, and the 5-second auto-clear behaviour for free. Renderers that do not provide a plaintext surface fall back to a best-effort TreeWalker highlight on the first match found anywhere in the DOM.
 
+### IOC Push Checklist
+
+Every IOC the renderer emits — whether onto `findings.externalRefs` or `findings.interestingStrings` — must obey this contract. The `ioc-conformity-audit` skill grades pull requests against these rules; drift here is what the audit exists to catch.
+
+1. **Type is always an `IOC.*` constant** from `src/constants.js`. Never a bespoke string literal (`type: 'url'`, `type: 'ioc'`, `type: 'email'`) — those slip past the sidebar's copy/filter/share wiring. The canonical set is `IOC.URL`, `IOC.EMAIL`, `IOC.IP`, `IOC.FILE_PATH`, `IOC.UNC_PATH`, `IOC.ATTACHMENT`, `IOC.YARA`, `IOC.PATTERN`, `IOC.INFO`, `IOC.HASH`, `IOC.COMMAND_LINE`, `IOC.PROCESS`, `IOC.HOSTNAME`, `IOC.USERNAME`, `IOC.REGISTRY_KEY`, `IOC.MAC`.
+2. **Severity comes from `IOC_CANONICAL_SEVERITY`** (also in `src/constants.js`) unless you have a renderer-specific reason to escalate. Escalations are fine — a URL becomes `high` in a phishing EML with `authTripleFail`, a command line lifted from a LNK trigger warrants `critical` — but they must be *escalations* from the canonical floor, not reductions.
+3. **Carry `_highlightText`, never raw offsets into a synthetic buffer.** The sidebar's click-to-focus mechanism uses `_sourceOffset` / `_sourceLength` / `_highlightText` to scroll and highlight. Offsets are only meaningful when they are true byte offsets into the rendered surface. If you extracted the value from a joined-string buffer (`strings.join('\n')`), set only `_highlightText: <value>` — the sidebar will locate it in the plaintext table at display time.
+4. **Cap large IOC lists with an `IOC.INFO` truncation marker.** When a renderer walks a large space (PE/ELF/Mach-O string tables, EVTX event fields, ZIP attachments), enforce a cap (`URL_CAP=50`, `IOC_CAP=500`, …) and *after* the cap push exactly one `IOC.INFO` row whose `url:` field explains the reason and the cap count. The Summary / Share exporters read this row — without it the analyst has no way to know they are looking at a truncated view.
+5. **Mirror every `Detection` into `externalRefs` as `IOC.PATTERN`.** The standard tail in `analyzeForSecurity` is `findings.externalRefs = findings.detections.map(d => ({ type: IOC.PATTERN, url: `${d.name} — ${d.description}`, severity: d.severity }))`. Without this, a detection shows up in the banner but is invisible to Summary, Share, and the STIX/MISP exporters.
+6. **Every IOC value must be click-to-focus navigable.** When the sidebar fires a navigation event for your IOC, the renderer's container should react: `_rawText` present for plaintext renderers, `_showSourcePane()` for toggle-driven ones (HTML/SVG/URL), or a custom click handler that softscrolls the relevant row/card into view and flashes a highlight class.
+
+**Docs to update (required) when adding a new renderer that emits IOCs:**
+
+- Regenerate `CODEMAP.md` (`python generate-codemap.py`).
+- No hand-edits to the docs are required for IOC plumbing alone — but the next `ioc-conformity-audit` run should come back 🟢 on your diff.
+
 ---
 
 ## Adding a New Export Format
+
 
 The toolbar's **📤 Export** dropdown is driven by a declarative menu in `src/app/app-ui.js`. All exporters are offline, synchronous (or `async` + `await` for `crypto.subtle` hashing only), and must never reach the network. **Default to the clipboard** — every menu item except `💾 Save raw file` writes to the clipboard so the analyst can paste straight into a ticket / TIP / jq pipeline. Plaintext and Markdown report exports live behind the separate `⚡ Summary` toolbar button; do not add a clipboard-Markdown or download-Markdown item to the dropdown, that duplication was deliberately removed.
 
