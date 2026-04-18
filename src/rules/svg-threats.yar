@@ -1,9 +1,3 @@
-// ════════════════════════════════════════════════════════════════════════════
-// SVG Threat Detection Rules
-// Detects malicious patterns in SVG files used for phishing, credential
-// harvesting, script injection, and payload delivery.
-// ════════════════════════════════════════════════════════════════════════════
-
 rule SVG_Embedded_Script {
     meta:
         description = "SVG contains embedded <script> element — potential JavaScript execution"
@@ -11,10 +5,11 @@ rule SVG_Embedded_Script {
         category    = "execution"
         mitre       = "T1059.007"
     strings:
+        $svg     = "<svg" nocase
         $script1 = "<script" nocase
         $script2 = "&lt;script" nocase
     condition:
-        any of ($script*) and "<svg"
+        $svg and any of ($script*)
 }
 
 rule SVG_ForeignObject_Form {
@@ -34,7 +29,7 @@ rule SVG_ForeignObject_Password {
     meta:
         description = "SVG <foreignObject> contains password field — credential harvesting"
         severity    = "critical"
-        category    = "credential_theft"
+        category    = "credential-access"
         mitre       = "T1056.003"
     strings:
         $fo   = "<foreignObject" nocase
@@ -65,10 +60,11 @@ rule SVG_Event_Handler_OnLoad {
         category    = "execution"
         mitre       = "T1059.007"
     strings:
+        $svg     = "<svg" nocase
         $onload1 = /onload\s*=\s*["'][^"']{1,500}["']/i
         $onload2 = /onload\s*=\s*[^"'\s>]{1,200}/i
     condition:
-        any of ($onload*)
+        $svg and any of ($onload*)
 }
 
 rule SVG_Event_Handler_Mouse {
@@ -78,12 +74,13 @@ rule SVG_Event_Handler_Mouse {
         category    = "execution"
         mitre       = "T1059.007"
     strings:
+        $svg    = "<svg" nocase
         $mouse1 = /onmouseover\s*=\s*["'][^"']{1,500}["']/i
         $mouse2 = /onclick\s*=\s*["'][^"']{1,500}["']/i
         $mouse3 = /onmouseenter\s*=\s*["'][^"']{1,500}["']/i
         $mouse4 = /onmousedown\s*=\s*["'][^"']{1,500}["']/i
     condition:
-        any of ($mouse*)
+        $svg and any of ($mouse*)
 }
 
 rule SVG_Event_Handler_Error {
@@ -93,9 +90,10 @@ rule SVG_Event_Handler_Error {
         category    = "execution"
         mitre       = "T1059.007"
     strings:
+        $svg     = "<svg" nocase
         $onerror = /onerror\s*=\s*["'][^"']{1,500}["']/i
     condition:
-        $onerror
+        $svg and $onerror
 }
 
 rule SVG_Base64_Script_Payload {
@@ -132,20 +130,21 @@ rule SVG_JavaScript_Obfuscation {
         category    = "obfuscation"
         mitre       = "T1027"
     strings:
+        $svg   = "<svg" nocase
         $eval  = /eval\s*\(/ nocase
         $atob  = /atob\s*\(/ nocase
         $fcc   = "String.fromCharCode" nocase
         $unesc = /unescape\s*\(/ nocase
         $func  = /Function\s*\(/ nocase
     condition:
-        any of ($eval, $atob, $fcc, $unesc, $func) and "<svg" 
+        $svg and any of ($eval, $atob, $fcc, $unesc, $func)
 }
 
 rule SVG_Document_Cookie {
     meta:
         description = "SVG accesses document.cookie — potential session theft"
         severity    = "critical"
-        category    = "credential_theft"
+        category    = "credential-access"
         mitre       = "T1539"
     strings:
         $cookie = "document.cookie" nocase
@@ -188,7 +187,7 @@ rule SVG_External_Use_Reference {
     meta:
         description = "SVG <use> element references external resource"
         severity    = "medium"
-        category    = "external_loading"
+        category    = "command-and-control"
         mitre       = "T1105"
     strings:
         $use   = "<use" nocase
@@ -202,7 +201,7 @@ rule SVG_Animate_Href_Manipulation {
     meta:
         description = "SVG <animate>/<set> modifies href attribute — runtime URL manipulation"
         severity    = "high"
-        category    = "evasion"
+        category    = "defense-evasion"
         mitre       = "T1027"
     strings:
         $anim1 = "<animate" nocase
@@ -219,13 +218,14 @@ rule SVG_XXE_Entity {
     meta:
         description = "SVG contains XML entity declaration — potential XXE attack"
         severity    = "high"
-        category    = "xxe"
+        category    = "initial-access"
         mitre       = "T1190"
     strings:
+        $svg    = "<svg" nocase
         $entity = /<!ENTITY\s+\w+/i
         $system = /SYSTEM\s+["']/i
     condition:
-        $entity or ($system and "<svg")
+        $entity or ($system and $svg)
 }
 
 rule SVG_Meta_Refresh_Redirect {
