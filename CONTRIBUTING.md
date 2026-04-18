@@ -120,7 +120,9 @@ src/renderers/plaintext-renderer.js    # PlainTextRenderer — catch-all text/he
 src/renderers/clickonce-renderer.js    # ClickOnceRenderer — .application / .manifest deployment analyser
 src/renderers/msix-renderer.js         # MsixRenderer — .msix / .msixbundle / .appx / .appxbundle / .appinstaller analyser
 src/renderers/browserext-renderer.js   # BrowserExtRenderer — Chrome .crx (v2/v3) / Firefox .xpi WebExtension analyser
+src/renderer-registry.js               # RendererRegistry — single source of truth for renderer auto-detection (magic → ext → text-sniff)
 src/app/app-core.js                    # App class — constructor, init, drop-zone, toolbar
+
 src/app/app-load.js                    # File loading, hashing (MD5/SHA), IOC extraction
 src/app/app-sidebar.js                 # Sidebar rendering — risk bar + collapsible panes
 src/app/app-yara.js                    # YARA rules dialog — upload, validate, save, scan, result display
@@ -189,6 +191,7 @@ Loupe/
 │   ├── numbering-resolver.js        # NumberingResolver class
 │   ├── content-renderer.js          # ContentRenderer class
 │   ├── security-analyzer.js         # SecurityAnalyzer class
+│   ├── renderer-registry.js         # RendererRegistry — auto-detection (magic → ext → text-sniff)
 │   ├── renderers/
 │   │   ├── ole-cfb-parser.js        # OleCfbParser — CFB compound file parser
 │   │   ├── xlsx-renderer.js         # XlsxRenderer
