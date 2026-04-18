@@ -1457,10 +1457,27 @@ class EvtxRenderer {
   // ── Extract IOCs from parsed EVTX events ────────────────────────────────
   _extractEvtxIOCs(events, f) {
     const seen = new Set();
+    // Cap the per-log IOC yield: forensic EVTX files can hold millions of
+    // events, and a naïve dedup set still produces tens of thousands of
+    // rows, which blows out the Summary pane. Once the cap is hit, emit a
+    // single IOC.INFO so the analyst sees the truncation.
+    const IOC_CAP = 500;
+    let truncated = false;
     const add = (type, val, sev) => {
       val = (val || '').trim();
       if (!val || val.length < 3 || val.length > 500 || seen.has(val.toLowerCase())) return;
       seen.add(val.toLowerCase());
+      if (f.externalRefs.length >= IOC_CAP) {
+        if (!truncated) {
+          truncated = true;
+          f.externalRefs.push({
+            type: IOC.INFO,
+            url: `EVTX IOC extraction truncated at ${IOC_CAP} unique values — log contains additional IOCs beyond cap`,
+            severity: 'info',
+          });
+        }
+        return;
+      }
       f.externalRefs.push({ type, url: val, severity: sev });
     };
 
