@@ -1150,10 +1150,19 @@ Object.assign(App.prototype, {
       td1.className = 'ioc-type ioc-type-' + ref.type.toLowerCase().replace(/\s+/g, '-');
       const td2 = document.createElement('td'); td2.className = 'ext-val';
       if (ref._yaraRuleName) {
-        // YARA match: bold humanised rule name + description
+        // ── YARA match: structured, scannable layout ────────────────
+        //   • Title row: bold humanised rule name + "view rule" button
+        //   • Description (when present) on its own muted line
+        //   • Per-string breakdown as a compact list ($id · value · hits)
+        // Falls back gracefully when `_yaraStrings` is absent (older
+        // findings) by just showing the rule name.
+        const titleRow = document.createElement('div');
+        titleRow.className = 'yara-sidebar-title';
+
         const strong = document.createElement('strong');
         strong.textContent = ref._yaraRuleName.replace(/_/g, ' ');
-        td2.appendChild(strong);
+        titleRow.appendChild(strong);
+
         // "View YARA rule" button — opens rule viewer filtered to this rule
         const viewBtn = document.createElement('button');
         viewBtn.className = 'yara-view-rule-btn';
@@ -1163,10 +1172,59 @@ Object.assign(App.prototype, {
           e.stopPropagation();
           this._openYaraDialog(ref._yaraRuleName);
         });
-        td2.appendChild(viewBtn);
-        if (ref.url) {
-          const rest = document.createElement('span');
-          rest.textContent = ' — ' + ref.url;
+        titleRow.appendChild(viewBtn);
+
+        td2.appendChild(titleRow);
+
+        // Description line (from rule meta.description)
+        if (ref.description) {
+          const descEl = document.createElement('div');
+          descEl.className = 'yara-sidebar-desc';
+          descEl.textContent = ref.description;
+          td2.appendChild(descEl);
+        }
+
+        // Per-string breakdown
+        const ys = ref._yaraStrings;
+        if (ys && ys.length) {
+          const list = document.createElement('ul');
+          list.className = 'yara-sidebar-strings';
+          const MAX_SHOWN = 6;
+          const shown = ys.slice(0, MAX_SHOWN);
+          for (const s of shown) {
+            const li = document.createElement('li');
+
+            const sid = document.createElement('code');
+            sid.className = 'yara-sidebar-sid';
+            sid.textContent = s.id;
+            li.appendChild(sid);
+
+            const val = document.createElement('span');
+            val.className = 'yara-sidebar-val';
+            val.textContent = s.value;
+            val.title = s.value; // full text on hover when truncated
+            li.appendChild(val);
+
+            if (s.hits && s.hits > 1) {
+              const hits = document.createElement('span');
+              hits.className = 'yara-sidebar-hits';
+              hits.textContent = s.hits + '\u00D7';
+              li.appendChild(hits);
+            }
+            list.appendChild(li);
+          }
+          if (ys.length > MAX_SHOWN) {
+            const more = document.createElement('li');
+            more.className = 'yara-sidebar-more';
+            more.textContent = '\u2026 +' + (ys.length - MAX_SHOWN) + ' more';
+            list.appendChild(more);
+          }
+          td2.appendChild(list);
+        } else if (ref.url) {
+          // Legacy fallback when `_yaraStrings` isn't populated.
+          const rest = document.createElement('div');
+          rest.className = 'yara-sidebar-desc';
+          rest.textContent = ref.url;
           td2.appendChild(rest);
         }
       } else {
