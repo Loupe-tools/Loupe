@@ -2,7 +2,7 @@ rule Java_Deserialization_CommonsCollections {
     meta:
         description = "Apache Commons Collections deserialization gadget chain"
         severity = "critical"
-        category = "deserialization"
+        category = "execution"
         mitre = "T1059"
     strings:
         $cc1 = "InvokerTransformer" ascii
@@ -19,7 +19,7 @@ rule Java_Deserialization_Gadgets {
     meta:
         description = "Known Java deserialization gadget classes"
         severity = "critical"
-        category = "deserialization"
+        category = "execution"
         mitre = "T1059"
     strings:
         $g1 = "TemplatesImpl" ascii
@@ -44,7 +44,7 @@ rule Java_JNDI_Injection {
     meta:
         description = "JNDI injection / Log4Shell style attack patterns"
         severity = "critical"
-        category = "injection"
+        category = "initial-access"
         mitre = "T1190"
     strings:
         $jndi1 = "jndi:ldap://" ascii nocase
@@ -65,7 +65,7 @@ rule Java_Remote_ClassLoader {
     meta:
         description = "Remote class loading via URLClassLoader or similar"
         severity = "high"
-        category = "classloader"
+        category = "execution"
         mitre = "T1105"
     strings:
         $cl1 = "URLClassLoader" ascii
@@ -106,7 +106,7 @@ rule Java_Reverse_Shell {
     meta:
         description = "Java reverse shell pattern (Socket + exec + IO streams)"
         severity = "critical"
-        category = "backdoor"
+        category = "command-and-control"
         mitre = "T1059"
     strings:
         $sock = "Socket" ascii
@@ -147,7 +147,7 @@ rule Java_Agent_Instrumentation {
     meta:
         description = "Java agent / bytecode instrumentation capabilities"
         severity = "high"
-        category = "agent"
+        category = "defense-evasion"
         mitre = "T1055"
     strings:
         $agent1 = "Premain-Class" ascii
@@ -168,7 +168,7 @@ rule Java_Native_Library_Loading {
     meta:
         description = "Native library loading via JNI"
         severity = "high"
-        category = "native"
+        category = "execution"
         mitre = "T1055"
     strings:
         $load1 = "System.loadLibrary" ascii
@@ -186,7 +186,7 @@ rule Java_Network_RAT {
     meta:
         description = "Remote access trojan patterns (keylogger, screen capture, webcam)"
         severity = "critical"
-        category = "rat"
+        category = "collection"
         mitre = "T1219"
     strings:
         $rat1 = "Robot" ascii
@@ -208,7 +208,7 @@ rule Java_Cryptominer {
     meta:
         description = "Cryptocurrency mining indicators in Java"
         severity = "high"
-        category = "cryptominer"
+        category = "impact"
         mitre = "T1496"
     strings:
         $pool1 = "stratum+tcp://" ascii nocase
@@ -300,7 +300,7 @@ rule Java_File_Encryption_Ransomware {
     meta:
         description = "File encryption patterns consistent with ransomware"
         severity = "critical"
-        category = "ransomware"
+        category = "impact"
         mitre = "T1486"
     strings:
         $crypto1 = "javax/crypto/Cipher" ascii
