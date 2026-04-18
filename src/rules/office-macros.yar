@@ -14,7 +14,8 @@ rule Office_Macro_Project_Present
         $e = "vbaData.xml"
 
     condition:
-        any of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and any of them
 }
 
 rule VBA_AutoExec_Trigger
@@ -37,7 +38,8 @@ rule VBA_AutoExec_Trigger
         $i = "Document_BeforeSave" nocase
 
     condition:
-        any of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and any of them
 }
 
 rule VBA_Shell_Execution
@@ -60,7 +62,9 @@ rule VBA_Shell_Execution
         $vba3 = "Attribute VB_"
 
     condition:
-        ($vba1 or $vba2 or $vba3) and any of ($exec1, $exec2, $exec3, $exec4, $exec5, $exec6)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and ($vba1 or $vba2 or $vba3)
+        and any of ($exec1, $exec2, $exec3, $exec4, $exec5, $exec6)
 }
 
 rule VBA_Download_Capability
@@ -84,7 +88,9 @@ rule VBA_Download_Capability
         $vba2 = "Function " nocase
 
     condition:
-        ($vba1 or $vba2) and 2 of ($dl1, $dl2, $dl3, $dl4, $dl5, $dl6, $dl7, $dl8)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and ($vba1 or $vba2)
+        and 2 of ($dl1, $dl2, $dl3, $dl4, $dl5, $dl6, $dl7, $dl8)
 }
 
 rule VBA_Obfuscation_Techniques
@@ -107,7 +113,8 @@ rule VBA_Obfuscation_Techniques
         $i = "FromBase64String" nocase
 
     condition:
-        3 of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and 3 of them
 }
 
 rule VBA_PowerShell_Invocation
@@ -125,7 +132,8 @@ rule VBA_PowerShell_Invocation
         $c = "CreateObject" nocase
 
     condition:
-        $ps and ($a or $b or $c)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and $ps and ($a or $b or $c)
 }
 
 rule VBA_Environment_Enumeration
@@ -145,7 +153,8 @@ rule VBA_Environment_Enumeration
         $f = "Win32_ComputerSystem" nocase
 
     condition:
-        2 of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and 2 of them
 }
 
 rule VBA_File_System_Write
@@ -165,7 +174,9 @@ rule VBA_File_System_Write
         $vba2 = "Function " nocase
 
     condition:
-        ($vba1 or $vba2) and any of ($fs1, $fs2, $fs3, $fs4)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and ($vba1 or $vba2)
+        and any of ($fs1, $fs2, $fs3, $fs4)
 }
 
 rule VBA_Registry_Manipulation
@@ -188,7 +199,9 @@ rule VBA_Registry_Manipulation
         $vba2 = "Function " nocase
 
     condition:
-        ($vba1 or $vba2) and 2 of ($a, $b, $c, $d, $e, $f, $g)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and ($vba1 or $vba2)
+        and 2 of ($a, $b, $c, $d, $e, $f, $g)
 }
 
 rule VBA_Scheduled_Task_Persistence
@@ -209,7 +222,9 @@ rule VBA_Scheduled_Task_Persistence
         $vba2 = "CreateObject" nocase
 
     condition:
-        ($vba1 or $vba2) and any of ($a, $b, $c, $d, $e)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and ($vba1 or $vba2)
+        and any of ($a, $b, $c, $d, $e)
 }
 
 rule VBA_ActiveX_Control
@@ -228,7 +243,8 @@ rule VBA_ActiveX_Control
         $e = "Painting" nocase
 
     condition:
-        any of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and any of them
 }
 
 rule VBA_MSHTA_Invocation
@@ -245,7 +261,8 @@ rule VBA_MSHTA_Invocation
         $c = "Shell" nocase
 
     condition:
-        $a and ($b or $c)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and $a and ($b or $c)
 }
 
 rule VBA_Certutil_Decode
@@ -262,7 +279,8 @@ rule VBA_Certutil_Decode
         $c = "Sub " nocase
 
     condition:
-        $a and $b and $c
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and $a and $b and $c
 }
 
 rule VBA_Sleep_Delay
@@ -280,7 +298,8 @@ rule VBA_Sleep_Delay
         $d = "Application.OnTime" nocase
 
     condition:
-        2 of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and 2 of them
 }
 
 rule Office_DDE_AutoLink
@@ -292,12 +311,16 @@ rule Office_DDE_AutoLink
         mitre       = "T1559.002"
 
     strings:
-        $a = "DDE" nocase fullword
-        $b = "DDEAUTO" nocase
-        $c = "DDEAUTO" nocase wide
+        $ddeauto_a = "DDEAUTO" nocase
+        $ddeauto_w = "DDEAUTO" nocase wide
+        $ddelink_a = "DDE|" nocase
+        $ddelink_w = "DDE|" nocase wide
+        $ddefml_a  = "=DDE(" nocase
+        $ddefml_w  = "=DDE(" nocase wide
 
     condition:
-        any of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and any of them
 }
 
 rule Office_OLE_Embedded_Object
@@ -333,7 +356,8 @@ rule Office_Remote_Template_Injection
         $d = "TargetMode=\"External\"" nocase
 
     condition:
-        $a and ($b or $c or $d)
+        uint32(0) == 0x04034B50
+        and $a and ($b or $c or $d)
 }
 
 rule Office_External_OLE_Link
@@ -350,7 +374,7 @@ rule Office_External_OLE_Link
         $c = "http" nocase
 
     condition:
-        all of them
+        uint32(0) == 0x04034B50 and all of them
 }
 
 rule Office_Follina_MSDT
@@ -368,7 +392,8 @@ rule Office_Follina_MSDT
         $d = "IT_BrowseForFile" nocase
 
     condition:
-        any of ($a, $b) or ($c and $d)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and (any of ($a, $b) or ($c and $d))
 }
 
 rule Office_Equation_Editor_CLSID
@@ -385,7 +410,8 @@ rule Office_Equation_Editor_CLSID
         $c = "Equation.3" nocase
 
     condition:
-        any of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and any of them
 }
 
 rule Office_External_Relationship
@@ -404,7 +430,8 @@ rule Office_External_Relationship
         $e = "Target=\"\\\\" nocase
 
     condition:
-        $a and any of ($b, $c, $d, $e)
+        uint32(0) == 0x04034B50
+        and $a and any of ($b, $c, $d, $e)
 }
 
 rule Office_ActiveX_Embedded
@@ -422,7 +449,7 @@ rule Office_ActiveX_Embedded
         $d = "ocx" nocase
 
     condition:
-        2 of them
+        uint32(0) == 0x04034B50 and 2 of them
 }
 
 rule Office_XLM_4_Macro
@@ -444,7 +471,8 @@ rule Office_XLM_4_Macro
         $h = "Macro1" nocase
 
     condition:
-        2 of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50)
+        and 2 of them
 }
 
 rule Office_ExternalLink_Formula
@@ -463,7 +491,8 @@ rule Office_ExternalLink_Formula
         $e = "externalLink" nocase
 
     condition:
-        any of them
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50)
+        and any of them
 }
 
 rule Office_Encrypted_Content
@@ -480,7 +509,7 @@ rule Office_Encrypted_Content
         $c = "EncryptionInfo" wide
 
     condition:
-        any of them
+        uint32(0) == 0xE011CFD0 and any of them
 }
 
 rule Office_VBA_Stomping
@@ -498,7 +527,8 @@ rule Office_VBA_Stomping
         $d = "PROJECT" wide
 
     condition:
-        $a and not $b and ($c or $d)
+        uint32(0) == 0xE011CFD0
+        and $a and not $b and ($c or $d)
 }
 
 rule AddIn_XLL_File
@@ -528,13 +558,12 @@ rule PPAM_PPTM_AddIn
         mitre       = "T1137.006"
 
     strings:
-        $pk = { 50 4B 03 04 }
         $a = "ppt/vbaProject.bin"
         $b = "vbaProject.bin"
         $c = "macroEnabled" nocase
 
     condition:
-        $pk and any of ($a, $b, $c)
+        uint32(0) == 0x04034B50 and any of ($a, $b, $c)
 }
 
 rule VBA_GetObject_WMI
@@ -553,7 +582,8 @@ rule VBA_GetObject_WMI
         $vba   = "Sub " nocase
 
     condition:
-        $vba and $get and any of ($a, $b, $c)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and $vba and $get and any of ($a, $b, $c)
 }
 
 rule VBA_Shell_Application_Abuse
@@ -571,7 +601,8 @@ rule VBA_Shell_Application_Abuse
         $vba   = "Sub " nocase
 
     condition:
-        $vba and $a and ($b or $c)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and $vba and $a and ($b or $c)
 }
 
 rule VBA_DDE_Field_Injection
@@ -583,14 +614,17 @@ rule VBA_DDE_Field_Injection
         mitre       = "T1559.002"
 
     strings:
-        $a     = "DDE" nocase fullword
-        $b     = "DDEAUTO" nocase
-        $c     = "cmd.exe" nocase
-        $d     = "powershell" nocase
-        $e     = "mshta" nocase
+        $ddeauto = "DDEAUTO" nocase
+        $ddelink = "DDE|" nocase
+        $ddefml  = "=DDE(" nocase
+        $c       = "cmd.exe" nocase
+        $d       = "powershell" nocase
+        $e       = "mshta" nocase
 
     condition:
-        ($a or $b) and any of ($c, $d, $e)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and any of ($ddeauto, $ddelink, $ddefml)
+        and any of ($c, $d, $e)
 }
 
 rule VBA_NewObject_PowerShell
@@ -608,7 +642,8 @@ rule VBA_NewObject_PowerShell
         $vba2  = "Shell" nocase
 
     condition:
-        $ps and $no and ($vba1 or $vba2)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and $ps and $no and ($vba1 or $vba2)
 }
 
 rule VBA_WbemDisp_WMI
@@ -626,5 +661,6 @@ rule VBA_WbemDisp_WMI
         $vba   = "Sub " nocase
 
     condition:
-        $vba and any of ($a, $b, $c)
+        (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
+        and $vba and any of ($a, $b, $c)
 }

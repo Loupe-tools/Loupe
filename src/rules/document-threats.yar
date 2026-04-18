@@ -13,7 +13,7 @@ rule PDF_JavaScript_Execution
         $c = "/JS("
 
     condition:
-        $pdf and any of ($a, $b, $c)
+        $pdf at 0 and any of ($a, $b, $c)
 }
 
 rule PDF_AutoOpen_Action
@@ -30,7 +30,7 @@ rule PDF_AutoOpen_Action
         $b = "/AA"
 
     condition:
-        $pdf and ($a or $b)
+        $pdf at 0 and ($a or $b)
 }
 
 rule PDF_Launch_Action
@@ -46,7 +46,7 @@ rule PDF_Launch_Action
         $a = "/Launch"
 
     condition:
-        $pdf and $a
+        $pdf at 0 and $a
 }
 
 rule PDF_Embedded_File_Attachment
@@ -63,7 +63,7 @@ rule PDF_Embedded_File_Attachment
         $b = "/Filespec"
 
     condition:
-        $pdf and ($a or $b)
+        $pdf at 0 and ($a or $b)
 }
 
 rule PDF_Obfuscated_Stream
@@ -82,7 +82,7 @@ rule PDF_Obfuscated_Stream
         $d = "/RunLengthDecode"
 
     condition:
-        $pdf and 2 of ($a, $b, $c, $d)
+        $pdf at 0 and 2 of ($a, $b, $c, $d)
 }
 
 rule PDF_SubmitForm_Action
@@ -98,7 +98,7 @@ rule PDF_SubmitForm_Action
         $a = "/SubmitForm"
 
     condition:
-        $pdf and $a
+        $pdf at 0 and $a
 }
 
 rule PDF_URI_Link
@@ -115,7 +115,7 @@ rule PDF_URI_Link
         $b = "/S /URI"
 
     condition:
-        $pdf and ($a or $b)
+        $pdf at 0 and ($a or $b)
 }
 
 rule PDF_GoToR_Remote_Link
@@ -132,7 +132,7 @@ rule PDF_GoToR_Remote_Link
         $b = "/GoToE"
 
     condition:
-        $pdf and ($a or $b)
+        $pdf at 0 and ($a or $b)
 }
 
 rule PDF_XFA_Form
@@ -150,7 +150,7 @@ rule PDF_XFA_Form
         $c = "xfa:data" nocase
 
     condition:
-        $pdf and any of ($a, $b, $c)
+        $pdf at 0 and any of ($a, $b, $c)
 }
 
 rule PDF_Encrypted_Content
@@ -166,7 +166,7 @@ rule PDF_Encrypted_Content
         $a = "/Encrypt"
 
     condition:
-        $pdf and $a
+        $pdf at 0 and $a
 }
 
 rule PDF_Phishing_QR_Code_Indicators
@@ -184,7 +184,7 @@ rule PDF_Phishing_QR_Code_Indicators
         $c = "/Subtype /Image"
 
     condition:
-        $pdf and ($a and $b and $c)
+        $pdf at 0 and ($a and $b and $c)
 }
 
 rule RTF_Embedded_Object
@@ -202,7 +202,7 @@ rule RTF_Embedded_Object
         $c = "\\objemb"
 
     condition:
-        $rtf and any of ($a, $b, $c)
+        $rtf at 0 and any of ($a, $b, $c)
 }
 
 rule RTF_Equation_Editor_Exploit
@@ -218,7 +218,7 @@ rule RTF_Equation_Editor_Exploit
         $clsid = "0002ce02" nocase
 
     condition:
-        $rtf and $clsid
+        $rtf at 0 and $clsid
 }
 
 rule RTF_Obfuscated_Header
@@ -235,7 +235,7 @@ rule RTF_Obfuscated_Header
         $junk2 = /\\'\w\w\\'\w\w\\'\w\w\\'\w\w/
 
     condition:
-        $rtf and ($junk1 or $junk2)
+        $rtf at 0 and ($junk1 or $junk2)
 }
 
 rule RTF_Large_Hex_Blob
@@ -252,7 +252,7 @@ rule RTF_Large_Hex_Blob
         $hex = /[0-9a-fA-F]{500,}/
 
     condition:
-        $rtf and $a and $hex
+        $rtf at 0 and $a and $hex
 }
 
 rule RTF_Package_Object
@@ -270,7 +270,7 @@ rule RTF_Package_Object
         $c = "OLE2Link" nocase
 
     condition:
-        $rtf and 2 of ($a, $b, $c)
+        $rtf at 0 and 2 of ($a, $b, $c)
 }
 
 rule OneNote_Embedded_Script
@@ -618,7 +618,7 @@ rule PDF_AcroForm_With_JavaScript
         $js2   = "/JS"
 
     condition:
-        $pdf and $acro and ($js1 or $js2)
+        $pdf at 0 and $acro and ($js1 or $js2)
 }
 
 rule PDF_RichMedia_Content
@@ -634,7 +634,7 @@ rule PDF_RichMedia_Content
         $a     = "/RichMedia"
 
     condition:
-        $pdf and $a
+        $pdf at 0 and $a
 }
 
 rule PDF_ObjectStream_With_Action
@@ -653,7 +653,7 @@ rule PDF_ObjectStream_With_Action
         $c     = "/JavaScript"
 
     condition:
-        $pdf and $obj and any of ($a, $b, $c)
+        $pdf at 0 and $obj and any of ($a, $b, $c)
 }
 
 rule PDF_Eval_Obfuscation
@@ -673,7 +673,7 @@ rule PDF_Eval_Obfuscation
         $d     = "atob" nocase
 
     condition:
-        $pdf and $js and 2 of ($a, $b, $c, $d)
+        $pdf at 0 and $js and 2 of ($a, $b, $c, $d)
 }
 
 rule HTML_Entity_Obfuscated_Script
