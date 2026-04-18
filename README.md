@@ -3,7 +3,14 @@
 **A 100% offline, single-file security analyser for suspicious files.**
 No server, no uploads, no tracking — just drop a file and inspect it.
 
-> **<a href="https://loupe.tools/" target="_blank">▶ Try it online here</a>**
+<p align="center">
+  <a href="FEATURES.md">📖 Features</a> ·
+  <a href="SECURITY.md">🔒 Security</a> ·
+  <a href="CONTRIBUTING.md">🛠️ Contributing</a> ·
+  <a href="VENDORED.md">📦 Vendored</a>
+</p>
+
+> **<a href="https://loupe.tools/" target="_blank" rel="noopener">▶ Launch the live demo</a>**
 
 
 ![License: MPL-2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)
