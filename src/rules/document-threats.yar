@@ -1,6 +1,3 @@
-// ─── Document Threats ───
-// 38 rules
-
 rule PDF_JavaScript_Execution
 {
     meta:
@@ -696,10 +693,6 @@ rule HTML_Entity_Obfuscated_Script
         $entity_chain and ($script_tag or $eval)
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// MHTML Smuggling
-// ════════════════════════════════════════════════════════════════════════
-
 rule MHTML_Smuggling
 {
     meta:
@@ -722,10 +715,6 @@ rule MHTML_Smuggling
         $mime and any of ($mhtml*) and any of ($active*)
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// OneNote Embedded PE
-// ════════════════════════════════════════════════════════════════════════
-
 rule OneNote_Embedded_PE
 {
     meta:
@@ -742,10 +731,6 @@ rule OneNote_Embedded_PE
     condition:
         $magic and ($mz or $pe)
 }
-
-// ════════════════════════════════════════════════════════════════════════
-// HTML Blob with Password-Protected Archive
-// ════════════════════════════════════════════════════════════════════════
 
 rule HTML_Smuggling_Password_Hint
 {
@@ -767,4 +752,3 @@ rule HTML_Smuggling_Password_Hint
     condition:
         ($blob or $b64) and $dl and any of ($pw*) and $zip
 }
-

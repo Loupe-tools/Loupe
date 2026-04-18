@@ -1,12 +1,3 @@
-/* ──────────────────────────────────────────────────────────────────────
- *  osascript-threats.yar — AppleScript & JXA threat detection rules
- *
- *  Targets: .applescript, .scpt (compiled), .jxa (JavaScript for Automation)
- *  These are text-based rules — no magic byte anchoring (compiled .scpt
- *  strings are extracted to an augmented buffer before YARA scanning).
- * ────────────────────────────────────────────────────────────────────── */
-
-
 rule osascript_credential_dialog_hidden
 {
     meta:

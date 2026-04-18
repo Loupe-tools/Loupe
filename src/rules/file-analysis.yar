@@ -1,6 +1,3 @@
-// ─── File Analysis ───
-// 3 rules
-
 rule PE_Shellcode_Loader_Pattern
 {
     meta:

@@ -1,6 +1,3 @@
-// ─── Network Indicators ───
-// 8 rules
-
 rule UNC_Path_NTLM_Theft
 {
     meta:
@@ -54,10 +51,6 @@ rule Credential_Dumping_Commands
     condition:
         ($a and $b) or ($c and $d) or ($e and ($f or $g))
 }
-
-// ════════════════════════════════════════════════════════════════════════
-// C2 / Exfiltration Channel Detection
-// ════════════════════════════════════════════════════════════════════════
 
 rule Exfil_Telegram_Bot_API
 {

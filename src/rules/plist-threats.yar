@@ -1,13 +1,3 @@
-/* ──────────────────────────────────────────────────────────────────────
- *  plist-threats.yar — macOS Property List threat detection rules
- *
- *  Targets: .plist (XML and binary formats)
- *  Detects: LaunchAgent/LaunchDaemon persistence, suspicious program
- *  arguments, hidden agents, DYLD injection, environment manipulation,
- *  and other macOS-specific abuse patterns.
- * ────────────────────────────────────────────────────────────────────── */
-
-
 rule plist_launchagent_shell_execution
 {
     meta:

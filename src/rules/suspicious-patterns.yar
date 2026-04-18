@@ -1,6 +1,3 @@
-// ─── Suspicious Patterns ───
-// 7 rules
-
 rule Embedded_PE_Header
 {
     meta:
@@ -123,10 +120,6 @@ rule Embedded_Compressed_Stream
         any of them
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// Crypto Miner Indicators
-// ════════════════════════════════════════════════════════════════════════
-
 rule Crypto_Miner_Indicators
 {
     meta:
@@ -154,10 +147,6 @@ rule Crypto_Miner_Indicators
         any of ($pool*) or any of ($miner*) or ($wallet and any of ($pool*, $miner*)) or ($monero and any of ($pool*, $miner*))
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// OLE10Native Embedded Object Abuse
-// ════════════════════════════════════════════════════════════════════════
-
 rule OLE10Native_Embedded_Executable
 {
     meta:
@@ -180,10 +169,6 @@ rule OLE10Native_Embedded_Executable
         $ole and $native and any of ($exe, $cmd, $bat, $scr, $pif, $ps1)
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// Suspicious String Entropy / Padding
-// ════════════════════════════════════════════════════════════════════════
-
 rule Suspicious_Null_Byte_Padding
 {
     meta:
@@ -199,8 +184,3 @@ rule Suspicious_Null_Byte_Padding
     condition:
         $nop_sled or (#null_pad > 10)
 }
-
-// ════════════════════════════════════════════════════════════════════════
-// REG — Windows Registry File rules
-// ════════════════════════════════════════════════════════════════════════
-

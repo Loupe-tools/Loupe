@@ -1,6 +1,3 @@
-// ─── Office Macros ───
-// 33 rules
-
 rule Office_Macro_Project_Present
 {
     meta:
@@ -631,4 +628,3 @@ rule VBA_WbemDisp_WMI
     condition:
         $vba and any of ($a, $b, $c)
 }
-

@@ -1,9 +1,3 @@
-// ════════════════════════════════════════════════════════════════
-// Mach-O threat detection rules
-// Targets: macOS malware, infostealers, reverse shells, persistence,
-//          privilege escalation, anti-analysis, packed binaries
-// ════════════════════════════════════════════════════════════════
-
 rule MachO_Atomic_Stealer_Keychain {
   meta:
     description = "Atomic Stealer / AMOS infostealer — Keychain credential theft patterns"

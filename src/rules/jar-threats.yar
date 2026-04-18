@@ -1,8 +1,3 @@
-// ─── JAR / Java Class Threat Detection Rules ────────────────────────────────
-// Targets: .jar, .war, .ear, .class files
-// Focus: Deserialization gadgets, JNDI injection, classloader abuse,
-//        command execution, reverse shells, obfuscation, Java agents
-
 rule Java_Deserialization_CommonsCollections {
     meta:
         description = "Apache Commons Collections deserialization gadget chain"
