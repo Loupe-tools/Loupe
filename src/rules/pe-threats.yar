@@ -1,8 +1,3 @@
-// ════════════════════════════════════════════════════════════════
-// PE / Executable threats — packer detection, suspicious patterns,
-// known malware indicators, and anomaly detection for PE files
-// ════════════════════════════════════════════════════════════════
-
 rule PE_UPX_Packed {
     meta:
         description = "UPX packed executable"
@@ -207,7 +202,7 @@ rule PE_Download_Capability {
 
 rule PE_Dynamic_API_Resolution {
     meta:
-        description = "PE uses dynamic API resolution (common in malware to hide imports)"
+        description = "PE uses dynamic API resolution (LdrLoadDll / LdrGetProcedureAddress or multiple LoadLibrary variants alongside GetProcAddress)"
         category = "evasion"
         mitre       = "T1027.007"
         severity = "medium"
@@ -218,7 +213,8 @@ rule PE_Dynamic_API_Resolution {
         $ldr = "LdrLoadDll" ascii
         $ldr2 = "LdrGetProcedureAddress" ascii
     condition:
-        uint16(0) == 0x5A4D and $gpa and ($lla or $llw or $ldr or $ldr2)
+        uint16(0) == 0x5A4D and
+        ($ldr or $ldr2 or ($gpa and $lla and $llw))
 }
 
 rule PE_Service_Persistence {
@@ -239,7 +235,7 @@ rule PE_Service_Persistence {
 rule PE_Registry_Persistence {
     meta:
         description = "PE writes to common persistence registry keys"
-        category = "suspicious"
+        category = "persistence"
         mitre       = "T1547.001"
         severity = "medium"
     strings:
@@ -343,7 +339,7 @@ rule PE_Embedded_PE {
 rule PE_Suspicious_Strings_CnC {
     meta:
         description = "PE contains strings suggesting C2 communication"
-        category = "suspicious"
+        category = "command-and-control"
         mitre       = "T1071"
         severity = "high"
     strings:
@@ -351,9 +347,9 @@ rule PE_Suspicious_Strings_CnC {
         $s2 = "powershell" ascii wide nocase
         $s3 = "/c whoami" ascii wide nocase
         $s4 = "User-Agent:" ascii wide
-        $s5 = "POST /" ascii
-        $s6 = "GET /" ascii
-        $s7 = "Mozilla/5.0" ascii
+        $s5 = "POST /" ascii wide
+        $s6 = "GET /" ascii wide
+        $s7 = "Mozilla/5.0" ascii wide
     condition:
         uint16(0) == 0x5A4D and 3 of them
 }
@@ -404,6 +400,91 @@ rule PE_Metasploit_Payload {
         $msf3 = "Meterpreter" ascii wide
         $msf4 = "reverse_tcp" ascii wide
         $msf5 = "reverse_http" ascii wide
+    condition:
+        uint16(0) == 0x5A4D and any of them
+}
+
+rule PE_XLL_Excel_AddIn {
+    meta:
+        description = "Excel XLL add-in (DLL that auto-loads into Excel on open)"
+        category = "suspicious"
+        mitre       = "T1137.006"
+        severity = "high"
+    strings:
+        $x1 = "xlAutoOpen" ascii
+        $x2 = "xlAutoClose" ascii
+        $x3 = "xlAutoAdd" ascii
+        $x4 = "xlAutoRemove" ascii
+        $x5 = "xlAutoRegister" ascii
+        $x6 = "xlAutoFree" ascii
+        $x7 = "xlAddInManagerInfo" ascii
+    condition:
+        uint16(0) == 0x5A4D and $x1 and 1 of ($x2, $x3, $x4, $x5, $x6, $x7)
+}
+
+rule PE_XLL_ExcelDNA_Managed {
+    meta:
+        description = "Excel-DNA managed-code XLL (.NET-authored Excel add-in)"
+        category = "suspicious"
+        mitre       = "T1137.006"
+        severity = "high"
+    strings:
+        $x1 = "xlAutoOpen" ascii
+        $dna1 = "ExcelDna" ascii wide
+        $dna2 = "EXCELDNA" ascii wide
+        $dna3 = "DNA_LIBRARY" ascii wide
+        $dna4 = "ExcelDna.Integration" ascii wide
+        $dna5 = "__MAIN__" ascii
+    condition:
+        uint16(0) == 0x5A4D and $x1 and 1 of ($dna*)
+}
+
+rule PE_Compiled_AutoHotkey {
+    meta:
+        description = "Compiled AutoHotkey script (common in commodity malware droppers)"
+        category = "suspicious"
+        mitre       = "T1059"
+        severity = "high"
+    strings:
+        $ahk1 = ">AUTOHOTKEY SCRIPT<" ascii wide
+        $ahk2 = ">AHK WITH ICON<" ascii wide
+        $ahk3 = "AutoHotkey" ascii wide
+        $ahk4 = "#NoTrayIcon" ascii wide
+        $ahk5 = "#SingleInstance" ascii wide
+        $ahk6 = "AutoHotkey.exe" ascii wide nocase
+    condition:
+        uint16(0) == 0x5A4D and
+        ($ahk1 or $ahk2 or ($ahk3 and 1 of ($ahk4, $ahk5, $ahk6)))
+}
+
+rule PE_Go_Binary {
+    meta:
+        description = "Go-compiled PE binary (static, large, commonly abused by malware families)"
+        category = "info"
+        mitre       = ""
+        severity = "info"
+    strings:
+        $g1 = "Go build ID:" ascii
+        $g2 = "go.buildinfo" ascii
+        $g3 = "runtime.goexit" ascii
+        $g4 = "runtime.main" ascii
+        $g5 = "\xff Go buildinf:" ascii
+        $g6 = "golang.org" ascii
+    condition:
+        uint16(0) == 0x5A4D and 2 of them
+}
+
+rule PE_Installer_InnoSetup {
+    meta:
+        description = "Inno Setup installer (bundles scripts and payloads; commonly abused)"
+        category = "info"
+        mitre       = ""
+        severity = "info"
+    strings:
+        $i1 = "Inno Setup" ascii wide
+        $i2 = "InnoSetupLdr" ascii
+        $i3 = "Inno Setup Setup Data" ascii
+        $i4 = "JR.Inno.Setup" ascii wide
     condition:
         uint16(0) == 0x5A4D and any of them
 }

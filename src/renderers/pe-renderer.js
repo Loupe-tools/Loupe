@@ -602,8 +602,295 @@ class PeRenderer {
       }
     } catch (_) { /* cert parsing is best-effort */ }
 
+    // ── Format heuristics: XLL / AutoHotkey / Go / Installer ─────────
+    // Populated as flat fields on `pe` so Summary + YARA can read them
+    // without a nested namespace. All four are best-effort — parse
+    // failures never abort PE analysis.
+    try { this._detectFormatHeuristics(bytes, pe); }
+    catch (_) { /* heuristics are best-effort */ }
+
     return pe;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Format heuristics — XLL / AutoHotkey / Go / Installer
+  //  Each fills flat fields on `pe` consumed by render(), analyzeForSecurity()
+  //  and Summary (_copyAnalysisPE in app-ui.js). Cheap scans only — no
+  //  decompression, no full byte-walk beyond bounded windows.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _detectFormatHeuristics(bytes, pe) {
+    // ── XLL (Excel add-in) ─────────────────────────────────────────
+    //   Excel XLL add-ins are DLLs that export one or more xlAuto*
+    //   functions which the host invokes on load / unload / registration.
+    //   Excel-DNA shim XLLs also embed the literal string EXCELDNA in
+    //   their resources.
+    pe.isXll = false;
+    pe.xllExports = [];
+    pe.xllIsExcelDna = false;
+    const XLL_HOOKS = new Set([
+      'xlAutoOpen', 'xlAutoClose', 'xlAutoAdd', 'xlAutoRemove',
+      'xlAutoRegister', 'xlAutoRegister12', 'xlAutoFree', 'xlAutoFree12',
+      'xlAddInManagerInfo', 'xlAddInManagerInfo12',
+    ]);
+    if (pe.exports && pe.exports.names) {
+      for (const n of pe.exports.names) {
+        if (n.name && XLL_HOOKS.has(n.name)) pe.xllExports.push(n.name);
+      }
+    }
+    if (pe.xllExports.length > 0) pe.isXll = true;
+    // Excel-DNA marker scan — restrict to extractStrings output to keep this cheap.
+    // Covers both ASCII and UTF-16LE strings — .NET string literals in the
+    // managed metadata/resources are almost always UTF-16, so an ASCII-only
+    // sweep misses most real Excel-DNA shims.
+    if (pe.strings && pe.strings.ascii) {
+      for (const s of pe.strings.ascii) {
+        if (s.includes('EXCELDNA') || s.includes('ExcelDna.Integration')) {
+          pe.xllIsExcelDna = true;
+          pe.isXll = true;
+          break;
+        }
+      }
+    }
+    if (!pe.xllIsExcelDna && pe.strings && pe.strings.unicode) {
+      for (const s of pe.strings.unicode) {
+        if (s.includes('EXCELDNA') || s.includes('ExcelDna.Integration')) {
+          pe.xllIsExcelDna = true;
+          pe.isXll = true;
+          break;
+        }
+      }
+    }
+
+    // ── Compiled AutoHotkey ────────────────────────────────────────
+    //   Compiled AutoHotkey scripts embed the ASCII marker
+    //   `>AUTOHOTKEY SCRIPT<` at the start of an RT_RCDATA resource
+    //   followed by the raw script source (up to a NUL terminator).
+    pe.isAutoHotkey = false;
+    pe.autoHotkeyScript = null;
+    pe.autoHotkeyOffset = 0;
+    const AHK_MARKER = '>AUTOHOTKEY SCRIPT<';
+    const ahkIdx = this._findAscii(bytes, AHK_MARKER);
+    if (ahkIdx >= 0) {
+      pe.isAutoHotkey = true;
+      pe.autoHotkeyOffset = ahkIdx;
+      // Extract script: skip marker + optional padding, then read until
+      // a NUL or the next resource marker. Cap at 256 KB to bound cost.
+      const startSearch = ahkIdx + AHK_MARKER.length;
+      // Walk forward past any non-printable bytes (resource header / padding)
+      // until we hit the first printable ASCII character.
+      let start = startSearch;
+      while (start < bytes.length && start < startSearch + 64) {
+        const c = bytes[start];
+        if (c >= 0x20 && c < 0x7F) break;
+        start++;
+      }
+      const cap = Math.min(bytes.length, start + 256 * 1024);
+      let end = start;
+      while (end < cap) {
+        const c = bytes[end];
+        if (c === 0) break;
+        // Stop if we see binary noise (non-printable, non-whitespace)
+        if (c < 0x09 || (c > 0x0D && c < 0x20) || c > 0x7E) break;
+        end++;
+      }
+      if (end > start + 8) {
+        const scriptBytes = bytes.subarray(start, end);
+        try {
+          pe.autoHotkeyScript = new TextDecoder('utf-8', { fatal: false }).decode(scriptBytes);
+        } catch (_) {
+          pe.autoHotkeyScript = String.fromCharCode(...scriptBytes);
+        }
+      } else {
+        pe.autoHotkeyScript = '';
+      }
+    }
+
+    // ── Go binary ──────────────────────────────────────────────────
+    //   Two high-confidence signals:
+    //     1. Go build info magic: "\xff Go buildinf:" followed by
+    //        pointer size, endianness, and the module path + build settings.
+    //     2. Presence of runtime.main / go:itab strings in pclntab.
+    pe.isGoBinary = false;
+    pe.goBuildInfo = null;
+    const buildInfoMagic = new Uint8Array([0xff, 0x20, 0x47, 0x6f, 0x20, 0x62, 0x75, 0x69, 0x6c, 0x64, 0x69, 0x6e, 0x66, 0x3a]);
+    const goIdx = this._findBytes(bytes, buildInfoMagic);
+    if (goIdx >= 0) {
+      pe.isGoBinary = true;
+      pe.goBuildInfo = this._parseGoBuildInfo(bytes, goIdx);
+    } else {
+      // Section-name fallback: .gopclntab is the runtime function table;
+      // .go.buildinfo carries module/version metadata on newer toolchains.
+      for (const s of pe.sections) {
+        if (s.name === '.gopclntab' || s.name === '.go.buildinfo') {
+          pe.isGoBinary = true;
+          break;
+        }
+      }
+    }
+
+    // ── Installer framework sniff (list-only) ──────────────────────
+    //   Inno Setup overlay starts with "zlb\x1A" (legacy) or
+    //   "idska32\x1A" (current). NSIS installers embed the magic
+    //   "NullsoftInst" in the firstheader near the end of the binary.
+    pe.installerType = null;
+    pe.installerVersion = null;
+    // Inno: search near end of file (overlay region) then fall back to full scan
+    const innoMagicA = [0x7a, 0x6c, 0x62, 0x1a];        // "zlb\x1A"
+    const innoMagicB = [0x69, 0x64, 0x73, 0x6b, 0x61, 0x33, 0x32, 0x1a]; // "idska32\x1A"
+    const innoIdx = this._findBytesAny(bytes, [innoMagicA, innoMagicB]);
+    if (innoIdx >= 0) {
+      pe.installerType = 'Inno Setup';
+      // Inno stubs also contain a human-readable version string like
+      // "Inno Setup Setup Data (5.5.0)" — grab if nearby.
+      const vIdx = this._findAscii(bytes, 'Inno Setup Setup Data (');
+      if (vIdx >= 0) {
+        const end = Math.min(bytes.length, vIdx + 80);
+        const str = this._str(bytes, vIdx, end - vIdx);
+        const m = str.match(/Inno Setup Setup Data \(([^)]+)\)/);
+        if (m) pe.installerVersion = m[1];
+      }
+    }
+    if (!pe.installerType) {
+      // NSIS: "Nullsoft Install System" ascii marker, or firstheader
+      // magic 0xDEADBEEF + "NullsoftInst" near file end.
+      // _findAscii returns -1 (not null) on miss, so chain with an explicit
+      // fall-through instead of `??` (which would never reach the second probe).
+      let nsisIdx = this._findAscii(bytes, 'Nullsoft.NSIS.exehead');
+      if (nsisIdx < 0) nsisIdx = this._findAscii(bytes, 'NullsoftInst');
+      const nsisLongIdx = this._findAscii(bytes, 'Nullsoft Install System');
+
+      if (nsisIdx >= 0 || nsisLongIdx >= 0) {
+        pe.installerType = 'NSIS';
+        if (nsisLongIdx >= 0) {
+          const end = Math.min(bytes.length, nsisLongIdx + 64);
+          const str = this._str(bytes, nsisLongIdx, end - nsisLongIdx);
+          const m = str.match(/Nullsoft Install System (v[0-9.]+)/);
+          if (m) pe.installerVersion = m[1];
+        }
+      }
+    }
+  }
+
+  // Locate an ASCII needle in the byte buffer. Returns index or -1.
+  // (Callers that need fall-through must compare against `< 0`; `??`
+  // won't work because -1 is not nullish.)
+  _findAscii(bytes, needle) {
+    const n = needle.length;
+    if (n === 0 || n > bytes.length) return -1;
+    const first = needle.charCodeAt(0);
+    const last = bytes.length - n;
+    outer: for (let i = 0; i <= last; i++) {
+      if (bytes[i] !== first) continue;
+      for (let j = 1; j < n; j++) {
+        if (bytes[i + j] !== needle.charCodeAt(j)) continue outer;
+      }
+      return i;
+    }
+    return -1;
+  }
+
+  // Locate a byte sequence in the buffer. Returns index or -1.
+  _findBytes(bytes, needle) {
+    const n = needle.length;
+    if (n === 0 || n > bytes.length) return -1;
+    const first = needle[0];
+    const last = bytes.length - n;
+    outer: for (let i = 0; i <= last; i++) {
+      if (bytes[i] !== first) continue;
+      for (let j = 1; j < n; j++) {
+        if (bytes[i + j] !== needle[j]) continue outer;
+      }
+      return i;
+    }
+    return -1;
+  }
+
+  // Locate any of the given byte sequences. Returns earliest hit or -1.
+  _findBytesAny(bytes, needles) {
+    let best = -1;
+    for (const n of needles) {
+      const arr = (n instanceof Uint8Array) ? n : new Uint8Array(n);
+      const idx = this._findBytes(bytes, arr);
+      if (idx >= 0 && (best < 0 || idx < best)) best = idx;
+    }
+    return best;
+  }
+
+  // Parse the Go build-info header at offset `off`. Returns a summary
+  // object or null if the layout isn't recognised.
+  //   Layout (since Go 1.18):
+  //     [0..13]  "\xff Go buildinf:"
+  //     [14]     ptrSize (usually 8)
+  //     [15]     flags (bit 1 = little-endian varint table)
+  //     [16..]   Go version string (varint-prefixed) + mod info (varint)
+  //   Older pre-1.18 binaries use fixed ptrs at [16..] — we detect those
+  //   and fall through to the pclntab signal.
+  _parseGoBuildInfo(bytes, off) {
+    const info = { version: null, path: null, mod: null, vcs: null, revision: null, buildTime: null, settings: {} };
+    if (off + 32 > bytes.length) return info;
+    const flags = bytes[off + 15];
+    const varintMode = !!(flags & 0x02);
+    let cursor = off + 16;
+    const readVarintStr = () => {
+      if (cursor >= bytes.length) return null;
+      let len = 0, shift = 0;
+      for (let i = 0; i < 10; i++) {
+        if (cursor >= bytes.length) return null;
+        const b = bytes[cursor++];
+        len |= (b & 0x7f) << shift;
+        if ((b & 0x80) === 0) break;
+        shift += 7;
+      }
+      if (len <= 0 || len > 65536 || cursor + len > bytes.length) return null;
+      const s = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(cursor, cursor + len));
+      cursor += len;
+      return s;
+    };
+    if (varintMode) {
+      info.version = readVarintStr();
+      const mod = readVarintStr();
+      if (mod && mod.length > 32) {
+        // mod is framed by 16 padding bytes each side in the official layout;
+        // strip when present.
+        const trimmed = mod.replace(/^\x00+|[\x00\xff]+$/g, '');
+        info.mod = trimmed;
+        // Parse key=value build settings from mod (Go 1.18+)
+        const settingLines = trimmed.split('\n');
+        for (const line of settingLines) {
+          if (line.startsWith('path\t')) info.path = line.slice(5);
+          else if (line.startsWith('mod\t')) {
+            const parts = line.split('\t');
+            if (parts.length >= 3) info.settings['module'] = parts[1] + ' ' + parts[2];
+          }
+          else if (line.startsWith('build\t')) {
+            const parts = line.slice(6).split('=');
+            if (parts.length === 2) {
+              info.settings[parts[0]] = parts[1];
+              if (parts[0] === 'vcs') info.vcs = parts[1];
+              if (parts[0] === 'vcs.revision') info.revision = parts[1];
+              if (parts[0] === 'vcs.time') info.buildTime = parts[1];
+            }
+          }
+        }
+      }
+    } else {
+      // Legacy (pre-1.18) layout: pointers to version string and mod info
+      // table. Skip for now — just grab the version via a nearby ASCII scan.
+      const scanEnd = Math.min(off + 4096, bytes.length);
+      for (let i = off + 16; i < scanEnd - 4; i++) {
+        // "go1." followed by a digit is a reliable Go-version anchor
+        if (bytes[i] === 0x67 && bytes[i + 1] === 0x6f && bytes[i + 2] === 0x31 && bytes[i + 3] === 0x2e) {
+          let end = i;
+          while (end < scanEnd && bytes[end] >= 0x20 && bytes[end] < 0x7f) end++;
+          info.version = this._str(bytes, i, end - i);
+          break;
+        }
+      }
+    }
+    return info;
+  }
+
 
   // ═══════════════════════════════════════════════════════════════════════
   //  Rich Header parser
@@ -1114,7 +1401,13 @@ class PeRenderer {
       // ── Banner ─────────────────────────────────────────────────────
       const banner = document.createElement('div');
       banner.className = 'doc-extraction-banner';
-      const bType = pe.coff.isDLL ? 'DLL' : pe.coff.isSystem ? 'System Driver' : 'Executable';
+      let bType = pe.coff.isDLL ? 'DLL' : pe.coff.isSystem ? 'System Driver' : 'Executable';
+      // Narrow the type label when we positively identified a format-specific
+      // PE so the banner immediately tells the analyst what they're looking at.
+      if (pe.isXll) bType = pe.xllIsExcelDna ? 'Excel Add-in (XLL, Excel-DNA)' : 'Excel Add-in (XLL)';
+      else if (pe.isAutoHotkey) bType = 'Compiled AutoHotkey Script';
+      else if (pe.installerType) bType = pe.installerType + ' Installer' + (pe.installerVersion ? ' ' + pe.installerVersion : '');
+      else if (pe.isGoBinary) bType = 'Go ' + (pe.coff.isDLL ? 'DLL' : 'Executable');
       const bArch = pe.optional.magicStr;
       banner.innerHTML = `<strong>PE Analysis — ${this._esc(bType)}</strong> ` +
         `<span class="doc-meta-tag">${this._esc(bArch)}</span> ` +
@@ -1123,6 +1416,77 @@ class PeRenderer {
         `<span class="doc-meta-tag">${pe.imports.length} imported DLLs</span>` +
         (pe.exports ? ` <span class="doc-meta-tag">${pe.exports.numNames} exports</span>` : '');
       wrap.appendChild(banner);
+
+      // ── Format-specific extras ─────────────────────────────────────
+      //   A small badge row immediately under the main banner surfacing
+      //   XLL / AutoHotkey / Go / Installer detections so the analyst
+      //   doesn't have to scroll the Security Features section to spot them.
+      if (pe.isXll || pe.isAutoHotkey || pe.installerType || pe.isGoBinary) {
+        const fmt = document.createElement('div');
+        fmt.className = 'doc-extraction-banner';
+        const parts = [];
+        if (pe.isXll) {
+          const hooks = pe.xllExports.length ? ` — exports: ${pe.xllExports.map(h => this._esc(h)).join(', ')}` : '';
+          const dna = pe.xllIsExcelDna ? ' <span class="doc-meta-tag">Excel-DNA managed</span>' : '';
+          parts.push(`<div>📊 <strong>XLL add-in detected</strong>${dna}${hooks}</div>`);
+        }
+        if (pe.isAutoHotkey) {
+          const sz = pe.autoHotkeyScript ? pe.autoHotkeyScript.length : 0;
+          parts.push(`<div>⌨ <strong>Compiled AutoHotkey script</strong> — ${sz.toLocaleString()} bytes extracted at RT_RCDATA offset 0x${(pe.autoHotkeyOffset||0).toString(16).toUpperCase()}</div>`);
+        }
+        if (pe.installerType) {
+          const v = pe.installerVersion ? ` ${this._esc(pe.installerVersion)}` : '';
+          parts.push(`<div>📦 <strong>${this._esc(pe.installerType)}${v} installer</strong> — payload archive embedded as PE overlay (list-only)</div>`);
+        }
+        if (pe.isGoBinary) {
+          const g = pe.goBuildInfo || {};
+          const bits = [];
+          if (g.version) bits.push(`<span class="doc-meta-tag">${this._esc(g.version)}</span>`);
+          if (g.path) bits.push(`<span class="doc-meta-tag">path: ${this._esc(g.path)}</span>`);
+          if (g.vcs && g.revision) bits.push(`<span class="doc-meta-tag">${this._esc(g.vcs)}: ${this._esc(g.revision.slice(0, 12))}</span>`);
+          parts.push(`<div>🐹 <strong>Go binary</strong> ${bits.join(' ')}</div>`);
+        }
+        fmt.innerHTML = parts.join('');
+        wrap.appendChild(fmt);
+      }
+
+      // ── Embedded AutoHotkey script viewer ──────────────────────────
+      if (pe.isAutoHotkey && pe.autoHotkeyScript) {
+        const src = document.createElement('div');
+        src.className = 'pe-ahk-source plaintext-scroll';
+        const table = document.createElement('table');
+        table.className = 'plaintext-table';
+        const lines = pe.autoHotkeyScript.split(/\r?\n/);
+        const maxLines = 5000;
+        const cnt = Math.min(lines.length, maxLines);
+        for (let i = 0; i < cnt; i++) {
+          const tr = document.createElement('tr');
+          const tdNum = document.createElement('td'); tdNum.className = 'plaintext-ln'; tdNum.textContent = i + 1;
+          const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code'; tdCode.textContent = lines[i];
+          tr.appendChild(tdNum); tr.appendChild(tdCode); table.appendChild(tr);
+        }
+        src.appendChild(table);
+        wrap.appendChild(this._renderSection('⌨ AutoHotkey Script Source (' + (pe.autoHotkeyScript.length).toLocaleString() + ' bytes)', src, lines.length));
+      }
+
+      // ── Go build-info viewer ───────────────────────────────────────
+      if (pe.isGoBinary && pe.goBuildInfo) {
+        const g = pe.goBuildInfo;
+        const rows = [];
+        if (g.version) rows.push(['Go Version', g.version]);
+        if (g.path) rows.push(['Main Package', g.path]);
+        if (g.vcs) rows.push(['VCS', g.vcs]);
+        if (g.revision) rows.push(['Revision', g.revision]);
+        if (g.buildTime) rows.push(['Build Time', g.buildTime]);
+        for (const [k, v] of Object.entries(g.settings || {})) {
+          if (k === 'vcs' || k === 'vcs.revision' || k === 'vcs.time') continue;
+          rows.push([k, String(v)]);
+        }
+        if (rows.length) {
+          wrap.appendChild(this._renderSection('🐹 Go Build Info', this._buildTable(['Field', 'Value'], rows)));
+        }
+      }
+
 
       // ── File Headers ───────────────────────────────────────────────
       wrap.appendChild(this._renderSection('📋 PE Headers', this._renderHeaders(pe)));
@@ -2024,7 +2388,59 @@ class PeRenderer {
         findings.interestingStrings.push({ type: IOC.UNC_PATH, url: unc, severity: 'medium' });
       }
 
+      // ── Format-family heuristics (XLL / AutoHotkey / Installer / Go) ─
+      //   Each populates narrow `findings.metadata` rows so the Summary /
+      //   sidebar shows what sub-type of PE this really is, plus autoExec
+      //   bumps for the ones that matter for threat scoring. Keep these
+      //   conservative — they fire on extension-agnostic content signals
+      //   and should only *add* context, never downgrade other findings.
+      if (pe.isXll) {
+        findings.metadata['Format'] = pe.xllIsExcelDna ? 'Excel Add-in (XLL, Excel-DNA managed)' : 'Excel Add-in (XLL)';
+        if (pe.xllExports && pe.xllExports.length) {
+          findings.metadata['XLL Hooks'] = pe.xllExports.join(', ');
+        }
+        // XLL add-ins auto-execute xlAutoOpen when opened in Excel — treat as
+        // macro-equivalent auto-exec surface. Unsigned XLLs are especially
+        // risky (Excel will still load them from trusted locations).
+        issues.push('Excel XLL add-in — xlAutoOpen runs automatically when the file is opened in Excel (MITRE T1137.006)');
+        riskScore += 2;
+        if (!hasCert) riskScore += 1;
+      }
+
+      if (pe.isAutoHotkey) {
+        findings.metadata['Format'] = 'Compiled AutoHotkey Script';
+        if (pe.autoHotkeyScript != null) {
+          findings.metadata['AHK Script Size'] = pe.autoHotkeyScript.length.toLocaleString() + ' bytes';
+        }
+        issues.push('Compiled AutoHotkey script embedded as RT_RCDATA — source is visible in the viewer; AHK can send keystrokes, read the clipboard, and launch arbitrary processes');
+        riskScore += 1.5;
+      }
+
+      if (pe.installerType) {
+        findings.metadata['Installer'] = pe.installerType + (pe.installerVersion ? ' ' + pe.installerVersion : '');
+        // Installers are benign-looking wrappers around a payload archive we
+        // cannot inspect without unpacking. Surface as an info-level issue so
+        // the analyst knows further triage (outside Loupe) is warranted.
+        issues.push(`${pe.installerType} installer — embeds a payload archive as a PE overlay that Loupe does not unpack; triage the extracted setup script/contents separately`);
+      }
+
+      if (pe.isGoBinary) {
+        findings.metadata['Format'] = 'Go Binary';
+        if (pe.goBuildInfo) {
+          if (pe.goBuildInfo.version) findings.metadata['Go Version'] = pe.goBuildInfo.version;
+          if (pe.goBuildInfo.path) findings.metadata['Go Module Path'] = pe.goBuildInfo.path;
+          if (pe.goBuildInfo.vcs && pe.goBuildInfo.revision) {
+            findings.metadata['Go VCS'] = `${pe.goBuildInfo.vcs} ${pe.goBuildInfo.revision.slice(0, 12)}`;
+          }
+          if (pe.goBuildInfo.buildTime) findings.metadata['Go Build Time'] = pe.goBuildInfo.buildTime;
+        }
+        // Go binaries bundle their full runtime — the tiny imports-table
+        // heuristic for "packed" fires on almost every Go EXE. Explicitly
+        // note the type so the sidebar reader doesn't over-index on that.
+      }
+
       // ── Risk assessment ────────────────────────────────────────────
+
       findings.autoExec = issues;
       if (riskScore >= 8) findings.risk = 'critical';
       else if (riskScore >= 5) findings.risk = 'high';
