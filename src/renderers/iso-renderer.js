@@ -113,8 +113,11 @@ class IsoRenderer {
   }
 
   analyzeForSecurity(buffer, fileName) {
+    // Start 'low'; the "bypasses MOTW" banner ships at severity:'medium',
+    // and the dangerous-content branches below flip f.risk to 'high'
+    // whenever executables / .lnk / autorun.inf are present.
     const f = {
-      risk: 'medium', hasMacros: false, macroSize: 0, macroHash: '',
+      risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
       signatureMatches: []
     };

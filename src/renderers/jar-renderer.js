@@ -983,7 +983,13 @@ class JarRenderer {
       node.files.push({ name: parts[parts.length - 1], entry: e });
     }
     // Render recursively. Folders are collapsed by default.
+    // Depth is bounded by PARSER_LIMITS.MAX_DEPTH so a JAR whose central
+    // directory encodes a deeply nested tree (real or hostile) cannot blow
+    // the recursion budget here.
     const renderNode = (node, pathPrefix, depth) => {
+      if (depth > PARSER_LIMITS.MAX_DEPTH) {
+        return `<li class="jar-tree-truncated">⚠ Tree depth limit (${PARSER_LIMITS.MAX_DEPTH}) reached — deeper entries hidden</li>`;
+      }
       let html = '';
       // Folder children first (sorted by name)
       const folderNames = [...node.children.keys()].sort((a, b) => a.localeCompare(b));
@@ -1199,7 +1205,11 @@ class JarRenderer {
   // ═════════════════════════════════════════════════════════════════════════
   async analyzeForSecurity(buffer, fileName) {
     const f = {
-      risk: 'info', hasMacros: false, macroCode: '', macroSize: 0, macroHash: '',
+      // Start 'low'; score-based calibration at the end (critical/high/
+      // medium/low ladder driven by criticalCount + highCount + mediumCount
+      // + obfuscation.length) will raise this whenever evidence warrants.
+      // 'info' was non-standard — see cross-renderer-sanity-check audit.
+      risk: 'low', hasMacros: false, macroCode: '', macroSize: 0, macroHash: '',
       autoExec: false, modules: [], externalRefs: [], metadata: {}, signatureMatches: [],
       interestingStrings: []
     };
@@ -1322,7 +1332,7 @@ class JarRenderer {
       const eExt = e.path.split('.').pop().toLowerCase();
       if (dangerousExts.has(eExt)) {
         f.interestingStrings.push({ type: IOC.FILE_PATH, url: e.path, severity: 'medium', note: 'Suspicious resource inside JAR' });
-        if (f.risk === 'info' || f.risk === 'low') f.risk = 'medium';
+        if (f.risk === 'low') f.risk = 'medium';
       }
     }
 
@@ -1386,6 +1396,6 @@ class JarRenderer {
     else if (highCount >= 3 || obfuscation.length > 0) f.risk = 'high';
     else if (highCount > 0 || mediumCount >= 3) f.risk = 'medium';
     else if (mediumCount > 0) f.risk = 'low';
-    else f.risk = 'info';
+    else f.risk = 'low';
   }
 }

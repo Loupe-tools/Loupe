@@ -17,7 +17,7 @@ model is deliberately narrow:
 | **No server component** | The tool runs entirely inside a single HTML file opened with `file://` or a static host. There is no backend, no API, no database. |
 | **No code evaluation** | `eval()`, `new Function()`, and inline event handlers from untrusted content are never used. |
 | **Sandboxed previews** | HTML and SVG previews are rendered inside `<iframe sandbox="" srcdoc="…">` with an inner CSP of `default-src 'none'`. Script execution, form submission, and navigation are all blocked inside the preview frame. |
-| **Parser safety limits** | Centralised `PARSER_LIMITS` constants enforce: max nesting depth (32), max decompressed size (50 MB), per-entry compression-ratio abort (100×), archive entry cap (10 000), and a 60-second parser timeout. |
+| **Parser safety limits** | Centralised `PARSER_LIMITS` constants enforce: max nesting depth (32, gated in plist / jar / iso recursive traversal), max decompressed size (50 MB), per-entry compression-ratio abort (100×), archive entry cap (10 000, enforced in zip / iso / msix), and a 60-second parser timeout. `ParserWatchdog.run()` wraps the entire renderer dispatch in `app-load.js`, not just the initial `file.arrayBuffer()` read, so every format parser inherits the timeout. |
 
 ### What Loupe does **not** protect against
 

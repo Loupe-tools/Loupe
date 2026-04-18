@@ -530,8 +530,12 @@ class MsixRenderer {
     sec.appendChild(h);
 
     const entries = [];
+    // Cap package entry enumeration at PARSER_LIMITS.MAX_ENTRIES to keep a
+    // hostile MSIX / APPX (hand-crafted 1 M-entry central directory) from
+    // chewing through the main thread here — the rest of the renderer is
+    // fine, we just don't want to materialise every entry descriptor.
     zip.forEach((path, entry) => {
-      if (entries.length >= 2000) return;
+      if (entries.length >= PARSER_LIMITS.MAX_ENTRIES) return;
       const uncompSize = entry._data ? (entry._data.uncompressedSize || 0) : 0;
       entries.push({ path, dir: entry.dir, size: uncompSize });
     });

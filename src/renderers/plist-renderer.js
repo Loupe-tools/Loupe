@@ -105,13 +105,22 @@ class PlistRenderer {
     if (!plistEl) throw new Error('No <plist> root element found');
     // The first child element of <plist> is the root value
     for (const child of plistEl.children) {
-      return this._parseXmlNode(child);
+      return this._parseXmlNode(child, 0);
     }
     return null;
   }
 
-  /** Recursively parse a plist XML node into a JS value with type info */
-  _parseXmlNode(node) {
+  /**
+   * Recursively parse a plist XML node into a JS value with type info.
+   * The `depth` argument is bounded by `PARSER_LIMITS.MAX_DEPTH` so a
+   * deliberately nested plist (e.g. 10 000 levels of `<array>` inside
+   * `<array>`) cannot blow the JS stack.
+   */
+  _parseXmlNode(node, depth) {
+    depth = depth | 0;
+    if (depth > PARSER_LIMITS.MAX_DEPTH) {
+      return { _type: 'string', _value: '(depth limit reached)' };
+    }
     const tag = node.tagName;
     switch (tag) {
       case 'dict': {
@@ -120,13 +129,13 @@ class PlistRenderer {
         for (let i = 0; i < children.length; i += 2) {
           if (children[i].tagName !== 'key') continue;
           const key = children[i].textContent;
-          const val = i + 1 < children.length ? this._parseXmlNode(children[i + 1]) : { _type: 'string', _value: '' };
+          const val = i + 1 < children.length ? this._parseXmlNode(children[i + 1], depth + 1) : { _type: 'string', _value: '' };
           entries.push({ key, value: val });
         }
         return { _type: 'dict', _entries: entries };
       }
       case 'array': {
-        const items = Array.from(node.children).map(c => this._parseXmlNode(c));
+        const items = Array.from(node.children).map(c => this._parseXmlNode(c, depth + 1));
         return { _type: 'array', _items: items };
       }
       case 'string': return { _type: 'string', _value: node.textContent };
@@ -445,31 +454,35 @@ class PlistRenderer {
   //  Collect all string values from plist (for scanning)
   // ══════════════════════════════════════════════════════════════════════════
 
-  _collectStrings(node, out) {
+  _collectStrings(node, out, depth) {
     if (!node) return;
+    depth = depth | 0;
+    if (depth > PARSER_LIMITS.MAX_DEPTH) return;
     if (node._type === 'string' && node._value) out.push(node._value);
     if (node._type === 'dict') {
       for (const e of (node._entries || [])) {
         out.push(e.key);
-        this._collectStrings(e.value, out);
+        this._collectStrings(e.value, out, depth + 1);
       }
     }
     if (node._type === 'array') {
-      for (const item of (node._items || [])) this._collectStrings(item, out);
+      for (const item of (node._items || [])) this._collectStrings(item, out, depth + 1);
     }
   }
 
   /** Collect all keys from plist recursively */
-  _collectKeys(node, out) {
+  _collectKeys(node, out, depth) {
     if (!node) return;
+    depth = depth | 0;
+    if (depth > PARSER_LIMITS.MAX_DEPTH) return;
     if (node._type === 'dict') {
       for (const e of (node._entries || [])) {
         out.add(e.key);
-        this._collectKeys(e.value, out);
+        this._collectKeys(e.value, out, depth + 1);
       }
     }
     if (node._type === 'array') {
-      for (const item of (node._items || [])) this._collectKeys(item, out);
+      for (const item of (node._items || [])) this._collectKeys(item, out, depth + 1);
     }
   }
 

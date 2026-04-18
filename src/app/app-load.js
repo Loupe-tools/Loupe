@@ -114,6 +114,14 @@ Object.assign(App.prototype, {
       // Compute file hashes in parallel with parsing
       const hashPromise = this._hashFile(buffer);
 
+      // ── Parser watchdog ──────────────────────────────────────────────
+      // Wrap the full renderer dispatch in a single timeout guard so any
+      // renderer that hangs on a maliciously crafted file (malformed PDF
+      // xref, pathological ZIP entry count, OneNote blob loop, etc.) is
+      // aborted after PARSER_LIMITS.TIMEOUT_MS instead of locking the UI.
+      // The inner closure writes to this.findings and to the outer
+      // `docEl` / `analyzer` bindings via closure.
+      await ParserWatchdog.run(async () => {
       if (['docx', 'docm'].includes(ext)) {
         const parsed = await new DocxParser().parse(buffer);
         analyzer = new SecurityAnalyzer();
@@ -594,6 +602,7 @@ Object.assign(App.prototype, {
           docEl = r.render(buffer, file.name, file.type);
         }
       }
+      }); // end ParserWatchdog.run
 
       // Extract interesting strings from rendered text + VBA source
       // Use ._rawText if available (PlainTextRenderer provides clean decoded text
