@@ -57,6 +57,7 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 | **Web** | `.html` `.htm` `.mht` `.mhtml` `.xhtml` `.svg` |
 | **Archives** | `.zip` `.gz` `.gzip` `.tar` `.tgz` `.rar` `.7z` `.cab` `.iso` `.img` |
 | **Windows** | `.lnk` `.hta` `.url` `.webloc` `.website` `.reg` `.inf` `.sct` `.msi` `.exe` `.dll` `.sys` `.scr` `.cpl` `.ocx` `.drv` `.com` `.xll` `.application` `.manifest` `.msix` `.msixbundle` `.appx` `.appxbundle` `.appinstaller` |
+| **Browser extensions** | `.crx` (Chrome / Chromium / Edge) · `.xpi` (Firefox / Thunderbird) |
 | **Linux / IoT** | ELF binaries (`.so`, `.o`, `.elf`, extensionless) |
 | **macOS** | Mach-O binaries (`.dylib`, `.bundle`, Fat/Universal) · `.applescript` `.scpt` `.scptd` `.jxa` `.plist` |
 | **Certificates** | `.pem` `.der` `.crt` `.cer` `.p12` `.pfx` `.key` *(auto-disambiguated against PGP)* |
@@ -74,7 +75,7 @@ Every format gets risk assessment, IOC extraction, and YARA scanning on top of t
 
 ## 🔍 What It Finds
 
-- **YARA rule engine** — 476 default rules auto-scan every file; upload your own `.yar` files to extend detection
+- **YARA rule engine** — 488 default rules auto-scan every file; upload your own `.yar` files to extend detection
 - **IOC extraction** — URLs, IPs, emails, file paths, UNC paths (including refanged `hxxp://` / `1[.]2[.]3[.]4`)
 - **File hashes** — MD5, SHA-1, SHA-256 with one-click VirusTotal lookup
 - **Macro / VBA analysis** — decoded source, auto-exec entry points, downloadable as `.txt` or raw `vbaProject.bin`
