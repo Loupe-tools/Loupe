@@ -41,9 +41,26 @@ class WsfRenderer {
         sec.appendChild(h);
 
         if (s.code) {
-          const pre = document.createElement('pre'); pre.className = 'rtf-raw-source';
+          const pre = document.createElement('pre'); pre.className = 'rtf-raw-source hljs';
           pre.style.cssText += 'max-height:300px;overflow:auto;';
-          pre.textContent = s.code.length > 50000 ? s.code.slice(0, 50000) + '\n… truncated' : s.code;
+          const code = s.code.length > 50000 ? s.code.slice(0, 50000) + '\n… truncated' : s.code;
+          // Map script language → hljs grammar. WSF most commonly hosts
+          // VBScript or JScript; fall back to plain text for anything
+          // exotic (PerlScript, Python, etc. aren't in the bundle).
+          const lang = /vbs|vbscript/i.test(s.language) ? 'vbscript'
+                     : /jscript|javascript/i.test(s.language) ? 'javascript'
+                     : null;
+          let highlighted = null;
+          if (lang && typeof hljs !== 'undefined' && code.length <= 200000) {
+            try {
+              highlighted = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+            } catch (_) { /* fallback */ }
+          }
+          if (highlighted !== null) {
+            pre.innerHTML = highlighted;
+          } else {
+            pre.textContent = code;
+          }
           sec.appendChild(pre);
         }
         wrap.appendChild(sec);
@@ -88,10 +105,24 @@ class WsfRenderer {
     const table = document.createElement('table'); table.className = 'plaintext-table';
     const maxLines = 10000;
     const count = Math.min(lines.length, maxLines);
+    // .wsf / .wsc are XML containers; .wsh is an INI-style settings file.
+    const sourceLang = ext === 'wsh' ? 'ini' : 'xml';
+    let highlightedLines = null;
+    if (typeof hljs !== 'undefined' && text.length <= 200000) {
+      try {
+        const result = hljs.highlight(text, { language: sourceLang, ignoreIllegals: true });
+        highlightedLines = result.value.split('\n');
+      } catch (_) { /* fallback to plain textContent */ }
+    }
     for (let i = 0; i < count; i++) {
       const tr = document.createElement('tr');
       const tdNum = document.createElement('td'); tdNum.className = 'plaintext-ln'; tdNum.textContent = i + 1;
-      const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code'; tdCode.textContent = lines[i];
+      const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code';
+      if (highlightedLines && highlightedLines[i] !== undefined) {
+        tdCode.innerHTML = highlightedLines[i] || '';
+      } else {
+        tdCode.textContent = lines[i];
+      }
       tr.appendChild(tdNum); tr.appendChild(tdCode); table.appendChild(tr);
     }
     scr.appendChild(table); wrap.appendChild(scr);
