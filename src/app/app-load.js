@@ -84,6 +84,21 @@ Object.assign(App.prototype, {
 
   async _loadFile(file) {
     this._setLoading(true);
+
+    // Reset the viewer + sidebar scroll position when a *fresh* file is
+    // loaded (drop, picker, paste) so the user always starts at the top
+    // of a new analysis. Drill-down loads (archive member, decoded
+    // payload, "All the way") push the current frame onto `_navStack`
+    // BEFORE calling `_loadFile` — that frame already captured the
+    // parent's scroll offsets, so we're safe to clear here. Return-
+    // navigation via the breadcrumb trail bypasses `_loadFile` entirely
+    // and routes through `_stickyRestoreScroll` instead, so this reset
+    // cannot clobber a restored scroll position.
+    const viewerEl = document.getElementById('viewer');
+    if (viewerEl) { viewerEl.scrollTop = 0; viewerEl.scrollLeft = 0; }
+    const sbBodyEl = document.getElementById('sb-body');
+    if (sbBodyEl) { sbBodyEl.scrollTop = 0; sbBodyEl.scrollLeft = 0; }
+
     // Show the breadcrumb trail immediately so the user sees the filename
     // while the (potentially slow) parse runs. We set a minimal _fileMeta
     // up front; the richer metadata (entropy, magic, size-with-page-count)
