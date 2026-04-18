@@ -5,10 +5,10 @@
 
 // Keyword set for YARA syntax highlighting (module-level for reuse)
 const _YARA_KW = new Set([
-  'rule','meta','strings','condition','import','include','private','global',
-  'and','or','not','any','all','of','them','true','false','at','in','for',
-  'filesize','entrypoint','fullword','nocase','wide','ascii',
-  'uint8','uint16','uint32','int8','int16','int32'
+  'rule', 'meta', 'strings', 'condition', 'import', 'include', 'private', 'global',
+  'and', 'or', 'not', 'any', 'all', 'of', 'them', 'true', 'false', 'at', 'in', 'for',
+  'filesize', 'entrypoint', 'fullword', 'nocase', 'wide', 'ascii',
+  'uint8', 'uint16', 'uint32', 'int8', 'int16', 'int32'
 ]);
 
 // localStorage key for user-uploaded YARA rules
@@ -1069,9 +1069,9 @@ Object.assign(App.prototype, {
     body.appendChild(table(
       ['Type', 'Syntax', 'Example', 'Notes'],
       [
-        ['Text',  c('"..."'),            c('$s = "cmd.exe"'),               'Exact byte match'],
-        ['Hex',   c('{ XX XX }'),        c('$h = { 4D 5A 90 }'),           'Raw bytes; supports wildcards'],
-        ['Regex', c('/pattern/flags'),   c('$r = /eval\\(.{0,40}\\)/i'),   'RE after = sign; i s m flags'],
+        ['Text', c('"..."'), c('$s = "cmd.exe"'), 'Exact byte match'],
+        ['Hex', c('{ XX XX }'), c('$h = { 4D 5A 90 }'), 'Raw bytes; supports wildcards'],
+        ['Regex', c('/pattern/flags'), c('$r = /eval\\(.{0,40}\\)/i'), 'RE after = sign; i s m flags'],
       ]
     ));
 
@@ -1080,11 +1080,11 @@ Object.assign(App.prototype, {
     body.appendChild(table(
       ['Feature', 'Syntax', 'Meaning'],
       [
-        ['Wildcard byte',   c('??'),           'Matches any single byte'],
-        ['Nibble wildcard',  c('4? or ?A'),    'Matches half-byte'],
-        ['Jump (range)',    c('[2-4]'),         'Skip 2 to 4 bytes'],
-        ['Unbounded jump',  c('[-]'),          'Skip any number of bytes'],
-        ['Alternative',     c('( AA | BB )'),  'Match either sequence'],
+        ['Wildcard byte', c('??'), 'Matches any single byte'],
+        ['Nibble wildcard', c('4? or ?A'), 'Matches half-byte'],
+        ['Jump (range)', c('[2-4]'), 'Skip 2 to 4 bytes'],
+        ['Unbounded jump', c('[-]'), 'Skip any number of bytes'],
+        ['Alternative', c('( AA | BB )'), 'Match either sequence'],
       ]
     ));
 
@@ -1093,9 +1093,9 @@ Object.assign(App.prototype, {
     body.appendChild(table(
       ['Modifier', 'Effect', 'Example'],
       [
-        [c('nocase'),   'Case-insensitive match',                c('$s = "cmd" nocase')],
-        [c('wide'),     'UTF-16LE encoding (2 bytes/char)',      c('$s = "cmd" wide')],
-        [c('ascii'),    'ASCII encoding (default, explicit)',     c('$s = "cmd" ascii wide')],
+        [c('nocase'), 'Case-insensitive match', c('$s = "cmd" nocase')],
+        [c('wide'), 'UTF-16LE encoding (2 bytes/char)', c('$s = "cmd" wide')],
+        [c('ascii'), 'ASCII encoding (default, explicit)', c('$s = "cmd" ascii wide')],
         [c('fullword'), 'Must be delimited by non-alphanumeric', c('$s = "eval" fullword')],
       ]
     ));
@@ -1105,16 +1105,16 @@ Object.assign(App.prototype, {
     body.appendChild(table(
       ['Keyword / Operator', 'Example', 'Description'],
       [
-        [c('any of them'),         c('condition: any of them'),         'Any defined string matches'],
-        [c('all of them'),         c('condition: all of them'),         'Every defined string matches'],
-        [c('N of them'),           c('condition: 2 of them'),           'At least N strings match'],
-        [c('any of ($a*)'),        c('condition: any of ($a*)'),        'Any string starting with $a'],
-        [c('#s > N'),              c('condition: #s > 3'),              'String $s matches > N times'],
-        [c('$s at N'),             c('condition: $s at 0'),             'String $s at exact offset'],
-        [c('$s in (X..Y)'),       c('condition: $s in (0..256)'),      'String $s within byte range'],
-        [c('filesize'),            c('condition: filesize < 100KB'),    'Size of scanned data'],
-        [c('and / or / not'),      c('condition: $a and not $b'),       'Boolean logic'],
-        [c('for N of ... : (...)'), c('for all of ($s*) : (# > 1)'),   'Iterate with sub-condition'],
+        [c('any of them'), c('condition: any of them'), 'Any defined string matches'],
+        [c('all of them'), c('condition: all of them'), 'Every defined string matches'],
+        [c('N of them'), c('condition: 2 of them'), 'At least N strings match'],
+        [c('any of ($a*)'), c('condition: any of ($a*)'), 'Any string starting with $a'],
+        [c('#s > N'), c('condition: #s > 3'), 'String $s matches > N times'],
+        [c('$s at N'), c('condition: $s at 0'), 'String $s at exact offset'],
+        [c('$s in (X..Y)'), c('condition: $s in (0..256)'), 'String $s within byte range'],
+        [c('filesize'), c('condition: filesize < 100KB'), 'Size of scanned data'],
+        [c('and / or / not'), c('condition: $a and not $b'), 'Boolean logic'],
+        [c('for N of ... : (...)'), c('for all of ($s*) : (# > 1)'), 'Iterate with sub-condition'],
       ]
     ));
 
@@ -1126,11 +1126,11 @@ Object.assign(App.prototype, {
     body.appendChild(table(
       ['Level', 'Colour', 'Use for'],
       [
-        ['critical', '\u{1F534} Red',    'Active exploitation, weaponised payloads'],
-        ['high',     '\u{1F7E0} Orange', 'Shellcode, obfuscated scripts, known malware'],
-        ['medium',   '\u{1F7E1} Yellow', 'Suspicious patterns, dual-use tools'],
-        ['low',      '\u{1F535} Blue',   'Informational artefacts, unusual but benign'],
-        ['info',     '\u26AA Grey',      'Metadata, structural markers, FYI only'],
+        ['critical', '\u{1F534} Red', 'Active exploitation, weaponised payloads'],
+        ['high', '\u{1F7E0} Orange', 'Shellcode, obfuscated scripts, known malware'],
+        ['medium', '\u{1F7E1} Yellow', 'Suspicious patterns, dual-use tools'],
+        ['low', '\u{1F535} Blue', 'Informational artefacts, unusual but benign'],
+        ['info', '\u26AA Grey', 'Metadata, structural markers, FYI only'],
       ],
       true // sevRow class
     ));
@@ -1144,9 +1144,9 @@ Object.assign(App.prototype, {
       ['Field', 'Type', 'Example', 'Purpose'],
       [
         [c('description'), 'string', c('"Detects PowerShell download cradle"'), 'Shown in sidebar findings and scan results'],
-        [c('severity'),    'string', c('"high"'),        'Badge colour & risk scoring (see Severity Levels above)'],
-        [c('category'),    'string', c('"execution"'),   'Groups the rule logically (e.g. execution, persistence, evasion)'],
-        [c('mitre'),       'string', c('"T1059.001"'),   'MITRE ATT&CK technique ID for cross-referencing'],
+        [c('severity'), 'string', c('"high"'), 'Badge colour & risk scoring (see Severity Levels above)'],
+        [c('category'), 'string', c('"execution"'), 'Groups the rule logically (e.g. execution, persistence, evasion)'],
+        [c('mitre'), 'string', c('"T1059.001"'), 'MITRE ATT&CK technique ID for cross-referencing'],
       ]
     ));
 
@@ -1182,7 +1182,7 @@ Object.assign(App.prototype, {
       '        $net  = "Net.WebClient" nocase\n' +
       '        $dl   = "DownloadString" nocase\n' +
       '        $b64  = /FromBase64String\\(.{1,64}\\)/i\n' +
-      '        $hex  = { 49 00 45 00 58 00 }   // "IEX" wide\n' +
+      '        $hex  = { 49 00 45 00 58 00 }\n' +
       '\n' +
       '    condition:\n' +
       '        2 of them\n' +
