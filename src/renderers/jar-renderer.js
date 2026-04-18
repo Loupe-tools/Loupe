@@ -694,11 +694,23 @@ class JarRenderer {
       });
     }
     if (webXmlContent) {
+      // hljs highlighting for web.xml — 200 KB cap mirrors other renderers.
+      let webXmlHTML;
+      if (typeof hljs !== 'undefined' && webXmlContent.length <= 200000) {
+        try {
+          const result = hljs.highlight(webXmlContent, { language: 'xml', ignoreIllegals: true });
+          webXmlHTML = `<pre class="jar-xml-source hljs">${result.value}</pre>`;
+        } catch (_) {
+          webXmlHTML = `<pre class="jar-xml-source">${this._esc(webXmlContent)}</pre>`;
+        }
+      } else {
+        webXmlHTML = `<pre class="jar-xml-source">${this._esc(webXmlContent)}</pre>`;
+      }
       tabs.push({
         key: 'webxml',
         label: '🌐 web.xml',
         count: null,
-        html: `<pre class="jar-xml-source">${this._esc(webXmlContent)}</pre>`
+        html: webXmlHTML
       });
     }
     const tabsHTML = this._buildTabsHTML(tabs);
