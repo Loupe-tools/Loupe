@@ -155,6 +155,18 @@ class ClickOnceRenderer {
     const lines = normalizedText.split('\n');
     const maxLines = 5000;
     const count = Math.min(lines.length, maxLines);
+
+    // Optional hljs XML syntax highlighting — matches svg/hta/html renderers.
+    // ClickOnce manifests are typically <20 KB; the 200 KB cap is defensive
+    // parity with SvgRenderer so pathological inputs stay snappy.
+    let highlightedLines = null;
+    if (typeof hljs !== 'undefined' && normalizedText.length <= 200000) {
+      try {
+        const result = hljs.highlight(normalizedText, { language: 'xml', ignoreIllegals: true });
+        highlightedLines = result.value.split('\n');
+      } catch (_) { /* fallback to plain textContent */ }
+    }
+
     for (let i = 0; i < count; i++) {
       const tr = document.createElement('tr');
       const tdNum = document.createElement('td');
@@ -162,7 +174,11 @@ class ClickOnceRenderer {
       tdNum.textContent = i + 1;
       const tdCode = document.createElement('td');
       tdCode.className = 'plaintext-code';
-      tdCode.textContent = lines[i];
+      if (highlightedLines && highlightedLines[i] !== undefined) {
+        tdCode.innerHTML = highlightedLines[i] || '';
+      } else {
+        tdCode.textContent = lines[i];
+      }
       tr.appendChild(tdNum); tr.appendChild(tdCode);
       table.appendChild(tr);
     }
