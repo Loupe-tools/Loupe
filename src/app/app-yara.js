@@ -226,6 +226,34 @@ Object.assign(App.prototype, {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   },
 
+  /**
+   * Escape a YARA condition expression and wrap each `$var` reference so
+   * matched identifiers render bold and unmatched ones render dimmed.
+   * Shared by the YARA results dialog and the sidebar IOC rows so the two
+   * surfaces can't drift in how they describe the "reason for detection".
+   *
+   * @param {string} condition        Raw rule condition (e.g. "$a and #b > 2").
+   * @param {Set<string>} matchedIds  Lowercased identifiers that produced hits.
+   * @returns {string|null}           HTML fragment, or null when the condition
+   *                                  is trivial (`any of them` / `N of them`)
+   *                                  and wouldn't add explanatory value.
+   */
+  _yaraBoldCond(condition, matchedIds) {
+    const raw = (condition || '').trim();
+    if (!raw) return null;
+    if (/^any\s+of\s+them$/i.test(raw)) return null;
+    if (/^all\s+of\s+them$/i.test(raw)) return null;
+    if (/^\d+\s+of\s+them$/i.test(raw)) return null;
+    return this._escHtmlYara(raw).replace(/\$\w+\*?/g, (ref) => {
+      const key = ref.replace(/\*$/, '').toLowerCase();
+      if (matchedIds.has(key)) {
+        return '<strong>' + ref + '</strong>';
+      }
+      return '<span class="yara-match-unmatched">' + ref + '</span>';
+    });
+  },
+
+
   // ═══════════════════════════════════════════════════════════════════════
   //  File helpers (save / upload / import)
   // ═══════════════════════════════════════════════════════════════════════
@@ -918,32 +946,44 @@ Object.assign(App.prototype, {
       hdr.appendChild(badge);
       card.appendChild(hdr);
 
+      // Build the set of identifiers that actually produced hits — used to
+      // emphasise matched $vars inside the condition expression on hover.
+      const matchedIdSet = new Set(r.matches.map(m => m.id.toLowerCase()));
+      const condHtml = this._yaraBoldCond(r.condition, matchedIdSet);
+
+
       // String matches
       for (const sm of r.matches) {
         const row = document.createElement('div');
         row.className = 'yara-match-row';
-        const id = document.createElement('span');
-        id.className = 'yara-match-id';
-        id.textContent = sm.id;
-        row.appendChild(id);
+        // Preserve the rule's variable name as a native tooltip so it stays
+        // recoverable without cluttering the column alignment.
+        row.title = sm.id;
+
         const val = document.createElement('span');
         val.className = 'yara-match-val';
         val.textContent = sm.value;
         row.appendChild(val);
+
         const count = document.createElement('span');
         count.className = 'yara-match-count';
         count.textContent = sm.matches.length + ' hit' + (sm.matches.length !== 1 ? 's' : '');
         row.appendChild(count);
 
-        // Show first few offsets
-        if (sm.matches.length > 0) {
-          const offsets = document.createElement('div');
-          offsets.className = 'yara-match-offsets';
-          const displayed = sm.matches.slice(0, 10);
-          offsets.textContent = 'Offsets: ' + displayed.map(o => '0x' + o.offset.toString(16)).join(', ');
-          if (sm.matches.length > 10) offsets.textContent += ' \u2026 (+' + (sm.matches.length - 10) + ' more)';
-          row.appendChild(offsets);
+        // Hover-revealed detection reason: this row's $var + the rule's
+        // condition with matched $vars emphasised.
+        const reason = document.createElement('div');
+        reason.className = 'yara-match-reason';
+        const idChip = '<span class="yara-match-id">' + this._escHtmlYara(sm.id) + '</span>';
+        if (condHtml) {
+          reason.innerHTML = idChip + ' <span class="yara-match-sep">\u2192</span> ' + condHtml;
+        } else {
+          // Fallback for trivial conditions — still shows the $var name so
+          // nothing is lost, just without a meaningful expression to bold.
+          reason.innerHTML = idChip + ' <span class="yara-match-sep">\u00b7</span> <em>matched</em>';
         }
+        row.appendChild(reason);
+
         card.appendChild(row);
       }
 
@@ -1326,8 +1366,10 @@ Object.assign(App.prototype, {
         description: desc || '',       // exposed for Summary / STIX / MISP
         _yaraRuleName: r.ruleName,
         _yaraStrings: yaraStrings,     // structured per-string breakdown for the sidebar
+        _yaraCondition: r.condition || '',  // raw condition expression for the sidebar's hover-revealed "reason for detection"
         _yaraMatches: allMatches       // For click-to-highlight cycling
       });
+
       if (!maxSeverity || sevRank[sev] > sevRank[maxSeverity]) maxSeverity = sev;
     }
     // Bump overall risk based on highest YARA severity
