@@ -257,10 +257,22 @@ class MsixRenderer {
       const lines = normalizedManifest.split('\n');
       const maxLines = 5000;
       const count = Math.min(lines.length, maxLines);
+      let highlightedLines = null;
+      if (typeof hljs !== 'undefined' && normalizedManifest.length <= 200000) {
+        try {
+          const result = hljs.highlight(normalizedManifest, { language: 'xml', ignoreIllegals: true });
+          highlightedLines = result.value.split('\n');
+        } catch (_) { /* fallback to plain textContent */ }
+      }
       for (let i = 0; i < count; i++) {
         const tr = document.createElement('tr');
         const tdNum = document.createElement('td'); tdNum.className = 'plaintext-ln'; tdNum.textContent = i + 1;
-        const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code'; tdCode.textContent = lines[i];
+        const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code';
+        if (highlightedLines && highlightedLines[i] !== undefined) {
+          tdCode.innerHTML = highlightedLines[i] || '';
+        } else {
+          tdCode.textContent = lines[i];
+        }
         tr.appendChild(tdNum); tr.appendChild(tdCode);
         table.appendChild(tr);
       }
@@ -320,10 +332,22 @@ class MsixRenderer {
     const lines = normalizedText.split('\n');
     const maxLines = 5000;
     const count = Math.min(lines.length, maxLines);
+    let highlightedLines = null;
+    if (typeof hljs !== 'undefined' && normalizedText.length <= 200000) {
+      try {
+        const result = hljs.highlight(normalizedText, { language: 'xml', ignoreIllegals: true });
+        highlightedLines = result.value.split('\n');
+      } catch (_) { /* fallback to plain textContent */ }
+    }
     for (let i = 0; i < count; i++) {
       const tr = document.createElement('tr');
       const tdNum = document.createElement('td'); tdNum.className = 'plaintext-ln'; tdNum.textContent = i + 1;
-      const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code'; tdCode.textContent = lines[i];
+      const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code';
+      if (highlightedLines && highlightedLines[i] !== undefined) {
+        tdCode.innerHTML = highlightedLines[i] || '';
+      } else {
+        tdCode.textContent = lines[i];
+      }
       tr.appendChild(tdNum); tr.appendChild(tdCode);
       table.appendChild(tr);
     }
