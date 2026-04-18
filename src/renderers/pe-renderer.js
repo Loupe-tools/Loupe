@@ -834,11 +834,17 @@ class PeRenderer {
     let cursor = off + 16;
     const readVarintStr = () => {
       if (cursor >= bytes.length) return null;
+      // NOTE: accumulate into a plain Number with `* 2**shift` — the obvious
+      // `len |= (b & 0x7f) << shift` is unsafe here because JS `<<` coerces
+      // to signed-32-bit, so any `shift >= 28` silently produces a negative
+      // intermediate and corrupts the length check below. We cap the decoded
+      // length at 65536 regardless, so any shift >= 24 is rejected outright.
       let len = 0, shift = 0;
       for (let i = 0; i < 10; i++) {
         if (cursor >= bytes.length) return null;
         const b = bytes[cursor++];
-        len |= (b & 0x7f) << shift;
+        if (shift >= 24) return null; // varint cannot encode a length > 64 KiB
+        len += (b & 0x7f) * (2 ** shift);
         if ((b & 0x80) === 0) break;
         shift += 7;
       }

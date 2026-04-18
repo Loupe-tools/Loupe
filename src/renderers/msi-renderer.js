@@ -268,7 +268,10 @@ class MsiRenderer {
 
   analyzeForSecurity(buffer, fileName) {
     const f = {
-      risk: 'medium', hasMacros: false, macroSize: 0, macroHash: '',
+      // Start 'low'; the monotonic `bumpRisk()` helper below is driven by
+      // real evidence (CustomActions, scripts, suspicious commands, signature
+      // verdict) — so a clean MSI stays 'low'.
+      risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
       signatureMatches: []
     };

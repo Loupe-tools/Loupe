@@ -179,7 +179,10 @@ class OneNoteRenderer {
 
   analyzeForSecurity(buffer, fileName) {
     const f = {
-      risk: 'medium', hasMacros: false, macroSize: 0, macroHash: '',
+      // Start 'low'; the embedded-object branch below flips f.risk to 'high'
+      // whenever a FileDataStoreObject contains an executable (PE / ELF /
+      // Mach-O / .lnk / script / HTA), which is the true OneNote threat.
+      risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
       signatureMatches: []
     };

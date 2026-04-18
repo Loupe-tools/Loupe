@@ -1065,9 +1065,10 @@ class MachoRenderer {
 
     for (const sec of scanSections) {
       if (strings.length >= maxStrings) break;
-      let current = '';
       const end = Math.min(sec.offset + sec.size, bytes.length);
 
+      // Pass 1: ASCII runs
+      let current = '';
       for (let i = sec.offset; i < end; i++) {
         const c = bytes[i];
         if (c >= 0x20 && c < 0x7F) {
@@ -1085,10 +1086,34 @@ class MachoRenderer {
         seen.add(current);
         strings.push(current);
       }
+
+      // Pass 2: UTF-16LE runs — Mach-O uses __ustring for wide-char
+      // literals, and Swift / NSString resources often store UTF-16
+      // text that the ASCII pass skips entirely.
+      if (strings.length >= maxStrings) break;
+      current = '';
+      for (let i = sec.offset; i + 1 < end; i += 2) {
+        const lo = bytes[i], hi = bytes[i + 1];
+        if (hi === 0 && lo >= 0x20 && lo < 0x7F) {
+          current += String.fromCharCode(lo);
+        } else {
+          if (current.length >= minLen && !seen.has(current)) {
+            seen.add(current);
+            strings.push(current);
+            if (strings.length >= maxStrings) break;
+          }
+          current = '';
+        }
+      }
+      if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
+        seen.add(current);
+        strings.push(current);
+      }
     }
 
     return strings;
   }
+
 
   // ═══════════════════════════════════════════════════════════════════════
   //  Render — builds DOM for viewer pane
