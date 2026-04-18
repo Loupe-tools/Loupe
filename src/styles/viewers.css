@@ -2530,10 +2530,11 @@ body.dark .yara-result-rule-name {
   padding: 2px 0;
   font-size: 11px;
   flex-wrap: wrap;
+  cursor: default;
 }
 
 .yara-match-id {
-  font-weight: 700;
+  font-weight: 600;
   color: #1a73e8;
   font-family: 'Fira Code', 'Consolas', monospace;
   font-size: 10px;
@@ -2544,6 +2545,8 @@ body.dark .yara-match-id {
 }
 
 .yara-match-val {
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: 'Fira Code', 'Consolas', monospace;
   font-size: 10px;
   color: #555;
@@ -2555,6 +2558,7 @@ body.dark .yara-match-val {
 }
 
 .yara-match-count {
+  margin-left: auto;
   font-size: 10px;
   font-weight: 700;
   color: #dc2626;
@@ -2565,17 +2569,55 @@ body.dark .yara-match-count {
   color: #f87171;
 }
 
-.yara-match-offsets {
+/* Hover-revealed sub-row: shows this row's $var and the rule's condition
+   expression with matched $vars bolded (the "reason for detection"). */
+.yara-match-reason {
+  display: none;
   width: 100%;
   font-size: 10px;
-  color: #888;
+  color: #555;
   font-family: 'Fira Code', 'Consolas', monospace;
-  padding-left: 16px;
+  padding: 3px 0 3px 10px;
   margin-top: 2px;
+  border-left: 2px solid rgba(124, 58, 237, .25);
+  word-break: break-word;
+  line-height: 1.45;
 }
 
-body.dark .yara-match-offsets {
-  color: rgba(255, 255, 255, .35);
+.yara-match-row:hover .yara-match-reason {
+  display: block;
+}
+
+.yara-match-reason strong {
+  color: #1a73e8;
+  font-weight: 700;
+}
+
+.yara-match-reason .yara-match-sep {
+  color: #aaa;
+  margin: 0 4px;
+}
+
+.yara-match-unmatched {
+  color: #aaa;
+  opacity: .7;
+}
+
+body.dark .yara-match-reason {
+  color: rgba(255, 255, 255, .55);
+  border-left-color: rgba(124, 58, 237, .4);
+}
+
+body.dark .yara-match-reason strong {
+  color: #22d3ee;
+}
+
+body.dark .yara-match-reason .yara-match-sep {
+  color: rgba(255, 255, 255, .3);
+}
+
+body.dark .yara-match-unmatched {
+  color: rgba(255, 255, 255, .3);
 }
 
 /* ── Sidebar "View rule" button ──────────────────────────────────────────── */
@@ -2617,11 +2659,15 @@ body.dark .yara-view-rule-btn:hover {
 /* ── Sidebar YARA match — structured per-string breakdown ──────────────
    Rendered inside `.ext-table td.ext-val` by app-sidebar.js when a
    finding carries `_yaraRuleName`. Three stacked blocks:
-     1. `.yara-sidebar-title`   — bold humanised rule name + 📐 button
+     1. `.yara-sidebar-title`   — bold humanised rule name
      2. `.yara-sidebar-desc`    — muted italic rule description
-     3. `.yara-sidebar-strings` — compact list of $id · value · hits
+     3. `.yara-sidebar-strings` — compact list of value + hit count
+   Each `<li>` wraps so that a hidden `.yara-sidebar-reason` sub-row can
+   appear on hover, revealing the matched `$var`, the rule's condition
+   with matched identifiers bolded, and the 📐 "view rule" affordance.
    The aim is to replace the previous one-line "desc — N string(s)
-   matched: $a=…, $b=…" blob with something an analyst can actually scan.
+   matched: $a=…, $b=…" blob with something an analyst can actually scan,
+   while keeping column alignment stable regardless of `$var` length.
    ─────────────────────────────────────────────────────────────────── */
 .yara-sidebar-title {
   display: flex;
@@ -2630,6 +2676,7 @@ body.dark .yara-view-rule-btn:hover {
   margin-bottom: 2px;
   line-height: 1.3;
 }
+
 
 .yara-sidebar-desc {
   font-size: 11px;
@@ -2659,12 +2706,17 @@ body.dark .yara-sidebar-strings {
 .yara-sidebar-strings li {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 2px 0;
   font-size: 11px;
   min-width: 0;
+  cursor: default;
 }
 
+/* Shared chip style for the `$var` identifier. Now only rendered inside
+   the hover-revealed `.yara-sidebar-reason` sub-row so the primary row
+   stays column-aligned regardless of identifier length. */
 .yara-sidebar-sid {
   flex: 0 0 auto;
   font-family: 'Fira Code', 'Consolas', monospace;
@@ -2699,6 +2751,7 @@ body.dark .yara-sidebar-val {
 
 .yara-sidebar-hits {
   flex: 0 0 auto;
+  margin-left: auto;
   font-size: 10px;
   color: #dc2626;
   font-weight: 600;
@@ -2707,6 +2760,67 @@ body.dark .yara-sidebar-val {
 
 body.dark .yara-sidebar-hits {
   color: #f87171;
+}
+
+/* Hover-revealed sub-row: surfaces the matched `$var`, the rule's
+   condition expression with matched identifiers bolded (the "reason for
+   detection"), and the 📐 "view rule" affordance. Mirrors the YARA
+   dialog's `.yara-match-reason` look so the two surfaces stay coherent. */
+.yara-sidebar-reason {
+  display: none;
+  width: 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 10px;
+  color: #555;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  padding: 3px 0 3px 10px;
+  margin-top: 2px;
+  border-left: 2px solid rgba(124, 58, 237, .25);
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.yara-sidebar-strings li:hover .yara-sidebar-reason {
+  display: flex;
+}
+
+.yara-sidebar-reason strong {
+  color: #1a73e8;
+  font-weight: 700;
+}
+
+.yara-sidebar-sep {
+  color: #aaa;
+}
+
+.yara-sidebar-cond {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.yara-sidebar-unmatched {
+  color: #aaa;
+  opacity: .7;
+}
+
+body.dark .yara-sidebar-reason {
+  color: rgba(255, 255, 255, .55);
+  border-left-color: rgba(124, 58, 237, .4);
+}
+
+body.dark .yara-sidebar-reason strong {
+  color: #22d3ee;
+}
+
+body.dark .yara-sidebar-sep {
+  color: rgba(255, 255, 255, .3);
+}
+
+body.dark .yara-sidebar-unmatched {
+  color: rgba(255, 255, 255, .3);
 }
 
 .yara-sidebar-more {
@@ -2719,6 +2833,7 @@ body.dark .yara-sidebar-hits {
 body.dark .yara-sidebar-more {
   color: rgba(255, 255, 255, .4);
 }
+
 
 /* ══════════════════════════════════════════════════════
    DOCUMENT SEARCH (now inside #viewer-toolbar)
