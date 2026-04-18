@@ -247,11 +247,29 @@ class MsgRenderer {
         else if (/\.(doc[mx]?|xls[mx]?|ppt[mx]?|doc|xls|ppt)$/i.test(a.name)) { if (f.risk === 'low') f.risk = 'medium'; f.externalRefs.push({ type: IOC.ATTACHMENT, url: a.name, severity: 'medium' }); }
       }
       if (msg.bodyHtml) {
-        for (const u of (msg.bodyHtml.match(/https?:\/\/[^\s"'<>()]+/gi) || []).slice(0, 10))
-          f.externalRefs.push({ type: IOC.URL, url: u, severity: 'info' });
+        // Extract body URLs with a hard cap; emit _highlightText so the
+        // sidebar can find the URL inside the rendered HTML body pane.
+        const BODY_URL_CAP = 10;
+        const allBodyUrls = msg.bodyHtml.match(/https?:\/\/[^\s"'<>()]+/gi) || [];
+        for (const u of allBodyUrls.slice(0, BODY_URL_CAP)) {
+          f.externalRefs.push({
+            type: IOC.URL,
+            url: u,
+            severity: 'info',
+            _highlightText: u,
+          });
+        }
+        if (allBodyUrls.length > BODY_URL_CAP) {
+          f.externalRefs.push({
+            type: IOC.INFO,
+            url: `URL extraction truncated at ${BODY_URL_CAP} — body contains ${allBodyUrls.length} total URLs`,
+            severity: 'info',
+          });
+        }
         if (/width=.{0,5}[01].{0,5}height=.{0,5}[01]/i.test(msg.bodyHtml))
           f.externalRefs.push({ type: IOC.PATTERN, url: '1x1 or 0x0 image detected', severity: 'medium' });
       }
+
       if (f.externalRefs.some(r => r.severity !== 'info') && f.risk === 'low') f.risk = 'medium';
     } catch (e) { }
     return f;

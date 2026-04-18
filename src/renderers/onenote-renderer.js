@@ -225,12 +225,34 @@ class OneNoteRenderer {
       if (sniffs.length) f.metadata.sniffedBlobTypes = Array.from(new Set(sniffs));
     }
 
-    // Extract URLs from text content
+    // Extract URLs from text content.
+    // Offsets are into the synthesized string-extraction concatenation (not
+    // the file bytes), so we emit _highlightText only — the sidebar's
+    // match-by-text lookup can still locate the URL inside the rendered
+    // "Extracted Text Strings" block for click-to-focus navigation.
     const strings = this._extractStrings(bytes);
     const fullText = strings.join('\n');
+    const URL_CAP = 100;
+    let urlCount = 0;
+    let urlTruncated = false;
     for (const m of fullText.matchAll(/https?:\/\/[^\s"'<>]{6,}/g)) {
-      f.externalRefs.push({ type: IOC.URL, url: m[0], severity: 'medium' });
+      if (urlCount >= URL_CAP) { urlTruncated = true; break; }
+      urlCount++;
+      f.externalRefs.push({
+        type: IOC.URL,
+        url: m[0],
+        severity: 'medium',
+        _highlightText: m[0],
+      });
     }
+    if (urlTruncated) {
+      f.externalRefs.push({
+        type: IOC.INFO,
+        url: `URL extraction truncated at ${URL_CAP} — file contains additional URLs not listed`,
+        severity: 'info',
+      });
+    }
+
 
     // Pattern detection is handled entirely by YARA (auto-scan on file load)
     return f;

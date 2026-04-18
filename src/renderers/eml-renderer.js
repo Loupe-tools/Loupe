@@ -204,30 +204,40 @@ class EmlRenderer {
 
 
       // ── Dedup helpers ──────────────────────────────────────────────────
+      // `raw` is the verbatim match text (used as _highlightText so the
+      // sidebar navigator can locate the span inside the rendered body
+      // even when the cleaned URL differs from what the eye sees).
       const seenEmails = new Set();
       const seenUrls = new Set();
       const seenIps = new Set();
-      const pushEmail = (addr, note, severity) => {
+      const pushEmail = (addr, note, severity, raw) => {
         if (!addr) return;
         const key = addr.toLowerCase();
         if (seenEmails.has(key)) return;
         seenEmails.add(key);
-        f.externalRefs.push({ type: IOC.EMAIL, url: addr, severity: severity || 'info', note });
+        const ref = { type: IOC.EMAIL, url: addr, severity: severity || 'info', note };
+        if (raw) ref._highlightText = raw;
+        f.externalRefs.push(ref);
       };
-      const pushUrl = (url, note, severity) => {
+      const pushUrl = (url, note, severity, raw) => {
         if (!url) return;
         // Strip common trailing punctuation that is usually not part of the URL
         const clean = url.replace(/[.,;:!?)\]>'"]+$/, '');
         const key = clean.toLowerCase();
         if (seenUrls.has(key)) return;
         seenUrls.add(key);
-        f.externalRefs.push({ type: IOC.URL, url: clean, severity: severity || 'medium', note });
+        const ref = { type: IOC.URL, url: clean, severity: severity || 'medium', note };
+        if (raw) ref._highlightText = raw;
+        f.externalRefs.push(ref);
       };
-      const pushIp = (ip, note, severity) => {
+      const pushIp = (ip, note, severity, raw) => {
         if (!ip || seenIps.has(ip)) return;
         seenIps.add(ip);
-        f.externalRefs.push({ type: IOC.IP, url: ip, severity: severity || 'medium', note });
+        const ref = { type: IOC.IP, url: ip, severity: severity || 'medium', note };
+        if (raw) ref._highlightText = raw;
+        f.externalRefs.push(ref);
       };
+
 
       const EMAIL_RE  = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
       const URL_RE    = /https?:\/\/[^\s"'<>()]+/gi;
@@ -283,14 +293,17 @@ class EmlRenderer {
       }
 
       // ── 4. URLs and emails in body (plain + HTML) ──────────────────────
+      // matchAll so we can carry `m[0]` as _highlightText — necessary when
+      // pushUrl's trailing-punctuation strip means the cleaned URL would
+      // never match the rendered body text verbatim.
       const bodies = [email.bodyText || '', email.bodyHtml || ''];
       for (const body of bodies) {
         if (!body) continue;
-        for (const m of body.match(URL_RE) || []) {
-          pushUrl(m, 'in body', 'medium');
+        for (const m of body.matchAll(URL_RE)) {
+          pushUrl(m[0], 'in body', 'medium', m[0]);
         }
-        for (const m of body.match(EMAIL_RE) || []) {
-          pushEmail(m, 'in body', 'info');
+        for (const m of body.matchAll(EMAIL_RE)) {
+          pushEmail(m[0], 'in body', 'info', m[0]);
         }
       }
 
@@ -300,9 +313,10 @@ class EmlRenderer {
         const hrefs = email.bodyHtml.match(/href\s*=\s*["']([^"']+)["']/gi) || [];
         for (const h of hrefs) {
           const m = h.match(/href\s*=\s*["']([^"']+)["']/i);
-          if (m && /^https?:\/\//i.test(m[1])) pushUrl(m[1], 'href target', 'medium');
+          if (m && /^https?:\/\//i.test(m[1])) pushUrl(m[1], 'href target', 'medium', m[1]);
         }
       }
+
 
       // ── 5. Dangerous attachments ───────────────────────────────────────
       const dangerExts = /\.(exe|scr|com|pif|bat|cmd|vbs|vbe|js|jse|wsf|wsh|ps1|hta|lnk|cpl|msi|dll|reg|inf|sct|gadget)$/i;
@@ -343,13 +357,26 @@ class EmlRenderer {
       }
 
       // ── 7. Auth results (detection) ────────────────────────────────────
+      // Three-way authentication failure (SPF+DKIM+DMARC all fail/none) is
+      // a strong phishing signal — stronger than any single failing check.
+      let authTripleFail = false;
       if (email.authResults) {
         const ar = email.authResults.toLowerCase();
+        const failOrNone = v => v === 'fail' || v === 'softfail' || v === 'none' ||
+                                v === 'neutral' || v === 'temperror' || v === 'permerror';
+        const pickV = (tag) => {
+          const m = ar.match(new RegExp('\\b' + tag + '\\s*=\\s*([a-z]+)'));
+          return m ? m[1] : '';
+        };
+        const spfV = pickV('spf'), dkimV = pickV('dkim'), dmarcV = pickV('dmarc');
+        authTripleFail = spfV && dkimV && dmarcV &&
+          failOrNone(spfV) && failOrNone(dkimV) && failOrNone(dmarcV);
+
         if (ar.includes('fail') || ar.includes('none')) {
           f.externalRefs.push({
             type: IOC.PATTERN,
             url: 'SPF/DKIM/DMARC check: ' + email.authResults.substring(0, 200),
-            severity: 'medium'
+            severity: authTripleFail ? 'high' : 'medium'
           });
           if (f.risk === 'low') f.risk = 'medium';
         }
@@ -357,8 +384,13 @@ class EmlRenderer {
 
       // ── Risk escalation ────────────────────────────────────────────────
       // URLs in the body + Reply-To mismatch is the classic phishing combo.
+      // Triple-auth-fail + body URL is the classic spoofed-sender + payload
+      // combo — every verified-origin check failed and the message still
+      // carries a clickable URL.
       const hasBodyUrl = f.externalRefs.some(r => r.type === IOC.URL);
       if (replyToMismatch && hasBodyUrl && f.risk !== 'high') f.risk = 'high';
+      if (authTripleFail && hasBodyUrl && f.risk !== 'high') f.risk = 'high';
+
 
     } catch (_) { /* parse failed — non-fatal */ }
 
