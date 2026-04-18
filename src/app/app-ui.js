@@ -489,6 +489,7 @@ Object.assign(App.prototype, {
     this._copyAnalysisOOXMLRels(f, parts, tp);
     this._copyAnalysisClickOnce(f, parts, tp);
     this._copyAnalysisMsix(f, parts, tp);
+    this._copyAnalysisBrowserExt(f, parts, tp);
 
     return parts.length ? parts.join('\n') + '\n' : '';
   },
@@ -754,6 +755,187 @@ Object.assign(App.prototype, {
         if (us.automaticBackgroundTask) parts.push('  - AutomaticBackgroundTask: enabled');
         if (us.forceUpdateFromAnyVersion === true) parts.push('  - ⚠ ForceUpdateFromAnyVersion: true');
       }
+    }
+  },
+
+  // ── Browser extension (CRX / XPI) detail ───────────────────────────────
+  //   Surfaces the parsed manifest.json (or legacy install.rdf) so paste-up
+  //   analysts see the container kind, signing state, Chrome Web Store /
+  //   AMO ID, manifest version, permission + host-grant split, entry
+  //   points (background worker / content scripts / action popup), CSP,
+  //   externally_connectable, update channel, and legacy XUL flags. The
+  //   renderer fills findings.browserExtInfo with the full parsed record;
+  //   this helper only formats what's already there.
+  _copyAnalysisBrowserExt(f, parts, tp) {
+    const bx = f && f.browserExtInfo;
+    if (!bx) return;
+
+    const kindLabel = bx.containerKind === 'crx' ? 'Chrome / Edge Extension (.crx)'
+                    : bx.containerKind === 'xpi' ? 'Firefox WebExtension (.xpi)'
+                    : bx.containerKind === 'xpi-legacy' ? 'Legacy Firefox Add-on (.xpi, install.rdf)'
+                    : bx.containerKind || 'Browser Extension';
+    parts.push('\n## Browser Extension Details');
+    parts.push(`- **Format:** ${tp(kindLabel)}`);
+
+    // ── Identity ──
+    if (bx.name)         parts.push(`- **Name:** ${tp(bx.name)}`);
+    if (bx.version)      parts.push(`- **Version:** ${tp(bx.version)}`);
+    if (bx.description)  parts.push(`- **Description:** ${tp(bx.description)}`);
+    if (bx.author)       parts.push(`- **Author:** ${tp(bx.author)}`);
+    if (bx.homepageUrl)  parts.push(`- **Homepage:** \`${tp(bx.homepageUrl)}\``);
+    if (bx.manifestVersion != null) {
+      parts.push(`- **Manifest Version:** ${bx.manifestVersion}${bx.manifestVersion === 2 ? ' (MV2 — deprecated)' : ''}`);
+    }
+
+    // ── CRX envelope / Mozilla signing ──
+    if (bx.containerKind === 'crx') {
+      const sigBits = [];
+      if (bx.crxVersion) sigBits.push(`Cr24 v${bx.crxVersion}`);
+      if (bx.crxVersion === 2) {
+        sigBits.push(`pubKey=${bx.crxPubKeyLen || 0}B`);
+        sigBits.push(`sig=${bx.crxSigLen || 0}B`);
+      } else if (bx.crxVersion === 3) {
+        sigBits.push(`header=${bx.crxHeaderLen || 0}B`);
+        sigBits.push('protobuf (not parsed)');
+      }
+      parts.push(`- **CRX Envelope:** ${tp(sigBits.join(', '))}`);
+      if (bx.crxId) parts.push(`- **Chrome Extension ID:** \`${tp(bx.crxId)}\``);
+    } else if (bx.containerKind === 'xpi' || bx.containerKind === 'xpi-legacy') {
+      const sigBits = [];
+      if (bx.hasMozillaSig) sigBits.push('META-INF/mozilla.rsa');
+      if (bx.hasCoseSig)    sigBits.push('META-INF/cose.sig');
+      if (sigBits.length) parts.push(`- **Mozilla Signature:** ${tp(sigBits.join(' + '))}`);
+      else                parts.push('- ⚠ **Mozilla Signature:** Unsigned XPI (no META-INF/mozilla.rsa)');
+      if (bx.geckoId)              parts.push(`- **gecko.id:** \`${tp(bx.geckoId)}\``);
+      if (bx.geckoStrictMinVersion) parts.push(`- **gecko.strict_min_version:** ${tp(bx.geckoStrictMinVersion)}`);
+    }
+
+    // ── Update channel ──
+    if (bx.updateUrl) {
+      const u = bx.updateUrl;
+      const isStore = /(^|\.)google\.com\/|(^|\.)mozilla\.org\/|addons\.mozilla\.org/i.test(u);
+      const isHttp  = /^http:\/\//i.test(u);
+      const tag = isHttp ? ' ⚠ (HTTP — MITM risk)'
+                : !isStore ? ' ⚠ (off-store auto-update channel)'
+                : '';
+      parts.push(`- **Update URL:** \`${tp(u)}\`${tag}`);
+    }
+
+    // ── Permissions split by tier ──
+    if ((bx.permissions && bx.permissions.length) ||
+        (bx.optionalPermissions && bx.optionalPermissions.length) ||
+        (bx.hostPermissions && bx.hostPermissions.length) ||
+        (bx.optionalHostPermissions && bx.optionalHostPermissions.length)) {
+      const HIGH = (BrowserExtRenderer.PERM_HIGH || new Set());
+      const MED  = (BrowserExtRenderer.PERM_MEDIUM || new Set());
+      const hi = [], md = [], lo = [];
+      for (const p of (bx.permissions || [])) {
+        if (HIGH.has(p)) hi.push(p);
+        else if (MED.has(p)) md.push(p);
+        else lo.push(p);
+      }
+      parts.push(`\n### Permissions (${(bx.permissions || []).length})`);
+      if (hi.length) parts.push(`- ⚠ **High-risk:** ${hi.map(p => '`' + tp(p) + '`').join(', ')}`);
+      if (md.length) parts.push(`- **Medium-risk:** ${md.map(p => '`' + tp(p) + '`').join(', ')}`);
+      if (lo.length) parts.push(`- **Standard:** ${lo.map(p => '`' + tp(p) + '`').join(', ')}`);
+      if (bx.optionalPermissions && bx.optionalPermissions.length) {
+        parts.push(`- **Optional:** ${bx.optionalPermissions.map(p => '`' + tp(p) + '`').join(', ')}`);
+      }
+
+      if (bx.hostPermissions && bx.hostPermissions.length) {
+        const broadHosts = bx.hostPermissions.filter(h => /^<all_urls>$|^\*:\/\/\*\/\*$|^https?:\/\/\*\/\*$/i.test(h));
+        parts.push(`- **Host Permissions (${bx.hostPermissions.length}):** ${bx.hostPermissions.slice(0, 20).map(h => '`' + tp(h) + '`').join(', ')}${bx.hostPermissions.length > 20 ? `, … +${bx.hostPermissions.length - 20} more` : ''}`);
+        if (broadHosts.length) {
+          parts.push(`  - ⚠ Broad grant: ${broadHosts.map(h => '`' + tp(h) + '`').join(', ')} — content scripts / webRequest see every site the user visits`);
+        }
+      }
+      if (bx.optionalHostPermissions && bx.optionalHostPermissions.length) {
+        parts.push(`- **Optional Host Permissions:** ${bx.optionalHostPermissions.slice(0, 20).map(h => '`' + tp(h) + '`').join(', ')}`);
+      }
+    }
+
+    // ── Entry points ──
+    const entryBits = [];
+    if (bx.serviceWorker)    entryBits.push(`service_worker → \`${tp(bx.serviceWorker)}\``);
+    if (bx.backgroundPage)   entryBits.push(`background.page → \`${tp(bx.backgroundPage)}\``);
+    if (bx.backgroundScripts && bx.backgroundScripts.length) {
+      entryBits.push(`background.scripts: ${bx.backgroundScripts.map(s => '`' + tp(s) + '`').join(', ')}`);
+    }
+    if (bx.actionPopup)        entryBits.push(`action.default_popup → \`${tp(bx.actionPopup)}\``);
+    if (bx.browserActionPopup) entryBits.push(`browser_action.default_popup → \`${tp(bx.browserActionPopup)}\``);
+    if (bx.pageActionPopup)    entryBits.push(`page_action.default_popup → \`${tp(bx.pageActionPopup)}\``);
+    if (bx.optionsPage)        entryBits.push(`options_page → \`${tp(bx.optionsPage)}\``);
+    if (bx.optionsUiPage)      entryBits.push(`options_ui.page → \`${tp(bx.optionsUiPage)}\``);
+    if (bx.devtoolsPage)       entryBits.push(`devtools_page → \`${tp(bx.devtoolsPage)}\``);
+    if (bx.sidebarActionPanel) entryBits.push(`sidebar_action.default_panel → \`${tp(bx.sidebarActionPanel)}\``);
+    if (entryBits.length) {
+      parts.push('\n### Entry Points');
+      for (const e of entryBits) parts.push(`- ${e}`);
+    }
+
+    // ── Content scripts ──
+    if (bx.contentScripts && bx.contentScripts.length) {
+      parts.push(`\n### Content Scripts (${bx.contentScripts.length})`);
+      for (const cs of bx.contentScripts.slice(0, 20)) {
+        const matches = (cs.matches || []).slice(0, 6).map(m => '`' + tp(m) + '`').join(', ');
+        const runAt = cs.runAt ? ` run_at=${tp(cs.runAt)}` : '';
+        const world = cs.world ? ` world=${tp(cs.world)}` : '';
+        const files = (cs.js || []).map(j => '`' + tp(j) + '`').join(', ');
+        const css = (cs.css || []).map(c => '`' + tp(c) + '`').join(', ');
+        const matchMore = (cs.matches || []).length > 6 ? `, … +${cs.matches.length - 6}` : '';
+        parts.push(`- matches: ${matches || '—'}${matchMore}${runAt}${world}`);
+        if (files) parts.push(`  - js: ${files}`);
+        if (css) parts.push(`  - css: ${css}`);
+      }
+      if (bx.contentScripts.length > 20) parts.push(`… and ${bx.contentScripts.length - 20} more`);
+    }
+
+    // ── CSP / externally connectable / WAR ──
+    if (bx.contentSecurityPolicy) {
+      const csp = bx.contentSecurityPolicy;
+      const unsafe = /'unsafe-(?:eval|inline)'/i.test(csp);
+      parts.push('\n### Content Security Policy');
+      parts.push(`- ${unsafe ? '⚠ ' : ''}\`${tp(csp)}\``);
+    }
+
+    if (bx.externallyConnectable) {
+      const ec = bx.externallyConnectable;
+      const bits = [];
+      if (ec.ids && ec.ids.length) bits.push(`ids: ${ec.ids.map(i => '`' + tp(i) + '`').join(', ')}`);
+      if (ec.matches && ec.matches.length) bits.push(`matches: ${ec.matches.map(m => '`' + tp(m) + '`').join(', ')}`);
+      if (ec.acceptsTlsChannelId) bits.push('acceptsTlsChannelId=true');
+      if (bits.length) {
+        parts.push('\n### Externally Connectable');
+        parts.push(`- ${bits.join(' · ')}`);
+      }
+    }
+
+    if (bx.webAccessibleResources && bx.webAccessibleResources.length) {
+      parts.push(`\n### Web-Accessible Resources (${bx.webAccessibleResources.length})`);
+      for (const war of bx.webAccessibleResources.slice(0, 15)) {
+        const res = (war.resources || []).slice(0, 8).map(r => '`' + tp(r) + '`').join(', ');
+        const mt  = (war.matches || []).slice(0, 6).map(m => '`' + tp(m) + '`').join(', ');
+        parts.push(`- resources: ${res || '—'}${mt ? ` — matches: ${mt}` : ''}`);
+      }
+      if (bx.webAccessibleResources.length > 15) parts.push(`… and ${bx.webAccessibleResources.length - 15} more`);
+    }
+
+    // ── Commands (keyboard shortcuts) ──
+    if (bx.commands && bx.commands.length) {
+      parts.push(`\n### Commands / Keyboard Shortcuts (${bx.commands.length})`);
+      for (const cmd of bx.commands.slice(0, 10)) {
+        const key = cmd.suggestedKey ? ` → ${tp(cmd.suggestedKey)}` : '';
+        parts.push(`- \`${tp(cmd.name || '?')}\`${key}${cmd.description ? ` — ${tp(cmd.description)}` : ''}`);
+      }
+    }
+
+    // ── Legacy XUL / bootstrap flag ──
+    if (bx.bootstrap) {
+      parts.push('\n### Legacy Firefox XUL');
+      parts.push('- ⚠ `em:bootstrap=true` — pre-WebExtension add-on with full XPCOM / chrome access');
+    }
+    if (bx.hasChromeManifest) {
+      parts.push('- Legacy `chrome.manifest` present — classic XUL add-on shape');
     }
   },
 
