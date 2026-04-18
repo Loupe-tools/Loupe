@@ -443,7 +443,6 @@ rule Hex_Encoded_PE_Header
     strings:
         $hex_mz_lower = "4d5a9000" ascii
         $hex_mz_upper = "4D5A9000" ascii
-        $hex_mz_mixed = "4d5a90" ascii
 
     condition:
         any of them
