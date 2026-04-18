@@ -2376,17 +2376,41 @@ class PeRenderer {
       }
 
       // ── Extract IOCs from strings ──────────────────────────────────
+      // IOCs extracted from ASCII + UTF-16LE string dumps. Offsets are into
+      // the joined synthetic buffer, not PE file bytes — so we carry only
+      // _highlightText (the raw match) and let the sidebar's text-search
+      // click-to-focus locate the string in the rendered strings pane.
       const allStrings = [...pe.strings.ascii, ...pe.strings.unicode].join('\n');
       const _urlRx = /https?:\/\/[^\s"'<>()\[\]{}\u0000-\u001F]{6,}/g;
       const _uncRx = /\\\\[\w.\-]{2,}(?:\\[\w.\-]+)+/g;
+      const URL_CAP = 50, UNC_CAP = 20;
       const urlMatches = [...new Set([...allStrings.matchAll(_urlRx)].map(m => m[0]))];
-      for (const url of urlMatches.slice(0, 50)) {
-        findings.interestingStrings.push({ type: IOC.URL, url, severity: 'info' });
+      for (const url of urlMatches.slice(0, URL_CAP)) {
+        findings.interestingStrings.push({
+          type: IOC.URL, url, severity: 'info', _highlightText: url,
+        });
+      }
+      if (urlMatches.length > URL_CAP) {
+        findings.interestingStrings.push({
+          type: IOC.INFO,
+          url: `URL extraction truncated at ${URL_CAP} — binary contains ${urlMatches.length} unique URLs`,
+          severity: 'info',
+        });
       }
       const uncMatches = [...new Set([...allStrings.matchAll(_uncRx)].map(m => m[0]))];
-      for (const unc of uncMatches.slice(0, 20)) {
-        findings.interestingStrings.push({ type: IOC.UNC_PATH, url: unc, severity: 'medium' });
+      for (const unc of uncMatches.slice(0, UNC_CAP)) {
+        findings.interestingStrings.push({
+          type: IOC.UNC_PATH, url: unc, severity: 'medium', _highlightText: unc,
+        });
       }
+      if (uncMatches.length > UNC_CAP) {
+        findings.interestingStrings.push({
+          type: IOC.INFO,
+          url: `UNC path extraction truncated at ${UNC_CAP} — binary contains ${uncMatches.length} unique UNC paths`,
+          severity: 'info',
+        });
+      }
+
 
       // ── Format-family heuristics (XLL / AutoHotkey / Installer / Go) ─
       //   Each populates narrow `findings.metadata` rows so the Summary /
