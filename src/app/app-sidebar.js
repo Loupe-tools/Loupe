@@ -1244,9 +1244,14 @@ Object.assign(App.prototype, {
       const td2 = document.createElement('td'); td2.className = 'ext-val';
       if (ref._yaraRuleName) {
         // ── YARA match: structured, scannable layout ────────────────
-        //   • Title row: bold humanised rule name + "view rule" button
+        //   • Title row: bold humanised rule name (no controls)
         //   • Description (when present) on its own muted line
-        //   • Per-string breakdown as a compact list ($id · value · hits)
+        //   • Per-string breakdown as a compact list — each row shows just
+        //     the matched value (+ hit count), keeping columns aligned
+        //     regardless of `$var` length. Hovering a row reveals a
+        //     "reason for detection" sub-row containing the `$var` chip,
+        //     the rule's condition with matched identifiers bolded, and
+        //     a "view rule" affordance.
         // Falls back gracefully when `_yaraStrings` is absent (older
         // findings) by just showing the rule name.
         const titleRow = document.createElement('div');
@@ -1255,17 +1260,6 @@ Object.assign(App.prototype, {
         const strong = document.createElement('strong');
         strong.textContent = ref._yaraRuleName.replace(/_/g, ' ');
         titleRow.appendChild(strong);
-
-        // "View YARA rule" button — opens rule viewer filtered to this rule
-        const viewBtn = document.createElement('button');
-        viewBtn.className = 'yara-view-rule-btn';
-        viewBtn.textContent = '\u{1F4D0}';
-        viewBtn.title = 'View YARA rule';
-        viewBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._openYaraDialog(ref._yaraRuleName);
-        });
-        titleRow.appendChild(viewBtn);
 
         td2.appendChild(titleRow);
 
@@ -1280,22 +1274,27 @@ Object.assign(App.prototype, {
         // Per-string breakdown
         const ys = ref._yaraStrings;
         if (ys && ys.length) {
+          // Pre-render the rule's condition expression once: escape + bold
+          // matched $vars, dim unmatched ones. Shared with the YARA dialog
+          // via `_yaraBoldCond` so the two surfaces can't drift.
+          const matchedIdSet = new Set(ys.map(s => s.id.toLowerCase()));
+          const condHtml = (typeof this._yaraBoldCond === 'function')
+            ? this._yaraBoldCond(ref._yaraCondition, matchedIdSet)
+            : null;
+
           const list = document.createElement('ul');
           list.className = 'yara-sidebar-strings';
           const MAX_SHOWN = 6;
           const shown = ys.slice(0, MAX_SHOWN);
           for (const s of shown) {
             const li = document.createElement('li');
-
-            const sid = document.createElement('code');
-            sid.className = 'yara-sidebar-sid';
-            sid.textContent = s.id;
-            li.appendChild(sid);
+            // Preserve the rule's variable name as a native tooltip so it
+            // remains recoverable without cluttering column alignment.
+            li.title = s.id;
 
             const val = document.createElement('span');
             val.className = 'yara-sidebar-val';
             val.textContent = s.value;
-            val.title = s.value; // full text on hover when truncated
             li.appendChild(val);
 
             if (s.hits && s.hits > 1) {
@@ -1304,6 +1303,49 @@ Object.assign(App.prototype, {
               hits.textContent = s.hits + '\u00D7';
               li.appendChild(hits);
             }
+
+            // ── Hover-revealed "reason for detection" sub-row ────────
+            //   [$id] → <rule condition with matched $vars bolded> [📐]
+            // For trivial conditions (any/all/N of them) we fall back to
+            // "$id · matched" so the $var stays recoverable on hover.
+            const reason = document.createElement('div');
+            reason.className = 'yara-sidebar-reason';
+
+            const idChip = document.createElement('code');
+            idChip.className = 'yara-sidebar-sid';
+            idChip.textContent = s.id;
+            reason.appendChild(idChip);
+
+            const sep = document.createElement('span');
+            sep.className = 'yara-sidebar-sep';
+            sep.textContent = condHtml ? '\u2192' : '\u00b7';
+            reason.appendChild(sep);
+
+            if (condHtml) {
+              const condSpan = document.createElement('span');
+              condSpan.className = 'yara-sidebar-cond';
+              condSpan.innerHTML = condHtml;
+              reason.appendChild(condSpan);
+            } else {
+              const em = document.createElement('em');
+              em.textContent = 'matched';
+              reason.appendChild(em);
+            }
+
+            // "View YARA rule" button — opens rule viewer filtered to
+            // this rule. Moved out of the title row so it only surfaces
+            // on hover alongside the reason context.
+            const viewBtn = document.createElement('button');
+            viewBtn.className = 'yara-view-rule-btn';
+            viewBtn.textContent = '\u{1F4D0}';
+            viewBtn.title = 'View YARA rule';
+            viewBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              this._openYaraDialog(ref._yaraRuleName);
+            });
+            reason.appendChild(viewBtn);
+
+            li.appendChild(reason);
             list.appendChild(li);
           }
           if (ys.length > MAX_SHOWN) {
@@ -1321,6 +1363,7 @@ Object.assign(App.prototype, {
           td2.appendChild(rest);
         }
       } else {
+
         const sp = document.createElement('span'); sp.textContent = ref.url; td2.appendChild(sp);
       }
       // Show decode chain note for IOCs extracted from encoded/obfuscated layers
