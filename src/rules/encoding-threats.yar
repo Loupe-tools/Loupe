@@ -245,7 +245,7 @@ rule Standalone_HTA_VBScript_Indicators
         $jscript_lang   = /language\s*=\s*["']?jscript/ nocase
 
     condition:
-        any of them
+        $hta_tag or $vbscript_lang or $jscript_lang or 2 of ($exec_global, $exec_statement, $execute_call, $eval_vbs, $getref, $chr_obfusc, $chrw_obfusc, $strreverse, $msgbox)
 }
 
 rule Standalone_WSF_Script_Indicators
