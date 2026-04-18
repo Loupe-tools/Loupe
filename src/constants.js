@@ -87,6 +87,37 @@ const IOC = Object.freeze({
 /** IOC types whose values are directly copyable in the sidebar. */
 const IOC_COPYABLE = new Set([IOC.URL, IOC.EMAIL, IOC.IP, IOC.FILE_PATH, IOC.UNC_PATH, IOC.HASH, IOC.COMMAND_LINE, IOC.PROCESS, IOC.HOSTNAME, IOC.USERNAME, IOC.REGISTRY_KEY, IOC.MAC]);
 
+/**
+ * Canonical severity floors per IOC type. These are the default severities
+ * renderers should emit for passive extractions (URLs in a document, emails
+ * in a PGP UID, etc.) — renderers are free to *escalate* when context
+ * demands it (e.g. a URL inside a phishing EML with authTripleFail), but
+ * they should never emit below the floor.
+ *
+ * The values here are descriptive, not enforced at runtime; every renderer
+ * passes the severity through unchanged. This table exists so the IOC
+ * conformity audit has a single source of truth to grade against.
+ */
+const IOC_CANONICAL_SEVERITY = Object.freeze({
+  [IOC.URL]:           'info',      // passive URL extraction; escalate for phishing/C2 context
+  [IOC.EMAIL]:         'info',      // sender/recipient/UID; escalate on auth-fail + body-URL
+  [IOC.IP]:            'info',
+  [IOC.FILE_PATH]:     'info',
+  [IOC.UNC_PATH]:      'medium',    // UNC in binary = credential-harvest candidate
+  [IOC.ATTACHMENT]:    'medium',    // attachments carry macro/script risk by default
+  [IOC.YARA]:          'info',      // severity comes from the rule meta; renderer mirrors it
+  [IOC.PATTERN]:       'info',      // Detection → IOC mirror; severity carried from detection
+  [IOC.INFO]:          'info',      // truncation markers and stats
+  [IOC.HASH]:          'info',      // extraction only; no reputation lookup
+  [IOC.COMMAND_LINE]:  'high',      // cmd/powershell strings are actionable on sight
+  [IOC.PROCESS]:       'info',
+  [IOC.HOSTNAME]:      'info',
+  [IOC.USERNAME]:      'info',
+  [IOC.REGISTRY_KEY]:  'medium',    // persistence-key indicator
+  [IOC.MAC]:           'info',
+});
+
+
 
 // ── String helpers ────────────────────────────────────────────────────────────
 function escHtml(s) {
