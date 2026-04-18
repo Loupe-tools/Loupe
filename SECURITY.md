@@ -40,7 +40,7 @@ receives security fixes. There are no LTS branches.
 
 ## Reporting a Vulnerability
 
-Security reports are handled on a best-effort basis by a small maintainer team —
+Security reports are handled on a best-effort basis by a single person—
 please allow reasonable time for triage.
 
 Please report vulnerabilities **privately** via one of:
