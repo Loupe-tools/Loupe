@@ -720,11 +720,17 @@ class ElfRenderer {
     let cursor = off + 16;
     const readVarintStr = () => {
       if (cursor >= bytes.length) return null;
+      // NOTE: accumulate into a plain Number with `* 2**shift` — the obvious
+      // `len |= (b & 0x7f) << shift` is unsafe here because JS `<<` coerces
+      // to signed-32-bit, so any `shift >= 28` silently produces a negative
+      // intermediate and corrupts the length check below. We cap the decoded
+      // length at 65536 regardless, so any shift >= 24 is rejected outright.
       let len = 0, shift = 0;
       for (let i = 0; i < 10; i++) {
         if (cursor >= bytes.length) return null;
         const b = bytes[cursor++];
-        len |= (b & 0x7f) << shift;
+        if (shift >= 24) return null; // varint cannot encode a length > 64 KiB
+        len += (b & 0x7f) * (2 ** shift);
         if ((b & 0x80) === 0) break;
         shift += 7;
       }
@@ -953,9 +959,10 @@ class ElfRenderer {
 
     for (const sec of scanSections) {
       if (strings.length >= maxStrings) break;
-      let current = '';
       const end = Math.min(sec.offset + sec.size, bytes.length);
 
+      // Pass 1: ASCII runs
+      let current = '';
       for (let i = sec.offset; i < end; i++) {
         const c = bytes[i];
         if (c >= 0x20 && c < 0x7F) {
@@ -973,10 +980,34 @@ class ElfRenderer {
         seen.add(current);
         strings.push(current);
       }
+
+      // Pass 2: UTF-16LE runs — catches wide-char paths/URLs/commands that
+      // ASCII-only scanning misses (e.g. Windows-style API strings embedded
+      // in cross-compiled ELF binaries, Qt/ICU UTF-16 resource tables).
+      if (strings.length >= maxStrings) break;
+      current = '';
+      for (let i = sec.offset; i + 1 < end; i += 2) {
+        const lo = bytes[i], hi = bytes[i + 1];
+        if (hi === 0 && lo >= 0x20 && lo < 0x7F) {
+          current += String.fromCharCode(lo);
+        } else {
+          if (current.length >= minLen && !seen.has(current)) {
+            seen.add(current);
+            strings.push(current);
+            if (strings.length >= maxStrings) break;
+          }
+          current = '';
+        }
+      }
+      if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
+        seen.add(current);
+        strings.push(current);
+      }
     }
 
     return strings;
   }
+
 
   // ═══════════════════════════════════════════════════════════════════════
   //  Render — builds DOM for viewer pane
