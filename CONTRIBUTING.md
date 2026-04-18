@@ -285,6 +285,49 @@ Renderers are self-contained classes exposing a static `render(file, arrayBuffer
 
 If the renderer also emits a `.plaintext-table` (one `<tr>` per line with a `.plaintext-code` cell per line) the sidebar automatically gets character-level match highlighting, line-background cycling, and the 5-second auto-clear behaviour for free. Renderers that do not provide a plaintext surface fall back to a best-effort TreeWalker highlight on the first match found anywhere in the DOM.
 
+### Risk Tier Calibration
+
+A renderer's `analyzeForSecurity()` must emit a `findings.risk` value in the
+canonical set `'low' | 'medium' | 'high' | 'critical'` (no `'info'`, no
+bespoke strings). The tier is **evidence-based**, not format-based — an empty
+`.hta` with no scripts and no IOCs is `'low'`, a weaponised `.png` with an
+embedded PE is `'high'`. To stay consistent with the rest of the codebase:
+
+1. **Initialise `f.risk = 'low'`.** Do not pre-stamp renderers with `'medium'`
+   or `'high'` on the grounds that the format "can be abused". The risk bar
+   in the sidebar and the Summary exporter both read `findings.risk`
+   directly; a pre-stamped floor produces false-positive risk colouring on
+   benign samples.
+2. **Escalate from `externalRefs`.** The end of `analyzeForSecurity()` should
+   look at the severities it just pushed onto `f.externalRefs` (detections
+   mirrored in as `IOC.PATTERN`, plus any format-specific escalations you
+   already wrote) and lift `f.risk` accordingly. The canonical tail is:
+   ```js
+   const highs   = f.externalRefs.filter(r => r.severity === 'high').length;
+   const hasCrit = f.externalRefs.some(r => r.severity === 'critical');
+   const hasMed  = f.externalRefs.some(r => r.severity === 'medium');
+   if      (hasCrit)      f.risk = 'critical';
+   else if (highs >= 2)   f.risk = 'high';
+   else if (highs >= 1)   f.risk = 'medium';
+   else if (hasMed)       f.risk = 'low';
+   ```
+3. **Never silently downgrade.** If your renderer already has a hand-rolled
+   escalation path (e.g. `if (dangerousContent) f.risk = 'high';`), gate the
+   calibration block with a monotonic rank check so later evidence only ever
+   lifts the tier:
+   ```js
+   const rank = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
+   if ((rank[tier] || 0) > (rank[f.risk] || 0)) f.risk = tier;
+   ```
+4. **Detections must be mirrored first.** The calibration block only works
+   if every `Detection` has already been pushed into `externalRefs` as an
+   `IOC.PATTERN` (see item 5 in the IOC Push Checklist below). Otherwise a
+   YARA-only finding stays invisible to the risk calculation.
+
+The `cross-renderer-sanity-check` skill grades new renderers against this
+contract; a renderer that stamps `'high'` without evidence, or stays `'low'`
+despite pushing high-severity externalRefs, will fail that audit.
+
 ### IOC Push Checklist
 
 Every IOC the renderer emits — whether onto `findings.externalRefs` or `findings.interestingStrings` — must obey this contract. The `ioc-conformity-audit` skill grades pull requests against these rules; drift here is what the audit exists to catch.
