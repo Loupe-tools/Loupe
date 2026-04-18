@@ -540,9 +540,9 @@ rule Obfuscated_Download_Cradle
         $dl8 = "curl " nocase
         $obf1 = "FromBase64String" nocase
         $obf2 = "-EncodedCommand" nocase
-        $obf3 = "-enc " nocase
-        $obf4 = "hidden" nocase
-        $obf5 = "-w hidden" nocase
+        $obf3 = /\s-enc\s/ nocase
+        $obf4 = "-w hidden" nocase
+        $obf5 = "-WindowStyle Hidden" nocase
         $obf6 = "-nop" nocase
 
     condition:
