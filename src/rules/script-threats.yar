@@ -102,10 +102,10 @@ rule JS_Obfuscated_Payload
         $eval = "eval("
         $func = "Function("
         $arr = /\[\d{2,3}(,\d{2,3}){20,}\]/
-        $split = /\"[^\"]{50,}\"\.split\(/
+        $split = /\"[^\"]{200,}\"\.split\(/
 
     condition:
-        (($cc1 or $cc2 or $cc3) and ($eval or $func)) or $arr or $split
+        (($cc1 or $cc2 or $cc3) and ($eval or $func)) or $arr or ($split and ($eval or $func))
 }
 
 rule Encoded_Script_File_JSE_VBE
@@ -430,8 +430,8 @@ rule BAT_Download_Execute
         $e = "wget " nocase
         $f = "-decode" nocase
         $g = "/transfer" nocase
-        $h = "start " nocase
-        $i = "call " nocase
+        $h = "-urlcache" nocase
+        $i = /-[Ee]nc(odedCommand)?\b/
 
     condition:
         any of ($a, $b, $c, $d, $e) and any of ($f, $g, $h, $i)
@@ -945,9 +945,7 @@ rule PS_Call_Operator_Obfuscation
     strings:
         $call_concat_1 = /&\s*\(\s*['"][a-zA-Z]+['"]\s*\+\s*['"][a-zA-Z]+['"]/ nocase
         $call_concat_2 = /&\s*\(\s*\$[a-zA-Z]+\s*\+\s*\$[a-zA-Z]+\s*\)/ nocase
-        $call_var = /&\s*\(\s*\$\w+\s*\)/ nocase
         $call_iex = /&\s*\(\s*['"]i['"\s]*\+\s*['"]e['"\s]*\+\s*['"]x['"]\s*\)/ nocase
-        $call_icm = /&\s*\(\s*['"]Invoke-/ nocase
         $dot_invoke = /\.\s*\(\s*['"][a-zA-Z]+['"]\s*\+/ nocase
 
     condition:
@@ -992,9 +990,11 @@ rule PS_Split_Join_Reassembly
         $split_iex = /\-split\s*['"][^'"]+['"].*iex/ nocase
         $join_iex = /\-join\s*['"][^'"]*['"].*iex/ nocase
         $split_invoke = /\-split\s*['"][^'"]+['"].*Invoke-Expression/ nocase
+        $iex = /\b[iI][eE][xX]\b/
+        $invoke_expr = "Invoke-Expression" nocase
 
     condition:
-        any of them
+        $split_join_1 or $split_join_2 or $split_iex or $join_iex or $split_invoke or ($string_join and ($iex or $invoke_expr))
 }
 
 rule PS_Hashtable_Command_Construction
