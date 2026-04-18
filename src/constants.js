@@ -161,3 +161,78 @@ function fmtBytes(n) {
   if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
   return (n / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
 }
+
+// ── Generic ASCII + UTF-16LE string scanner ──────────────────────────────────
+/**
+ * Extract printable ASCII and UTF-16LE strings from a byte range.
+ *
+ * Shared helper used by binary renderers (ELF, Mach-O, …) that need to
+ * surface embedded strings for IOC extraction and YARA scanning. Two passes:
+ *   1. UTF-16LE   — pairs of `[printable ASCII byte][0x00]`, minimum
+ *                   `utf16Min` code units.
+ *   2. ASCII 1-byte — runs of `0x20..0x7E`, minimum `asciiMin` bytes.
+ *
+ * Strings are deduplicated across both passes (ASCII wins; UTF-16 is only
+ * emitted if not already seen in the ASCII output) so a single latin-script
+ * string stored as UTF-16 doesn't show up twice. The scan stops after `cap`
+ * total strings to bound memory.
+ *
+ * @param {Uint8Array} bytes
+ * @param {{ start?: number, end?: number, asciiMin?: number, utf16Min?: number, cap?: number }} [opts]
+ * @returns {{ ascii: string[], utf16: string[] }}
+ */
+function extractAsciiAndUtf16leStrings(bytes, opts) {
+  const o = opts || {};
+  const start = o.start | 0;
+  const end = Math.min(o.end == null ? bytes.length : o.end, bytes.length);
+  const asciiMin = o.asciiMin || 4;
+  const utf16Min = o.utf16Min || 4;
+  const cap = o.cap || 10000;
+
+  const ascii = [];
+  const utf16 = [];
+  const seen = new Set();
+
+  // Pass 1: ASCII runs
+  let cur = '';
+  for (let i = start; i < end; i++) {
+    const b = bytes[i];
+    if (b >= 0x20 && b < 0x7F) {
+      cur += String.fromCharCode(b);
+    } else {
+      if (cur.length >= asciiMin && !seen.has(cur)) {
+        seen.add(cur);
+        ascii.push(cur);
+        if (ascii.length + utf16.length >= cap) return { ascii, utf16 };
+      }
+      cur = '';
+    }
+  }
+  if (cur.length >= asciiMin && !seen.has(cur)) {
+    seen.add(cur);
+    ascii.push(cur);
+  }
+
+  // Pass 2: UTF-16LE runs
+  cur = '';
+  for (let i = start; i + 1 < end; i += 2) {
+    const lo = bytes[i], hi = bytes[i + 1];
+    if (hi === 0 && lo >= 0x20 && lo < 0x7F) {
+      cur += String.fromCharCode(lo);
+    } else {
+      if (cur.length >= utf16Min && !seen.has(cur)) {
+        seen.add(cur);
+        utf16.push(cur);
+        if (ascii.length + utf16.length >= cap) return { ascii, utf16 };
+      }
+      cur = '';
+    }
+  }
+  if (cur.length >= utf16Min && !seen.has(cur)) {
+    seen.add(cur);
+    utf16.push(cur);
+  }
+
+  return { ascii, utf16 };
+}
+
