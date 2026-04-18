@@ -17,25 +17,28 @@ class App {
     this._setupViewerPan();
     this._setupSearch();
     this._checkVersionParam();
-    // Keyboard shortcuts: S=toggle sidebar, Y=YARA dialog, Ctrl+F=search.
+    // Keyboard shortcuts: S=toggle sidebar, Y=YARA dialog, F=focus document search.
+    // F (not Ctrl+F) is used because every major browser reserves Ctrl+F for its
+    // own find-in-page bar and the hijack is brittle / user-hostile.
     // Drill-down navigation (archives, PDF attachments, etc.) is driven
     // exclusively by the toolbar breadcrumb trail — no back/forward
     // shortcuts or mouse side-button handlers are wired up.
     document.addEventListener('keydown', e => {
-      // Ctrl+F / Cmd+F: focus document search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        const si = document.getElementById('doc-search');
-        const sw = document.getElementById('doc-search-wrap');
-        if (si && sw && !sw.classList.contains('hidden')) {
-          e.preventDefault(); si.focus(); si.select();
-        }
-        return;
-      }
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 's' || e.key === 'S') this._toggleSidebar();
       else if (e.key === 'y' || e.key === 'Y') this._openYaraDialog();
       else if (e.key === '?' || e.key === 'h' || e.key === 'H') this._openHelpDialog();
+      else if (e.key === 'f' || e.key === 'F') {
+        // Only hijack F when a file is loaded (viewer toolbar is visible),
+        // otherwise silently pass through so the user can still type F into
+        // future inputs on the drop-zone screen.
+        const tb = document.getElementById('viewer-toolbar');
+        if (!tb || tb.classList.contains('hidden')) return;
+        const si = document.getElementById('doc-search');
+        if (si) { e.preventDefault(); si.focus(); si.select(); }
+      }
     });
+
   }
 
 
@@ -258,7 +261,8 @@ class App {
       // bytes + filename instead of a freshly-built `clipboard.txt`.
       // Without this, pasting a just-copied .applescript silently changes
       // the file's SHA-256 and its extension, which in turn makes
-      // `_detectFileType` fall through to highlight.js auto-detect —
+      // `RendererRegistry.detect()` fall through to highlight.js auto-detect —
+
       // confusing in a security tool where the hash is the identity.
       const cached = this._lastCopiedMeta;
       if (cached && cached.buffer && cached.normText &&
