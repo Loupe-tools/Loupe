@@ -16,7 +16,7 @@ model is deliberately narrow:
 | **No network access** | A strict `Content-Security-Policy` (`default-src 'none'`) blocks all outbound requests — fetch, XHR, WebSocket, `<img src="https://…">`, `<script src>`, etc. No telemetry, no analytics, no CDN loads. |
 | **No server component** | The tool runs entirely inside a single HTML file opened with `file://` or a static host. There is no backend, no API, no database. |
 | **No code evaluation** | `eval()`, `new Function()`, and inline event handlers from untrusted content are never used. |
-| **Sandboxed previews** | HTML and SVG previews are rendered inside `<iframe sandbox="" srcdoc="…">` with an inner CSP of `default-src 'none'`. Script execution, form submission, and navigation are all blocked inside the preview frame. |
+| **Sandboxed previews** | HTML and SVG previews are rendered inside `<iframe sandbox="allow-same-origin" srcdoc="…">` with an inner CSP of `default-src 'none'`. `allow-same-origin` is kept only so the inner CSP meta tag can govern the frame's own origin; every other sandbox permission (scripts, forms, popups, top-navigation, pointer-lock, etc.) is revoked by omission. Script execution, form submission, and navigation are all blocked inside the preview frame. |
 | **Parser safety limits** | Centralised `PARSER_LIMITS` constants enforce: max nesting depth (32, gated in plist / jar / iso recursive traversal), max decompressed size (50 MB), per-entry compression-ratio abort (100×), archive entry cap (10 000, enforced in zip / iso / msix), and a 60-second parser timeout. `ParserWatchdog.run()` wraps the entire renderer dispatch in `app-load.js`, not just the initial `file.arrayBuffer()` read, so every format parser inherits the timeout. |
 
 ### What Loupe does **not** protect against
@@ -93,7 +93,7 @@ LCTQfYKVR/BsSTwCXga1BV1w3RMf1vaMWhB0nJQSRgEA2wjBKwwepSNHlarD
 | Vanilla JS, no npm runtime deps | Zero supply-chain surface from transitive dependencies |
 | Vendored libraries pinned by SHA-256 in [`VENDORED.md`](VENDORED.md) | Tamper-evident; upgrades require hash rotation in review |
 | `Content-Security-Policy` meta tag | Defence-in-depth even when served from `file://` (no HTTP headers) |
-| `<iframe sandbox="">` for untrusted previews | Strongest browser-native isolation for rendered HTML/SVG |
+| `<iframe sandbox="allow-same-origin">` for untrusted previews | Strongest browser-native isolation for rendered HTML/SVG — only `allow-same-origin` is kept so the frame's own inner CSP meta tag applies |
 | `PARSER_LIMITS` constants | Single source of truth for all safety thresholds; easy to audit and tighten |
 | EML / MSG anchor tags rendered as inert `<span class="eml-link-inert">` with the original `href` preserved only in a `title` tooltip | Loupe is a forensic viewer — an analyst triaging a phishing sample must be able to inspect a hostile URL without the risk of accidentally navigating to it. `<a href>` is stripped during HTML sanitisation in `src/renderers/eml-renderer.js` |
 
