@@ -15,8 +15,27 @@ Object.assign(App.prototype, {
     // Clear any lingering encoded-content highlights from previous view
     this._clearEncodedHighlight();
 
+    // ── Pending return-navigation state ─────────────────────────────────
+    // `_pendingSectionOpenState` carries the user's manual collapse/expand
+    // choices for each top-level section across a drill-down round-trip
+    // (captured by `_pushNavState` → replayed here). Consumed once.
+    //
+    // `_pendingReturnFocus` is an explicit "scroll to this finding and flash
+    // it" instruction set by deobfuscation drill-down buttons. When present
+    // it also force-expands its owning section, overriding any stored
+    // collapse — the user explicitly returned to focus there.
+    this._sectionOpenOverrides = this._pendingSectionOpenState || null;
+    const returnFocus = this._pendingReturnFocus || null;
+    this._pendingSectionOpenState = null;
+    this._pendingReturnFocus = null;
+    // Transient flag consumed by `_renderEncodedContentSection` to force
+    // the Deobfuscation <details> open regardless of any stored collapse.
+    this._forceDeobfuscationOpen = !!(returnFocus && returnFocus.section === 'deobfuscation');
+
+
     const f = this.findings;
     const yaraCount = (this._yaraResults || []).length;
+
 
     // ── Risk bar ─────────────────────────────────────────────────────────
     const rb = document.getElementById('sb-risk');
@@ -65,8 +84,19 @@ Object.assign(App.prototype, {
       this._renderEncodedContentSection(body, f.encodedContent, fileName);
     }
 
+    // ── Return-focus handling ───────────────────────────────────────────
+    // When the user returns from a drill-down triggered by a Deobfuscation
+    // action (Load for analysis / Decode & Analyse / All the way / etc.),
+    // scroll the originating card into view and flash it so they can resume
+    // iterating through the findings without hunting or scrolling. Wrapped
+    // in rAF so the sidebar layout has settled before we measure/scroll.
+    if (returnFocus && returnFocus.section === 'deobfuscation') {
+      requestAnimationFrame(() => this._applyDeobfuscationReturnFocus(returnFocus));
+    }
+
     // Show sidebar
     if (!this.sidebarOpen) this._toggleSidebar();
+
 
     // Lock sidebar width after initial render so filter toggles don't cause resizing.
     // Uses requestAnimationFrame to read the computed fit-content width after layout,
@@ -80,12 +110,27 @@ Object.assign(App.prototype, {
     });
   },
 
+  // Helper: resolve the `<details open>` state for a top-level sidebar
+  // section, honouring any pending open-state overrides snapshotted from
+  // the previous render (e.g. when the user returns from drilling into a
+  // decoded child file — their manual collapses/expansions on each section
+  // persist across that round-trip).
+  _resolveSectionOpen(key, fallback) {
+    const overrides = this._sectionOpenOverrides;
+    if (overrides && Object.prototype.hasOwnProperty.call(overrides, key)) {
+      return !!overrides[key];
+    }
+    return !!fallback;
+  },
+
   // ── File Info section ──────────────────────────────────────────────────
   _renderFileInfoSection(container, fileName) {
     const f = this.findings;
     const det = document.createElement('details');
     det.className = 'sb-details';
-    det.open = true;
+    det.dataset.sbSection = 'fileInfo';
+    det.open = this._resolveSectionOpen('fileInfo', true);
+
 
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
@@ -223,8 +268,10 @@ Object.assign(App.prototype, {
     const f = this.findings;
     const det = document.createElement('details');
     det.className = 'sb-details';
+    det.dataset.sbSection = 'macros';
     // Auto-open if auto-exec patterns detected
-    if (f.autoExec && f.autoExec.length) det.open = true;
+    det.open = this._resolveSectionOpen('macros', !!(f.autoExec && f.autoExec.length));
+
 
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
@@ -322,7 +369,11 @@ Object.assign(App.prototype, {
 
     const det = document.createElement('details');
     det.className = 'sb-details';
-    det.open = true;  // always auto-open — any extracted PDF JS is high signal
+    det.dataset.sbSection = 'pdfJs';
+    // Default-open: any extracted PDF JS is high signal. Honour user's
+    // manual collapse across drill-down round-trips.
+    det.open = this._resolveSectionOpen('pdfJs', true);
+
 
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
@@ -403,11 +454,23 @@ Object.assign(App.prototype, {
 
     const det = document.createElement('details');
     det.className = 'sb-details';
-    // Auto-open if any high-severity findings, decoded content, or IOCs extracted
+    det.dataset.sbSection = 'deobfuscation';
+    // Auto-open if any high-severity findings, decoded content, or IOCs extracted.
+    // Honour user's manual collapse across drill-down round-trips, UNLESS the
+    // user is explicitly returning from a Deobfuscation finding drill-down —
+    // in that case force-open so the originating card is visible/focusable.
     const hasHigh = encodedFindings.some(f => f.severity === 'high' || f.severity === 'critical');
     const hasDecoded = encodedFindings.some(f => f.decodedBytes);
     const hasIOCs = encodedFindings.some(f => f.iocs && f.iocs.length);
-    det.open = hasHigh || hasDecoded || hasIOCs;
+    const defaultOpen = hasHigh || hasDecoded || hasIOCs;
+    // Force-open the section when we're returning from a Deobfuscation
+    // drill-down (the originating card is about to be scrolled into view
+    // and flashed — it MUST be visible). Otherwise honour the user's
+    // manual collapse captured before the drill-down.
+    const forceOpen = !!this._forceDeobfuscationOpen;
+    det.open = forceOpen ? true : this._resolveSectionOpen('deobfuscation', defaultOpen);
+
+
 
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
@@ -474,9 +537,18 @@ Object.assign(App.prototype, {
     for (const finding of sorted) {
       const card = document.createElement('div');
       card.className = `enc-finding-card enc-sev-${finding.severity}`;
+      // Stamp the finding's offset as a DOM attribute so
+      // `_applyDeobfuscationReturnFocus` can locate the originating card
+      // after a drill-down round-trip (the `_cardEl` reference below lives
+      // on the finding object which survives re-renders too, but the dataset
+      // attribute makes this queryable even when scanning stale state).
+      if (finding.offset !== undefined && finding.offset !== null) {
+        card.dataset.encOffset = String(finding.offset);
+      }
 
       // Store DOM reference for bidirectional cross-flash linking
       finding._cardEl = card;
+
       // Keep any rows already registered by _renderIocsSection (which runs
       // BEFORE this section — see _renderSidebar ordering). Overwriting with
       // a fresh `[]` here would wipe those registrations and break the
@@ -846,12 +918,15 @@ Object.assign(App.prototype, {
               const blob = new Blob([finding.decodedBytes], { type: 'application/octet-stream' });
               const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
               this._pushNavState(fileName);
+              const _top = this._navStack && this._navStack[this._navStack.length - 1];
+              if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
               this._loadFile(syntheticFile);
             } else {
               this._toast('Decoded but no bytes produced', 'error');
               decodeLoadBtn.disabled = false;
               decodeLoadBtn.textContent = '▶ Decode & Analyse';
             }
+
           } catch (err) {
             this._toast('Decode failed: ' + err.message, 'error');
             decodeLoadBtn.disabled = false;
@@ -871,9 +946,12 @@ Object.assign(App.prototype, {
           const blob = new Blob([finding.decodedBytes], { type: 'application/octet-stream' });
           const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
           this._pushNavState(fileName);
+          const _top = this._navStack && this._navStack[this._navStack.length - 1];
+          if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
           this._loadFile(syntheticFile);
         });
         actions.appendChild(loadBtn);
+
       }
 
       // "Load for analysis" for embedded ZIP (extract from raw bytes)
@@ -888,9 +966,12 @@ Object.assign(App.prototype, {
           const blob = new Blob([zipBytes], { type: 'application/zip' });
           const syntheticFile = new File([blob], `embedded_zip_offset${finding.offset}.zip`, { type: 'application/zip' });
           this._pushNavState(fileName);
+          const _top = this._navStack && this._navStack[this._navStack.length - 1];
+          if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
           this._loadFile(syntheticFile);
         });
         actions.appendChild(loadZipBtn);
+
       }
 
       // "Decompress & Analyse" for compressed blobs that weren't eagerly decompressed
@@ -912,7 +993,10 @@ Object.assign(App.prototype, {
               const blob = new Blob([finding.decodedBytes], { type: 'application/octet-stream' });
               const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
               this._pushNavState(fileName);
+              const _top = this._navStack && this._navStack[this._navStack.length - 1];
+              if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
               this._loadFile(syntheticFile);
+
             } else {
               this._toast('Decompression failed — data may be corrupt or truncated', 'error');
               decompBtn.disabled = false;
@@ -951,7 +1035,10 @@ Object.assign(App.prototype, {
                 const blob = new Blob([deepest.decodedBytes], { type: 'application/octet-stream' });
                 const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
                 this._pushNavState(fileName);
+                const _top = this._navStack && this._navStack[this._navStack.length - 1];
+                if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
                 this._loadFile(syntheticFile);
+
               } else {
                 this._toast('Deep decode produced no bytes', 'error');
                 atwBtn.disabled = false;
@@ -1021,7 +1108,13 @@ Object.assign(App.prototype, {
   _renderFindingsTableSection(container, refs, fileName, sectionEmoji, sectionTitle, emptyMessage) {
     const det = document.createElement('details');
     det.className = 'sb-details';
-    if (refs.length) det.open = true;
+    // Section key for manual collapse-state preservation across nav
+    // round-trips (Detections / IOCs). Must match the keys used by
+    // `_snapshotSectionOpenState` in app-load.js and `_resolveSectionOpen`.
+    const _sbKey = sectionTitle === 'Detections' ? 'detections' : 'iocs';
+    det.dataset.sbSection = _sbKey;
+    det.open = this._resolveSectionOpen(_sbKey, refs.length > 0);
+
 
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
@@ -2354,8 +2447,60 @@ Object.assign(App.prototype, {
     });
   },
 
+  // ── Apply "return focus" to a Deobfuscation card after drill-down ───────
+  //
+  // Invoked from `_renderSidebar` (inside a rAF) when the nav frame we're
+  // restoring was tagged with `returnFocus = { section:'deobfuscation',
+  // findingOffset: N }` by one of the Deobfuscation drill-down buttons.
+  //
+  // Locates the card by the `data-enc-offset` attribute we stamp when
+  // rendering each `.enc-finding-card`, force-opens its containing
+  // <details>, scrolls the `#sb-body` pane so the card is centred in view,
+  // and flashes the card (reusing the existing `.enc-card-flash` keyframes)
+  // so the analyst can immediately see where they came from and move on
+  // to the next finding without hunting.
+  //
+  // Uses `block: 'nearest'` to avoid yanking the whole viewport when the
+  // card is already partially visible; the flash provides the visual cue.
+  _applyDeobfuscationReturnFocus(returnFocus) {
+    // Clear the transient force-open flag now that the section is rendered.
+    this._forceDeobfuscationOpen = false;
+
+    if (!returnFocus || returnFocus.findingOffset === undefined ||
+        returnFocus.findingOffset === null) return;
+
+    const sbBody = document.getElementById('sb-body');
+    if (!sbBody) return;
+
+    // Locate the card by the stamped data-enc-offset attribute. CSS
+    // attribute-selector escaping would be needed for truly arbitrary
+    // values, but finding.offset is always a non-negative integer.
+    const offsetStr = String(returnFocus.findingOffset);
+    const card = sbBody.querySelector(
+      `.enc-finding-card[data-enc-offset="${offsetStr}"]`);
+    if (!card) return;
+
+    // Ensure its owning <details> is open (belt-and-braces — the force-open
+    // branch above already did this, but a stale override could still flip
+    // the section closed).
+    const sect = card.closest('.sb-details');
+    if (sect && !sect.open) sect.open = true;
+
+    // Flash the card (restart the animation by toggling the class).
+    card.classList.remove('enc-card-flash');
+    void card.offsetWidth;
+    card.classList.add('enc-card-flash');
+    setTimeout(() => card.classList.remove('enc-card-flash'), 1500);
+
+    // Scroll the card into view inside the sidebar pane. We deliberately
+    // use 'nearest' instead of 'center' so the viewer pane isn't jolted
+    // when the sidebar is the target container.
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  },
+
   // ── Get deepest decoded finding in innerFindings tree ───────────────────
   _getDeepestFinding(finding) {
+
     if (!finding.innerFindings || !finding.innerFindings.length) return finding;
     const sevRank = { critical: 4, high: 3, medium: 2, info: 1 };
     const best = finding.innerFindings.reduce((a, b) =>
