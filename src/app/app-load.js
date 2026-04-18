@@ -136,515 +136,31 @@ Object.assign(App.prototype, {
       // aborted after PARSER_LIMITS.TIMEOUT_MS instead of locking the UI.
       // The inner closure writes to this.findings and to the outer
       // `docEl` / `analyzer` bindings via closure.
+      //
+      // Dispatch strategy:
+      //   1. Build a detection context once (`RendererRegistry.makeContext`)
+      //      — this memoises ASCII heads, the OLE stream list, and the
+      //      ZIP central-directory peek so every predicate touches the
+      //      bytes at most once.
+      //   2. Ask `RendererRegistry.detect()` which renderer wins. The
+      //      registry runs magic → extension → text-sniff passes in that
+      //      order, so an extensionless MSIX is still routed to the
+      //      MSIX renderer, a renamed .docx stays a Word document, and
+      //      `.key` bytes are disambiguated between X.509 and PGP.
+      //   3. Run the per-id handler below which owns the actual
+      //      instantiate → analyze → render sequence (some paths are
+      //      sync, some async; a few attach inner-file listeners).
       await ParserWatchdog.run(async () => {
-      if (['docx', 'docm'].includes(ext)) {
-        const parsed = await new DocxParser().parse(buffer);
-        analyzer = new SecurityAnalyzer();
-        this.findings = analyzer.analyze(parsed);
-        docEl = new ContentRenderer(parsed).render();
-      } else if (['xlsx', 'xlsm', 'xls', 'ods'].includes(ext)) {
-        const r = new XlsxRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['pptx', 'pptm'].includes(ext)) {
-        const r = new PptxRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = await r.render(buffer);
-      } else if (ext === 'odt') {
-        const r = new OdtRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = await r.render(buffer);
-      } else if (ext === 'odp') {
-        const r = new OdpRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = await r.render(buffer);
-      } else if (ext === 'ppt') {
-        const r = new PptBinaryRenderer();
-        this.findings = r.analyzeForSecurity(buffer);
-        docEl = r.render(buffer);
-      } else if (['csv', 'tsv'].includes(ext)) {
-        const text = await file.text();
-        const r = new CsvRenderer();
-        this.findings = r.analyzeForSecurity(text);
-        docEl = r.render(text, file.name);
-      } else if (ext === 'evtx') {
-        const r = new EvtxRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (ext === 'sqlite' || ext === 'db') {
-        const r = new SqliteRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (ext === 'doc') {
-        const r = new DocBinaryRenderer();
-        this.findings = r.analyzeForSecurity(buffer);
-        docEl = r.render(buffer);
-      } else if (ext === 'msg') {
-        const r = new MsgRenderer();
-        this.findings = r.analyzeForSecurity(buffer);
-        docEl = r.render(buffer);
-        // Listen for inner-file open events from MSG attachments
-        docEl.addEventListener('open-inner-file', (e) => {
-          const innerFile = e.detail;
-          if (innerFile) {
-            this._pushNavState(file.name);
-            this._loadFile(innerFile);
-          }
-        });
-      } else if (ext === 'eml') {
-        const r = new EmlRenderer();
-        this.findings = r.analyzeForSecurity(buffer);
-        docEl = r.render(buffer);
-        // Listen for inner-file open events from EML attachments
-        docEl.addEventListener('open-inner-file', (e) => {
-          const innerFile = e.detail;
-          if (innerFile) {
-            this._pushNavState(file.name);
-            this._loadFile(innerFile);
-          }
-        });
-      } else if (ext === 'lnk') {
-        const r = new LnkRenderer();
-        this.findings = r.analyzeForSecurity(buffer);
-        docEl = r.render(buffer);
-      } else if (ext === 'hta') {
-        const r = new HtaRenderer();
-        this.findings = r.analyzeForSecurity(buffer);
-        docEl = r.render(buffer);
-      } else if (ext === 'rtf') {
-        const r = new RtfRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['jar', 'war', 'ear', 'class'].includes(ext)) {
-        // Mark the body so core.css can clamp the sidebar to 33vw (vs the
-        // default 50vw ceiling). JAR viewers have dense tables, a file tree,
-        // and a tab strip that need horizontal room; this is done before
-        // `_renderSidebar()` runs so the width-lock captures the clamped value.
-        document.body.classList.add('jar-active');
-        const r = new JarRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = await r.render(buffer, file.name);
-
-        // Listen for inner-file open events from clickable archive entries
-        docEl.addEventListener('open-inner-file', (e) => {
-          const innerFile = e.detail;
-          if (innerFile) {
-            this._pushNavState(file.name);
-            this._loadFile(innerFile);
-          }
-        });
-      } else if (['zip', 'rar', '7z', 'cab', 'gz', 'gzip', 'tar', 'tgz'].includes(ext)) {
-        const r = new ZipRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = await r.render(buffer, file.name);
-        // Listen for inner-file open events from clickable archive entries
-        docEl.addEventListener('open-inner-file', (e) => {
-          const innerFile = e.detail;
-          if (innerFile) {
-            this._pushNavState(file.name);
-            this._loadFile(innerFile);
-          }
-        });
-      } else if (['msix', 'msixbundle', 'appx', 'appxbundle', 'appinstaller'].includes(ext)) {
-        // ── MSIX / APPX / .appinstaller ────────────────────────────────
-        //   .msix/.msixbundle/.appx/.appxbundle are ZIP packages containing
-        //   AppxManifest.xml (or AppxBundleManifest.xml). .appinstaller is
-        //   a standalone XML document. The renderer sniffs the magic bytes
-        //   internally to pick the right code path.
-        const r = new MsixRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = await r.render(buffer, file.name);
-        // Listen for inner-file open events from clickable package entries
-        docEl.addEventListener('open-inner-file', (e) => {
-          const innerFile = e.detail;
-          if (innerFile) {
-            this._pushNavState(file.name);
-            this._loadFile(innerFile);
-          }
-        });
-      } else if (['crx', 'xpi'].includes(ext)) {
-        // ── Chrome/Edge CRX + Firefox XPI ──────────────────────────────
-        //   .crx is an extension container with a Cr24 envelope wrapping a
-        //   ZIP payload; .xpi is a plain ZIP. Both carry a WebExtension
-        //   manifest.json (MV2/MV3) or, for legacy Firefox, install.rdf.
-        const r = new BrowserExtRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = await r.render(buffer, file.name);
-        // Listen for inner-file open events from clickable entries
-        docEl.addEventListener('open-inner-file', (e) => {
-          const innerFile = e.detail;
-          if (innerFile) {
-            this._pushNavState(file.name);
-            this._loadFile(innerFile);
-          }
-        });
-      } else if (['iso', 'img'].includes(ext)) {
-        const r = new IsoRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['url', 'webloc', 'website'].includes(ext)) {
-        const r = new UrlShortcutRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (ext === 'one') {
-        const r = new OneNoteRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['iqy', 'slk'].includes(ext)) {
-        const r = new IqySlkRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['wsf', 'wsc', 'wsh'].includes(ext)) {
-        const r = new WsfRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (ext === 'reg') {
-        const r = new RegRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['inf', 'sct'].includes(ext)) {
-        const r = new InfSctRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (ext === 'msi') {
-        const r = new MsiRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-        // Listen for stream open events from clickable MSI stream entries
-        docEl.addEventListener('open-inner-file', (e) => {
-          const innerFile = e.detail;
-          if (innerFile) {
-            this._pushNavState(file.name);
-            this._loadFile(innerFile);
-          }
-        });
-      } else if (ext === 'svg') {
-        const r = new SvgRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        if (this.findings.augmentedBuffer) {
-          this._yaraBuffer = this.findings.augmentedBuffer;
+        const rctx = RendererRegistry.makeContext(file, buffer);
+        const decision = RendererRegistry.detect(rctx);
+        const handler = this._rendererDispatch[decision.id] || this._rendererDispatch.plaintext;
+        const result = await handler.call(this, file, buffer, rctx);
+        if (result) {
+          docEl = result.docEl;
+          if (result.analyzer) analyzer = result.analyzer;
         }
-        docEl = r.render(buffer, file.name);
-      } else if (['html', 'htm', 'mht', 'mhtml', 'xhtml'].includes(ext)) {
-        const r = new HtmlRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        if (this.findings.augmentedBuffer) {
-          this._yaraBuffer = this.findings.augmentedBuffer;
-        }
-        docEl = r.render(buffer, file.name);
-      } else if (ext === 'pdf') {
-        const r = new PdfRenderer();
-        this.findings = await r.analyzeForSecurity(buffer, file.name);
-        docEl = await r.render(buffer, file.name, this.findings);
-        // Listen for inner-file open events from embedded /Filespec attachments
-        docEl.addEventListener('open-inner-file', (e) => {
-          const innerFile = e.detail;
-          if (innerFile) {
-            this._pushNavState(file.name);
-            this._loadFile(innerFile);
-          }
-        });
-      } else if (['pgp', 'gpg', 'asc', 'sig'].includes(ext) ||
-                 (['key', 'pem', 'crt', 'cer', 'der'].includes(ext) &&
-                  this._looksLikePgp(new Uint8Array(buffer)))) {
-        const r = new PgpRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['pem', 'der', 'crt', 'cer', 'p12', 'pfx', 'key'].includes(ext)) {
-        const r = new X509Renderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'ico', 'tif', 'tiff', 'avif'].includes(ext)) {
-        const r = new ImageRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['exe', 'dll', 'sys', 'scr', 'cpl', 'ocx', 'drv', 'com', 'xll'].includes(ext)) {
-        // .xll — Excel add-in; structurally a DLL. The PE renderer's
-        // format-heuristics pass (pe-renderer._detectFormatHeuristics)
-        // picks up the xlAutoOpen / xlAutoClose exports so the sidebar,
-        // Summary output, and YARA pass all flag the XLL class correctly.
-        const r = new PeRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (ext === 'application' || ext === 'manifest') {
-        // ── ClickOnce / .NET assembly manifests ─────────────────────────
-        //   The `.manifest` extension is overloaded in the wild: most are
-        //   Side-by-Side (SxS), vcpkg, or Visual Studio project manifests.
-        //   We only want true ClickOnce deployment/application manifests.
-        //   Require *both* an `<assembly>` root *and* a ClickOnce-specific
-        //   signal — either the asm.v1/v2 URN, or one of the ClickOnce-
-        //   only child elements (`<deployment>`, `<entryPoint>`,
-        //   `<trustInfo>`). Anything else (SxS manifests with just
-        //   `<assembly>`+`<dependency>`, vcpkg manifests, VS project
-        //   manifests) falls through to the plaintext renderer.
-        const preview = new TextDecoder('utf-8', { fatal: false })
-          .decode(new Uint8Array(buffer, 0, Math.min(4096, buffer.byteLength)));
-        const hasAssemblyRoot = /<\s*(?:\w+:)?assembly\b/i.test(preview);
-        const hasClickOnceSignal =
-          /urn:schemas-microsoft-com:asm\.v[12]/i.test(preview)
-          || /<\s*(?:\w+:)?deployment\b/i.test(preview)
-          || /<\s*(?:\w+:)?entryPoint\b/i.test(preview)
-          || /<\s*(?:\w+:)?trustInfo\b/i.test(preview);
-        if (hasAssemblyRoot && hasClickOnceSignal) {
-          const r = new ClickOnceRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else {
-          const r = new PlainTextRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        }
-
-      } else if (['elf', 'so', 'o'].includes(ext)) {
-        const r = new ElfRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (['dylib', 'bundle'].includes(ext)) {
-        const r = new MachoRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        docEl = r.render(buffer, file.name);
-      } else if (ext === 'plist') {
-        const r = new PlistRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        if (this.findings.augmentedBuffer) {
-          this._yaraBuffer = this.findings.augmentedBuffer;
-        }
-        docEl = r.render(buffer, file.name);
-      } else if (['applescript', 'jxa', 'scpt', 'scptd'].includes(ext)) {
-        const r = new OsascriptRenderer();
-        this.findings = r.analyzeForSecurity(buffer, file.name);
-        if (this.findings.augmentedBuffer) {
-          this._yaraBuffer = this.findings.augmentedBuffer;
-        }
-        docEl = r.render(buffer, file.name);
-      } else {
-        // ── Content-based detection fallback for extensionless/unknown files ──
-        // Detect file type by magic bytes when extension is missing or unrecognized
-        const bytes = new Uint8Array(buffer);
-        const detectedType = this._detectFileType(bytes);
-        
-        if (detectedType === 'sqlite') {
-          const r = new SqliteRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'evtx') {
-          const r = new EvtxRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'lnk') {
-          const r = new LnkRenderer();
-          this.findings = r.analyzeForSecurity(buffer);
-          docEl = r.render(buffer);
-        } else if (detectedType === 'pdf') {
-          const r = new PdfRenderer();
-          this.findings = await r.analyzeForSecurity(buffer, file.name);
-          docEl = await r.render(buffer, file.name, this.findings);
-          docEl.addEventListener('open-inner-file', (e) => {
-            const innerFile = e.detail;
-            if (innerFile) {
-              this._pushNavState(file.name);
-              this._loadFile(innerFile);
-            }
-          });
-        } else if (detectedType === 'browserext') {
-          const r = new BrowserExtRenderer();
-          this.findings = await r.analyzeForSecurity(buffer, file.name);
-          docEl = await r.render(buffer, file.name);
-          docEl.addEventListener('open-inner-file', (e) => {
-            const innerFile = e.detail;
-            if (innerFile) {
-              this._pushNavState(file.name);
-              this._loadFile(innerFile);
-            }
-          });
-        } else if (detectedType === 'zip') {
-          // ZIP could be DOCX, XLSX, PPTX, ODT, ODP, ODS, or plain ZIP
-          // Try to identify OOXML/ODF by checking internal structure
-          const r = new ZipRenderer();
-          this.findings = await r.analyzeForSecurity(buffer, file.name);
-          docEl = await r.render(buffer, file.name);
-          // Listen for inner-file open events
-          docEl.addEventListener('open-inner-file', (e) => {
-            const innerFile = e.detail;
-            if (innerFile) {
-              this._pushNavState(file.name);
-              this._loadFile(innerFile);
-            }
-          });
-        } else if (detectedType === 'ole') {
-          // OLE/CFB could be doc, xls, ppt, msg, or msi - try to identify
-          const oleType = this._tryOleCfbDisambiguation(buffer);
-          
-          if (oleType === 'doc') {
-            const r = new DocBinaryRenderer();
-            this.findings = r.analyzeForSecurity(buffer);
-            docEl = r.render(buffer);
-          } else if (oleType === 'xls') {
-            const r = new XlsxRenderer();
-            this.findings = await r.analyzeForSecurity(buffer, file.name);
-            docEl = r.render(buffer, file.name);
-          } else if (oleType === 'ppt') {
-            const r = new PptBinaryRenderer();
-            this.findings = r.analyzeForSecurity(buffer);
-            docEl = r.render(buffer);
-          } else if (oleType === 'msg') {
-            const r = new MsgRenderer();
-            this.findings = r.analyzeForSecurity(buffer);
-            docEl = r.render(buffer);
-            // Listen for inner-file open events from MSG attachments
-            docEl.addEventListener('open-inner-file', (e) => {
-              const innerFile = e.detail;
-              if (innerFile) {
-                this._pushNavState(file.name);
-                this._loadFile(innerFile);
-              }
-            });
-          } else if (oleType === 'msi') {
-            const r = new MsiRenderer();
-            this.findings = r.analyzeForSecurity(buffer, file.name);
-            docEl = r.render(buffer, file.name);
-          } else {
-            // Unknown OLE type - try msg first (most common for forensics), then doc
-            try {
-              const r = new MsgRenderer();
-              this.findings = r.analyzeForSecurity(buffer);
-              docEl = r.render(buffer);
-              // Listen for inner-file open events from MSG attachments
-              docEl.addEventListener('open-inner-file', (e) => {
-                const innerFile = e.detail;
-                if (innerFile) {
-                  this._pushNavState(file.name);
-                  this._loadFile(innerFile);
-                }
-              });
-            } catch (e) {
-              try {
-                const r = new DocBinaryRenderer();
-                this.findings = r.analyzeForSecurity(buffer);
-                docEl = r.render(buffer);
-              } catch (e2) {
-                // Fall through to plain text
-                const r = new PlainTextRenderer();
-                this.findings = r.analyzeForSecurity(buffer, file.name);
-                docEl = r.render(buffer, file.name, file.type);
-              }
-            }
-          }
-        } else if (detectedType === 'image') {
-          const r = new ImageRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'rtf') {
-          const r = new RtfRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'html') {
-          const r = new HtmlRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          if (this.findings.augmentedBuffer) {
-            this._yaraBuffer = this.findings.augmentedBuffer;
-          }
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'hta') {
-          const r = new HtaRenderer();
-          this.findings = r.analyzeForSecurity(buffer);
-          docEl = r.render(buffer);
-        } else if (detectedType === 'eml') {
-          const r = new EmlRenderer();
-          this.findings = r.analyzeForSecurity(buffer);
-          docEl = r.render(buffer);
-          // Listen for inner-file open events from EML attachments
-          docEl.addEventListener('open-inner-file', (e) => {
-            const innerFile = e.detail;
-            if (innerFile) {
-              this._pushNavState(file.name);
-              this._loadFile(innerFile);
-            }
-          });
-        } else if (detectedType === 'url') {
-          const r = new UrlShortcutRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'reg') {
-          const r = new RegRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'inf') {
-          const r = new InfSctRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'iso') {
-          const r = new IsoRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'onenote') {
-          const r = new OneNoteRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'pe') {
-          const r = new PeRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'elf') {
-          const r = new ElfRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'jar') {
-          // See the extension-based branch above — same rationale for
-          // clamping the sidebar for JAR content.
-          document.body.classList.add('jar-active');
-          const r = new JarRenderer();
-          this.findings = await r.analyzeForSecurity(buffer, file.name);
-          docEl = await r.render(buffer, file.name);
-
-          docEl.addEventListener('open-inner-file', (e) => {
-            const innerFile = e.detail;
-            if (innerFile) {
-              this._pushNavState(file.name);
-              this._loadFile(innerFile);
-            }
-          });
-        } else if (detectedType === 'svg') {
-          const r = new SvgRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          if (this.findings.augmentedBuffer) {
-            this._yaraBuffer = this.findings.augmentedBuffer;
-          }
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'macho') {
-          const r = new MachoRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'scpt' || detectedType === 'applescript') {
-          // `scpt` = compiled AppleScript (FasTX magic), `applescript` =
-          // content-sniffed AppleScript / JXA source text. Both route
-          // through OsascriptRenderer; the renderer introspects the bytes
-          // and picks the right parsing path.
-          const r = new OsascriptRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          if (this.findings.augmentedBuffer) {
-            this._yaraBuffer = this.findings.augmentedBuffer;
-          }
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'plist') {
-          const r = new PlistRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          if (this.findings.augmentedBuffer) {
-            this._yaraBuffer = this.findings.augmentedBuffer;
-          }
-          docEl = r.render(buffer, file.name);
-        } else if (detectedType === 'pgp') {
-          const r = new PgpRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name);
-        } else {
-          // Catch-all: plain text or hex dump for any unrecognised format
-          const r = new PlainTextRenderer();
-          this.findings = r.analyzeForSecurity(buffer, file.name);
-          docEl = r.render(buffer, file.name, file.type);
-        }
-      }
       }); // end ParserWatchdog.run
+
 
       // Extract interesting strings from rendered text + VBA source
       // Use ._rawText if available (PlainTextRenderer provides clean decoded text
@@ -905,247 +421,303 @@ Object.assign(App.prototype, {
   },
 
 
-  // ── OLE/CFB disambiguation (determine doc/xls/ppt/msg/msi from OLE compound) ──
-  _tryOleCfbDisambiguation(buffer) {
-    // Try to identify the specific OLE compound file type
-    // by checking internal structure and stream names.
-    // Uses metadata-only parsing to avoid loading large stream content.
-    try {
-      // Parse OLE structure to get stream names (metadata only)
-      const parser = new OleCfbParser(buffer);
-      parser.parseMetadataOnly();
-      
-      // Get all stream names (already lowercase from parser)
-      const streamNames = Array.from(parser.streamMeta.keys());
-      
-      // MSG (Outlook message): has __substg1.0_ streams
-      if (streamNames.some(n => n.startsWith('__substg1.0_')))
-        return 'msg';
-      
-      // MSI (Windows Installer): has specific streams
-      if (streamNames.includes('!_stringpool') || streamNames.includes('!_stringdata'))
-        return 'msi';
-      
-      // DOC (Word): has WordDocument stream
-      if (streamNames.includes('worddocument'))
-        return 'doc';
-      
-      // XLS (Excel): has Workbook stream
-      if (streamNames.includes('workbook'))
-        return 'xls';
-      
-      // PPT (PowerPoint): has PowerPoint Document or Current User stream
-      if (streamNames.includes('powerpoint document') || streamNames.includes('current user'))
-        return 'ppt';
-      
-    } catch (e) {
-      // If parsing fails, return null and let it try renderers in sequence
-    }
-    
-    return null; // Unknown OLE type - will try renderers in sequence
+  // ── Renderer dispatch table ───────────────────────────────────────────
+  //
+  // Single source of truth that maps a registry id (the value returned by
+  // `RendererRegistry.detect()`) to the handler that owns the actual
+  // instantiate → analyze → render sequence for that format. Every handler:
+  //
+  //   • is called with `(file, buffer, rctx)` bound to `App`
+  //   • assigns `this.findings` from the renderer's `analyzeForSecurity()`
+  //   • returns `{ docEl, analyzer? }` — analyzer is only set for the DOCX
+  //     pipeline (which still needs to hand the analyzer instance into
+  //     `_renderSidebar` for module rendering)
+  //   • attaches the `open-inner-file` listener whose containers expose
+  //     drill-down (msg / eml / pdf / zip / msix / browserext / jar / msi)
+  //
+  // Adding a new renderer means appending one entry here AND one entry in
+  // `RendererRegistry.ENTRIES`. The catch-all `plaintext` handler is the
+  // last-resort fallback that `_loadFile` selects when the registry can't
+  // find any match.
+  _rendererDispatch: {
+    // ── DOCX pipeline (parser + analyzer + content renderer) ────────────
+    async docx(file, buffer) {
+      const parsed = await new DocxParser().parse(buffer);
+      const analyzer = new SecurityAnalyzer();
+      this.findings = analyzer.analyze(parsed);
+      const docEl = new ContentRenderer(parsed).render();
+      return { docEl, analyzer };
+    },
+
+    // ── OOXML / OLE workbooks + ODS — all route through XlsxRenderer ────
+    async xlsx(file, buffer) {
+      const r = new XlsxRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    async xls(file, buffer)  { return this._rendererDispatch.xlsx.call(this, file, buffer); },
+    async ods(file, buffer)  { return this._rendererDispatch.xlsx.call(this, file, buffer); },
+
+    async pptx(file, buffer) {
+      const r = new PptxRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      return { docEl: await r.render(buffer) };
+    },
+    async odt(file, buffer) {
+      const r = new OdtRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      return { docEl: await r.render(buffer) };
+    },
+    async odp(file, buffer) {
+      const r = new OdpRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      return { docEl: await r.render(buffer) };
+    },
+    async ppt(file, buffer) {
+      const r = new PptBinaryRenderer();
+      this.findings = r.analyzeForSecurity(buffer);
+      return { docEl: r.render(buffer) };
+    },
+    async doc(file, buffer) {
+      const r = new DocBinaryRenderer();
+      this.findings = r.analyzeForSecurity(buffer);
+      return { docEl: r.render(buffer) };
+    },
+
+    // ── CSV / TSV (decoded via FileReader, not the ArrayBuffer) ─────────
+    async csv(file) {
+      const text = await file.text();
+      const r = new CsvRenderer();
+      this.findings = r.analyzeForSecurity(text);
+      return { docEl: r.render(text, file.name) };
+    },
+
+    // ── Forensic / structured-binary formats ────────────────────────────
+    evtx(file, buffer) {
+      const r = new EvtxRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    sqlite(file, buffer) {
+      const r = new SqliteRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    lnk(file, buffer) {
+      const r = new LnkRenderer();
+      this.findings = r.analyzeForSecurity(buffer);
+      return { docEl: r.render(buffer) };
+    },
+    iso(file, buffer) {
+      const r = new IsoRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    onenote(file, buffer) {
+      const r = new OneNoteRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+
+    // ── Email / message containers (drill-down via open-inner-file) ─────
+    msg(file, buffer) {
+      const r = new MsgRenderer();
+      this.findings = r.analyzeForSecurity(buffer);
+      const docEl = r.render(buffer);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+    eml(file, buffer) {
+      const r = new EmlRenderer();
+      this.findings = r.analyzeForSecurity(buffer);
+      const docEl = r.render(buffer);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+
+    // ── Archives + package formats (all expose drill-down) ──────────────
+    async zip(file, buffer) {
+      const r = new ZipRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      const docEl = await r.render(buffer, file.name);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+    async msix(file, buffer) {
+      const r = new MsixRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      const docEl = await r.render(buffer, file.name);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+    async browserext(file, buffer) {
+      const r = new BrowserExtRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      const docEl = await r.render(buffer, file.name);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+    async jar(file, buffer) {
+      // body.jar-active clamps the sidebar to 33vw (vs the default 50vw)
+      // — JAR viewers have dense tables, file tree, and a tab strip that
+      // need horizontal room. Set BEFORE `_renderSidebar` runs so the
+      // width-lock captures the clamped value.
+      document.body.classList.add('jar-active');
+      const r = new JarRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      const docEl = await r.render(buffer, file.name);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+    msi(file, buffer) {
+      const r = new MsiRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      const docEl = r.render(buffer, file.name);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+
+    // ── PDF (drill-down via embedded /Filespec attachments) ─────────────
+    async pdf(file, buffer) {
+      const r = new PdfRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      const docEl = await r.render(buffer, file.name, this.findings);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+
+    // ── Misc text / config formats ──────────────────────────────────────
+    rtf(file, buffer) {
+      const r = new RtfRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    hta(file, buffer) {
+      const r = new HtaRenderer();
+      this.findings = r.analyzeForSecurity(buffer);
+      return { docEl: r.render(buffer) };
+    },
+    html(file, buffer) {
+      const r = new HtmlRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      if (this.findings.augmentedBuffer) this._yaraBuffer = this.findings.augmentedBuffer;
+      return { docEl: r.render(buffer, file.name) };
+    },
+    url(file, buffer) {
+      const r = new UrlShortcutRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    reg(file, buffer) {
+      const r = new RegRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    inf(file, buffer) {
+      const r = new InfSctRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    iqyslk(file, buffer) {
+      const r = new IqySlkRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    wsf(file, buffer) {
+      const r = new WsfRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    clickonce(file, buffer) {
+      const r = new ClickOnceRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+
+    // ── SVG / Plist / AppleScript — augmentedBuffer goes to YARA ────────
+    svg(file, buffer) {
+      const r = new SvgRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      if (this.findings.augmentedBuffer) this._yaraBuffer = this.findings.augmentedBuffer;
+      return { docEl: r.render(buffer, file.name) };
+    },
+    plist(file, buffer) {
+      const r = new PlistRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      if (this.findings.augmentedBuffer) this._yaraBuffer = this.findings.augmentedBuffer;
+      return { docEl: r.render(buffer, file.name) };
+    },
+    scpt(file, buffer) {
+      const r = new OsascriptRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      if (this.findings.augmentedBuffer) this._yaraBuffer = this.findings.augmentedBuffer;
+      return { docEl: r.render(buffer, file.name) };
+    },
+
+    // ── Crypto material ─────────────────────────────────────────────────
+    pgp(file, buffer) {
+      const r = new PgpRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    x509(file, buffer) {
+      const r = new X509Renderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+
+    // ── Native binaries ─────────────────────────────────────────────────
+    pe(file, buffer) {
+      // .xll — Excel add-in; structurally a DLL. The PE renderer's
+      // format-heuristics pass picks up xlAutoOpen / xlAutoClose so the
+      // sidebar / Summary / YARA pass all flag the XLL class correctly.
+      const r = new PeRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    elf(file, buffer) {
+      const r = new ElfRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    macho(file, buffer) {
+      const r = new MachoRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+
+    // ── Images ──────────────────────────────────────────────────────────
+    image(file, buffer) {
+      const r = new ImageRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+
+    // ── Catch-all — invoked by `_loadFile` when the registry can't find
+    //    any match, OR when the chosen handler is unknown (defensive).
+    plaintext(file, buffer) {
+      const r = new PlainTextRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name, file.type) };
+    },
   },
 
-  // ── Content-based file type detection (fallback for extensionless files) ──
-  _detectFileType(bytes) {
-    if (bytes.length < 4) return null;
-    
-    // SQLite: "SQLite format 3\000"
-    if (bytes[0] === 0x53 && bytes[1] === 0x51 && bytes[2] === 0x4C && bytes[3] === 0x69 &&
-        bytes[4] === 0x74 && bytes[5] === 0x65 && bytes[6] === 0x20)
-      return 'sqlite';
-    
-    // EVTX: "ElfFile\0"
-    if (bytes[0] === 0x45 && bytes[1] === 0x6C && bytes[2] === 0x66 && bytes[3] === 0x46 &&
-        bytes[4] === 0x69 && bytes[5] === 0x6C && bytes[6] === 0x65 && bytes[7] === 0x00)
-      return 'evtx';
-    
-    // Windows Shortcut (LNK)
-    if (bytes[0] === 0x4C && bytes[1] === 0x00 && bytes[2] === 0x00 && bytes[3] === 0x00)
-      return 'lnk';
-    
-    // PDF
-    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)
-      return 'pdf';
-    
-    // Chrome/Edge CRX extension envelope: "Cr24" magic
-    if (bytes[0] === 0x43 && bytes[1] === 0x72 && bytes[2] === 0x32 && bytes[3] === 0x34)
-      return 'browserext';
-
-    // ZIP / OOXML (could be docx, xlsx, pptx, odt, odp, ods, or just zip)
-    if (bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04)
-      return 'zip';
-    
-    // OLE/CFB Compound File (could be doc, xls, ppt, msg, msi)
-    if (bytes[0] === 0xD0 && bytes[1] === 0xCF && bytes[2] === 0x11 && bytes[3] === 0xE0)
-      return 'ole';
-    
-    // PNG Image
-    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47)
-      return 'image';
-    
-    // JPEG Image
-    if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF)
-      return 'image';
-    
-    // GIF Image
-    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46)
-      return 'image';
-    
-    // RAR Archive
-    if (bytes[0] === 0x52 && bytes[1] === 0x61 && bytes[2] === 0x72)
-      return 'zip'; // Route to ZipRenderer which handles RAR
-    
-    // 7-Zip Archive
-    if (bytes[0] === 0x37 && bytes[1] === 0x7A && bytes[2] === 0xBC && bytes[3] === 0xAF)
-      return 'zip'; // Route to ZipRenderer
-    
-    // PE Executable (MZ header)
-    if (bytes[0] === 0x4D && bytes[1] === 0x5A)
-      return 'pe';
-    
-    // ELF Binary
-    if (bytes[0] === 0x7F && bytes[1] === 0x45 && bytes[2] === 0x4C && bytes[3] === 0x46)
-      return 'elf';
-    
-    // Mach-O Binary (64-bit LE: CF FA ED FE, 32-bit LE: CE FA ED FE)
-    if ((bytes[0] === 0xCF && bytes[1] === 0xFA && bytes[2] === 0xED && bytes[3] === 0xFE) ||
-        (bytes[0] === 0xCE && bytes[1] === 0xFA && bytes[2] === 0xED && bytes[3] === 0xFE))
-      return 'macho';
-    
-    // CA FE BA BE — shared by Java class files and Mach-O Fat/Universal binaries
-    if (bytes[0] === 0xCA && bytes[1] === 0xFE && bytes[2] === 0xBA && bytes[3] === 0xBE) {
-      if (typeof JarRenderer !== 'undefined' && JarRenderer.isJavaClass(bytes))
-        return 'jar';
-      return 'macho';
-    }
-    
-    // Gzip
-    if (bytes[0] === 0x1F && bytes[1] === 0x8B)
-      return 'zip'; // Route to ZipRenderer which handles gzip
-    
-    // TAR (check for "ustar" magic at offset 257)
-    if (bytes.length > 262) {
-      const tarMagic = String.fromCharCode(bytes[257], bytes[258], bytes[259], bytes[260], bytes[261]);
-      if (tarMagic === 'ustar') return 'zip'; // Route to ZipRenderer which handles TAR
-    }
-    
-    // ISO 9660 Disk Image (check at offset 32769)
-    if (bytes.length > 32768 + 5) {
-      const iso = String.fromCharCode(bytes[32769], bytes[32770], bytes[32771], bytes[32772], bytes[32773]);
-      if (iso === 'CD001') return 'iso';
-    }
-    
-    // OneNote
-    if (bytes.length >= 16 && bytes[0] === 0xE4 && bytes[1] === 0x52 && bytes[2] === 0x5C && bytes[3] === 0x7B)
-      return 'onenote';
-    
-    // Binary plist: "bplist" (0x62 0x70 0x6C 0x69 0x73 0x74)
-    if (bytes.length >= 8 && bytes[0] === 0x62 && bytes[1] === 0x70 && bytes[2] === 0x6C &&
-        bytes[3] === 0x69 && bytes[4] === 0x73 && bytes[5] === 0x74)
-      return 'plist';
-    
-    // Compiled AppleScript (FasTX magic: 0x46 0x61 0x73 0x54)
-    if (bytes[0] === 0x46 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x54)
-      return 'scpt';
-    
-    // Binary OpenPGP packet stream — first byte is an OpenPGP packet header
-    // (Public-Key, Secret-Key, Public-Subkey, Secret-Subkey in both old+new format).
-    // Check tight byte patterns + plausible version byte to avoid false positives.
-    if ([0x99, 0x95, 0xB9, 0x9D, 0xC6, 0xC5, 0xCE, 0xC7].includes(bytes[0])) {
-      const scan = bytes.subarray(0, Math.min(8, bytes.length));
-      if ([3, 4, 5, 6].some(v => Array.from(scan).includes(v)))
-        return 'pgp';
-    }
-    
-    // Text-based detection (check first 20 bytes as string)
-    const head = String.fromCharCode(...bytes.subarray(0, Math.min(20, bytes.length)));
-    
-    // RTF
-    if (head.startsWith('{\\rtf')) return 'rtf';
-    
-    // SVG (check before HTML — SVG is valid XML that starts with <?xml or <svg)
-    if (head.startsWith('<svg') || head.includes('<svg'))
-      return 'svg';
-    // SVG with XML declaration — check more bytes
-    if (head.startsWith('<?xml')) {
-      const head200 = String.fromCharCode(...bytes.subarray(0, Math.min(200, bytes.length)));
-      if (/<svg[\s>]/i.test(head200)) return 'svg';
-    }
-    
-    // HTML / HTA
-    if (head.startsWith('<!DOCTYPE') || head.startsWith('<html') || head.startsWith('<HTML'))
-      return 'html';
-    if (head.startsWith('<HTA:') || head.includes('<HTA:'))
-      return 'hta';
-    
-    // Email (RFC 5322)
-    if (head.startsWith('From ') || head.startsWith('Received:') || head.startsWith('MIME-Version'))
-      return 'eml';
-    
-    // URL shortcut
-    if (head.startsWith('[InternetShortcut]'))
-      return 'url';
-    
-    // OpenPGP ASCII armor (-----BEGIN PGP PUBLIC KEY BLOCK-----, etc.)
-    if (head.startsWith('-----BEGIN PGP'))
-      return 'pgp';
-    
-    // Registry files
-    if (head.startsWith('REGEDIT4') || head.startsWith('Windows Registry'))
-      return 'reg';
-    if (bytes.length >= 4 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
-      const u16 = new TextDecoder('utf-16le', { fatal: false }).decode(bytes.subarray(0, Math.min(80, bytes.length)));
-      if (u16.startsWith('Windows Registry'))
-        return 'reg';
-    }
-    
-    // INF Setup Information files
-    if (head.startsWith('[Version]') || head.startsWith('[version]'))
-      return 'inf';
-    
-    // XML plist (text-based — check for <plist or <!DOCTYPE plist)
-    if (head.startsWith('<?xml') || head.startsWith('<plist') || head.startsWith('<!DOCTYPE')) {
-      const head500 = String.fromCharCode(...bytes.subarray(0, Math.min(500, bytes.length)));
-      if (/<plist[\s>]/i.test(head500) || /<!DOCTYPE\s+plist/i.test(head500))
-        return 'plist';
-    }
-
-    // AppleScript / JXA source text — no magic bytes, but the language is
-    // distinctive enough to content-sniff. This matters when a user copies
-    // an .applescript file and pastes it back: the Web Clipboard API's
-    // text/plain channel normalises CRLF→LF and strips the filename, so
-    // without a sniff we'd fall through to PlainTextRenderer +
-    // hljs.highlightAuto(), which has no AppleScript grammar bundled and
-    // frequently mis-classifies AppleScript as PowerShell (both have
-    // similar `do X "…"` shapes). We look for a cluster of characteristic
-    // verbs/constructs in the first 4 KB so a lone "tell me" in a plain
-    // English text file doesn't get hijacked.
-    const head4k = String.fromCharCode(...bytes.subarray(0, Math.min(4096, bytes.length)));
-    // Must look like UTF-8 / ASCII text (reject binaries that happen to
-    // contain the words below).
-    const nonPrintable = (head4k.match(/[\x00-\x08\x0E-\x1F]/g) || []).length;
-    if (nonPrintable / Math.max(head4k.length, 1) < 0.01) {
-      let score = 0;
-      if (/\btell\s+application\s+"/i.test(head4k))      score += 3;
-      if (/\bdo\s+shell\s+script\s+"/i.test(head4k))     score += 3;
-      if (/\bend\s+tell\b/i.test(head4k))                score += 2;
-      if (/\bon\s+run\b|\bon\s+open\b|\bon\s+idle\b/i.test(head4k)) score += 2;
-      if (/\bset\s+\w[\w ]*\s+to\s+/i.test(head4k))      score += 1;
-      if (/\bwith\s+administrator\s+privileges\b/i.test(head4k)) score += 2;
-      if (/\bthe\s+clipboard\b/i.test(head4k))           score += 1;
-      if (/\bproperty\s+\w+\s*:/i.test(head4k))          score += 1;
-      if (/\bActiveXObject\b/.test(head4k))              score -= 3; // JScript, not JXA
-      if (/^\s*#!/m.test(head4k) && !/osascript/i.test(head4k)) score -= 2;
-      // Threshold: at least two strong AppleScript markers (e.g.
-      // "tell application \"…\"" + "do shell script") to avoid false
-      // positives on prose that merely contains one of these phrases.
-      if (score >= 5) return 'applescript';
-    }
-
-    return null; // Unknown - will fall through to PlainTextRenderer
+  // Wire `open-inner-file` events from a container renderer (msg / eml /
+  // zip / pdf / msix / browserext / jar / msi) to the nav-stack push +
+  // recursive `_loadFile`. Pulled out of every dispatch handler so the
+  // listener semantics live in one place.
+  _wireInnerFileListener(docEl, parentName) {
+    if (!docEl || typeof docEl.addEventListener !== 'function') return;
+    docEl.addEventListener('open-inner-file', (e) => {
+      const innerFile = e.detail;
+      if (!innerFile) return;
+      this._pushNavState(parentName);
+      this._loadFile(innerFile);
+    });
   },
 
   // ── Shannon entropy ─────────────────────────────────────────────────────
+
   _computeEntropy(bytes) {
     if (bytes.length === 0) return 0;
     const freq = new Uint32Array(256);
