@@ -1244,14 +1244,16 @@ Object.assign(App.prototype, {
       const td2 = document.createElement('td'); td2.className = 'ext-val';
       if (ref._yaraRuleName) {
         // ── YARA match: structured, scannable layout ────────────────
-        //   • Title row: bold humanised rule name (no controls)
-        //   • Description (when present) on its own muted line
-        //   • Per-string breakdown as a compact list — each row shows just
-        //     the matched value (+ hit count), keeping columns aligned
-        //     regardless of `$var` length. Hovering a row reveals a
-        //     "reason for detection" sub-row containing the `$var` chip,
-        //     the rule's condition with matched identifiers bolded, and
-        //     a "view rule" affordance.
+        //   • Title row: bold humanised rule name + always-visible 📐
+        //     "view rule" button (once per rule, never hidden).
+        //   • Description (when present) on its own muted line.
+        //   • Per-string breakdown as a compact list — each row shows
+        //     just the matched value (+ hit count), keeping columns
+        //     aligned regardless of `$var` length. Hovering anywhere on
+        //     the parent findings-table row reveals the "reason for
+        //     detection" sub-rows for every match at once, each carrying
+        //     the `$var` chip and the rule's condition with matched
+        //     identifiers bolded.
         // Falls back gracefully when `_yaraStrings` is absent (older
         // findings) by just showing the rule name.
         const titleRow = document.createElement('div');
@@ -1260,6 +1262,18 @@ Object.assign(App.prototype, {
         const strong = document.createElement('strong');
         strong.textContent = ref._yaraRuleName.replace(/_/g, ' ');
         titleRow.appendChild(strong);
+
+        // "View YARA rule" button — always visible, once per rule.
+        // Opens the rule viewer filtered to this rule.
+        const titleViewBtn = document.createElement('button');
+        titleViewBtn.className = 'yara-view-rule-btn';
+        titleViewBtn.textContent = '\u{1F4D0}';
+        titleViewBtn.title = 'View YARA rule';
+        titleViewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._openYaraDialog(ref._yaraRuleName);
+        });
+        titleRow.appendChild(titleViewBtn);
 
         td2.appendChild(titleRow);
 
@@ -1331,19 +1345,6 @@ Object.assign(App.prototype, {
               em.textContent = 'matched';
               reason.appendChild(em);
             }
-
-            // "View YARA rule" button — opens rule viewer filtered to
-            // this rule. Moved out of the title row so it only surfaces
-            // on hover alongside the reason context.
-            const viewBtn = document.createElement('button');
-            viewBtn.className = 'yara-view-rule-btn';
-            viewBtn.textContent = '\u{1F4D0}';
-            viewBtn.title = 'View YARA rule';
-            viewBtn.addEventListener('click', (e) => {
-              e.stopPropagation();
-              this._openYaraDialog(ref._yaraRuleName);
-            });
-            reason.appendChild(viewBtn);
 
             li.appendChild(reason);
             list.appendChild(li);
