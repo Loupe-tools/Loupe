@@ -1279,9 +1279,24 @@ Object.assign(App.prototype, {
       const sev = validSeverities.includes(severity) ? severity : 'high';
       const strings = r.matches.map(m => m.id + '=' + m.value).join(', ');
 
+      // `url` is kept as a single flat line so that Markdown summary,
+      // clipboard share, STIX / MISP exporters and the search index keep
+      // working against the existing `ref.url` contract. The structured
+      // `_yaraStrings` / `description` fields below are what the sidebar
+      // renderer uses to build the pretty per-string table.
       let text = '';
       if (desc) text += desc + ' \u2014 ';
       text += r.matches.length + ' string(s) matched: ' + strings;
+
+      // Structured per-string list for the sidebar's pretty renderer.
+      // One entry per YARA string identifier ($a / $s1 / …), with its
+      // matched value and number of hits.
+      const yaraStrings = r.matches.map(m => ({
+        id: m.id,
+        value: m.value,
+        hits: (m.matches && m.matches.length) || 0,
+      }));
+
       // Build flat list of all match locations for click-to-highlight
       const allMatches = [];
       for (const m of r.matches) {
@@ -1308,8 +1323,10 @@ Object.assign(App.prototype, {
         type: IOC.YARA,
         url: text,
         severity: sev,
+        description: desc || '',       // exposed for Summary / STIX / MISP
         _yaraRuleName: r.ruleName,
-        _yaraMatches: allMatches  // For click-to-highlight cycling
+        _yaraStrings: yaraStrings,     // structured per-string breakdown for the sidebar
+        _yaraMatches: allMatches       // For click-to-highlight cycling
       });
       if (!maxSeverity || sevRank[sev] > sevRank[maxSeverity]) maxSeverity = sev;
     }
