@@ -1,8 +1,3 @@
-// ════════════════════════════════════════════════════════════════
-// ELF / Linux binary threats — packer detection, malware families,
-// rootkit indicators, reverse shells, cryptominers, and IoT malware
-// ════════════════════════════════════════════════════════════════
-
 rule ELF_UPX_Packed {
     meta:
         description = "UPX packed ELF binary"
@@ -360,6 +355,23 @@ rule ELF_Container_Escape {
     condition:
         uint32(0) == 0x464C457F and
         2 of ($s*) and 2 of ($esc*)
+}
+
+rule ELF_Go_Binary {
+    meta:
+        description = "Go-compiled ELF binary (static, large, commonly abused by Linux malware families)"
+        category = "info"
+        mitre       = ""
+        severity = "info"
+    strings:
+        $g1 = "Go build ID:" ascii
+        $g2 = "go.buildinfo" ascii
+        $g3 = "runtime.goexit" ascii
+        $g4 = "runtime.main" ascii
+        $g5 = "\xff Go buildinf:" ascii
+        $g6 = "golang.org" ascii
+    condition:
+        uint32(0) == 0x464C457F and 2 of them
 }
 
 rule ELF_BPF_Rootkit {

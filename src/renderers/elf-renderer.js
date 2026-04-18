@@ -658,8 +658,120 @@ class ElfRenderer {
     // ── String extraction ─────────────────────────────────────────
     elf.strings = this._extractStrings(bytes, elf);
 
+    // ── Format heuristics: Go binary ──────────────────────────────
+    //   Mirrors PeRenderer._detectFormatHeuristics. Populates flat
+    //   fields on `elf` for Summary / YARA consumption. Best-effort —
+    //   failures don't abort ELF analysis.
+    try { this._detectGoBinary(bytes, elf); }
+    catch (_) { /* best-effort */ }
+
     return elf;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Go binary detection (shared heuristic with pe-renderer.js)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  _detectGoBinary(bytes, elf) {
+    elf.isGoBinary = false;
+    elf.goBuildInfo = null;
+
+    // Signal 1: "\xff Go buildinf:" magic header, carries version + VCS.
+    const magic = new Uint8Array([0xff, 0x20, 0x47, 0x6f, 0x20, 0x62, 0x75, 0x69, 0x6c, 0x64, 0x69, 0x6e, 0x66, 0x3a]);
+    const goIdx = this._findBytesInRange(bytes, magic, 0, bytes.length);
+    if (goIdx >= 0) {
+      elf.isGoBinary = true;
+      elf.goBuildInfo = this._parseGoBuildInfo(bytes, goIdx);
+      return;
+    }
+
+    // Signal 2: section-name fallback. .gopclntab is the runtime function
+    // table present in every stripped Go binary; .go.buildinfo appears on
+    // newer toolchains. Either alone is high-confidence.
+    for (const s of elf.sections) {
+      if (s.name === '.gopclntab' || s.name === '.go.buildinfo' ||
+          s.name === '.note.go.buildid') {
+        elf.isGoBinary = true;
+        return;
+      }
+    }
+  }
+
+  // Byte-sequence search constrained to [start, end). Returns index or -1.
+  _findBytesInRange(bytes, needle, start, end) {
+    const n = needle.length;
+    if (n === 0) return -1;
+    const stop = Math.min(end, bytes.length) - n;
+    const first = needle[0];
+    outer: for (let i = start; i <= stop; i++) {
+      if (bytes[i] !== first) continue;
+      for (let j = 1; j < n; j++) if (bytes[i + j] !== needle[j]) continue outer;
+      return i;
+    }
+    return -1;
+  }
+
+  // Same parser as pe-renderer.js — Go build-info is format-agnostic.
+  _parseGoBuildInfo(bytes, off) {
+    const info = { version: null, path: null, mod: null, vcs: null, revision: null, buildTime: null, settings: {} };
+    if (off + 32 > bytes.length) return info;
+    const flags = bytes[off + 15];
+    const varintMode = !!(flags & 0x02);
+    let cursor = off + 16;
+    const readVarintStr = () => {
+      if (cursor >= bytes.length) return null;
+      let len = 0, shift = 0;
+      for (let i = 0; i < 10; i++) {
+        if (cursor >= bytes.length) return null;
+        const b = bytes[cursor++];
+        len |= (b & 0x7f) << shift;
+        if ((b & 0x80) === 0) break;
+        shift += 7;
+      }
+      if (len <= 0 || len > 65536 || cursor + len > bytes.length) return null;
+      const s = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(cursor, cursor + len));
+      cursor += len;
+      return s;
+    };
+    if (varintMode) {
+      info.version = readVarintStr();
+      const mod = readVarintStr();
+      if (mod && mod.length > 32) {
+        const trimmed = mod.replace(/^\x00+|[\x00\xff]+$/g, '');
+        info.mod = trimmed;
+        const settingLines = trimmed.split('\n');
+        for (const line of settingLines) {
+          if (line.startsWith('path\t')) info.path = line.slice(5);
+          else if (line.startsWith('mod\t')) {
+            const parts = line.split('\t');
+            if (parts.length >= 3) info.settings['module'] = parts[1] + ' ' + parts[2];
+          }
+          else if (line.startsWith('build\t')) {
+            const parts = line.slice(6).split('=');
+            if (parts.length === 2) {
+              info.settings[parts[0]] = parts[1];
+              if (parts[0] === 'vcs') info.vcs = parts[1];
+              if (parts[0] === 'vcs.revision') info.revision = parts[1];
+              if (parts[0] === 'vcs.time') info.buildTime = parts[1];
+            }
+          }
+        }
+      }
+    } else {
+      // Pre-1.18 layout — just grab the version via an ASCII scan.
+      const scanEnd = Math.min(off + 4096, bytes.length);
+      for (let i = off + 16; i < scanEnd - 4; i++) {
+        if (bytes[i] === 0x67 && bytes[i + 1] === 0x6f && bytes[i + 2] === 0x31 && bytes[i + 3] === 0x2e) {
+          let end = i;
+          while (end < scanEnd && bytes[end] >= 0x20 && bytes[end] < 0x7f) end++;
+          info.version = this._str(bytes, i, end - i);
+          break;
+        }
+      }
+    }
+    return info;
+  }
+
 
   // ═══════════════════════════════════════════════════════════════════════
   //  Symbol table parser
@@ -884,7 +996,8 @@ class ElfRenderer {
       // ── Banner ─────────────────────────────────────────────────────
       const banner = document.createElement('div');
       banner.className = 'doc-extraction-banner';
-      const bType = elf.isDyn && elf.interpreter ? 'PIE Executable' : elf.isDyn ? 'Shared Object' : elf.isExec ? 'Executable' : elf.isRel ? 'Relocatable' : elf.isCore ? 'Core Dump' : 'ELF';
+      let bType = elf.isDyn && elf.interpreter ? 'PIE Executable' : elf.isDyn ? 'Shared Object' : elf.isExec ? 'Executable' : elf.isRel ? 'Relocatable' : elf.isCore ? 'Core Dump' : 'ELF';
+      if (elf.isGoBinary) bType = 'Go ' + bType;
       banner.innerHTML = `<strong>ELF Analysis — ${this._esc(bType)}</strong> ` +
         `<span class="doc-meta-tag">${this._esc(elf.ident.classStr)}</span> ` +
         `<span class="doc-meta-tag">${this._esc(elf.machineStr)}</span> ` +
@@ -894,8 +1007,40 @@ class ElfRenderer {
         (elf.neededLibs.length > 0 ? ` <span class="doc-meta-tag">${elf.neededLibs.length} libraries</span>` : '');
       wrap.appendChild(banner);
 
+      // ── Go binary badge + build-info ─────────────────────────────
+      //   Mirrors the PE renderer: surface the Go detection immediately
+      //   under the main banner so analysts don't have to scroll.
+      if (elf.isGoBinary) {
+        const fmt = document.createElement('div');
+        fmt.className = 'doc-extraction-banner';
+        const g = elf.goBuildInfo || {};
+        const bits = [];
+        if (g.version) bits.push(`<span class="doc-meta-tag">${this._esc(g.version)}</span>`);
+        if (g.path) bits.push(`<span class="doc-meta-tag">path: ${this._esc(g.path)}</span>`);
+        if (g.vcs && g.revision) bits.push(`<span class="doc-meta-tag">${this._esc(g.vcs)}: ${this._esc(g.revision.slice(0, 12))}</span>`);
+        fmt.innerHTML = `<div>🐹 <strong>Go binary</strong> ${bits.join(' ')}</div>`;
+        wrap.appendChild(fmt);
+
+        if (elf.goBuildInfo) {
+          const rows = [];
+          if (g.version) rows.push(['Go Version', g.version]);
+          if (g.path) rows.push(['Main Package', g.path]);
+          if (g.vcs) rows.push(['VCS', g.vcs]);
+          if (g.revision) rows.push(['Revision', g.revision]);
+          if (g.buildTime) rows.push(['Build Time', g.buildTime]);
+          for (const [k, v] of Object.entries(g.settings || {})) {
+            if (k === 'vcs' || k === 'vcs.revision' || k === 'vcs.time') continue;
+            rows.push([k, String(v)]);
+          }
+          if (rows.length) {
+            wrap.appendChild(this._renderSection('🐹 Go Build Info', this._buildTable(['Field', 'Value'], rows)));
+          }
+        }
+      }
+
       // ── ELF Header ──────────────────────────────────────────────
       wrap.appendChild(this._renderSection('📋 ELF Header', this._renderHeaders(elf)));
+
 
       // ── Security Features ───────────────────────────────────────
       wrap.appendChild(this._renderSection('🛡 Security Features', this._renderSecurity(elf)));
@@ -1740,6 +1885,23 @@ class ElfRenderer {
       const uncMatches = [...new Set([...allStrings.matchAll(_uncRx)].map(m => m[0]))];
       for (const unc of uncMatches.slice(0, 20)) {
         findings.interestingStrings.push({ type: IOC.UNC_PATH, url: unc, severity: 'medium' });
+      }
+
+      // ── Go binary metadata ─────────────────────────────────────────
+      // Surface the Go-specific fields on findings.metadata so the Summary
+      // (_copyAnalysisELF in app-ui.js) can display them alongside the
+      // standard ELF header info. Kept below the generic linking check
+      // so ordering in the Summary mirrors PE output.
+      if (elf.isGoBinary) {
+        findings.metadata['Format'] = 'Go Binary';
+        if (elf.goBuildInfo) {
+          if (elf.goBuildInfo.version) findings.metadata['Go Version'] = elf.goBuildInfo.version;
+          if (elf.goBuildInfo.path) findings.metadata['Go Module Path'] = elf.goBuildInfo.path;
+          if (elf.goBuildInfo.vcs && elf.goBuildInfo.revision) {
+            findings.metadata['Go VCS'] = `${elf.goBuildInfo.vcs} ${elf.goBuildInfo.revision.slice(0, 12)}`;
+          }
+          if (elf.goBuildInfo.buildTime) findings.metadata['Go Build Time'] = elf.goBuildInfo.buildTime;
+        }
       }
 
       // ── Risk assessment ────────────────────────────────────────────
