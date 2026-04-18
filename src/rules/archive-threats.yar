@@ -25,7 +25,7 @@ rule ZIP_Contains_LNK
 {
     meta:
         description = "ZIP archive contains Windows shortcut (.lnk) — masquerade delivery"
-        severity    = "critical"
+        severity    = "medium"
         category    = "delivery"
         mitre       = "T1204.002"
 
@@ -40,7 +40,7 @@ rule ZIP_Contains_URL_Shortcut
 {
     meta:
         description = "ZIP archive contains .url shortcut file — uncommon, likely phishing"
-        severity    = "critical"
+        severity    = "medium"
         category    = "delivery"
         mitre       = "T1204.002"
 
@@ -92,7 +92,7 @@ rule ZIP_Contains_MSI
 {
     meta:
         description = "ZIP archive contains an MSI installer — uncommon as email attachment"
-        severity    = "high"
+        severity    = "medium"
         category    = "delivery"
         mitre       = "T1218.007"
 
