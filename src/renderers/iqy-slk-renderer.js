@@ -281,6 +281,17 @@ class IqySlkRenderer {
     table.className = 'plaintext-table';
     const maxLines = 5000;
     const count = Math.min(lines.length, maxLines);
+    // IQY is a key=value / URL text format — `ini` is the closest hljs
+    // grammar and gives useful colouring for the URL and any parameters.
+    // SLK has no suitable bundled grammar, so skip highlighting for it.
+    const lang = format === 'IQY' ? 'ini' : null;
+    let highlightedLines = null;
+    if (lang && typeof hljs !== 'undefined' && normalizedText.length <= 200000) {
+      try {
+        const result = hljs.highlight(normalizedText, { language: lang, ignoreIllegals: true });
+        highlightedLines = result.value.split('\n');
+      } catch (_) { /* fallback to plain textContent */ }
+    }
     for (let i = 0; i < count; i++) {
       const tr = document.createElement('tr');
       const tdNum = document.createElement('td');
@@ -288,7 +299,11 @@ class IqySlkRenderer {
       tdNum.textContent = i + 1;
       const tdCode = document.createElement('td');
       tdCode.className = 'plaintext-code';
-      tdCode.textContent = lines[i];
+      if (highlightedLines && highlightedLines[i] !== undefined) {
+        tdCode.innerHTML = highlightedLines[i] || '';
+      } else {
+        tdCode.textContent = lines[i];
+      }
       tr.appendChild(tdNum);
       tr.appendChild(tdCode);
       table.appendChild(tr);
