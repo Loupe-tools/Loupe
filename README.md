@@ -6,7 +6,7 @@ No server, no uploads, no tracking — just drop a file and inspect it.
 > **<a href="https://loupe.tools/" target="_blank">▶ Try it online here</a>**
 
 
-![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)
+![License: MPL-2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)
 ![100% Offline](https://img.shields.io/badge/100%25-Offline-brightgreen)
 ![Single HTML File](https://img.shields.io/badge/Single_File-HTML-orange)
 ![Browser Based](https://img.shields.io/badge/Runs_In-Browser-blueviolet)
@@ -136,7 +136,7 @@ Full threat model and vulnerability reporting: **[SECURITY.md](SECURITY.md)**.
 
 ## 🤝 Get Involved
 
-Loupe is open source under the [GNU General Public License v3.0](LICENSE).
+Loupe is open source under the [Mozilla Public License 2.0](LICENSE).
 
 - ⭐ **Star the repo** — helps others discover the project
 - 🐛 **Open an issue** — bug reports, feature requests, and format support suggestions
