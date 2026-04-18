@@ -662,6 +662,13 @@ class PlistRenderer {
       const table = document.createElement('table');
       table.className = 'plaintext-table';
       const maxLines = 10000;
+      let highlightedLines = null;
+      if (typeof hljs !== 'undefined' && xmlSource.length <= 200000) {
+        try {
+          const result = hljs.highlight(xmlSource, { language: 'xml', ignoreIllegals: true });
+          highlightedLines = result.value.split('\n');
+        } catch (_) { /* fallback to plain textContent */ }
+      }
       for (let i = 0; i < Math.min(lines.length, maxLines); i++) {
         const tr = document.createElement('tr');
         const tdN = document.createElement('td');
@@ -669,7 +676,11 @@ class PlistRenderer {
         tdN.textContent = i + 1;
         const tdC = document.createElement('td');
         tdC.className = 'plaintext-code';
-        tdC.textContent = lines[i];
+        if (highlightedLines && highlightedLines[i] !== undefined) {
+          tdC.innerHTML = highlightedLines[i] || '';
+        } else {
+          tdC.textContent = lines[i];
+        }
         tr.appendChild(tdN);
         tr.appendChild(tdC);
         table.appendChild(tr);
