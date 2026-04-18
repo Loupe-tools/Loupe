@@ -1,6 +1,3 @@
-// ─── Script Threats ───
-// 64 rules
-
 rule PS_Whitespace_Token_Obfuscation
 {
     meta:
@@ -242,7 +239,6 @@ rule VBS_Scheduled_Task
     condition:
         ($a or $b or $c) and $d
 }
-
 
 rule VBS_Obfuscation_ChrW
 {
@@ -614,8 +610,6 @@ rule PowerShell_Stealth_Flags_Combo
         $ps and 2 of ($a, $b, $c, $d, $e, $f)
 }
 
-
-
 rule WMIC_Process_Create
 {
     meta:
@@ -673,7 +667,6 @@ rule AMSI_ETW_Bypass_Patterns
     condition:
         ($a or $b or $c) and ($f or $g)
 }
-
 
 rule CMD_Caret_Obfuscation
 {
@@ -851,7 +844,6 @@ rule VBScript_Chr_Concatenation
         any of them
 }
 
-
 rule Python_Exec_Base64_Obfuscation
 {
     meta:
@@ -910,7 +902,7 @@ rule Python_Char_Construction
         reference = "Python chr() string building"
 
     strings:
-        $chr_chain = /chr\(\d+\)\s*\+\s*chr\(\d+\)\s*\+\s*chr\(\d+\)/ 
+        $chr_chain = /chr\(\d+\)\s*\+\s*chr\(\d+\)\s*\+\s*chr\(\d+\)/
         $chr_join = /join\s*\(\s*\[?\s*chr\s*\(\s*\d+\s*\)/ nocase
         $chr_map = /map\s*\(\s*chr\s*,\s*\[/ nocase
         $exec = "exec(" nocase
@@ -919,10 +911,6 @@ rule Python_Char_Construction
     condition:
         any of ($chr_chain, $chr_join, $chr_map) and ($exec or $eval)
 }
-
-// ============================================================================
-// ROT13 / Caesar Cipher Rules
-// ============================================================================
 
 rule JS_ROT13_Cipher_Implementation
 {
@@ -945,10 +933,6 @@ rule JS_ROT13_Cipher_Implementation
         ($charcode_13 and $replace_alpha) or $fromcharcode_shift or ($rot13_func) or $caesar_shift
 }
 
-// ============================================================================
-// PowerShell Call Operator Obfuscation
-// ============================================================================
-
 rule PS_Call_Operator_Obfuscation
 {
     meta:
@@ -969,10 +953,6 @@ rule PS_Call_Operator_Obfuscation
     condition:
         any of them
 }
-
-// ============================================================================
-// PowerShell Environment Variable Payload
-// ============================================================================
 
 rule PS_EnvVar_Payload_Execution
 {
@@ -996,10 +976,6 @@ rule PS_EnvVar_Payload_Execution
         any of ($env_iex_combo*) or (any of ($env_set*) and any of ($iex, $invoke_expr) and $env_get)
 }
 
-// ============================================================================
-// PowerShell Split/Join Reassembly
-// ============================================================================
-
 rule PS_Split_Join_Reassembly
 {
     meta:
@@ -1021,10 +997,6 @@ rule PS_Split_Join_Reassembly
         any of them
 }
 
-// ============================================================================
-// PowerShell Hashtable Command Construction
-// ============================================================================
-
 rule PS_Hashtable_Command_Construction
 {
     meta:
@@ -1043,10 +1015,6 @@ rule PS_Hashtable_Command_Construction
     condition:
         $hashtable and any of ($call_key, $call_index, $dot_key)
 }
-
-// ============================================================================
-// JavaScript Split/Join Deobfuscation
-// ============================================================================
 
 rule JS_Split_Join_Deobfuscation
 {
@@ -1069,10 +1037,6 @@ rule JS_Split_Join_Deobfuscation
         any of ($split_join_*) and any of ($eval, $func, $document_write, $innerhtml)
 }
 
-// ============================================================================
-// JavaScript Proxy-Based Function Hiding
-// ============================================================================
-
 rule JS_Proxy_Function_Hiding
 {
     meta:
@@ -1092,10 +1056,6 @@ rule JS_Proxy_Function_Hiding
     condition:
         $proxy and any of ($handler_apply, $handler_get, $inline_get, $inline_apply)
 }
-
-// ============================================================================
-// JavaScript Bracket Property / Hex Escape Execution
-// ============================================================================
 
 rule JS_Bracket_Hex_Property_Execution
 {
@@ -1117,10 +1077,6 @@ rule JS_Bracket_Hex_Property_Execution
     condition:
         any of them
 }
-
-// ============================================================================
-// Space / Colon / Dash Delimited Hex Strings
-// ============================================================================
 
 rule Bash_Base64_Execution
 {
@@ -1188,10 +1144,6 @@ rule Shell_Curl_Wget_Pipe_Exec
         any of them
 }
 
-// ============================================================================
-// Python Reverse Shell / Network Backdoor
-// ============================================================================
-
 rule Python_Reverse_Shell
 {
     meta:
@@ -1215,10 +1167,6 @@ rule Python_Reverse_Shell
     condition:
         $socket_import and $connect and ($subprocess or $pty) and ($os_dup2 or $popen or $call or $pty_spawn or $bin_sh or $bin_bash)
 }
-
-// ============================================================================
-// Node.js child_process Execution
-// ============================================================================
 
 rule NodeJS_Child_Process_Execution
 {
@@ -1245,4 +1193,3 @@ rule NodeJS_Child_Process_Execution
     condition:
         any of ($require_cp*,$import_cp*) and any of ($exec,$execSync,$spawn,$spawnSync,$execFile) and any of ($cmd,$powershell,$bash)
 }
-
