@@ -1,0 +1,1208 @@
+'use strict';
+// ════════════════════════════════════════════════════════════════════════════
+// msix-renderer.js — MSIX / APPX / .appinstaller analyzer
+//
+// Three input shapes are accepted — the renderer sniffs content internally:
+//
+//   1. MSIX / APPX packages  (.msix, .appx)
+//        ZIP container with AppxManifest.xml at the root. Optionally ships a
+//        detached signature at AppxSignature.p7x and a code-integrity catalog
+//        under AppxMetadata/CodeIntegrity.cat.
+//
+//   2. Bundles  (.msixbundle, .appxbundle)
+//        ZIP of ZIPs; AppxBundleManifest.xml at the root lists the contained
+//        packages (application vs resource). We list them and let the user
+//        click through — we do not recursively crack them at render time.
+//
+//   3. App Installer files  (.appinstaller)
+//        Standalone XML with a <AppInstaller Uri="…"> root that points to a
+//        MainPackage / MainBundle download URI, optional UpdateSettings, and
+//        Dependencies. The common abuse pattern here is plain-HTTP MainPackage
+//        URIs (trivially MITM'd into a silent auto-update swap).
+//
+// Core detection logic is identical across the three shapes: surface the
+// identity, capability set, entry points / extensions, and flag anything in
+// the "dangerous default-allowed" subset of capabilities (runFullTrust,
+// allowElevation, broadFileSystemAccess, packageManagement, …) plus the
+// common manifest-hijack patterns (AppExecutionAlias claiming `python.exe`
+// et al., fullTrustProcess helpers, startupTask auto-run).
+//
+// Depends on: constants.js (IOC, escHtml), JSZip (vendor), DOMParser (built-in)
+// ════════════════════════════════════════════════════════════════════════════
+class MsixRenderer {
+
+  // Restricted capabilities (<rescap:Capability>) — these require a special
+  // Store declaration and are the primary reason an MSIX would warrant a
+  // second look. `runFullTrust` alone effectively disables the MSIX sandbox.
+  static RESCAP_HIGH = new Set([
+    'runFullTrust',
+    'allowElevation',
+    'broadFileSystemAccess',
+    'packageManagement',
+    'packageQuery',
+    'packagePolicySystem',
+    'unvirtualizedResources',
+    'confirmAppClose',
+    'enterpriseDataPolicy',
+    'enterpriseAuthentication',
+    'previewStore',
+    'localSystemServices',
+    'extendedExecutionUnconstrained',
+  ]);
+
+  // Device / filesystem capabilities that warrant medium-severity mention.
+  static DEVCAP_MEDIUM = new Set([
+    'documentsLibrary', 'picturesLibrary', 'videosLibrary', 'musicLibrary',
+    'removableStorage', 'sharedUserCertificates',
+    'enterpriseAuthentication', 'userAccountInformation',
+    'phoneCall', 'voipCall',
+    'blockedChatMessages', 'chat', 'smsSend',
+    'appCaptureServices', 'backgroundMediaPlayback',
+  ]);
+
+  // Execution-alias names attackers love to claim (so `python` typed at
+  // an admin prompt launches their package instead of the real binary).
+  static ALIAS_HIJACK_NAMES = new Set([
+    'python.exe', 'python3.exe', 'pip.exe', 'py.exe',
+    'node.exe', 'npm.exe', 'npx.exe',
+    'wget.exe', 'curl.exe', 'ssh.exe', 'scp.exe', 'sftp.exe',
+    'git.exe', 'where.exe', 'which.exe',
+    'pwsh.exe', 'powershell.exe', 'cmd.exe',
+    'notepad.exe', 'code.exe', 'explorer.exe',
+    'openssl.exe', 'java.exe', 'javac.exe', 'ruby.exe', 'perl.exe',
+  ]);
+
+  // Low-reputation / tunnelling hosts copied from clickonce-threats.yar.
+  static SUSPICIOUS_HOST_RE =
+    /\.(?:trycloudflare\.com|ngrok\.io|ngrok-free\.app|serveo\.net|loca\.lt|duckdns\.org|sytes\.net|zapto\.org|hopto\.org|serveftp\.com|top|xyz|tk|ml|cf|ga|gq|zip|mov|click|country|work)(?:[/:?]|$)/i;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Entry point — shape-matches the other renderers
+  //
+  // Wraps the whole dispatch in a try/catch envelope so a malformed
+  // manifest (unparsable XML, missing Identity / Capabilities / Applications
+  // / Packages, surprise DOM shapes in _parseExtension, …) surfaces as a
+  // readable fallback notice instead of a blank pane — and crucially still
+  // returns a `wrap` with `_rawText` populated so sidebar IOC extraction and
+  // YARA scanning keep running on the raw bytes.
+  // ═══════════════════════════════════════════════════════════════════════
+  async render(buffer, fileName) {
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'clickonce-view msix-view';
+
+    // Content sniff: ZIP vs XML. `.appinstaller` is always XML; `.msix` etc.
+    // are always ZIP. Trust content, not extension.
+    const isZip = bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04;
+
+    try {
+      if (isZip) {
+        return await this._renderPackage(wrap, buffer, fileName);
+      }
+      return this._renderAppInstaller(wrap, buffer, fileName);
+    } catch (err) {
+      // Drop whatever was partially appended; render a fallback notice.
+      while (wrap.firstChild) wrap.removeChild(wrap.firstChild);
+      const notice = document.createElement('div');
+      notice.className = 'bin-fallback-notice';
+      notice.innerHTML =
+        `<div class="bin-fallback-title"><strong>⚠ MSIX / App Installer parsing failed — showing raw fallback view</strong></div>` +
+        `<div class="bin-fallback-reason"><code>${this._esc(err && err.message || String(err))}</code></div>` +
+        `<div class="bin-fallback-sub">The package or manifest appears to be malformed, so structural analysis isn't available. ` +
+        `IOC extraction and YARA rules can still run against whatever text could be decoded.</div>`;
+      wrap.appendChild(notice);
+      // Best-effort _rawText so sidebar IOC / YARA keeps working.
+      if (!isZip) {
+        try {
+          wrap._rawText = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+        } catch (_) { wrap._rawText = ''; }
+      } else {
+        wrap._rawText = '';
+      }
+      return wrap;
+    }
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ZIP path — .msix / .appx / .msixbundle / .appxbundle
+  // ═══════════════════════════════════════════════════════════════════════
+  async _renderPackage(wrap, buffer, fileName) {
+    let zip;
+    try {
+      zip = await JSZip.loadAsync(buffer);
+    } catch (e) {
+      const err = document.createElement('div');
+      err.style.cssText = 'color:#f88;padding:20px;';
+      err.textContent = 'Unable to open package ZIP: ' + (e && e.message || e);
+      wrap.appendChild(err);
+      return wrap;
+    }
+    this._zip = zip;
+
+    const hasBundle = !!zip.file('AppxBundleManifest.xml') || !!zip.file('AppxMetadata/AppxBundleManifest.xml');
+    const manifestPath = hasBundle
+      ? (zip.file('AppxBundleManifest.xml') ? 'AppxBundleManifest.xml' : 'AppxMetadata/AppxBundleManifest.xml')
+      : (zip.file('AppxManifest.xml') ? 'AppxManifest.xml' : null);
+
+    let manifestText = null;
+    if (manifestPath) {
+      try { manifestText = await zip.file(manifestPath).async('string'); }
+      catch (e) { /* fall through */ }
+    }
+
+    // Signature detection — presence only; we do not parse the PKCS#7.
+    const hasSignature = !!zip.file('AppxSignature.p7x');
+    const hasCat = !!zip.file('AppxMetadata/CodeIntegrity.cat');
+    const hasBlockMap = !!zip.file('AppxBlockMap.xml');
+
+    const parsed = this._parseManifest(manifestText, hasBundle);
+    parsed.hasSignature = hasSignature;
+    parsed.hasCodeIntegrityCat = hasCat;
+    parsed.hasBlockMap = hasBlockMap;
+    parsed.containerKind = hasBundle ? 'bundle' : 'package';
+
+    // ── Banner ────────────────────────────────────────────────────────
+    const banner = document.createElement('div');
+    banner.className = 'doc-extraction-banner';
+    const kindLabel = hasBundle
+      ? 'MSIX / APPX Bundle (.msixbundle / .appxbundle)'
+      : 'MSIX / APPX Package (.msix / .appx)';
+    banner.innerHTML =
+      `<strong>${this._esc(kindLabel)}</strong> — Windows app package; the ` +
+      `manifest declares the entry points, required capabilities, and any ` +
+      `fullTrust or AppExecutionAlias extensions that can affect the host.`;
+    wrap.appendChild(banner);
+
+    // ── Summary card ──────────────────────────────────────────────────
+    const card = this._buildSummaryCard(parsed);
+    wrap.appendChild(card);
+
+    // ── Capabilities section ──────────────────────────────────────────
+    if (parsed.capabilities && parsed.capabilities.length) {
+      wrap.appendChild(this._buildCapsSection(parsed.capabilities));
+    }
+
+    // ── Entry points / extensions ─────────────────────────────────────
+    if (parsed.applications && parsed.applications.length) {
+      wrap.appendChild(this._buildAppsSection(parsed.applications));
+    }
+
+    // ── Bundle package list ───────────────────────────────────────────
+    if (parsed.bundlePackages && parsed.bundlePackages.length) {
+      wrap.appendChild(this._buildBundleList(parsed.bundlePackages));
+    }
+
+    // ── File tree (clickable) ─────────────────────────────────────────
+    wrap.appendChild(await this._buildFileTree(zip, wrap));
+
+    // ── Raw AppxManifest / AppxBundleManifest XML ─────────────────────
+    // Mirrors the ClickOnceRenderer plaintext-table pattern so the sidebar's
+    // click-to-focus pipeline (_navigateToFinding → _highlightMatchesInline)
+    // finds both `wrap._rawText` and a `.plaintext-table` to highlight into.
+    // Without this hook every MSIX IOC / risk produced above carried a
+    // _sourceOffset/_sourceLength against manifestText but had nowhere to
+    // land, silently breaking click-to-focus for the whole format family.
+    const normalizedManifest = (manifestText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (normalizedManifest) {
+      const rawDetails = document.createElement('details');
+      rawDetails.className = 'clickonce-raw-details';
+      const sum = document.createElement('summary');
+      sum.textContent = hasBundle ? 'Raw AppxBundleManifest.xml' : 'Raw AppxManifest.xml';
+      rawDetails.appendChild(sum);
+
+      const sourcePane = document.createElement('div');
+      sourcePane.className = 'clickonce-source plaintext-scroll';
+      const table = document.createElement('table');
+      table.className = 'plaintext-table';
+      const lines = normalizedManifest.split('\n');
+      const maxLines = 5000;
+      const count = Math.min(lines.length, maxLines);
+      for (let i = 0; i < count; i++) {
+        const tr = document.createElement('tr');
+        const tdNum = document.createElement('td'); tdNum.className = 'plaintext-ln'; tdNum.textContent = i + 1;
+        const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code'; tdCode.textContent = lines[i];
+        tr.appendChild(tdNum); tr.appendChild(tdCode);
+        table.appendChild(tr);
+      }
+      sourcePane.appendChild(table);
+      rawDetails.appendChild(sourcePane);
+      wrap.appendChild(rawDetails);
+
+      // Hooks for the sidebar highlight pipeline — identical to ClickOnce.
+      wrap._rawText = normalizedManifest;
+      wrap._showSourcePane = () => {
+        rawDetails.open = true;
+        setTimeout(() => rawDetails.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+      };
+    } else {
+      // Even without a manifest (bare ZIP), stash an empty _rawText so the
+      // sidebar doesn't try to highlight against undefined.
+      wrap._rawText = '';
+    }
+
+    return wrap;
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // XML path — .appinstaller
+  // ═══════════════════════════════════════════════════════════════════════
+  _renderAppInstaller(wrap, buffer, fileName) {
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    const parsed = this._parseAppInstaller(normalizedText);
+    parsed.containerKind = 'appinstaller';
+
+    const banner = document.createElement('div');
+    banner.className = 'doc-extraction-banner';
+    banner.innerHTML =
+      `<strong>App Installer File (.appinstaller)</strong> — XML descriptor ` +
+      `that points Windows at a package Uri for one-click install and ` +
+      `optional auto-update; plain-HTTP or suspicious-host Uris are MITM ` +
+      `/ downgrade vectors.`;
+    wrap.appendChild(banner);
+
+    wrap.appendChild(this._buildSummaryCard(parsed));
+
+    // Raw XML (collapsible, same pattern as ClickOnceRenderer)
+    const rawDetails = document.createElement('details');
+    rawDetails.className = 'clickonce-raw-details';
+    const sum = document.createElement('summary');
+    sum.textContent = 'Raw XML';
+    rawDetails.appendChild(sum);
+
+    const sourcePane = document.createElement('div');
+    sourcePane.className = 'clickonce-source plaintext-scroll';
+    const table = document.createElement('table');
+    table.className = 'plaintext-table';
+    const lines = normalizedText.split('\n');
+    const maxLines = 5000;
+    const count = Math.min(lines.length, maxLines);
+    for (let i = 0; i < count; i++) {
+      const tr = document.createElement('tr');
+      const tdNum = document.createElement('td'); tdNum.className = 'plaintext-ln'; tdNum.textContent = i + 1;
+      const tdCode = document.createElement('td'); tdCode.className = 'plaintext-code'; tdCode.textContent = lines[i];
+      tr.appendChild(tdNum); tr.appendChild(tdCode);
+      table.appendChild(tr);
+    }
+    sourcePane.appendChild(table);
+    rawDetails.appendChild(sourcePane);
+    wrap.appendChild(rawDetails);
+
+    // Hooks for sidebar highlight pipeline.
+    wrap._rawText = normalizedText;
+    wrap._showSourcePane = () => {
+      rawDetails.open = true;
+      setTimeout(() => rawDetails.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    };
+
+    return wrap;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Summary card — shared by all three shapes
+  // ═══════════════════════════════════════════════════════════════════════
+  _buildSummaryCard(parsed) {
+    const card = document.createElement('div');
+    card.className = 'clickonce-card msix-card';
+
+    const addRow = (label, value, cls) => {
+      if (value == null || value === '') return;
+      const row = document.createElement('div');
+      row.className = 'clickonce-field' + (cls ? ' ' + cls : '');
+      const lbl = document.createElement('span'); lbl.className = 'clickonce-label'; lbl.textContent = label + ':';
+      const val = document.createElement('span'); val.className = 'clickonce-value'; val.textContent = value;
+      row.appendChild(lbl); row.appendChild(document.createTextNode(' ')); row.appendChild(val);
+      card.appendChild(row);
+    };
+
+    if (parsed.containerKind === 'bundle') addRow('Format', 'MSIX / APPX Bundle');
+    else if (parsed.containerKind === 'package') addRow('Format', 'MSIX / APPX Package');
+    else if (parsed.containerKind === 'appinstaller') addRow('Format', 'App Installer File');
+
+    if (parsed.identity) {
+      addRow('Identity', this._fmtIdentity(parsed.identity));
+      if (parsed.identity.processorArchitecture) addRow('Architecture', parsed.identity.processorArchitecture);
+    }
+    if (parsed.properties) {
+      if (parsed.properties.displayName) addRow('Display Name', parsed.properties.displayName);
+      if (parsed.properties.publisherDisplayName) addRow('Publisher (Display)', parsed.properties.publisherDisplayName);
+    }
+    if (parsed.identity && parsed.identity.publisher) addRow('Publisher (CN)', parsed.identity.publisher);
+
+    // Signature state — only meaningful for ZIP packages.
+    if (parsed.containerKind === 'package' || parsed.containerKind === 'bundle') {
+      const sigTxt = parsed.hasSignature
+        ? (parsed.hasCodeIntegrityCat ? 'Signed (AppxSignature.p7x + CI catalog)' : 'Signed (AppxSignature.p7x)')
+        : 'Unsigned / sideload-only';
+      addRow('Signature', sigTxt, parsed.hasSignature ? null : 'clickonce-warn');
+      addRow('Block Map', parsed.hasBlockMap ? 'Present' : 'Missing',
+             parsed.hasBlockMap ? null : 'clickonce-warn');
+    }
+
+    if (parsed.targetDeviceFamilies && parsed.targetDeviceFamilies.length) {
+      addRow('Target Device Families', parsed.targetDeviceFamilies
+        .map(t => `${t.name}${t.minVersion ? ' ≥ ' + t.minVersion : ''}`).join(', '));
+    }
+
+    // App-installer specific fields
+    if (parsed.containerKind === 'appinstaller') {
+      if (parsed.uri) {
+        const isHttp = /^http:\/\//i.test(parsed.uri);
+        addRow('Self Uri', parsed.uri, isHttp ? 'clickonce-warn' : null);
+      }
+      if (parsed.mainPackage) {
+        const mp = parsed.mainPackage;
+        addRow('Main Package', this._fmtIdentity(mp));
+        if (mp.uri) {
+          const isHttp = /^http:\/\//i.test(mp.uri);
+          addRow('Main Package Uri', mp.uri, isHttp ? 'clickonce-warn' : null);
+        }
+      }
+      if (parsed.mainBundle) {
+        const mb = parsed.mainBundle;
+        addRow('Main Bundle', this._fmtIdentity(mb));
+        if (mb.uri) {
+          const isHttp = /^http:\/\//i.test(mb.uri);
+          addRow('Main Bundle Uri', mb.uri, isHttp ? 'clickonce-warn' : null);
+        }
+      }
+      if (parsed.updateSettings) {
+        const us = parsed.updateSettings;
+        if (us.onLaunch) {
+          const bits = [];
+          if (us.onLaunch.hoursBetweenUpdateChecks != null) bits.push(`every ${us.onLaunch.hoursBetweenUpdateChecks}h`);
+          if (us.onLaunch.updateBlocksActivation === true) bits.push('blocks activation');
+          if (us.onLaunch.showPrompt === false) bits.push('silent (no prompt)');
+          addRow('On-Launch Update', bits.length ? bits.join(', ') : 'enabled',
+                 us.onLaunch.showPrompt === false ? 'clickonce-warn' : null);
+        }
+        if (us.automaticBackgroundTask) addRow('Auto Background Update', 'enabled');
+        if (us.forceUpdateFromAnyVersion === true) addRow('Force Update', 'any prior version', 'clickonce-warn');
+      }
+    }
+
+    // ── Risk indicators ────────────────────────────────────────────────
+    const risks = this._assess(parsed);
+    if (risks.length) {
+      const riskDiv = document.createElement('div');
+      riskDiv.className = 'clickonce-risks';
+      for (const r of risks) {
+        const d = document.createElement('div');
+        d.className = 'clickonce-risk clickonce-risk-' + r.sev;
+        d.textContent = r.msg;
+        riskDiv.appendChild(d);
+      }
+      card.appendChild(riskDiv);
+    }
+
+    return card;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Capabilities table
+  // ═══════════════════════════════════════════════════════════════════════
+  _buildCapsSection(caps) {
+    const sec = document.createElement('div'); sec.className = 'clickonce-section';
+    const h = document.createElement('h3'); h.textContent = `Declared Capabilities (${caps.length})`;
+    sec.appendChild(h);
+
+    const list = document.createElement('ul'); list.className = 'clickonce-dep-list';
+    for (const c of caps) {
+      const li = document.createElement('li');
+      const sev = this._capSeverity(c);
+      const tag = c.restricted ? 'rescap' : (c.device ? 'device' : 'general');
+      li.textContent = `[${tag}] ${c.name}${sev === 'high' ? '  — requires Store declaration / unsandboxed' : sev === 'medium' ? '  — broad user-data access' : ''}`;
+      if (sev !== 'low') li.className = 'clickonce-warn';
+      list.appendChild(li);
+    }
+    sec.appendChild(list);
+    return sec;
+  }
+
+  _capSeverity(c) {
+    if (c.restricted || MsixRenderer.RESCAP_HIGH.has(c.name)) return 'high';
+    if (MsixRenderer.DEVCAP_MEDIUM.has(c.name)) return 'medium';
+    return 'low';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Applications / entry points / extensions
+  // ═══════════════════════════════════════════════════════════════════════
+  _buildAppsSection(apps) {
+    const sec = document.createElement('div'); sec.className = 'clickonce-section';
+    const h = document.createElement('h3');
+    h.textContent = `Applications / Entry Points (${apps.length})`;
+    sec.appendChild(h);
+
+    for (const a of apps) {
+      const li = document.createElement('div');
+      li.style.cssText = 'margin:6px 0;padding:6px 10px;border-left:3px solid #4a89dc;';
+      const head = document.createElement('div');
+      head.style.cssText = 'font-weight:600;';
+      head.textContent = `${a.id || '(app)'} — ${a.executable || '(no exe)'}`;
+      if (a.entryPoint === 'Windows.FullTrustApplication') {
+        const warn = document.createElement('span');
+        warn.style.cssText = 'margin-left:8px;color:#c15;font-weight:bold;';
+        warn.textContent = '[FullTrust entry]';
+        head.appendChild(warn);
+      }
+      li.appendChild(head);
+
+      if (a.displayName) {
+        const sub = document.createElement('div');
+        sub.style.cssText = 'color:#888;font-size:0.9em;';
+        sub.textContent = a.displayName;
+        li.appendChild(sub);
+      }
+
+      if (a.extensions && a.extensions.length) {
+        const ul = document.createElement('ul');
+        ul.style.cssText = 'margin:4px 0 0 16px;font-size:0.9em;';
+        for (const ex of a.extensions) {
+          const eli = document.createElement('li');
+          eli.textContent = this._fmtExtension(ex);
+          if (ex.severity === 'high' || ex.severity === 'medium') {
+            eli.style.color = ex.severity === 'high' ? '#c15' : '#b25000';
+          }
+          ul.appendChild(eli);
+        }
+        li.appendChild(ul);
+      }
+      sec.appendChild(li);
+    }
+    return sec;
+  }
+
+  _fmtExtension(ex) {
+    switch (ex.category) {
+      case 'windows.fullTrustProcess':
+        return `fullTrustProcess: ${ex.executable || '(no exe)'}`;
+      case 'windows.startupTask':
+        return `startupTask: ${ex.taskId || ''} (${ex.enabled === true ? 'enabled' : 'disabled'}) → ${ex.executable || ex.displayName || ''}`;
+      case 'windows.appExecutionAlias':
+        return `appExecutionAlias: ${(ex.aliases || []).join(', ') || '(empty)'}`;
+      case 'windows.protocol':
+        return `protocol handler: ${(ex.protocols || []).join(', ')}`;
+      case 'windows.fileTypeAssociation':
+        return `fileTypeAssociation: ${(ex.fileTypes || []).join(', ')} (${ex.name || ''})`;
+      case 'windows.service':
+        return `service: ${ex.executable || '(no exe)'}`;
+      case 'windows.backgroundTasks':
+        return `backgroundTask: ${(ex.triggers || []).join(', ')} → ${ex.entryPoint || ex.executable || ''}`;
+      case 'windows.comServer':
+      case 'windows.comInterface':
+      case 'com.Extension':
+        return `COM extension (${ex.category})`;
+      default:
+        return ex.category + (ex.executable ? ` → ${ex.executable}` : '');
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Bundle inner-package list
+  // ═══════════════════════════════════════════════════════════════════════
+  _buildBundleList(pkgs) {
+    const sec = document.createElement('div'); sec.className = 'clickonce-section';
+    const h = document.createElement('h3'); h.textContent = `Bundled Packages (${pkgs.length})`;
+    sec.appendChild(h);
+    const ul = document.createElement('ul'); ul.className = 'clickonce-dep-list';
+    for (const p of pkgs.slice(0, 100)) {
+      const li = document.createElement('li');
+      const size = p.size ? `  — ${this._fmtBytes(p.size)}` : '';
+      li.textContent = `[${p.type || 'application'}] ${p.fileName || '(no filename)'}${p.architecture ? '  ' + p.architecture : ''}${p.resourceId ? '  resource:' + p.resourceId : ''}${size}`;
+      ul.appendChild(li);
+    }
+    sec.appendChild(ul);
+    return sec;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // File tree — reuses zip-table styling and the `open-inner-file` event
+  // ═══════════════════════════════════════════════════════════════════════
+  async _buildFileTree(zip, wrap) {
+    const sec = document.createElement('div'); sec.className = 'clickonce-section';
+    const h = document.createElement('h3'); h.textContent = 'Package Contents';
+    sec.appendChild(h);
+
+    const entries = [];
+    zip.forEach((path, entry) => {
+      if (entries.length >= 2000) return;
+      const uncompSize = entry._data ? (entry._data.uncompressedSize || 0) : 0;
+      entries.push({ path, dir: entry.dir, size: uncompSize });
+    });
+
+    const tbl = document.createElement('table'); tbl.className = 'zip-table';
+    const thead = document.createElement('thead');
+    const hr = document.createElement('tr');
+    for (const col of ['', 'Path', 'Size', '']) {
+      const th = document.createElement('th'); th.textContent = col; hr.appendChild(th);
+    }
+    thead.appendChild(hr); tbl.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    const sorted = entries.slice().sort((a, b) => a.path.localeCompare(b.path));
+    const EXEC_EXTS = new Set(['exe', 'dll', 'scr', 'sys', 'msi', 'ps1', 'bat', 'cmd', 'vbs', 'js', 'hta']);
+    for (const e of sorted) {
+      const ext = e.path.split('.').pop().toLowerCase();
+      const dangerous = !e.dir && EXEC_EXTS.has(ext);
+      const tr = document.createElement('tr');
+      if (dangerous) tr.className = 'zip-row-danger';
+      if (!e.dir) tr.classList.add('zip-row-clickable');
+
+      const tdIcon = document.createElement('td'); tdIcon.className = 'zip-icon';
+      tdIcon.textContent = e.dir ? '📁' : (dangerous ? '⚠️' : '📄');
+      tr.appendChild(tdIcon);
+
+      const tdPath = document.createElement('td'); tdPath.className = 'zip-path';
+      tdPath.textContent = e.path;
+      if (dangerous) {
+        const badge = document.createElement('span'); badge.className = 'zip-badge-danger';
+        badge.textContent = 'EXECUTABLE'; tdPath.appendChild(badge);
+      }
+      tr.appendChild(tdPath);
+
+      const tdSize = document.createElement('td'); tdSize.className = 'zip-size';
+      tdSize.textContent = e.dir ? '—' : this._fmtBytes(e.size);
+      tr.appendChild(tdSize);
+
+      const tdAct = document.createElement('td'); tdAct.className = 'zip-action';
+      if (!e.dir) {
+        const btn = document.createElement('span'); btn.className = 'zip-badge-open';
+        btn.textContent = '🔍 Open'; btn.title = `Open ${e.path.split('/').pop()} for analysis`;
+        btn.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
+          try {
+            const data = await zip.file(e.path).async('arraybuffer');
+            const name = e.path.split('/').pop();
+            const file = new File([data], name, { type: 'application/octet-stream' });
+            wrap.dispatchEvent(new CustomEvent('open-inner-file', { bubbles: true, detail: file }));
+          } catch (err) {
+            console.warn('Failed to extract from MSIX:', e.path, err && err.message);
+          }
+        });
+        tdAct.appendChild(btn);
+      }
+      tr.appendChild(tdAct);
+      tbody.appendChild(tr);
+    }
+    tbl.appendChild(tbody);
+
+    const scr = document.createElement('div'); scr.style.cssText = 'overflow:auto;max-height:60vh;';
+    scr.appendChild(tbl);
+    sec.appendChild(scr);
+    return sec;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Security analysis
+  // ═══════════════════════════════════════════════════════════════════════
+  async analyzeForSecurity(buffer, fileName) {
+    const f = {
+      risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
+      autoExec: [], modules: [], externalRefs: [], metadata: {},
+      signatureMatches: [],
+      msixInfo: null,
+    };
+    const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+    const isZip = bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04;
+
+    let parsed;
+    let manifestText = '';
+    if (isZip) {
+      try {
+        const zip = await JSZip.loadAsync(buffer);
+        const hasBundle = !!zip.file('AppxBundleManifest.xml') || !!zip.file('AppxMetadata/AppxBundleManifest.xml');
+        const manifestPath = hasBundle
+          ? (zip.file('AppxBundleManifest.xml') ? 'AppxBundleManifest.xml' : 'AppxMetadata/AppxBundleManifest.xml')
+          : (zip.file('AppxManifest.xml') ? 'AppxManifest.xml' : null);
+        if (manifestPath) manifestText = await zip.file(manifestPath).async('string');
+        parsed = this._parseManifest(manifestText, hasBundle);
+        parsed.hasSignature = !!zip.file('AppxSignature.p7x');
+        parsed.hasCodeIntegrityCat = !!zip.file('AppxMetadata/CodeIntegrity.cat');
+        parsed.hasBlockMap = !!zip.file('AppxBlockMap.xml');
+        parsed.containerKind = hasBundle ? 'bundle' : 'package';
+      } catch (e) {
+        parsed = { containerKind: 'package', capabilities: [], applications: [] };
+      }
+    } else {
+      manifestText = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      parsed = this._parseAppInstaller(manifestText);
+      parsed.containerKind = 'appinstaller';
+    }
+    f.msixInfo = parsed;
+
+    // ── Metadata for the generic Summary block ────────────────────────
+    const md = f.metadata;
+    md['Format'] = parsed.containerKind === 'bundle' ? 'MSIX/APPX Bundle'
+                 : parsed.containerKind === 'package' ? 'MSIX/APPX Package'
+                 : 'App Installer File';
+    if (parsed.identity) md['Package Identity'] = this._fmtIdentity(parsed.identity);
+    if (parsed.identity && parsed.identity.publisher) md['Publisher'] = parsed.identity.publisher;
+    if (parsed.identity && parsed.identity.version) md['Version'] = parsed.identity.version;
+    if (parsed.identity && parsed.identity.processorArchitecture) md['Architecture'] = parsed.identity.processorArchitecture;
+    if (parsed.properties && parsed.properties.publisherDisplayName) md['Publisher (Display)'] = parsed.properties.publisherDisplayName;
+    if (parsed.properties && parsed.properties.displayName) md['Display Name'] = parsed.properties.displayName;
+    if (parsed.targetDeviceFamilies && parsed.targetDeviceFamilies.length) {
+      md['Target Device Families'] = parsed.targetDeviceFamilies.map(t => t.name).join(', ');
+    }
+    if (parsed.containerKind === 'package' || parsed.containerKind === 'bundle') {
+      md['Signed'] = parsed.hasSignature ? 'Yes (AppxSignature.p7x)' : 'No';
+    }
+    if (parsed.capabilities && parsed.capabilities.length) {
+      md['Capabilities'] = String(parsed.capabilities.length);
+    }
+    if (parsed.applications && parsed.applications.length) {
+      const names = parsed.applications.map(a => a.executable || a.id).filter(Boolean);
+      md['Entry Points'] = names.join(', ');
+    }
+    if (parsed.containerKind === 'appinstaller' && parsed.mainPackage && parsed.mainPackage.uri) {
+      md['Main Package Uri'] = parsed.mainPackage.uri;
+    }
+
+    // ── Risk assessment ────────────────────────────────────────────────
+    const risks = this._assess(parsed);
+    const locate = (needle) => {
+      if (!needle || !manifestText) return null;
+      const idx = manifestText.indexOf(needle);
+      return idx === -1 ? null : { offset: idx, length: needle.length };
+    };
+    let score = 0;
+    for (const r of risks) {
+      const ref = { type: IOC.PATTERN, url: r.msg, severity: r.sev };
+      if (r.highlight) {
+        ref._highlightText = r.highlight;
+        const loc = locate(r.highlight);
+        if (loc) { ref._sourceOffset = loc.offset; ref._sourceLength = loc.length; }
+      }
+      f.externalRefs.push(ref);
+      if (r.sev === 'high') score += 3;
+      else if (r.sev === 'medium') score += 1.5;
+      else score += 0.5;
+    }
+
+    // ── URL IOCs from the manifest ────────────────────────────────────
+    const urls = new Set();
+    if (parsed.uri) urls.add(parsed.uri);
+    if (parsed.mainPackage && parsed.mainPackage.uri) urls.add(parsed.mainPackage.uri);
+    if (parsed.mainBundle && parsed.mainBundle.uri) urls.add(parsed.mainBundle.uri);
+    for (const d of (parsed.dependencies || [])) if (d.uri) urls.add(d.uri);
+    for (const u of urls) {
+      if (!/^https?:\/\//i.test(u)) continue;
+      const sev = /^http:\/\//i.test(u) ? 'medium' : 'info';
+      const ref = { type: IOC.URL, url: u, severity: sev };
+      const loc = locate(u);
+      if (loc) { ref._sourceOffset = loc.offset; ref._sourceLength = loc.length; }
+      f.externalRefs.push(ref);
+    }
+
+    // ── Per-capability and per-alias entries in interestingStrings ────
+    f.interestingStrings = f.interestingStrings || [];
+    for (const c of (parsed.capabilities || [])) {
+      const sev = this._capSeverity(c);
+      if (sev === 'high' || sev === 'medium') {
+        f.interestingStrings.push({
+          type: IOC.PATTERN,
+          url: `${c.restricted ? 'rescap' : 'capability'}: ${c.name}`,
+          severity: sev,
+        });
+      }
+    }
+    for (const a of (parsed.applications || [])) {
+      for (const ex of (a.extensions || [])) {
+        if (ex.category === 'windows.appExecutionAlias' && ex.aliases) {
+          for (const al of ex.aliases) {
+            if (MsixRenderer.ALIAS_HIJACK_NAMES.has(al.toLowerCase())) {
+              f.interestingStrings.push({
+                type: IOC.PATTERN,
+                url: `AppExecutionAlias hijack: ${al}`,
+                severity: 'high',
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Critical bucket aligns this renderer's tiering with inf / reg / pdf /
+    // jar, which all escalate to 'critical' once multiple unambiguously
+    // high-severity indicators stack (e.g. runFullTrust + silent install +
+    // HTTP MainPackage Uri + fullTrustProcess helper + AppExecutionAlias
+    // hijack). Without the critical bucket, those stacks topped out at
+    // 'high', visibly under-calling peer formats.
+    if (score >= 8) f.risk = 'critical';
+    else if (score >= 5) f.risk = 'high';
+    else if (score >= 2) f.risk = 'medium';
+    else f.risk = 'low';
+
+    return f;
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AppxManifest.xml / AppxBundleManifest.xml parser
+  // Uses getElementsByTagNameNS('*', local) to dodge the `uap/uap3/desktop/
+  // rescap/com` namespace-prefix swamp.
+  // ═══════════════════════════════════════════════════════════════════════
+  _parseManifest(text, isBundle) {
+    const parsed = {
+      identity: null,
+      properties: null,
+      targetDeviceFamilies: [],
+      capabilities: [],
+      applications: [],
+      dependencies: [],
+      bundlePackages: [],
+      raw: text || '',
+    };
+    if (!text) return parsed;
+
+    let doc;
+    try { doc = new DOMParser().parseFromString(text, 'application/xml'); }
+    catch (e) { return parsed; }
+    if (doc.getElementsByTagName('parsererror')[0]) return parsed;
+
+    const root = doc.documentElement;
+    if (!root) return parsed;
+
+    const first = (parent, local) => {
+      if (!parent) return null;
+      const els = parent.getElementsByTagNameNS('*', local);
+      return els.length ? els[0] : null;
+    };
+    const all = (parent, local) => {
+      if (!parent) return [];
+      return Array.from(parent.getElementsByTagNameNS('*', local));
+    };
+    const attr = (el, name) => (el && el.getAttribute(name)) || null;
+
+    // ── Identity ──────────────────────────────────────────────────────
+    const idEl = first(root, 'Identity');
+    if (idEl) {
+      parsed.identity = {
+        name: attr(idEl, 'Name'),
+        publisher: attr(idEl, 'Publisher'),
+        version: attr(idEl, 'Version'),
+        processorArchitecture: attr(idEl, 'ProcessorArchitecture'),
+        resourceId: attr(idEl, 'ResourceId'),
+      };
+    }
+
+    // ── Properties ────────────────────────────────────────────────────
+    const propsEl = first(root, 'Properties');
+    if (propsEl) {
+      const getText = (name) => {
+        const el = first(propsEl, name);
+        return el ? el.textContent.trim() : null;
+      };
+      parsed.properties = {
+        displayName: getText('DisplayName'),
+        publisherDisplayName: getText('PublisherDisplayName'),
+        logo: getText('Logo'),
+        description: getText('Description'),
+      };
+    }
+
+    // ── Dependencies → TargetDeviceFamily ────────────────────────────
+    for (const t of all(root, 'TargetDeviceFamily')) {
+      parsed.targetDeviceFamilies.push({
+        name: attr(t, 'Name'),
+        minVersion: attr(t, 'MinVersion'),
+        maxVersionTested: attr(t, 'MaxVersionTested'),
+      });
+    }
+
+    // ── Capabilities (general / rescap / device) ──────────────────────
+    const capsEl = first(root, 'Capabilities');
+    if (capsEl) {
+      for (const c of Array.from(capsEl.children)) {
+        const local = c.localName;                 // Capability | DeviceCapability
+        const prefix = (c.prefix || '').toLowerCase();
+        parsed.capabilities.push({
+          name: attr(c, 'Name'),
+          restricted: prefix === 'rescap',
+          device: local === 'DeviceCapability',
+          custom: local === 'CustomCapability',
+          raw: (c.prefix ? c.prefix + ':' : '') + local,
+        });
+      }
+    }
+
+    // ── Applications → Entry points + Extensions ─────────────────────
+    for (const a of all(root, 'Application')) {
+      const app = {
+        id: attr(a, 'Id'),
+        executable: attr(a, 'Executable'),
+        entryPoint: attr(a, 'EntryPoint'),
+        startPage: attr(a, 'StartPage'),
+        displayName: null,
+        extensions: [],
+      };
+      const visual = first(a, 'VisualElements');
+      if (visual) app.displayName = attr(visual, 'DisplayName') || attr(visual, 'displayName');
+
+      const extsEl = first(a, 'Extensions');
+      if (extsEl) {
+        for (const ex of Array.from(extsEl.children)) {
+          if (ex.localName !== 'Extension') continue;
+          app.extensions.push(this._parseExtension(ex, first, all, attr));
+        }
+      }
+      parsed.applications.push(app);
+    }
+
+    // ── Bundle package list (only present when isBundle) ─────────────
+    if (isBundle) {
+      for (const p of all(root, 'Package')) {
+        // The bundle manifest's <Package> under <Packages> carries these
+        // attributes; filter out any stray <Package> elsewhere.
+        if (!p.hasAttribute('FileName')) continue;
+        parsed.bundlePackages.push({
+          type: attr(p, 'Type'),
+          fileName: attr(p, 'FileName'),
+          architecture: attr(p, 'Architecture'),
+          resourceId: attr(p, 'ResourceId'),
+          version: attr(p, 'Version'),
+          size: Number(attr(p, 'Size') || 0) || null,
+          offset: attr(p, 'Offset'),
+        });
+      }
+    }
+
+    return parsed;
+  }
+
+  // ── Flatten one <Extension Category="…">  into a normalised record ───
+  _parseExtension(ex, first, all, attr) {
+    const category = attr(ex, 'Category') || ex.localName;
+    const rec = { category, raw: ex.outerHTML && ex.outerHTML.slice(0, 240) || '' };
+
+    switch (category) {
+      case 'windows.fullTrustProcess': {
+        rec.executable = attr(ex, 'Executable');
+        rec.severity = 'high';
+        break;
+      }
+      case 'windows.startupTask': {
+        // <uap5:Extension Category="windows.startupTask"><uap5:StartupTask .../></uap5:Extension>
+        const st = first(ex, 'StartupTask');
+        rec.taskId = st ? attr(st, 'TaskId') : null;
+        rec.enabled = st ? (attr(st, 'Enabled') === 'true') : null;
+        rec.displayName = st ? attr(st, 'DisplayName') : null;
+        rec.executable = attr(ex, 'Executable') || (st ? attr(st, 'Executable') : null);
+        rec.severity = 'medium';
+        break;
+      }
+      case 'windows.appExecutionAlias': {
+        const aliases = [];
+        for (const a of all(ex, 'ExecutionAlias')) {
+          const n = attr(a, 'Alias');
+          if (n) aliases.push(n);
+        }
+        rec.aliases = aliases;
+        const hijack = aliases.some(a => MsixRenderer.ALIAS_HIJACK_NAMES.has(a.toLowerCase()));
+        rec.severity = hijack ? 'high' : 'medium';
+        break;
+      }
+      case 'windows.protocol': {
+        const protos = [];
+        for (const p of all(ex, 'Protocol')) {
+          const n = attr(p, 'Name');
+          if (n) protos.push(n);
+        }
+        rec.protocols = protos;
+        // Claiming a well-known scheme (http/https/ftp/file) is unusual.
+        const suspicious = protos.some(p => ['http', 'https', 'ftp', 'file', 'ms-appinstaller'].includes(p.toLowerCase()));
+        rec.severity = suspicious ? 'high' : 'low';
+        break;
+      }
+      case 'windows.fileTypeAssociation': {
+        const fta = first(ex, 'FileTypeAssociation');
+        rec.name = fta ? attr(fta, 'Name') : null;
+        const types = [];
+        for (const t of all(ex, 'FileType')) {
+          const v = t.textContent && t.textContent.trim();
+          if (v) types.push(v);
+        }
+        rec.fileTypes = types;
+        rec.severity = 'low';
+        break;
+      }
+      case 'windows.service': {
+        rec.executable = attr(ex, 'Executable');
+        rec.severity = 'medium';
+        break;
+      }
+      case 'windows.backgroundTasks': {
+        const triggers = [];
+        for (const t of all(ex, 'Task')) {
+          const v = attr(t, 'Type');
+          if (v) triggers.push(v);
+        }
+        rec.triggers = triggers;
+        rec.entryPoint = attr(ex, 'EntryPoint');
+        rec.executable = attr(ex, 'Executable');
+        rec.severity = 'low';
+        break;
+      }
+      case 'com.Extension':
+      case 'windows.comServer':
+      case 'windows.comInterface': {
+        rec.executable = attr(ex, 'Executable');
+        rec.severity = 'medium';
+        break;
+      }
+      default:
+        rec.executable = attr(ex, 'Executable');
+        rec.entryPoint = attr(ex, 'EntryPoint');
+        rec.severity = 'low';
+    }
+    return rec;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AppInstaller XML parser
+  // ═══════════════════════════════════════════════════════════════════════
+  _parseAppInstaller(text) {
+    const parsed = {
+      uri: null,
+      version: null,
+      identity: null,          // mirror of mainPackage for generic summary rendering
+      properties: null,
+      mainPackage: null,
+      mainBundle: null,
+      dependencies: [],
+      updateSettings: null,
+      raw: text || '',
+    };
+    if (!text) return parsed;
+
+    let doc;
+    try { doc = new DOMParser().parseFromString(text, 'application/xml'); }
+    catch (e) { return parsed; }
+    if (doc.getElementsByTagName('parsererror')[0]) return parsed;
+
+    const root = doc.documentElement;
+    if (!root) return parsed;
+
+    const first = (parent, local) => {
+      if (!parent) return null;
+      const els = parent.getElementsByTagNameNS('*', local);
+      return els.length ? els[0] : null;
+    };
+    const all = (parent, local) => {
+      if (!parent) return [];
+      return Array.from(parent.getElementsByTagNameNS('*', local));
+    };
+    const attr = (el, name) => (el && el.getAttribute(name)) || null;
+
+    parsed.uri = attr(root, 'Uri');
+    parsed.version = attr(root, 'Version');
+
+    const readPkg = (el) => el ? {
+      name: attr(el, 'Name'),
+      publisher: attr(el, 'Publisher'),
+      version: attr(el, 'Version'),
+      processorArchitecture: attr(el, 'ProcessorArchitecture'),
+      uri: attr(el, 'Uri'),
+    } : null;
+
+    parsed.mainPackage = readPkg(first(root, 'MainPackage'));
+    parsed.mainBundle = readPkg(first(root, 'MainBundle'));
+    parsed.identity = parsed.mainPackage || parsed.mainBundle;
+
+    const depsEl = first(root, 'Dependencies');
+    if (depsEl) {
+      for (const p of Array.from(depsEl.children)) {
+        parsed.dependencies.push(readPkg(p));
+      }
+    }
+
+    const usEl = first(root, 'UpdateSettings');
+    if (usEl) {
+      const us = { onLaunch: null, automaticBackgroundTask: false, forceUpdateFromAnyVersion: null };
+      const ol = first(usEl, 'OnLaunch');
+      if (ol) {
+        us.onLaunch = {
+          hoursBetweenUpdateChecks: Number(attr(ol, 'HoursBetweenUpdateChecks') || 0) || null,
+          updateBlocksActivation: attr(ol, 'UpdateBlocksActivation') === 'true',
+          showPrompt: attr(ol, 'ShowPrompt') === null ? null : attr(ol, 'ShowPrompt') === 'true',
+        };
+      }
+      if (first(usEl, 'AutomaticBackgroundTask')) us.automaticBackgroundTask = true;
+      const fu = first(usEl, 'ForceUpdateFromAnyVersion');
+      if (fu) us.forceUpdateFromAnyVersion = (fu.textContent || '').trim().toLowerCase() === 'true';
+      parsed.updateSettings = us;
+    }
+
+    return parsed;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Risk assessment — returns [{ sev, msg, highlight? }]
+  // ═══════════════════════════════════════════════════════════════════════
+  _assess(parsed) {
+    const risks = [];
+
+    // ── Capability-based risks (package / bundle only) ────────────────
+    for (const c of (parsed.capabilities || [])) {
+      if (c.restricted || MsixRenderer.RESCAP_HIGH.has(c.name)) {
+        risks.push({
+          sev: 'high',
+          msg: `⚠ Restricted capability requested: ${c.name}${c.restricted ? ' (rescap)' : ''} — typically requires Store approval and grants unsandboxed behaviour`,
+          highlight: `Name="${c.name}"`,
+        });
+      } else if (MsixRenderer.DEVCAP_MEDIUM.has(c.name)) {
+        risks.push({
+          sev: 'medium',
+          msg: `Broad user-data capability: ${c.name}`,
+          highlight: `Name="${c.name}"`,
+        });
+      }
+    }
+
+    // ── Per-application extensions ────────────────────────────────────
+    for (const a of (parsed.applications || [])) {
+      if (a.entryPoint === 'Windows.FullTrustApplication') {
+        risks.push({
+          sev: 'high',
+          msg: `⚠ Application "${a.id || '?'}" uses EntryPoint="Windows.FullTrustApplication" — bypasses the AppContainer sandbox`,
+          highlight: 'Windows.FullTrustApplication',
+        });
+      }
+      for (const ex of (a.extensions || [])) {
+        if (ex.category === 'windows.fullTrustProcess') {
+          risks.push({
+            sev: 'high',
+            msg: `⚠ fullTrustProcess extension spawns helper "${ex.executable || '(no exe)'}" outside the sandbox`,
+            highlight: ex.executable || 'windows.fullTrustProcess',
+          });
+        }
+        if (ex.category === 'windows.startupTask' && ex.enabled === true) {
+          risks.push({
+            sev: 'medium',
+            msg: `startupTask "${ex.taskId || '?'}" launches automatically on sign-in`,
+            highlight: ex.taskId ? `TaskId="${ex.taskId}"` : 'windows.startupTask',
+          });
+        }
+        if (ex.category === 'windows.appExecutionAlias' && ex.aliases) {
+          for (const al of ex.aliases) {
+            if (MsixRenderer.ALIAS_HIJACK_NAMES.has(al.toLowerCase())) {
+              risks.push({
+                sev: 'high',
+                msg: `⚠ AppExecutionAlias claims "${al}" — hijacks a common CLI name on PATH`,
+                highlight: `Alias="${al}"`,
+              });
+            }
+          }
+        }
+        if (ex.category === 'windows.protocol' && ex.protocols) {
+          for (const p of ex.protocols) {
+            const lp = p.toLowerCase();
+            if (['http', 'https', 'ftp', 'file'].includes(lp)) {
+              risks.push({
+                sev: 'high',
+                msg: `⚠ Claims the "${p}" protocol handler — would be invoked for all ${p}:// links`,
+                highlight: `Name="${p}"`,
+              });
+            } else if (lp === 'ms-appinstaller') {
+              risks.push({
+                sev: 'medium',
+                msg: `Claims the "ms-appinstaller" protocol — mirrors CVE-2021-43890-style handler hijack`,
+                highlight: `Name="${p}"`,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // ── App-Installer risks ───────────────────────────────────────────
+    const pkgUri = (parsed.mainPackage && parsed.mainPackage.uri) || (parsed.mainBundle && parsed.mainBundle.uri) || null;
+    if (pkgUri && /^http:\/\//i.test(pkgUri)) {
+      risks.push({
+        sev: 'high',
+        msg: '⚠ MainPackage/MainBundle Uri is plain HTTP — MITM swap on first install and every auto-update',
+        highlight: pkgUri,
+      });
+    }
+    if (pkgUri && MsixRenderer.SUSPICIOUS_HOST_RE.test(pkgUri)) {
+      risks.push({
+        sev: 'high',
+        msg: 'MainPackage/MainBundle Uri points to a low-reputation / tunnelling host',
+        highlight: pkgUri,
+      });
+    }
+    if (parsed.uri && /^http:\/\//i.test(parsed.uri)) {
+      risks.push({
+        sev: 'medium',
+        msg: 'App Installer Uri itself is HTTP (auto-update channel can be swapped)',
+        highlight: parsed.uri,
+      });
+    }
+    if (parsed.updateSettings && parsed.updateSettings.onLaunch && parsed.updateSettings.onLaunch.showPrompt === false) {
+      risks.push({
+        sev: 'medium',
+        msg: 'OnLaunch auto-update has ShowPrompt="false" — updates apply silently without user confirmation',
+        highlight: 'ShowPrompt="false"',
+      });
+    }
+    if (parsed.updateSettings && parsed.updateSettings.forceUpdateFromAnyVersion === true) {
+      risks.push({
+        sev: 'medium',
+        msg: 'ForceUpdateFromAnyVersion="true" — any prior version is forcibly replaced',
+        highlight: 'ForceUpdateFromAnyVersion',
+      });
+    }
+    for (const d of (parsed.dependencies || [])) {
+      if (d && d.uri && /^http:\/\//i.test(d.uri)) {
+        risks.push({
+          sev: 'medium',
+          msg: `Dependency "${d.name || '?'}" uses plain-HTTP Uri`,
+          highlight: d.uri,
+        });
+      }
+    }
+
+    // ── Signature absence (package / bundle only) ─────────────────────
+    if ((parsed.containerKind === 'package' || parsed.containerKind === 'bundle') && parsed.hasSignature === false) {
+      risks.push({
+        sev: 'medium',
+        msg: 'Package is unsigned (no AppxSignature.p7x) — cannot be installed without developer mode / sideload policy',
+      });
+    }
+
+    return risks;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Helpers
+  // ═══════════════════════════════════════════════════════════════════════
+  _fmtIdentity(id) {
+    if (!id) return '';
+    const parts = [];
+    if (id.name) parts.push(id.name);
+    if (id.version) parts.push('v' + id.version);
+    if (id.processorArchitecture) parts.push(id.processorArchitecture);
+    if (id.publisher) parts.push('(' + id.publisher + ')');
+    return parts.join(' ');
+  }
+
+  _fmtBytes(n) {
+    if (!n && n !== 0) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  }
+
+  _esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+}
