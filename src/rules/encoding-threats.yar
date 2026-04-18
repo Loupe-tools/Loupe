@@ -251,20 +251,26 @@ rule Standalone_HTA_VBScript_Indicators
 rule Standalone_WSF_Script_Indicators
 {
     meta:
-        description = "Windows Script File execution indicator (standalone match)"
+        description = "WSF/WSC XML container combined with script-host execution indicator"
         severity    = "medium"
         category    = "execution"
         mitre       = "T1059"
 
     strings:
-        $regwrite    = "RegWrite" nocase fullword
-        $frombase64  = "FromBase64String" nocase
-        $wbemdisp    = "wbemdisp.dll" nocase
-        $dde         = "DDE" nocase fullword
-        $ddeauto     = "DDEAUTO" nocase fullword
+        $wsf_job       = /<job\b/ nocase
+        $wsf_script    = /<script\s[^>]*language\s*=\s*["']?(VBScript|JScript|VBS|JS)\b/ nocase
+        $wsf_package   = "<package" nocase
+        $wsf_component = "<component" nocase
+
+        $regwrite      = "RegWrite" nocase fullword
+        $wbemdisp      = "wbemdisp.dll" nocase
+        $wscript_shell = "WScript.Shell" ascii wide nocase
+        $create_obj    = "CreateObject" ascii wide nocase
+        $shell_app     = "Shell.Application" ascii wide nocase
 
     condition:
-        any of them
+        any of ($wsf_job, $wsf_script, $wsf_package, $wsf_component)
+        and any of ($regwrite, $wbemdisp, $wscript_shell, $create_obj, $shell_app)
 }
 
 rule Standalone_RTF_OLE_Keywords
