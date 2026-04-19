@@ -94,15 +94,41 @@ Plus a Midnight Glass UI with a 6-theme picker (Light / Dark / Midnight OLED / S
 
 Six built-in themes, selectable from the **⚙ Settings** dialog — your choice persists via `localStorage`.
 
-<p align="center">
-<img src="screenshots/light.png"     alt="Loupe — Light theme"     width="400">
-<img src="screenshots/dark.png"      alt="Loupe — Dark theme"      width="400">
-<br>
-<img src="screenshots/midnight.png"  alt="Loupe — Midnight (OLED)" width="400">
-<img src="screenshots/solarized.png" alt="Loupe — Solarized Dark"  width="400">
-<br>
-<em>Light · Dark (default) · Midnight (OLED pure-black) · Solarized Dark · Mocha · Latte</em>
-</p>
+<table align="center">
+  <tr>
+    <td align="center"><img src="screenshots/light_hero.png" alt="Loupe — Light theme" width="260"><br><b>☀️ Light</b></td>
+    <td align="center"><img src="screenshots/dark_hero.png" alt="Loupe — Dark theme" width="260"><br><b>🌙 Dark</b></td>
+    <td align="center"><img src="screenshots/midnight_hero.png" alt="Loupe — Midnight OLED theme" width="260"><br><b>🌑 Midnight OLED</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="screenshots/solarized_hero.png" alt="Loupe — Solarized theme" width="260"><br><b>🌅 Solarized</b></td>
+    <td align="center"><img src="screenshots/mocha_hero.png" alt="Loupe — Mocha theme" width="260"><br><b>🌙 Mocha</b></td>
+    <td align="center"><img src="screenshots/latte_hero.png" alt="Loupe — Latte theme" width="260"><br><b>☕ Latte</b></td>
+  </tr>
+</table>
+
+<details>
+<summary><sub>More screenshots — file viewer &amp; YARA dialog per theme</sub></summary>
+
+<sub><b>☀️ Light</b></sub>
+<p><img src="screenshots/light_1.png" alt="Light — file viewer 1" width="260"> <img src="screenshots/light_2.png" alt="Light — file viewer 2" width="260"> <img src="screenshots/light_yara.png" alt="Light — YARA dialog" width="260"></p>
+
+<sub><b>🌙 Dark</b></sub>
+<p><img src="screenshots/dark_1.png" alt="Dark — file viewer 1" width="260"> <img src="screenshots/dark_2.png" alt="Dark — file viewer 2" width="260"> <img src="screenshots/dark_yara.png" alt="Dark — YARA dialog" width="260"></p>
+
+<sub><b>🌑 Midnight OLED</b></sub>
+<p><img src="screenshots/midnight_1.png" alt="Midnight — file viewer 1" width="260"> <img src="screenshots/midnight_2.png" alt="Midnight — file viewer 2" width="260"> <img src="screenshots/midnight_yara.png" alt="Midnight — YARA dialog" width="260"></p>
+
+<sub><b>🌅 Solarized</b></sub>
+<p><img src="screenshots/solarized_1.png" alt="Solarized — file viewer 1" width="260"> <img src="screenshots/solarized_2.png" alt="Solarized — file viewer 2" width="260"> <img src="screenshots/solarized_yara.png" alt="Solarized — YARA dialog" width="260"></p>
+
+<sub><b>🌙 Mocha</b></sub>
+<p><img src="screenshots/mocha_1.png" alt="Mocha — file viewer 1" width="260"> <img src="screenshots/mocha_2.png" alt="Mocha — file viewer 2" width="260"> <img src="screenshots/mocha_yara.png" alt="Mocha — YARA dialog" width="260"></p>
+
+<sub><b>☕ Latte</b></sub>
+<p><img src="screenshots/latte_1.png" alt="Latte — file viewer 1" width="260"> <img src="screenshots/latte_2.png" alt="Latte — file viewer 2" width="260"> <img src="screenshots/latte_yara.png" alt="Latte — YARA dialog" width="260"></p>
+
+</details>
 
 ---
 

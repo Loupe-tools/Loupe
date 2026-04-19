@@ -13,6 +13,7 @@
 - [Supported Formats (full reference)](#-supported-formats-full-reference)
 - [Security Analysis Capabilities](#-security-analysis-capabilities)
 - [User Interface](#-user-interface)
+- [Themes](#-themes)
 - [Exports](#-exports)
 - [Example Files (guided tour)](#-example-files-guided-tour)
 
@@ -108,7 +109,7 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks �
 | Feature | Detail |
 |---|---|
 | **Midnight Glass theme** | Premium dark mode with frosted-glass panels, gradient surfaces, and cyan accent highlights |
-| **Theme picker** | Tile grid inside the ⚙ Settings dialog (`,`) exposing 6 themes — **Light**, **Dark** (default), **Midnight (OLED)** pure-black, **Solarized Dark** (warm low-glare), **Catppuccin Mocha** (dark, mauve-accented), and **Catppuccin Latte** (light, mauve-accented). Every surface in the app — renderers, sidebar, dialogs, risk chips, inline per-file colour hints — reads from a single set of CSS custom-property tokens (`--accent`, `--accent-rgb`, `--risk-high`, `--risk-high-rgb`, `--hairline-*`, `--bg-*`, `--text-*`) so a theme overlay flips the whole app with zero per-renderer work. Selection persists across reloads via `localStorage['loupe_theme']` and is applied **before first paint** by an inline `<head>` bootstrap that mirrors `_initTheme()` — no flash of unstyled / default-themed content when opening the file. First-boot users with no saved preference are matched to their OS `prefers-color-scheme` (Light / Dark), falling back to Dark. Themes are pluggable: each overlay lives in its own `src/styles/themes/<id>.css` file and is registered in the `THEMES` array in `src/app/app-ui.js` — no toolbar dropdown, the Settings dialog is the sole picker surface |
+| **Theme picker** | Tile grid inside the ⚙ Settings dialog (`,`) exposing 6 themes — **Light** (light), **Dark** (dark — default), **Midnight OLED** (dark, pure-black), **Solarized** (dark, warm low-glare), **Mocha** (dark, mauve-accented), and **Latte** (light, mauve-accented). Every surface in the app — renderers, sidebar, dialogs, risk chips, inline per-file colour hints — reads from a single set of CSS custom-property tokens (`--accent`, `--accent-rgb`, `--risk-high`, `--risk-high-rgb`, `--hairline-*`, `--bg-*`, `--text-*`) so a theme overlay flips the whole app with zero per-renderer work. Selection persists across reloads via `localStorage['loupe_theme']` and is applied **before first paint** by an inline `<head>` bootstrap that mirrors `_initTheme()` — no flash of unstyled / default-themed content when opening the file. First-boot users with no saved preference are matched to their OS `prefers-color-scheme` (Light / Dark), falling back to Dark. Themes are pluggable: each overlay lives in its own `src/styles/themes/<id>.css` file and is registered in the `THEMES` array in `src/app/app-ui.js` — no toolbar dropdown, the Settings dialog is the sole picker surface |
 | **Settings / Help dialog** | `⚙` toolbar button (or `,` for Settings, `?` / `H` for Help) opens a unified two-tabbed modal. The **Settings** tab carries the theme picker and a **10-stop logarithmic Summary-size slider** (4 K → ∞ chars, default ~64 000 chars / ~16 K tokens) whose current budget is shown as a live chip inside the `⚡ Summary` button. The **Help** tab lists all keyboard shortcuts and offline/release links. Persistence keys: `localStorage['loupe_theme']`, `localStorage['loupe_summary_chars']`. The YARA rule dialog (`Y`) stays a separate surface so the rule viewer keeps its full-screen footprint |
 | **Floating zoom controls** | Zoom 50–200% via a floating control that stays out of the way |
 | **Click-and-drag panning** | Grab and drag to pan around rendered documents |
@@ -123,6 +124,86 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks �
 | **Toast notifications** | Non-intrusive feedback for downloads, clipboard operations, and errors |
 | **Click-to-highlight** | Clicking any IOC or YARA match in the sidebar jumps to (and cycles through) matching occurrences in the viewer with yellow/blue `<mark>` highlights |
 | **Forensic-safe email links** | `<a href>` inside EML / MSG messages is deliberately rendered as an inert `<span class="eml-link-inert">` — the visible anchor text and the underlying URL (exposed only as a hover `title` tooltip) stay inspectable, but clicking does nothing. Phishing URLs can be read and copied without the risk of accidental navigation |
+
+---
+
+## 🎨 Themes
+
+Six built-in themes, all selected from the **⚙ Settings** dialog (`,`). The choice is stored in `localStorage['loupe_theme']` and applied before first paint so there is no flash of the wrong palette when the page opens; first-boot users with no saved preference are matched to their OS `prefers-color-scheme`. Every surface in the app reads from the same CSS custom-property tokens, so each overlay re-skins renderers, sidebar, dialogs, risk chips, and inline per-file colour hints with zero per-renderer work.
+
+Each theme dropdown below shows four shots: the blank drop-zone (hero), the YARA rules dialog, and two file viewers loaded from the [`examples/`](examples/) tree.
+
+<details><summary>☀️ Light <sub><i>(light)</i></sub></summary>
+
+| Blank canvas | YARA rules dialog |
+|:---:|:---:|
+| <img src="screenshots/light_hero.png" width="780" alt="Light theme — blank drop zone"> | <img src="screenshots/light_yara.png" width="780" alt="Light theme — YARA rules dialog"> |
+
+| File viewer — example 1 | File viewer — example 2 |
+|:---:|:---:|
+| <img src="screenshots/light_1.png" width="780" alt="Light theme — file viewer, example 1"> | <img src="screenshots/light_2.png" width="780" alt="Light theme — file viewer, example 2"> |
+
+</details>
+
+<details open><summary>🌙 Dark <sub><i>(dark — default)</i></sub></summary>
+
+| Blank canvas | YARA rules dialog |
+|:---:|:---:|
+| <img src="screenshots/dark_hero.png" width="780" alt="Dark theme — blank drop zone"> | <img src="screenshots/dark_yara.png" width="780" alt="Dark theme — YARA rules dialog"> |
+
+| File viewer — example 1 | File viewer — example 2 |
+|:---:|:---:|
+| <img src="screenshots/dark_1.png" width="780" alt="Dark theme — file viewer, example 1"> | <img src="screenshots/dark_2.png" width="780" alt="Dark theme — file viewer, example 2"> |
+
+</details>
+
+<details><summary>🌑 Midnight OLED <sub><i>(dark)</i></sub></summary>
+
+| Blank canvas | YARA rules dialog |
+|:---:|:---:|
+| <img src="screenshots/midnight_hero.png" width="780" alt="Midnight OLED theme — blank drop zone"> | <img src="screenshots/midnight_yara.png" width="780" alt="Midnight OLED theme — YARA rules dialog"> |
+
+| File viewer — example 1 | File viewer — example 2 |
+|:---:|:---:|
+| <img src="screenshots/midnight_1.png" width="780" alt="Midnight OLED theme — file viewer, example 1"> | <img src="screenshots/midnight_2.png" width="780" alt="Midnight OLED theme — file viewer, example 2"> |
+
+</details>
+
+<details><summary>🌅 Solarized <sub><i>(dark)</i></sub></summary>
+
+| Blank canvas | YARA rules dialog |
+|:---:|:---:|
+| <img src="screenshots/solarized_hero.png" width="780" alt="Solarized theme — blank drop zone"> | <img src="screenshots/solarized_yara.png" width="780" alt="Solarized theme — YARA rules dialog"> |
+
+| File viewer — example 1 | File viewer — example 2 |
+|:---:|:---:|
+| <img src="screenshots/solarized_1.png" width="780" alt="Solarized theme — file viewer, example 1"> | <img src="screenshots/solarized_2.png" width="780" alt="Solarized theme — file viewer, example 2"> |
+
+</details>
+
+<details><summary>🌙 Mocha <sub><i>(dark)</i></sub></summary>
+
+| Blank canvas | YARA rules dialog |
+|:---:|:---:|
+| <img src="screenshots/mocha_hero.png" width="780" alt="Mocha theme — blank drop zone"> | <img src="screenshots/mocha_yara.png" width="780" alt="Mocha theme — YARA rules dialog"> |
+
+| File viewer — example 1 | File viewer — example 2 |
+|:---:|:---:|
+| <img src="screenshots/mocha_1.png" width="780" alt="Mocha theme — file viewer, example 1"> | <img src="screenshots/mocha_2.png" width="780" alt="Mocha theme — file viewer, example 2"> |
+
+</details>
+
+<details><summary>☕ Latte <sub><i>(light)</i></sub></summary>
+
+| Blank canvas | YARA rules dialog |
+|:---:|:---:|
+| <img src="screenshots/latte_hero.png" width="780" alt="Latte theme — blank drop zone"> | <img src="screenshots/latte_yara.png" width="780" alt="Latte theme — YARA rules dialog"> |
+
+| File viewer — example 1 | File viewer — example 2 |
+|:---:|:---:|
+| <img src="screenshots/latte_1.png" width="780" alt="Latte theme — file viewer, example 1"> | <img src="screenshots/latte_2.png" width="780" alt="Latte theme — file viewer, example 2"> |
+
+</details>
 
 ---
 
