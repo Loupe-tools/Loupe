@@ -16,6 +16,7 @@ xlsx_js      = read('vendor/xlsx.full.min.js')
 pdf_js       = read('vendor/pdf.min.js')
 pdf_wrk_js   = read('vendor/pdf.worker.min.js')
 highlight_js = read('vendor/highlight.min.js')
+utif_js      = read('vendor/utif.min.js')
 
 # CSS files — concatenated in order.
 # Each optional theme overlay lives in src/styles/themes/<id>.css and contains
@@ -372,6 +373,11 @@ HTML = f"""<!DOCTYPE html>
   <!-- ── highlight.js (inlined) ──────────────────────────────────────── -->
   <script>
 {highlight_js}
+  </script>
+
+  <!-- ── UTIF.js (inlined — TIFF decoder used by image-renderer) ─────── -->
+  <script>
+{utif_js}
   </script>
 
   <!-- ── Application ─────────────────────────────────────────────────── -->

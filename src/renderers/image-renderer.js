@@ -27,30 +27,74 @@ class ImageRenderer {
 
     // Image element
     const imgWrap = document.createElement('div'); imgWrap.className = 'image-preview-wrap';
-    const img = document.createElement('img');
-    img.className = 'image-preview';
-    const blob = new Blob([bytes], { type: mime });
-    const blobUrl = URL.createObjectURL(blob);
-    img.src = blobUrl;
-    img.alt = fileName || 'Image preview';
-    img.title = 'Right-click to save or inspect';
-
-    // Show dimensions once loaded
     const infoDiv = document.createElement('div'); infoDiv.className = 'image-info';
-    infoDiv.textContent = `Loading image…`;
-    img.addEventListener('load', () => {
-      infoDiv.textContent = `${img.naturalWidth} × ${img.naturalHeight} px  ·  ${ext.toUpperCase()}  ·  ${this._fmtBytes(bytes.length)}`;
-      // Revoke blob URL after image is loaded to free memory
-      URL.revokeObjectURL(blobUrl);
-    });
-    img.addEventListener('error', () => {
-      infoDiv.textContent = `Failed to render image — file may be corrupted or unsupported format`;
-      infoDiv.style.color = 'var(--risk-high)';
-      // Revoke blob URL on error to free memory
-      URL.revokeObjectURL(blobUrl);
-    });
 
-    imgWrap.appendChild(img);
+    // TIFF branch — browsers don't render TIFF in <img>, so we decode via the
+    // vendored UTIF.js and paint the first page onto a <canvas>. We probe by
+    // extension AND by magic bytes (II*\0 / MM\0*) so mis-labelled files still
+    // get the canvas path, and fall through to the <img> path on any failure
+    // so Safari users (who CAN decode TIFF natively) aren't regressed.
+    const isTiffMagic =
+      bytes.length >= 4 &&
+      ((bytes[0] === 0x49 && bytes[1] === 0x49 && bytes[2] === 0x2A && bytes[3] === 0x00) ||
+       (bytes[0] === 0x4D && bytes[1] === 0x4D && bytes[2] === 0x00 && bytes[3] === 0x2A));
+    const isTiff = (ext === 'tif' || ext === 'tiff' || isTiffMagic) && typeof UTIF !== 'undefined';
+
+    let canvasRendered = false;
+    if (isTiff) {
+      try {
+        const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const ifds = UTIF.decode(ab);
+        if (ifds && ifds.length) {
+          UTIF.decodeImage(ab, ifds[0]);
+          const rgba = UTIF.toRGBA8(ifds[0]);
+          const w = ifds[0].width, h = ifds[0].height;
+          if (w > 0 && h > 0 && rgba && rgba.length === w * h * 4) {
+            const canvas = document.createElement('canvas');
+            canvas.className = 'image-preview';
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            const imgData = ctx.createImageData(w, h);
+            imgData.data.set(rgba);
+            ctx.putImageData(imgData, 0, 0);
+            imgWrap.appendChild(canvas);
+            const pageSuffix = ifds.length > 1 ? `  ·  page 1 of ${ifds.length}` : '';
+            infoDiv.textContent = `${w} × ${h} px  ·  TIFF${pageSuffix}  ·  ${this._fmtBytes(bytes.length)}`;
+            canvasRendered = true;
+          }
+        }
+      } catch (e) {
+        // Swallow and fall through to the <img> path below — it will surface
+        // the standard "Failed to render image" message if the browser also
+        // can't handle it.
+      }
+    }
+
+    if (!canvasRendered) {
+      const img = document.createElement('img');
+      img.className = 'image-preview';
+      const blob = new Blob([bytes], { type: mime });
+      const blobUrl = URL.createObjectURL(blob);
+      img.src = blobUrl;
+      img.alt = fileName || 'Image preview';
+      img.title = 'Right-click to save or inspect';
+
+      infoDiv.textContent = `Loading image…`;
+      img.addEventListener('load', () => {
+        infoDiv.textContent = `${img.naturalWidth} × ${img.naturalHeight} px  ·  ${ext.toUpperCase()}  ·  ${this._fmtBytes(bytes.length)}`;
+        // Revoke blob URL after image is loaded to free memory
+        URL.revokeObjectURL(blobUrl);
+      });
+      img.addEventListener('error', () => {
+        infoDiv.textContent = `Failed to render image — file may be corrupted or unsupported format`;
+        infoDiv.style.color = 'var(--risk-high)';
+        // Revoke blob URL on error to free memory
+        URL.revokeObjectURL(blobUrl);
+      });
+
+      imgWrap.appendChild(img);
+    }
+
     wrap.appendChild(imgWrap);
     wrap.appendChild(infoDiv);
 
