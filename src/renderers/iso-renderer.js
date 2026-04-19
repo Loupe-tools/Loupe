@@ -66,47 +66,23 @@ class IsoRenderer {
       wrap.appendChild(warnDiv);
     }
 
-    // File table
+    // File listing — shared ArchiveTree (tree + flat + search + sort).
+    // ISO/IMG are currently a passive listing (no per-file extraction), so
+    // onOpen is omitted; the component renders no Open button for those rows.
     if (files.length) {
-      const scr = document.createElement('div'); scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 220px)';
-      const tbl = document.createElement('table'); tbl.className = 'zip-table';
-      const thead = document.createElement('thead');
-      const hr = document.createElement('tr');
-      for (const h of ['', 'Path', 'Size', 'Date']) {
-        const th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
-      }
-      thead.appendChild(hr); tbl.appendChild(thead);
-
-      const tbody = document.createElement('tbody');
-      for (const e of files) {
-        const tr = document.createElement('tr');
-        const ext = e.name.split('.').pop().toLowerCase();
-        const isDangerous = !e.dir && IsoRenderer.EXEC_EXTS.has(ext);
-        if (isDangerous) tr.className = 'zip-row-danger';
-
-        const tdIcon = document.createElement('td'); tdIcon.className = 'zip-icon';
-        tdIcon.textContent = e.dir ? '📁' : (isDangerous ? '⚠️' : '📄');
-        tr.appendChild(tdIcon);
-
-        const tdPath = document.createElement('td'); tdPath.className = 'zip-path';
-        tdPath.textContent = e.path || e.name;
-        if (isDangerous) {
-          const badge = document.createElement('span'); badge.className = 'zip-badge-danger';
-          badge.textContent = 'EXECUTABLE'; tdPath.appendChild(badge);
-        }
-        tr.appendChild(tdPath);
-
-        const tdSize = document.createElement('td'); tdSize.className = 'zip-size';
-        tdSize.textContent = e.dir ? '—' : this._fmtBytes(e.size);
-        tr.appendChild(tdSize);
-
-        const tdDate = document.createElement('td'); tdDate.className = 'zip-date';
-        tdDate.textContent = e.date || '—';
-        tr.appendChild(tdDate);
-
-        tbody.appendChild(tr);
-      }
-      tbl.appendChild(tbody); scr.appendChild(tbl); wrap.appendChild(scr);
+      const archEntries = files.map(e => ({
+        path: e.path || e.name,
+        dir: !!e.dir,
+        size: e.size || 0,
+        // ISO stores date as "YYYY-MM-DD HH:MM:SS" — convert for flat-view sorting.
+        date: e.date ? new Date(e.date.replace(' ', 'T') + 'Z') : null,
+      }));
+      const tree = ArchiveTree.render({
+        entries: archEntries,
+        execExts: IsoRenderer.EXEC_EXTS,
+        showDate: true,
+      });
+      wrap.appendChild(tree);
     }
 
     return wrap;

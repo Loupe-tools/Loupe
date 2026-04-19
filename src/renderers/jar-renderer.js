@@ -715,20 +715,48 @@ class JarRenderer {
     }
     const tabsHTML = this._buildTabsHTML(tabs);
 
-    // ── File tree (all entries, nested) ─────────────────────────────────
-    const treeHTML = `<section class="jar-pane jar-tree-pane" aria-label="File tree">
-      <header class="jar-pane-header">📁 Archive Contents <span class="jar-pane-count">${entries.filter(e => !e.dir).length}</span>
-        <span class="jar-pane-actions">
-          <button type="button" class="jar-tree-toggle-all" data-action="expand">Expand all</button>
-          <button type="button" class="jar-tree-toggle-all" data-action="collapse">Collapse all</button>
-        </span>
-      </header>
-      <div class="jar-pane-body jar-tree-body">${this._buildFileTreeHTML(entries)}</div>
-    </section>`;
+    wrap.innerHTML = bannerHTML + headerGridHTML + tabsHTML;
 
-    wrap.innerHTML = bannerHTML + headerGridHTML + tabsHTML + treeHTML;
+    // ── Archive Contents — shared ArchiveTree component ─────────────────
+    // Dropped the hand-rolled `.jar-tree*` markup in favour of the shared
+    // browser (tree + flat + search + sort). The section wrapper is kept
+    // so the on-screen "Archive Contents" heading+count remains, but the
+    // Expand / Collapse buttons now live inside ArchiveTree's toolbar.
+    const treeSection = document.createElement('section');
+    treeSection.className = 'jar-pane jar-tree-pane';
+    treeSection.setAttribute('aria-label', 'File tree');
+    const treeHeader = document.createElement('header');
+    treeHeader.className = 'jar-pane-header';
+    treeHeader.innerHTML = `📁 Archive Contents <span class="jar-pane-count">${entries.filter(e => !e.dir).length}</span>`;
+    treeSection.appendChild(treeHeader);
+    const archEntries = entries.map(e => ({
+      path: e.path,
+      dir: !!e.dir,
+      size: e.size || 0,
+      compressed: e.compressedSize || 0,
+      date: e.date || null,
+    }));
+    const archTree = ArchiveTree.render({
+      entries: archEntries,
+      showCompressed: true,
+      showDate: true,
+      onOpen: async (entry) => {
+        const zipEntry = zip.file(entry.path);
+        if (!zipEntry) return;
+        try {
+          const ab = await zipEntry.async('arraybuffer');
+          const name = entry.path.split('/').pop();
+          const innerFile = new File([ab], name);
+          wrap.dispatchEvent(new CustomEvent('open-inner-file', { bubbles: true, detail: innerFile }));
+        } catch {}
+      },
+    });
+    treeSection.appendChild(archTree);
+    wrap.appendChild(treeSection);
 
-    // Inner file open listener (for tree Open buttons, resource tables, etc.)
+    // Inner-file open listener for the [data-jar-open] buttons that still
+    // live in the Config / Resource tab tables. (The Archive Contents tree
+    // is handled by ArchiveTree's own onOpen callback above.)
     wrap.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-jar-open]');
       if (!btn) return;
@@ -746,7 +774,6 @@ class JarRenderer {
     });
 
     this._wireTabs(wrap);
-    this._wireFileTree(wrap);
     this._addSearchBar(wrap);
     return wrap;
   }
@@ -973,134 +1000,20 @@ class JarRenderer {
     });
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  //  File tree (nested archive browser)
-  // ═════════════════════════════════════════════════════════════════════════
-  _buildFileTreeHTML(entries) {
-    // Build nested tree from flat entry list.
-    // Root is a synthetic folder; children keyed by path segment.
-    const root = { children: new Map(), files: [] };
-    // Sort so parent dirs precede children, and folders first within a level.
-    const sorted = [...entries].sort((a, b) => a.path.localeCompare(b.path));
-    for (const e of sorted) {
-      if (e.dir) continue; // skip explicit dir entries; we synthesise folders from file paths
-      const parts = e.path.split('/').filter(Boolean);
-      if (parts.length === 0) continue;
-      let node = root;
-      for (let i = 0; i < parts.length - 1; i++) {
-        const seg = parts[i];
-        if (!node.children.has(seg)) node.children.set(seg, { children: new Map(), files: [] });
-        node = node.children.get(seg);
-      }
-      node.files.push({ name: parts[parts.length - 1], entry: e });
-    }
-    // Render recursively. Folders are collapsed by default.
-    // Depth is bounded by PARSER_LIMITS.MAX_DEPTH so a JAR whose central
-    // directory encodes a deeply nested tree (real or hostile) cannot blow
-    // the recursion budget here.
-    const renderNode = (node, pathPrefix, depth) => {
-      if (depth > PARSER_LIMITS.MAX_DEPTH) {
-        return `<li class="jar-tree-truncated">⚠ Tree depth limit (${PARSER_LIMITS.MAX_DEPTH}) reached — deeper entries hidden</li>`;
-      }
-      let html = '';
-      // Folder children first (sorted by name)
-      const folderNames = [...node.children.keys()].sort((a, b) => a.localeCompare(b));
-      for (const name of folderNames) {
-        const child = node.children.get(name);
-        const childPath = pathPrefix ? pathPrefix + '/' + name : name;
-        const fileCount = this._countFilesInNode(child);
-        html += `<li class="jar-tree-folder" data-jar-folder-path="${this._esc(childPath)}">
-          <div class="jar-tree-row jar-tree-folder-row" tabindex="0" role="button" aria-expanded="false">
-            <span class="jar-tree-caret" aria-hidden="true">▸</span>
-            <span class="jar-tree-icon" aria-hidden="true">📁</span>
-            <span class="jar-tree-name">${this._esc(name)}</span>
-            <span class="jar-tree-meta">${fileCount} item${fileCount === 1 ? '' : 's'}</span>
-          </div>
-          <ul class="jar-tree-children" hidden>${renderNode(child, childPath, depth + 1)}</ul>
-        </li>`;
-      }
-      // Files (sorted by name)
-      const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
-      for (const f of files) {
-        const icon = f.name.toLowerCase().endsWith('.class') ? '☕'
-          : /\.(xml|properties|yml|yaml|json|txt|mf)$/i.test(f.name) ? '📝'
-          : /\.(jar|war|ear|zip)$/i.test(f.name) ? '📦'
-          : /\.(png|jpe?g|gif|bmp|svg|ico)$/i.test(f.name) ? '🖼'
-          : '📄';
-        html += `<li class="jar-tree-file" data-jar-file-name="${this._esc(f.name)}">
-          <div class="jar-tree-row jar-tree-file-row">
-            <span class="jar-tree-caret" aria-hidden="true"></span>
-            <span class="jar-tree-icon" aria-hidden="true">${icon}</span>
-            <span class="jar-tree-name" title="${this._esc(f.entry.path)}">${this._esc(f.name)}</span>
-            <span class="jar-tree-meta">${this._fmtBytes(f.entry.size)}</span>
-            <button type="button" class="jar-open-btn" data-jar-open="${this._esc(f.entry.path)}">Open</button>
-          </div>
-        </li>`;
-      }
-      return html;
-    };
-    const body = renderNode(root, '', 0);
-    if (!body) return '<div class="jar-findings-empty">Archive is empty.</div>';
-    return `<ul class="jar-tree" role="tree">${body}</ul>`;
-  }
-
-  _countFilesInNode(node) {
-    let n = node.files.length;
-    for (const child of node.children.values()) n += this._countFilesInNode(child);
-    return n;
-  }
-
-  _wireFileTree(wrap) {
-    const tree = wrap.querySelector('.jar-tree');
-    if (!tree) return;
-
-    const toggleFolder = (li, force) => {
-      const row = li.querySelector(':scope > .jar-tree-folder-row');
-      const kids = li.querySelector(':scope > .jar-tree-children');
-      if (!row || !kids) return;
-      const currentlyOpen = !kids.hasAttribute('hidden');
-      const open = typeof force === 'boolean' ? force : !currentlyOpen;
-      if (open) { kids.removeAttribute('hidden'); row.setAttribute('aria-expanded', 'true'); li.classList.add('jar-tree-open'); }
-      else { kids.setAttribute('hidden', ''); row.setAttribute('aria-expanded', 'false'); li.classList.remove('jar-tree-open'); }
-    };
-
-    tree.addEventListener('click', (e) => {
-      // Open button — don't intercept (handled by outer wrap listener)
-      if (e.target.closest('[data-jar-open]')) return;
-      const folderRow = e.target.closest('.jar-tree-folder-row');
-      if (folderRow) {
-        toggleFolder(folderRow.parentElement);
-      }
-    });
-    tree.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      const folderRow = e.target.closest('.jar-tree-folder-row');
-      if (folderRow) {
-        e.preventDefault();
-        toggleFolder(folderRow.parentElement);
-      }
-    });
-
-    // Expand/Collapse all buttons
-    const pane = wrap.querySelector('.jar-tree-pane');
-    if (pane) {
-      pane.addEventListener('click', (e) => {
-        const btn = e.target.closest('.jar-tree-toggle-all');
-        if (!btn) return;
-        const action = btn.getAttribute('data-action');
-        const force = action === 'expand';
-        tree.querySelectorAll('li.jar-tree-folder').forEach(li => toggleFolder(li, force));
-      });
-    }
-  }
+  // Note: the nested file-tree browser previously built here has been
+  // replaced by the shared ArchiveTree component (src/renderers/archive-tree.js).
+  // ArchiveTree owns its own search / sort / keyboard / expand-collapse so the
+  // cross-tab search bar below only filters the tabbed panes (Classes /
+  // Dependencies / Strings / Resources) — the tree is searched independently
+  // via ArchiveTree's own search input.
 
   // ═════════════════════════════════════════════════════════════════════════
-  //  Search bar — tab- and tree-aware
+  //  Search bar — tab-aware
   // ═════════════════════════════════════════════════════════════════════════
   _addSearchBar(wrap) {
     const bar = document.createElement('div');
     bar.className = 'jar-search-bar';
-    bar.innerHTML = `<input type="text" class="jar-search-input" placeholder="🔍 Search manifest, classes, strings, APIs, tree…">
+    bar.innerHTML = `<input type="text" class="jar-search-input" placeholder="🔍 Search manifest, classes, strings, APIs…">
       <span class="jar-search-status" hidden></span>`;
     wrap.prepend(bar);
 
@@ -1159,48 +1072,12 @@ class JarRenderer {
         }
       }
 
-      // 3) File tree: highlight matching names and auto-expand ancestor folders.
-      const tree = wrap.querySelector('.jar-tree');
-      if (tree) {
-        // Clear previous highlights & auto-expansion.
-        tree.querySelectorAll('.jar-tree-hit').forEach(el => el.classList.remove('jar-tree-hit'));
-        tree.querySelectorAll('li.jar-tree-auto-expanded').forEach(li => {
-          li.classList.remove('jar-tree-auto-expanded');
-          const kids = li.querySelector(':scope > .jar-tree-children');
-          const row = li.querySelector(':scope > .jar-tree-folder-row');
-          if (kids) kids.setAttribute('hidden', '');
-          if (row) row.setAttribute('aria-expanded', 'false');
-          li.classList.remove('jar-tree-open');
-        });
+      // Note: the Archive Contents tree is now owned by ArchiveTree, which
+      // has its own search input inside the tree section. The cross-tab
+      // search bar above intentionally ignores tree rows so the two
+      // inputs don't fight over highlight state.
 
-        if (q) {
-          const fileLis = tree.querySelectorAll('li.jar-tree-file');
-          let treeHits = 0;
-          fileLis.forEach(li => {
-            const name = (li.getAttribute('data-jar-file-name') || '').toLowerCase();
-            const match = name.includes(q);
-            if (match) {
-              li.classList.add('jar-tree-hit');
-              treeHits++;
-              // Auto-expand ancestor folders
-              let parent = li.parentElement; // <ul.jar-tree-children>
-              while (parent && parent !== tree) {
-                if (parent.tagName === 'LI' && parent.classList.contains('jar-tree-folder')) {
-                  parent.classList.add('jar-tree-auto-expanded', 'jar-tree-open');
-                  const kids = parent.querySelector(':scope > .jar-tree-children');
-                  const row = parent.querySelector(':scope > .jar-tree-folder-row');
-                  if (kids) kids.removeAttribute('hidden');
-                  if (row) row.setAttribute('aria-expanded', 'true');
-                }
-                parent = parent.parentElement;
-              }
-            }
-          });
-          totalHits += treeHits;
-        }
-      }
-
-      // 4) Status line
+      // 3) Status line
       if (q) { status.hidden = false; status.textContent = totalHits === 0 ? 'No matches' : `${totalHits} match${totalHits === 1 ? '' : 'es'}`; }
       else { status.hidden = true; status.textContent = ''; }
     };

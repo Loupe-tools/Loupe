@@ -113,70 +113,30 @@ class PkgRenderer {
       wrap.appendChild(det);
     }
 
-    // Files table
+    // Files listing — shared ArchiveTree (tree + flat + search + sort).
+    // Install scripts (preinstall / postinstall / …) rarely carry a file
+    // extension, so we flag them via ArchiveTree's `danger` / `dangerLabel`
+    // fields rather than relying on the built-in exec-extension classifier.
     if (pkg.files.length) {
-      const scr = document.createElement('div');
-      scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 260px)';
-      const tbl = document.createElement('table'); tbl.className = 'zip-table';
-      const thead = document.createElement('thead');
-      const hr = document.createElement('tr');
-      for (const h of ['', 'Path', 'Size', 'Compressed', 'Encoding', '']) {
-        const th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
-      }
-      thead.appendChild(hr); tbl.appendChild(thead);
-      const tbody = document.createElement('tbody');
-
-      // Sort: scripts first (alarming), then dirs/files alphabetically
-      const sorted = pkg.files.slice().sort((a, b) => {
-        if (a.isScript !== b.isScript) return a.isScript ? -1 : 1;
-        return a.path.localeCompare(b.path);
+      const byPath = new Map();
+      for (const f of pkg.files) byPath.set(f.path, f);
+      const archEntries = pkg.files.map(f => ({
+        path: f.path,
+        dir: !!f.dir,
+        size: f.uncompSize || 0,
+        compressed: f.compSize || 0,
+        danger: !!f.isScript,
+        dangerLabel: 'INSTALL SCRIPT',
+      }));
+      const tree = ArchiveTree.render({
+        entries: archEntries,
+        onOpen: (entry) => {
+          const fileEntry = byPath.get(entry.path);
+          if (fileEntry) this._extractAndOpen(bytes, pkg, fileEntry, wrap);
+        },
+        showCompressed: true,
       });
-
-      for (const f of sorted) {
-        const tr = document.createElement('tr');
-        if (f.isScript) tr.className = 'zip-row-danger';
-        if (!f.dir) tr.classList.add('zip-row-clickable');
-
-        const tdIcon = document.createElement('td'); tdIcon.className = 'zip-icon';
-        tdIcon.textContent = f.dir ? '📁' : (f.isScript ? '⚠️' : this._getFileIcon(f.path));
-        tr.appendChild(tdIcon);
-
-        const tdPath = document.createElement('td'); tdPath.className = 'zip-path';
-        tdPath.textContent = f.path;
-        if (f.isScript) {
-          const badge = document.createElement('span'); badge.className = 'zip-badge-danger';
-          badge.textContent = 'INSTALL SCRIPT'; tdPath.appendChild(badge);
-        }
-        tr.appendChild(tdPath);
-
-        const tdSize = document.createElement('td'); tdSize.className = 'zip-size';
-        tdSize.textContent = f.dir ? '—' : this._fmtBytes(f.uncompSize);
-        tr.appendChild(tdSize);
-
-        const tdComp = document.createElement('td'); tdComp.className = 'zip-size';
-        tdComp.textContent = f.dir ? '—' : this._fmtBytes(f.compSize);
-        tr.appendChild(tdComp);
-
-        const tdEnc = document.createElement('td'); tdEnc.className = 'zip-date';
-        tdEnc.textContent = f.dir ? '—' : (f.encoding || 'none');
-        tr.appendChild(tdEnc);
-
-        const tdAction = document.createElement('td'); tdAction.className = 'zip-action';
-        if (!f.dir) {
-          const openBtn = document.createElement('span'); openBtn.className = 'zip-badge-open';
-          openBtn.textContent = '🔍 Open';
-          openBtn.title = `Open ${f.path.split('/').pop()} for analysis`;
-          openBtn.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            this._extractAndOpen(bytes, pkg, f, wrap);
-          });
-          tdAction.appendChild(openBtn);
-        }
-        tr.appendChild(tdAction);
-
-        tbody.appendChild(tr);
-      }
-      tbl.appendChild(tbody); scr.appendChild(tbl); wrap.appendChild(scr);
+      wrap.appendChild(tree);
     }
 
     return wrap;

@@ -18,9 +18,15 @@
 //     hand-crafted archive can't blow the recursion budget.
 //
 // Callers pass a flat `entries` array with the shape:
-//   { path, dir, size, compressed?, date?, encrypted?, linkName? }
+//   { path, dir, size, compressed?, date?, encrypted?, linkName?,
+//     danger?, dangerLabel? }
 // plus an `onOpen(entry)` callback. See ZipRenderer._renderZipContents for a
 // reference call site.
+//
+// `danger: true` lets callers mark arbitrary entries as risky even when the
+// file extension isn't in `execExts` — used by PkgRenderer for install
+// scripts named `preinstall` / `postinstall` (no extension). `dangerLabel`
+// overrides the default "EXEC" badge text (e.g. "INSTALL SCRIPT").
 //
 // Depends on: constants.js (escHtml, fmtBytes, PARSER_LIMITS)
 // ════════════════════════════════════════════════════════════════════════════
@@ -209,14 +215,19 @@ class ArchiveTree {
       for (const f of files) {
         const entry = f.entry;
         const ext = f.name.split('.').pop().toLowerCase();
-        const isDanger = ctx.execExts.has(ext);
+        const isExec = ctx.execExts.has(ext);
         const isDecoy = ArchiveTree._isDoubleExt(f.name, ctx);
+        // Caller-supplied `danger` flag (e.g. PkgRenderer tagging install
+        // scripts with no extension) also triggers the danger styling.
+        const isExplicit = !!entry.danger;
+        const isDanger = isExec || isExplicit;
         const icon = ArchiveTree._ICON_BY_EXT[ext] || '📄';
         const rowClasses = ['arch-tree-row', 'arch-tree-file-row'];
         if (isDanger || isDecoy) rowClasses.push('arch-tree-danger');
         if (entry.encrypted) rowClasses.push('arch-tree-encrypted');
         let badges = '';
-        if (isDanger) badges += '<span class="arch-badge arch-badge-danger">EXEC</span>';
+        if (isExec) badges += '<span class="arch-badge arch-badge-danger">EXEC</span>';
+        else if (isExplicit) badges += `<span class="arch-badge arch-badge-danger">${escHtml(entry.dangerLabel || 'DANGER')}</span>`;
         if (isDecoy) badges += '<span class="arch-badge arch-badge-danger">DOUBLE EXT</span>';
         if (entry.encrypted) badges += '<span class="arch-badge arch-badge-lock">🔒</span>';
         if (entry.linkName) badges += `<span class="arch-badge arch-badge-link" title="Symlink target: ${escHtml(entry.linkName)}">🔗 ${escHtml(entry.linkName)}</span>`;
