@@ -43,13 +43,13 @@ the `THEMES` array in `src/app/app-ui.js` and add the CSS path to `CSS_FILES` in
 ### YARA Rule Files
 
 ```
-src/rules/office-macros.yar            # Office/VBA macro detection (34 rules)
+src/rules/office-macros.yar            # Office/VBA macro detection (36 rules)
 src/rules/script-threats.yar           # Script threats: PS, JS, VBS, CMD, Python (61 rules)
 src/rules/document-threats.yar         # PDF, RTF, OLE, HTML, SVG, OneNote (41 rules)
 src/rules/windows-threats.yar          # LNK, HTA, MSI, registry, LOLBins (129 rules)
-src/rules/archive-threats.yar          # Archive format threats (10 rules)
+src/rules/archive-threats.yar          # Archive format threats (14 rules)
 src/rules/encoding-threats.yar         # Base64, hex, obfuscation patterns (28 rules)
-src/rules/network-indicators.yar       # UNC, WebDAV, credential theft (8 rules)
+src/rules/network-indicators.yar       # UNC, WebDAV, credential theft (10 rules)
 src/rules/suspicious-patterns.yar      # General suspicious patterns (10 rules)
 src/rules/file-analysis.yar            # PE, image, forensic analysis (3 rules)
 src/rules/pe-threats.yar               # PE executable threats: packers, malware toolkits (31 rules)
@@ -62,7 +62,7 @@ src/rules/plist-threats.yar            # Property list threats: LaunchAgent, per
 src/rules/clickonce-threats.yar        # ClickOnce deployment threats: AppDomainManager, HTTP deploy, full trust (4 rules)
 src/rules/msix-threats.yar             # MSIX / APPX / App Installer threats: full-trust capabilities, startup tasks, silent auto-update (9 rules)
 src/rules/browserext-threats.yar       # Browser extension (.crx / .xpi) threats: native messaging, all_urls, unsafe-eval CSP, debugger, externally_connectable (12 rules)
-src/rules/macos-installer-threats.yar  # macOS installer threats: PKG install-time scripts, unsigned/root, DMG encrypted envelopes, app-bundle launchers (12 rules)
+src/rules/macos-installer-threats.yar  # macOS installer threats: xar / UDIF magic, DMG encrypted envelopes, app-bundle launchers, hidden bundles (5 rules)
 ```
 
 ### JS Concatenation Order
@@ -96,6 +96,8 @@ src/renderers/cab-renderer.js          # CabRenderer — Microsoft Cabinet (MSCF
 src/renderers/rar-renderer.js          # RarRenderer — RAR v4 + v5 header walker (listing-only)
 src/renderers/seven7-renderer.js       # SevenZRenderer — 7-Zip header walker (plain + LZMA-encoded via vendored LZMA-JS) + AES coder detection
 src/renderers/iso-renderer.js          # IsoRenderer — ISO 9660 filesystem listing
+src/renderers/dmg-renderer.js          # DmgRenderer — Apple Disk Image (UDIF) koly/mish parser + encrypted envelope detector
+src/renderers/pkg-renderer.js          # PkgRenderer — macOS flat PKG / xar installer (TOC + Distribution/PackageInfo + dangerous-script scan)
 
 src/renderers/url-renderer.js          # UrlRenderer — .url / .webloc shortcut parser
 src/renderers/onenote-renderer.js      # OneNoteRenderer — .one embedded object extraction
@@ -123,8 +125,6 @@ src/renderers/jar-renderer.js          # JarRenderer — JAR/WAR/EAR archive + .
 src/renderers/svg-renderer.js          # SvgRenderer — SVG sandboxed preview + security analyser
 src/renderers/osascript-renderer.js    # OsascriptRenderer — AppleScript / JXA source + compiled binary analyser
 src/renderers/plist-renderer.js        # PlistRenderer — macOS .plist (XML + binary) tree view + security analyser
-src/renderers/dmg-renderer.js          # DmgRenderer — Apple Disk Image (UDIF) koly/mish parser + encrypted envelope detector
-src/renderers/pkg-renderer.js          # PkgRenderer — macOS flat PKG / xar installer (TOC + Distribution/PackageInfo + dangerous-script scan)
 src/renderers/image-renderer.js        # ImageRenderer — image preview + stego/polyglot detection
 src/renderers/plaintext-renderer.js    # PlainTextRenderer — catch-all text/hex viewer
 src/renderers/clickonce-renderer.js    # ClickOnceRenderer — .application / .manifest deployment analyser
@@ -225,6 +225,8 @@ Loupe/
 │   │   ├── rar-renderer.js          # RarRenderer — RAR v4 / v5 header walker (listing-only)
 │   │   ├── seven7-renderer.js       # SevenZRenderer — 7-Zip container (listing-only; decodes LZMA-encoded end-headers via vendored lzma-d-min.js)
 │   │   ├── iso-renderer.js          # IsoRenderer — ISO 9660 filesystem
+│   │   ├── dmg-renderer.js          # DmgRenderer — Apple Disk Image (UDIF) parser
+│   │   ├── pkg-renderer.js          # PkgRenderer — macOS flat PKG / xar installer
 
 │   │   ├── url-renderer.js          # UrlRenderer — .url / .webloc shortcuts
 │   │   ├── onenote-renderer.js      # OneNoteRenderer — .one files
@@ -252,8 +254,6 @@ Loupe/
 │   │   ├── svg-renderer.js          # SvgRenderer — SVG preview + security analyser
 │   │   ├── osascript-renderer.js    # OsascriptRenderer — AppleScript / JXA analyser
 │   │   ├── plist-renderer.js        # PlistRenderer — macOS .plist viewer + security analyser
-│   │   ├── dmg-renderer.js          # DmgRenderer — Apple Disk Image (UDIF) parser
-│   │   ├── pkg-renderer.js          # PkgRenderer — macOS flat PKG / xar installer
 │   │   ├── image-renderer.js        # ImageRenderer — image preview + stego detection
 │   │   ├── plaintext-renderer.js    # PlainTextRenderer
 │   │   ├── clickonce-renderer.js    # ClickOnceRenderer — .application / .manifest deployment analyser
@@ -419,7 +419,7 @@ Loupe is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, etc.)
 - **SVG analysis** — `SvgRenderer` provides a sandboxed iframe preview and source-code view with line numbers. `analyzeForSecurity()` performs deep SVG-specific analysis: `<script>` extraction, `<foreignObject>` detection, event handler scanning, Base64/data URI payload analysis, SVG-specific vectors (`<use>`, `<animate>`/`<set>` href manipulation, `<feImage>` external filters), XXE detection, and JavaScript obfuscation patterns. Augmented buffer is stored separately in `_yaraBuffer` to avoid contaminating Copy/Save.
 - **AppleScript / JXA analysis** — `OsascriptRenderer` handles `.applescript` source files (syntax-highlighted display), compiled `.scpt` binaries (string extraction from binary data), and `.jxa` JavaScript for Automation files. Security analysis flags shell command execution (`do shell script`), application targeting, file system access, and macOS-specific persistence/privilege escalation patterns.
 - **Property list analysis** — `PlistRenderer` parses both XML and binary `.plist` formats into an interactive tree view with expandable nested structures. Security analysis detects LaunchAgent/LaunchDaemon persistence, suspicious URL schemes, shell command execution, and privacy-sensitive entitlement keys. 21 dedicated YARA rules cover plist-specific threat patterns.
-- **macOS installer analysis** — `DmgRenderer` handles Apple Disk Image (`.dmg`) UDIF containers: reads the 512-byte BE `koly` trailer at end-of-file, enumerates partitions via the XML plist (`blkx` entries), decodes base64 `mish` partition blocks to count block-type frequencies, and detects encrypted envelopes by sniffing `AEA1` / `encrcdsa` / `cdsaencr` at offset 0 (a hard-encrypted DMG renders its header + encryption verdict without attempting to walk the inaccessible filesystem). Because HFS+ / APFS filesystem parsing is out of scope for a browser tool, embedded `.app` bundle paths are recovered via the shared `extractAsciiAndUtf16leStrings` scanner and listed as sidebar IOCs. `PkgRenderer` handles flat PKG (`.pkg` / `.mpkg`) xar archives: parses the 28-byte BE header, inflates the zlib-compressed TOC XML via `Decompressor.inflate(…, 'deflate')`, and extracts `Distribution` / `PackageInfo` metadata. Inner files are clickable and emit `open-inner-file` CustomEvents (same wiring as `ZipRenderer`). A static `DANGEROUS_SCRIPT_NAMES` set (`preinstall` / `postinstall` / `preflight` / `postflight` / `preupgrade` / `postupgrade` / `InstallationCheck` / `VolumeCheck`) drives the risk calibration — any matching script entry pushes a `high` externalRef. Both renderers are backed by `macos-installer-threats.yar` (12 rules).
+- **macOS installer analysis** — `DmgRenderer` handles Apple Disk Image (`.dmg`) UDIF containers: reads the 512-byte BE `koly` trailer at end-of-file, enumerates partitions via the XML plist (`blkx` entries), decodes base64 `mish` partition blocks to count block-type frequencies, and detects encrypted envelopes by sniffing `AEA1` / `encrcdsa` / `cdsaencr` at offset 0 (a hard-encrypted DMG renders its header + encryption verdict without attempting to walk the inaccessible filesystem). Because HFS+ / APFS filesystem parsing is out of scope for a browser tool, embedded `.app` bundle paths are recovered via the shared `extractAsciiAndUtf16leStrings` scanner and listed as sidebar IOCs. `PkgRenderer` handles flat PKG (`.pkg` / `.mpkg`) xar archives: parses the 28-byte BE header, inflates the zlib-compressed TOC XML via `Decompressor.inflate(…, 'deflate')`, and extracts `Distribution` / `PackageInfo` metadata. Inner files are clickable and emit `open-inner-file` CustomEvents (same wiring as `ZipRenderer`). A static `DANGEROUS_SCRIPT_NAMES` set (`preinstall` / `postinstall` / `preflight` / `postflight` / `preupgrade` / `postupgrade` / `InstallationCheck` / `VolumeCheck`) drives the risk calibration — any matching script entry pushes a `high` externalRef. Both renderers are backed by `macos-installer-threats.yar` (5 rules).
 - **ClickOnce analysis** — `ClickOnceRenderer` parses `.application` deployment manifests and `.manifest` application manifests. `app-load.js` routes them via a root-element sniff (`assembly` → ClickOnce, otherwise falls through to `PlainTextRenderer` so side-by-side assembly / SxS / vcpkg manifests still render). Extracts identity, deployment settings, entry point, trust level, `appDomainManager*` overrides, signature presence, and `dependentAssembly` chains. Emits `findings.clickOnceInfo`, surfaced in `⚡ Summary`, and backed by `clickonce-threats.yar`.
 - **MSIX / APPX / App Installer analysis** — `MsixRenderer` handles `.msix` / `.msixbundle` / `.appx` / `.appxbundle` ZIP containers plus standalone `.appinstaller` XML (extension dispatch in `app-load.js`). For package containers, `JSZip` extracts `AppxManifest.xml` / `AppxBundleManifest.xml`; parses identity, capabilities (tiered), and application extensions (full-trust process, startup task, app-execution alias, protocol, COM, background tasks). For `.appinstaller` XML, parses `Uri`, main package / bundle, dependencies, and `UpdateSettings`. All namespaces are read via `getElementsByTagNameNS("*", local)` so prefix variations don't break extraction. The `AppxSignature.p7x` signature envelope is parsed by `_parseP7x` — a deliberately conservative DER token-scan (no full ASN.1 walker) that confirms the `PKCX` magic, scans for the `AppxSipInfo` (1.3.6.1.4.1.311.84.2.1) and `SpcIndirectDataContent` OIDs, and extracts the signer Subject CN / O via the `id-at-commonName` / `id-at-organizationName` OIDs (handles UTF8String / PrintableString / BMPString tags + 0x81 / 0x82 long-form lengths). The signer CN is then compared against the manifest's `Identity/@Publisher` DN (parsed by `_parsePublisherDN`); a mismatch is the canonical re-signed / repackaged tell and is flagged `high` in both `_assess` and the summary card. `_computePublisherId` derives the canonical 13-character Windows PublisherId (SHA-256 of UTF-16LE publisher → first 8 bytes → 65-bit stream → 13 × 5-bit groups in the Crockford-style `0..9 + a..z minus i/l/o/u` alphabet) so `PackageFamilyName` lookups can be done without installation. Inner files emit `open-inner-file` CustomEvents (same wiring as `ZipRenderer`). Emits `findings.msixInfo`, surfaced in `⚡ Summary`, and backed by `msix-threats.yar`. See `FEATURES.md` for the full parsed-field list.
 - **Browser extension analysis** — `BrowserExtRenderer` handles Chrome `.crx` (v2 and v3) and Firefox `.xpi` archives. Extension dispatch in `app-load.js` routes by extension, with a `Cr24` magic sniff fallback. For `.crx`, the v2/v3 envelope is unwrapped (v2 carries a raw RSA public key + signature; v3 carries a protobuf `CrxFileHeader` decoded via the in-tree `ProtobufReader` — `_parseCrxV3Header` walks the header to pull every `AsymmetricKeyProof.public_key` (RSA field 2, ECDSA field 3) plus the nested `SignedData.crx_id` (field 10000 → field 1, expected 16 bytes), then `_decorateCrxV3` SHA-256s each public key and remaps the first 16 bytes via `_crxIdFromBytes` to produce the canonical Chrome extension ID for comparison against the declared `crx_id`) and the embedded ZIP payload is extracted with `JSZip`; for `.xpi`, the ZIP is read directly. The summary card surfaces `Chrome Extension ID (declared)`, one `Chrome Extension ID (computed, RSA-SHA256 / ECDSA-SHA256)` row per key, an `ID match: ✓ / ✗` verdict, and a signature count line; `_assess` raises `high` risks for malformed or empty headers, zero signatures, or a declared-vs-computed ID mismatch, and `medium` for a non-16-byte declared crx_id. Parses `manifest.json` (MV2 / MV3), extracts identity, permissions (tiered via static `PERM_HIGH` / `PERM_MEDIUM` / `BROAD_HOST_PATTERNS`), content scripts, background worker / service worker, externally_connectable, content_security_policy, and Firefox `applications.gecko` / legacy `install.rdf`. CRX v2 public keys produce the canonical Chrome extension ID (SHA-256 → first 16 bytes → nibble remap `0..f → a..p`); CRX v3 reuses the same remap on every parsed `AsymmetricKeyProof`. Inner files emit `open-inner-file` CustomEvents (same wiring as `ZipRenderer`). Emits `findings.browserExtInfo`, surfaced in `⚡ Summary`, and backed by `browserext-threats.yar`.

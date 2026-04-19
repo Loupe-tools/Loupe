@@ -75,7 +75,7 @@ Every format gets risk assessment, IOC extraction, and YARA scanning on top of t
 
 ## 🔍 What It Finds
 
-- **YARA rule engine** — 493 default rules auto-scan every file; drop in your own `.yar` files to extend detection.
+- **YARA rule engine** — 502 default rules auto-scan every file; drop in your own `.yar` files to extend detection.
 - **IOCs** — URLs, IPs, emails, hostnames, domains, file paths, UNC paths, GUIDs, key fingerprints. Defanged indicators (`hxxp://`, `1[.]2[.]3[.]4`) are refanged automatically.
 - **File hashes** — MD5, SHA-1, SHA-256 with one-click VirusTotal lookup.
 - **Macros & scripts** — decoded VBA, PowerShell, JScript, HTA; auto-exec entry points flagged.

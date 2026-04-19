@@ -498,7 +498,7 @@ Object.assign(App.prototype, {
     searchInput.type = 'text';
     searchInput.id = 'yara-search';
     searchInput.className = 'yara-search';
-    searchInput.placeholder = 'type to filter \u2014 try "execution", "critical", a filename, or free text\u2026';
+    searchInput.placeholder = 'type to filter \u2014 try "execution", "critical", a filetype, or free text\u2026';
     searchInput.spellcheck = false;
     searchInput.autocomplete = 'off';
     chipBar.appendChild(searchInput);
@@ -1365,7 +1365,7 @@ Object.assign(App.prototype, {
     // Anything after the first ":" in the summary header is treated as the item block.
     const splitColon = text.indexOf(': ');
     const isList = (type === 'error' || type === 'warning') &&
-                   splitColon !== -1 && text.indexOf('; ', splitColon) !== -1;
+      splitColon !== -1 && text.indexOf('; ', splitColon) !== -1;
 
     if (!isList) {
       // Single-line status — keep the existing compact look

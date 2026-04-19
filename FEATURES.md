@@ -70,7 +70,7 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks to
 |---|---|
 | **Risk assessment** | Colour-coded risk bar (low / medium / high / critical) with a finding summary |
 | **Document search** | In-toolbar search with match highlighting, match counter, `Enter`/`Shift+Enter` navigation (`F` to focus) |
-| **YARA rule engine** | Ships with 493 default rules across 20 category files; auto-scans every file on load. Upload custom `.yar` files (or drag-and-drop), validate, save the combined set, rescan. |
+| **YARA rule engine** | Ships with 502 default rules across 20 category files; auto-scans every file on load. Upload custom `.yar` files (or drag-and-drop), validate, save the combined set, rescan. |
 | **File hashes** | MD5, SHA-1, SHA-256 computed in-browser with one-click VirusTotal lookup |
 | **Parser safety limits** | Centralised caps on nesting depth, decompressed size, per-entry compression ratio (zip-bomb defeat), entry count, and a wall-clock watchdog that aborts runaway parsers |
 | **Encoded content detection** | Scans for Base64, hex, Base32, gzip / zlib / deflate. Decodes, classifies the payload (PE, script, URL list, …), extracts IOCs, and offers "Load for analysis" to drill into the decoded layer. |
@@ -137,7 +137,7 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks to
 | **DMG (Apple Disk Image)** | Reads the UDIF trailer, enumerates partitions, decodes mish block-type frequencies, detects encrypted envelopes (AEA1 / `encrcdsa` / `cdsaencr`), and extracts embedded `.app` bundle paths even when filesystem walking isn't possible. |
 | **PKG (flat installer)** | Parses xar TOC + `Distribution` / `PackageInfo` XML; clickable entry drill-down; flags dangerous install-time script names (`preinstall`, `postinstall`, `preflight`, `postflight`, `InstallationCheck`, `VolumeCheck`). |
 | **ZIP-wrapped `.app` bundles** | The ZIP listing also surfaces embedded macOS `.app` bundles — each bundle root is emitted as its own IOC, and hidden bundles (leading-dot dirs), unsigned bundles (no `_CodeSignature/`), and multi-bundle ZIPs are flagged high-severity. |
-| **macOS installer YARA** | 12 rules across DMG and PKG: install-time scripts, unsigned / root scripts, encrypted-envelope heuristics, app-bundle launcher patterns. |
+| **macOS installer YARA** | 5 rules across DMG and PKG: xar / UDIF magic detection, encrypted-envelope heuristic, `.app` bundle launcher detection, hidden-bundle flag. Install-script risk is flagged directly by `PkgRenderer` via the dangerous-script-name set (`preinstall` / `postinstall` / `preflight` / `postflight` / …). |
 
 ### Browser extensions
 
@@ -163,16 +163,15 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks to
 | **X.509** | Parses PEM / DER certificates and PKCS#12 containers — subject / issuer DN, validity with expiry status, public key details (algorithm, key size, curve), extensions (SAN, Key Usage, EKU, Basic Constraints, AKI / SKI, CRL DP, AIA, Certificate Policies), serial, signature algorithm, SHA-1 / SHA-256 fingerprints. Flags self-signed, expired / not-yet-valid, weak keys (<2048-bit RSA), weak signature algorithms (SHA-1 / MD5), long validity periods, missing SAN, embedded private keys. IOC extraction from SANs and CRL / AIA URIs. |
 | **OpenPGP** | Parses ASCII-armored and binary data (RFC 4880 / RFC 9580) — packets, key IDs, fingerprints, User IDs + embedded emails, subkeys, self-signatures, subkey bindings; public-key algorithm (RSA / DSA / ECDSA / ECDH / EdDSA / X25519 / Ed25519), key size, ECC curve; validates ASCII-armor CRC-24. Flags unencrypted secret keys, weak key sizes, deprecated algorithms (Elgamal-sign-or-encrypt, v3 legacy), revoked / expired / long-lived keys, SHA-1 as preferred hash. Parse-only — no signature verification or secret-key decryption. |
 
-### Java, web & images
+### Scripts, Java, web & images
 
 | Capability | What you get |
 |---|---|
+| **Script scanning** | `.vbs`, `.ps1`, `.bat`, `.js`, `.cmd`, and similar standalone script types are scanned for dangerous execution patterns alongside full YARA matching (`script-threats.yar` ships 61 rules covering PowerShell, JScript, VBS, CMD, and Python). Source is syntax-highlighted via the vendored highlight.js bundle. |
 | **JAR / Java** | Parses JAR / WAR / EAR archives and standalone `.class` files — class file header, MANIFEST.MF with Main-Class and permissions, class listing with package tree, dependency extraction, constant pool string analysis with ~45 suspicious Java API patterns (deserialization, JNDI, reflection, command execution, networking) mapped to MITRE ATT&CK. Obfuscation detection (Allatori, ZKM, ProGuard, short-name heuristics). Clickable inner file extraction. 17 YARA rules. |
 | **SVG security analysis** | `<script>` extraction (inline + external), `<foreignObject>` detection (credential forms, password fields, embedded HTML), event handler scanning (~30 `on*` attributes), Base64 / data URI payload analysis, SVG-specific vectors (`<use>` external refs, `<animate>` / `<set>` href manipulation, `<feImage>` external filters), XML entity / DTD / XXE detection, JavaScript obfuscation patterns, meta refresh redirects. 18 YARA rules. |
 | **Image analysis** | Steganography indicators, polyglot file detection, hex header inspection for embedded payloads; embedded-thumbnail extraction (JPEG thumbnail renders alongside the main image so a disagreement jumps out); expanded EXIF coverage — MakerNote, ICC profile, UserComment, Interop, IFD1 tag groups |
 | **TIFF tag metadata** | Full IFD walk surfacing ImageDescription, Make / Model, Software / DateTime, Artist / HostComputer, Copyright, XMP, IPTC — the tag numbers most commonly abused as covert channels |
-
-| **Script scanning** | `.vbs`, `.ps1`, `.bat`, `.rtf`, and similar script types are scanned for dangerous execution patterns alongside YARA matching |
 
 ### Archive drill-down
 
@@ -202,7 +201,6 @@ ZIP listings additionally surface per-entry risk signals classic archive viewers
 | **Collapsible sidebar sections** | Single-pane sidebar with collapsible `<details>`: File Info, Macros, Signatures & IOCs |
 | **Breadcrumb navigation** | Drill-down path as a clickable crumb trail (e.g. `📦 archive.zip ▸ 📄 doc.docm ▸ 🔧 Module1.bas`). Overflow `… ▾` dropdown keeps long trails on one line; the close button is anchored so its position never shifts with filename length. |
 | **Archive browser** | Shared collapsible / searchable / sortable tree used by every archive-style renderer (ZIP, JAR / WAR / EAR, MSIX / APPX, CRX / XPI, TAR / `.tar.gz`, ISO / IMG, PKG / MPKG, CAB, RAR, 7z). Tree view with child counts and one-click drill-down; flat sortable table view; instant filter box; per-entry risk badges (executable, double-extension, ZipCrypto lock, tar-symlink target). |
-
 | **Keyboard shortcuts** | `S` sidebar · `Y` YARA dialog · `,` Settings · `?` / `H` Help · `F` search document · `Ctrl+C` / `⌘C` copy raw file (when nothing is selected) · `Ctrl+V` paste file for analysis · `Esc` close dialog / clear search. **Archive browser:** `/` focus filter · `↑ ↓` navigate rows · `← →` collapse / expand folder · `Enter` / `Space` open selected file. |
 | **Smart whole-token select** | Double-click in any monospace viewer selects the entire non-whitespace token — expanding past `/ . : = - _` and across visual line wraps — up to the nearest whitespace boundary. Great for URLs, hashes, base64 blobs, file paths, registry keys, PE imports, x509 fingerprints. |
 | **Loading overlay** | Spinner with status message while parsing large files |
@@ -360,6 +358,18 @@ The [`examples/`](examples/) directory contains sample files for every supported
 - [`example.jar`](examples/java/example.jar) — Java archive with class files, MANIFEST.MF, and constant pool analysis
 - [`polyglot-example.png`](examples/images/polyglot-example.png) — PNG with a ZIP appended past the IEND marker
 
+### Browser extensions ([`examples/browser-extensions/`](examples/browser-extensions/))
+
+- [`benign-firefox.xpi`](examples/browser-extensions/benign-firefox.xpi) — minimal Firefox WebExtension (`manifest.json`) for a clean MV2/MV3 walk-through
+- [`ublock-example.xpi`](examples/browser-extensions/ublock-example.xpi) — real-world uBlock Origin `.xpi` — content scripts, declarativeNetRequest, tiered permissions
+- [`suspicious-chrome.crx`](examples/browser-extensions/suspicious-chrome.crx) — Chrome `.crx` with `nativeMessaging`, `<all_urls>`, `unsafe-eval` CSP, and a non-store `update_url` (high-risk verdict)
+- [`example.crx`](examples/browser-extensions/example.crx) — large real-world CRX v3 sample for signature / extension-ID derivation
+
 ### Archives ([`examples/archives/`](examples/archives/))
 
-- [`example.zip`](examples/archives/example.zip), [`example.tar`](examples/archives/example.tar), [`example.tar.gz`](examples/archives/example.tar.gz), [`example.gz`](examples/archives/example.gz), [`example.iso`](examples/archives/example.iso) — archive / disk-image samples
+- [`example.zip`](examples/archives/example.zip), [`encrypted-example.zip`](examples/archives/encrypted-example.zip), [`recursive-example.zip`](examples/archives/recursive-example.zip) — plain, ZipCrypto-encrypted, and nested-archive ZIPs
+- [`example.tar`](examples/archives/example.tar), [`example.tar.gz`](examples/archives/example.tar.gz), [`example.gz`](examples/archives/example.gz) — tar, gzipped-tar, and lone-gzip samples
+- [`example.cab`](examples/archives/example.cab) — Microsoft Cabinet (MSCF) with a clickable MSZIP entry
+- [`example.rar`](examples/archives/example.rar) — RAR archive (listing-only; decompression not attempted)
+- [`example.7z`](examples/archives/example.7z) — 7-Zip archive with LZMA-encoded end-header for the listing round-trip
+- [`example.iso`](examples/archives/example.iso) — ISO 9660 disk image with clickable filesystem drill-down
