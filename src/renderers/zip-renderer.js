@@ -305,76 +305,31 @@ class ZipRenderer {
       wrap.appendChild(warnDiv);
     }
 
-    // File table
-    const scr = document.createElement('div'); scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 220px)';
-    const tbl = document.createElement('table'); tbl.className = 'zip-table';
-
-    const thead = document.createElement('thead');
-    const hr = document.createElement('tr');
-    for (const h of ['', 'Path', 'Size', 'Date', '']) {
-      const th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
-    }
-    thead.appendChild(hr); tbl.appendChild(thead);
-
-    const tbody = document.createElement('tbody');
-    for (const entry of entries) {
-      const tr = document.createElement('tr');
-      const ext = (entry.path || '').split('.').pop().toLowerCase();
-      const isDangerous = !entry.dir && ZipRenderer.EXEC_EXTS.has(ext);
-      const isDouble = this._isDoubleExt(entry.path);
-      if (isDangerous || isDouble) tr.className = 'zip-row-danger';
-
-      if (!entry.dir) {
-        tr.classList.add('zip-row-clickable');
-        tr.addEventListener('click', () => this._extractTarEntry(bytes, entry, wrap));
-      }
-
-      // Icon
-      const tdIcon = document.createElement('td'); tdIcon.className = 'zip-icon';
-      tdIcon.textContent = entry.dir ? '📁' : (isDangerous ? '⚠️' : this._getFileIcon(entry.path));
-      tr.appendChild(tdIcon);
-
-      // Path
-      const tdPath = document.createElement('td'); tdPath.className = 'zip-path';
-      tdPath.textContent = entry.path;
-      if (isDangerous) { const badge = document.createElement('span'); badge.className = 'zip-badge-danger'; badge.textContent = 'EXECUTABLE'; tdPath.appendChild(badge); }
-      if (isDouble) { const badge = document.createElement('span'); badge.className = 'zip-badge-danger'; badge.textContent = 'DOUBLE EXT'; tdPath.appendChild(badge); }
-      tr.appendChild(tdPath);
-
-      // Size
-      const tdSize = document.createElement('td'); tdSize.className = 'zip-size';
-      tdSize.textContent = entry.dir ? '—' : this._fmtBytes(entry.size);
-      tr.appendChild(tdSize);
-
-      // Date
-      const tdDate = document.createElement('td'); tdDate.className = 'zip-date';
-      tdDate.textContent = entry.mtime ? entry.mtime.toISOString().slice(0, 16).replace('T', ' ') : '—';
-      tr.appendChild(tdDate);
-
-      // Action column
-      const tdAction = document.createElement('td'); tdAction.className = 'zip-action';
-      if (!entry.dir) {
-        const openBtn = document.createElement('span'); openBtn.className = 'zip-badge-open';
-        openBtn.textContent = '🔍 Open';
-        openBtn.title = `Open ${entry.path.split('/').pop()} for analysis`;
-        openBtn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          this._extractTarEntry(bytes, entry, wrap);
-        });
-        tdAction.appendChild(openBtn);
-      }
-      tr.appendChild(tdAction);
-
-      tbody.appendChild(tr);
-    }
-
-    tbl.appendChild(tbody); scr.appendChild(tbl); wrap.appendChild(scr);
+    // File browser — shared ArchiveTree component (tree + flat + search + sort).
+    // Map TAR's `mtime: Date` → ArchiveTree's expected `date` field.
+    const archEntries = entries.map(e => ({
+      path: e.path,
+      dir: e.dir,
+      size: e.size,
+      date: e.mtime || null,
+      linkName: e.linkName || null,
+      _tarRef: e, // keep a handle back to the TAR entry for extraction
+    }));
+    const tree = ArchiveTree.render({
+      entries: archEntries,
+      onOpen: (entry) => this._extractTarEntry(bytes, entry._tarRef || entry, wrap),
+      execExts: ZipRenderer.EXEC_EXTS,
+      decoyExts: ZipRenderer.DECOY_EXTS,
+      showDate: true,
+    });
+    wrap.appendChild(tree);
 
     // Store bytes for extraction
     this._tarBytes = bytes;
 
     return wrap;
   }
+
 
   _parseTar(bytes) {
     const entries = [];
@@ -517,73 +472,19 @@ class ZipRenderer {
       wrap.appendChild(warnDiv);
     }
 
-    // Table
-    const scr = document.createElement('div'); scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 200px)';
-    const tbl = document.createElement('table'); tbl.className = 'zip-table';
-    const thead = document.createElement('thead');
-    const hr = document.createElement('tr');
-    for (const h of ['', 'Path', 'Size', 'Compressed', 'Date', '']) {
-      const th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
-    }
-    thead.appendChild(hr); tbl.appendChild(thead);
-
-    const tbody = document.createElement('tbody');
-    const sorted = entries.slice().sort((a, b) => a.path.localeCompare(b.path));
-    for (const e of sorted) {
-      const tr = document.createElement('tr');
-      const ext = e.path.split('.').pop().toLowerCase();
-      const isDangerous = !e.dir && ZipRenderer.EXEC_EXTS.has(ext);
-      const isDouble = this._isDoubleExt(e.path);
-      if (isDangerous || isDouble) tr.className = 'zip-row-danger';
-
-      // Highlight file rows on hover (clickable via Open button)
-      if (!e.dir) {
-        tr.classList.add('zip-row-clickable');
-      }
-
-      // Icon
-      const tdIcon = document.createElement('td'); tdIcon.className = 'zip-icon';
-      tdIcon.textContent = e.dir ? '📁' : (isDangerous ? '⚠️' : '📄'); tr.appendChild(tdIcon);
-
-      // Path
-      const tdPath = document.createElement('td'); tdPath.className = 'zip-path';
-      tdPath.textContent = e.path;
-      if (isDangerous) { const badge = document.createElement('span'); badge.className = 'zip-badge-danger'; badge.textContent = 'EXECUTABLE'; tdPath.appendChild(badge); }
-      if (isDouble) { const badge = document.createElement('span'); badge.className = 'zip-badge-danger'; badge.textContent = 'DOUBLE EXT'; tdPath.appendChild(badge); }
-      tr.appendChild(tdPath);
-
-      // Size
-      const tdSize = document.createElement('td'); tdSize.className = 'zip-size';
-      tdSize.textContent = e.dir ? '—' : this._fmtBytes(e.size); tr.appendChild(tdSize);
-
-      // Compressed
-      const tdComp = document.createElement('td'); tdComp.className = 'zip-size';
-      tdComp.textContent = e.dir ? '—' : this._fmtBytes(e.compressed); tr.appendChild(tdComp);
-
-      // Date
-      const tdDate = document.createElement('td'); tdDate.className = 'zip-date';
-      tdDate.textContent = e.date ? e.date.toISOString().slice(0, 19).replace('T', ' ') : '—';
-      tr.appendChild(tdDate);
-
-      // Action column
-      const tdAction = document.createElement('td'); tdAction.className = 'zip-action';
-      if (!e.dir) {
-        const openBtn = document.createElement('span'); openBtn.className = 'zip-badge-open';
-        openBtn.textContent = '🔍 Open';
-        openBtn.title = `Open ${e.path.split('/').pop()} for analysis`;
-        openBtn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          this._extractAndOpen(zip, e.path, wrap);
-        });
-        tdAction.appendChild(openBtn);
-      }
-      tr.appendChild(tdAction);
-
-      tbody.appendChild(tr);
-    }
-    tbl.appendChild(tbody); scr.appendChild(tbl); wrap.appendChild(scr);
+    // File browser — shared ArchiveTree component (tree + flat + search + sort).
+    const tree = ArchiveTree.render({
+      entries,
+      onOpen: (entry) => this._extractAndOpen(zip, entry.path, wrap),
+      execExts: ZipRenderer.EXEC_EXTS,
+      decoyExts: ZipRenderer.DECOY_EXTS,
+      showCompressed: true,
+      showDate: true,
+    });
+    wrap.appendChild(tree);
     return wrap;
   }
+
 
   // ── Extract file from ZIP and dispatch open event ─────────────────────────
 
@@ -696,41 +597,25 @@ class ZipRenderer {
     summ.textContent = `${entries.length} file(s) in encrypted archive (contents locked)`;
     wrap.appendChild(summ);
 
-    const scr = document.createElement('div'); scr.style.cssText = 'overflow:auto;max-height:calc(100vh - 300px)';
-    const tbl = document.createElement('table'); tbl.className = 'zip-table';
-    const thead = document.createElement('thead');
-    const hr = document.createElement('tr');
-    for (const h of ['', 'Path', 'Size', 'Compressed']) {
-      const th = document.createElement('th'); th.textContent = h; hr.appendChild(th);
-    }
-    thead.appendChild(hr); tbl.appendChild(thead);
-    const tbody = document.createElement('tbody');
-
-    for (const e of entries) {
-      const tr = document.createElement('tr');
-      const ext = e.name.split('.').pop().toLowerCase();
-      const isDangerous = ZipRenderer.EXEC_EXTS.has(ext);
-      if (isDangerous) tr.className = 'zip-row-danger';
-      tr.style.opacity = '0.6';
-
-      const tdIcon = document.createElement('td'); tdIcon.className = 'zip-icon';
-      tdIcon.textContent = isDangerous ? '⚠️🔒' : '📄🔒'; tr.appendChild(tdIcon);
-
-      const tdPath = document.createElement('td'); tdPath.className = 'zip-path';
-      tdPath.textContent = e.name;
-      if (isDangerous) { const badge = document.createElement('span'); badge.className = 'zip-badge-danger'; badge.textContent = 'EXECUTABLE'; tdPath.appendChild(badge); }
-      tr.appendChild(tdPath);
-
-      const tdSize = document.createElement('td'); tdSize.className = 'zip-size';
-      tdSize.textContent = this._fmtBytes(e.uncompSize); tr.appendChild(tdSize);
-
-      const tdComp = document.createElement('td'); tdComp.className = 'zip-size';
-      tdComp.textContent = this._fmtBytes(e.compSize); tr.appendChild(tdComp);
-
-      tbody.appendChild(tr);
-    }
-    tbl.appendChild(tbody); scr.appendChild(tbl); wrap.appendChild(scr);
+    // File browser — shared ArchiveTree. Every entry is marked encrypted so
+    // the tree renders lock badges and suppresses the Open button.
+    const archEntries = entries.map(e => ({
+      path: e.name,
+      dir: false,
+      size: e.uncompSize,
+      compressed: e.compSize,
+      encrypted: true,
+    }));
+    const tree = ArchiveTree.render({
+      entries: archEntries,
+      onOpen: null, // locked — Open buttons are suppressed on encrypted rows
+      execExts: ZipRenderer.EXEC_EXTS,
+      decoyExts: ZipRenderer.DECOY_EXTS,
+      showCompressed: true,
+    });
+    wrap.appendChild(tree);
   }
+
 
   // ── ZipCrypto decryption implementation ───────────────────────────────────
 

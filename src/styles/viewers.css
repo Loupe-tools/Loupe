@@ -8483,3 +8483,511 @@ body.dark .clickonce-raw-details[open] > summary {
   border: none;
   border-radius: 0 0 6px 6px;
 }
+
+/* ──────────────────────────────────────────────────────────────────────── */
+/*  Archive tree — shared collapsible/searchable/sortable browser used by   */
+/*  zip / msix / appx / crx / xpi renderers (src/renderers/archive-tree.js) */
+/* ──────────────────────────────────────────────────────────────────────── */
+
+.arch-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────── */
+.arch-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e4e4e4;
+  background: #fafafa;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+body.dark .arch-toolbar {
+  background: var(--panel-bg-raised);
+  border-color: var(--panel-border);
+}
+
+.arch-search-wrap {
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 200px;
+}
+
+.arch-search {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid #d4d4d4;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.arch-search:focus {
+  border-color: var(--risk-info);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
+}
+
+body.dark .arch-search {
+  background: var(--panel-bg);
+  border-color: var(--panel-border);
+  color: var(--text);
+}
+
+.arch-search-count {
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+body.dark .arch-search-count {
+  color: var(--text-muted);
+}
+
+.arch-view-toggle {
+  display: inline-flex;
+  border: 1px solid #d4d4d4;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+body.dark .arch-view-toggle {
+  border-color: var(--panel-border);
+  background: var(--panel-bg);
+}
+
+.arch-view-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.arch-view-btn + .arch-view-btn {
+  border-left: 1px solid #d4d4d4;
+}
+
+body.dark .arch-view-btn + .arch-view-btn {
+  border-color: var(--panel-border);
+}
+
+.arch-view-btn:hover {
+  background: rgba(59, 130, 246, .08);
+}
+
+.arch-view-btn.active {
+  background: var(--risk-info);
+  color: white;
+}
+
+.arch-tree-controls {
+  display: inline-flex;
+  gap: 4px;
+  transition: opacity 0.15s;
+}
+
+.arch-tree-controls.arch-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.arch-tree-btn {
+  appearance: none;
+  border: 1px solid #d4d4d4;
+  background: #fff;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.arch-tree-btn:hover {
+  background: rgba(59, 130, 246, .08);
+  border-color: var(--risk-info);
+}
+
+body.dark .arch-tree-btn {
+  background: var(--panel-bg);
+  border-color: var(--panel-border);
+  color: var(--text);
+}
+
+body.dark .arch-tree-btn:hover {
+  background: rgba(96, 165, 250, .12);
+}
+
+/* ── Panes ────────────────────────────────────────────────────────────── */
+.arch-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  max-height: calc(100vh - 240px);
+}
+
+.arch-pane[hidden] {
+  display: none;
+}
+
+/* ── Tree view ────────────────────────────────────────────────────────── */
+.arch-tree {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.arch-tree ul.arch-tree-children {
+  list-style: none;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.arch-tree li {
+  margin: 0;
+}
+
+.arch-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: default;
+  user-select: none;
+  line-height: 1.5;
+  min-height: 24px;
+}
+
+.arch-tree-folder-row {
+  cursor: pointer;
+}
+
+.arch-tree-row:hover {
+  background: rgba(59, 130, 246, .08);
+}
+
+body.dark .arch-tree-row:hover {
+  background: rgba(96, 165, 250, .1);
+}
+
+.arch-tree-row:focus-visible {
+  outline: 2px solid var(--risk-info);
+  outline-offset: -2px;
+}
+
+.arch-tree-caret {
+  width: 14px;
+  flex: 0 0 14px;
+  text-align: center;
+  color: #999;
+  font-size: 10px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+
+.arch-tree-folder.arch-tree-open > .arch-tree-folder-row > .arch-tree-caret {
+  transform: rotate(90deg);
+}
+
+.arch-tree-caret-leaf {
+  color: transparent;
+}
+
+.arch-tree-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.arch-tree-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Consolas', 'Monaco', 'SF Mono', monospace;
+}
+
+.arch-tree-meta {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+}
+
+body.dark .arch-tree-meta {
+  color: var(--text-muted);
+}
+
+.arch-tree-danger {
+  background: rgb(var(--risk-high-rgb) / .06);
+}
+
+body.dark .arch-tree-danger {
+  background: rgb(var(--risk-high-rgb) / .1);
+}
+
+.arch-tree-danger:hover {
+  background: rgb(var(--risk-high-rgb) / .14) !important;
+}
+
+.arch-tree-encrypted {
+  opacity: 0.65;
+}
+
+.arch-tree-hidden {
+  display: none;
+}
+
+.arch-tree-hit > .arch-tree-row {
+  background: rgba(250, 204, 21, .18);
+}
+
+body.dark .arch-tree-hit > .arch-tree-row {
+  background: rgba(250, 204, 21, .14);
+}
+
+.arch-tree-truncated {
+  padding: 6px 12px;
+  color: var(--risk-high);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* ── Flat view ────────────────────────────────────────────────────────── */
+.arch-flat-scroll {
+  overflow: auto;
+}
+
+.arch-flat-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.arch-flat-table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-weight: 700;
+  border-bottom: 2px solid #ddd;
+  position: sticky;
+  top: 0;
+  background: #f8f8f8;
+  white-space: nowrap;
+  user-select: none;
+}
+
+body.dark .arch-flat-table th {
+  background: var(--panel-bg-raised);
+  border-color: var(--panel-border);
+  color: var(--text-muted);
+}
+
+.arch-flat-table th.arch-sortable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.arch-flat-table th.arch-sortable:hover {
+  background: rgba(59, 130, 246, .1);
+}
+
+.arch-flat-table th.arch-sort-active {
+  color: var(--risk-info);
+}
+
+.arch-sort-arrow {
+  font-size: 9px;
+  margin-left: 2px;
+  color: var(--risk-info);
+}
+
+.arch-flat-table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid #eee;
+}
+
+body.dark .arch-flat-table td {
+  border-color: var(--panel-border);
+  color: var(--text);
+}
+
+.arch-col-icon {
+  width: 28px;
+  text-align: center;
+}
+
+.arch-col-path {
+  font-family: 'Consolas', 'Monaco', 'SF Mono', monospace;
+  word-break: break-all;
+}
+
+.arch-col-num {
+  white-space: nowrap;
+  text-align: right;
+  color: #888;
+}
+
+.arch-col-date {
+  white-space: nowrap;
+  color: #888;
+  font-size: 11px;
+}
+
+.arch-col-action {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.arch-flat-row {
+  transition: background 0.15s;
+}
+
+.arch-flat-row:hover {
+  background: rgba(59, 130, 246, .08);
+}
+
+body.dark .arch-flat-row:hover {
+  background: rgba(96, 165, 250, .1);
+}
+
+.arch-flat-danger {
+  background: rgb(var(--risk-high-rgb) / .06);
+}
+
+body.dark .arch-flat-danger {
+  background: rgb(var(--risk-high-rgb) / .1);
+}
+
+.arch-flat-encrypted {
+  opacity: 0.65;
+}
+
+.arch-flat-hidden {
+  display: none;
+}
+
+.arch-flat-hit {
+  background: rgba(250, 204, 21, .12);
+}
+
+body.dark .arch-flat-hit {
+  background: rgba(250, 204, 21, .08);
+}
+
+.arch-flat-dir .arch-col-path {
+  font-weight: 600;
+}
+
+/* ── Badges (shared between tree and flat views) ──────────────────────── */
+.arch-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.arch-badge-danger {
+  background: var(--risk-high);
+  color: white;
+}
+
+.arch-badge-lock {
+  background: rgba(148, 163, 184, .25);
+  color: #94a3b8;
+}
+
+.arch-badge-link {
+  background: rgba(59, 130, 246, .15);
+  color: var(--risk-info);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Open button ──────────────────────────────────────────────────────── */
+.arch-open-btn {
+  appearance: none;
+  border: none;
+  background: rgba(59, 130, 246, .15);
+  color: var(--risk-info);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: 6px;
+  flex: 0 0 auto;
+  transition: background 0.12s, color 0.12s;
+  font-family: inherit;
+}
+
+.arch-open-btn:hover,
+.arch-tree-row:hover .arch-open-btn,
+.arch-flat-row:hover .arch-open-btn {
+  background: var(--risk-info);
+  color: white;
+}
+
+body.dark .arch-open-btn {
+  background: var(--banner-info-bg, rgba(96, 165, 250, .15));
+}
+
+/* ── Search hit highlight ─────────────────────────────────────────────── */
+.arch-mark {
+  background: rgba(250, 204, 21, .5);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+  font-weight: 700;
+}
+
+body.dark .arch-mark {
+  background: rgba(250, 204, 21, .35);
+  color: #fef3c7;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────── */
+.arch-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: #888;
+  font-size: 13px;
+}
+
+body.dark .arch-empty {
+  color: var(--text-muted);
+}

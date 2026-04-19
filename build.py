@@ -111,7 +111,12 @@ JS_FILES = [
     'src/renderers/odp-renderer.js',
     'src/renderers/ppt-renderer.js',
     'src/renderers/rtf-renderer.js',
+    # archive-tree.js — shared collapsible / searchable / sortable archive
+    # browser. Must load BEFORE every renderer that uses `ArchiveTree`
+    # (zip, jar, msix, browserext) so the class exists at construction time.
+    'src/renderers/archive-tree.js',
     'src/renderers/zip-renderer.js',
+
     'src/renderers/iso-renderer.js',
     'src/renderers/dmg-renderer.js',
     'src/renderers/pkg-renderer.js',

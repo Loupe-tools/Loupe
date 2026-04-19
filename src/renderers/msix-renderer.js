@@ -635,70 +635,32 @@ class MsixRenderer {
     zip.forEach((path, entry) => {
       if (entries.length >= PARSER_LIMITS.MAX_ENTRIES) return;
       const uncompSize = entry._data ? (entry._data.uncompressedSize || 0) : 0;
-      entries.push({ path, dir: entry.dir, size: uncompSize });
+      const compSize = entry._data ? (entry._data.compressedSize || 0) : 0;
+      entries.push({ path, dir: entry.dir, size: uncompSize, compressed: compSize, date: entry.date || null });
     });
 
-    const tbl = document.createElement('table'); tbl.className = 'zip-table';
-    const thead = document.createElement('thead');
-    const hr = document.createElement('tr');
-    for (const col of ['', 'Path', 'Size', '']) {
-      const th = document.createElement('th'); th.textContent = col; hr.appendChild(th);
-    }
-    thead.appendChild(hr); tbl.appendChild(thead);
-
-    const tbody = document.createElement('tbody');
-    const sorted = entries.slice().sort((a, b) => a.path.localeCompare(b.path));
+    // Shared ArchiveTree component — tree + flat + search + column sort.
     const EXEC_EXTS = new Set(['exe', 'dll', 'scr', 'sys', 'msi', 'ps1', 'bat', 'cmd', 'vbs', 'js', 'hta']);
-    for (const e of sorted) {
-      const ext = e.path.split('.').pop().toLowerCase();
-      const dangerous = !e.dir && EXEC_EXTS.has(ext);
-      const tr = document.createElement('tr');
-      if (dangerous) tr.className = 'zip-row-danger';
-      if (!e.dir) tr.classList.add('zip-row-clickable');
-
-      const tdIcon = document.createElement('td'); tdIcon.className = 'zip-icon';
-      tdIcon.textContent = e.dir ? '📁' : (dangerous ? '⚠️' : '📄');
-      tr.appendChild(tdIcon);
-
-      const tdPath = document.createElement('td'); tdPath.className = 'zip-path';
-      tdPath.textContent = e.path;
-      if (dangerous) {
-        const badge = document.createElement('span'); badge.className = 'zip-badge-danger';
-        badge.textContent = 'EXECUTABLE'; tdPath.appendChild(badge);
-      }
-      tr.appendChild(tdPath);
-
-      const tdSize = document.createElement('td'); tdSize.className = 'zip-size';
-      tdSize.textContent = e.dir ? '—' : this._fmtBytes(e.size);
-      tr.appendChild(tdSize);
-
-      const tdAct = document.createElement('td'); tdAct.className = 'zip-action';
-      if (!e.dir) {
-        const btn = document.createElement('span'); btn.className = 'zip-badge-open';
-        btn.textContent = '🔍 Open'; btn.title = `Open ${e.path.split('/').pop()} for analysis`;
-        btn.addEventListener('click', async (ev) => {
-          ev.stopPropagation();
-          try {
-            const data = await zip.file(e.path).async('arraybuffer');
-            const name = e.path.split('/').pop();
-            const file = new File([data], name, { type: 'application/octet-stream' });
-            wrap.dispatchEvent(new CustomEvent('open-inner-file', { bubbles: true, detail: file }));
-          } catch (err) {
-            console.warn('Failed to extract from MSIX:', e.path, err && err.message);
-          }
-        });
-        tdAct.appendChild(btn);
-      }
-      tr.appendChild(tdAct);
-      tbody.appendChild(tr);
-    }
-    tbl.appendChild(tbody);
-
-    const scr = document.createElement('div'); scr.style.cssText = 'overflow:auto;max-height:60vh;';
-    scr.appendChild(tbl);
-    sec.appendChild(scr);
+    const tree = ArchiveTree.render({
+      entries,
+      execExts: EXEC_EXTS,
+      showCompressed: true,
+      showDate: true,
+      onOpen: async (entry) => {
+        try {
+          const data = await zip.file(entry.path).async('arraybuffer');
+          const name = entry.path.split('/').pop();
+          const file = new File([data], name, { type: 'application/octet-stream' });
+          wrap.dispatchEvent(new CustomEvent('open-inner-file', { bubbles: true, detail: file }));
+        } catch (err) {
+          console.warn('Failed to extract from MSIX:', entry.path, err && err.message);
+        }
+      },
+    });
+    sec.appendChild(tree);
     return sec;
   }
+
 
   // ═══════════════════════════════════════════════════════════════════════
   // Security analysis
