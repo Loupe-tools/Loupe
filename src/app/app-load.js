@@ -513,6 +513,19 @@ Object.assign(App.prototype, {
       this.findings = r.analyzeForSecurity(buffer, file.name);
       return { docEl: r.render(buffer, file.name) };
     },
+    dmg(file, buffer) {
+      const r = new DmgRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    async pkg(file, buffer) {
+      const r = new PkgRenderer();
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      const docEl = await r.render(buffer, file.name);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
+    },
+
     onenote(file, buffer) {
       const r = new OneNoteRenderer();
       this.findings = r.analyzeForSecurity(buffer, file.name);

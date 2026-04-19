@@ -1235,7 +1235,7 @@ Object.assign(App.prototype, {
     for (const ref of refs) {
       const tr = document.createElement('tr');
       tr.className = 'ioc-clickable';
-      tr.dataset.search = (ref.type + ' ' + ref.url).toLowerCase();
+      tr.dataset.search = (ref.type + ' ' + (ref.url || '')).toLowerCase();
       tr.dataset.severity = ref.severity;
       tr.dataset.type = ref.type;
 
@@ -1386,7 +1386,7 @@ Object.assign(App.prototype, {
         }
       } else {
 
-        const sp = document.createElement('span'); sp.textContent = ref.url; td2.appendChild(sp);
+        const sp = document.createElement('span'); sp.textContent = ref.url || ''; td2.appendChild(sp);
       }
       // Show decode chain note for IOCs extracted from encoded/obfuscated layers
       if (ref._decodedFrom) {
@@ -1408,7 +1408,7 @@ Object.assign(App.prototype, {
         noteEl.textContent = '↳ ' + ref.note;
         td2.appendChild(noteEl);
       }
-      if (IOC_COPYABLE.has(ref.type)) {
+      if (IOC_COPYABLE.has(ref.type) && ref.url) {
         const cb = document.createElement('button'); cb.className = 'copy-url-btn';
         cb.textContent = '📋'; cb.title = 'Copy';
         let copyVal = ref.url;

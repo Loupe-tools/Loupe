@@ -323,6 +323,47 @@ class RendererRegistry {
       description: 'ISO 9660 Disk Image',
     },
     {
+      // Apple Disk Image (UDIF) — 512-byte 'koly' trailer at end-of-file,
+      // OR the encrypted-DMG envelopes ('encrcdsa' / 'cdsaencr' / 'AEA1')
+      // at offset 0. DmgRenderer handles all three shapes internally so
+      // any of them should route here before anything else claims them.
+      id: 'dmg',
+      className: 'DmgRenderer',
+      exts: ['dmg'],
+      magic: (ctx) => {
+        const b = ctx.bytes;
+        // Encrypted envelopes sit at offset 0.
+        if (b.length >= 8) {
+          if (b[0] === 0x41 && b[1] === 0x45 && b[2] === 0x41 && b[3] === 0x31) return true; // AEA1
+          if (b[0] === 0x65 && b[1] === 0x6E && b[2] === 0x63 && b[3] === 0x72
+           && b[4] === 0x63 && b[5] === 0x64 && b[6] === 0x73 && b[7] === 0x61) return true; // encrcdsa
+          if (b[0] === 0x63 && b[1] === 0x64 && b[2] === 0x73 && b[3] === 0x61
+           && b[4] === 0x65 && b[5] === 0x6E && b[6] === 0x63 && b[7] === 0x72) return true; // cdsaencr
+        }
+        // UDIF 'koly' magic at the 512-byte trailer.
+        if (b.length < 512) return false;
+        const off = b.length - 512;
+        return b[off] === 0x6B && b[off + 1] === 0x6F
+            && b[off + 2] === 0x6C && b[off + 3] === 0x79;
+      },
+      description: 'Apple Disk Image (UDIF / .dmg)',
+    },
+    {
+      // macOS Installer Package — flat PKG is a xar archive ('xar!' at 0).
+      // Must precede the generic ZIP entry even though xar isn't ZIP-prefixed,
+      // to keep the magic pass ordered by specificity.
+      id: 'pkg',
+      className: 'PkgRenderer',
+      exts: ['pkg', 'mpkg'],
+      magic: (ctx) => {
+        const b = ctx.bytes;
+        return b.length >= 4
+          && b[0] === 0x78 && b[1] === 0x61 && b[2] === 0x72 && b[3] === 0x21;
+      },
+      description: 'macOS Installer Package (flat PKG / xar)',
+    },
+
+    {
       id: 'scpt',
       className: 'OsascriptRenderer',
       exts: ['applescript', 'jxa', 'scpt', 'scptd'],

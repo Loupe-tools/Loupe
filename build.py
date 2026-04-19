@@ -54,8 +54,10 @@ YARA_FILES = [
     'src/rules/clickonce-threats.yar',
     'src/rules/msix-threats.yar',
     'src/rules/browserext-threats.yar',
+    'src/rules/macos-installer-threats.yar',
 ]
 YARA_CATEGORIES = {
+
     'src/rules/office-macros.yar': 'Office Macros',
     'src/rules/script-threats.yar': 'Script',
     'src/rules/document-threats.yar': 'Document',
@@ -75,7 +77,9 @@ YARA_CATEGORIES = {
     'src/rules/clickonce-threats.yar': 'ClickOnce',
     'src/rules/msix-threats.yar': 'MSIX / APPX',
     'src/rules/browserext-threats.yar': 'Browser Extension',
+    'src/rules/macos-installer-threats.yar': 'macOS Installer',
 }
+
 yar_parts = []
 for f in YARA_FILES:
     cat = YARA_CATEGORIES.get(f, 'Other')
@@ -109,6 +113,9 @@ JS_FILES = [
     'src/renderers/rtf-renderer.js',
     'src/renderers/zip-renderer.js',
     'src/renderers/iso-renderer.js',
+    'src/renderers/dmg-renderer.js',
+    'src/renderers/pkg-renderer.js',
+
     'src/renderers/url-renderer.js',
     'src/renderers/onenote-renderer.js',
     'src/renderers/iqy-slk-renderer.js',
@@ -164,6 +171,8 @@ ACCEPT_EXTS = [
     '.docx','.docm','.xlsx','.xlsm','.xls','.ods','.pptx','.pptm','.ppt','.odt','.odp',
     '.csv','.tsv','.doc','.msg','.eml','.lnk','.hta','.rtf','.pdf',
     '.zip','.gz','.gzip','.tar','.tgz','.rar','.7z','.cab','.iso','.img','.one',
+    '.dmg','.pkg','.mpkg',
+
     '.url','.webloc','.website','.iqy','.slk','.wsf','.wsc','.wsh','.reg','.inf','.sct','.msi',
     '.html','.htm','.mht','.mhtml','.xhtml','.xml','.vbs','.vbe','.js','.jse','.ps1','.bat','.cmd',
     '.ics','.vcf','.txt','.log','.json','.ini','.cfg','.yml','.yaml',
