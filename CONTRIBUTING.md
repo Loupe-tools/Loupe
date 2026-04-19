@@ -403,6 +403,98 @@ Adding a new format is a three-step change:
 
 ---
 
+## Adding a New Theme
+
+All six built-in themes are driven by the same set of CSS custom properties
+("design tokens") defined in `src/styles/core.css`. A new theme is a pure
+overlay — it only re-defines the tokens and does not touch any selector, layout
+rule, or component style elsewhere in the codebase. `src/styles/viewers.css`
+and every renderer's inline styles read exclusively from these tokens so a
+single overlay file flips every surface in the app.
+
+### The token contract
+
+The canonical tokens every theme must define live at the top of
+`src/styles/core.css`. The non-negotiable ones are:
+
+| Token | Purpose |
+|---|---|
+| `--accent` / `--accent-rgb` / `--accent-hover` / `--accent-deep` | Primary brand colour (buttons, focus rings, links). `--accent-rgb` is the **space-separated** RGB channel triplet (`"r g b"`, not `"r,g,b"`) used by CSS Colors 4 `rgb(var(--accent-rgb) / .12)` syntax for themed transparency |
+| `--risk-high` / `--risk-high-rgb` / `--risk-med` / `--risk-low` / `--risk-info` | Four-tier risk palette consumed by the risk bar, detection chips, and every `container.style.color = 'var(--risk-high)'` site inside renderers |
+| `--hairline-soft` / `--hairline` / `--hairline-strong` / `--hairline-bold` | Four-tier border palette used by all dividers, table grids, and card outlines |
+| `--bg` / `--bg-panel` / `--bg-raised` / `--text` / `--text-muted` / `--text-dim` | Base surface and foreground tokens |
+
+The full list is enumerated in the `:root` / `body.dark` blocks in
+`core.css` — any token used by `viewers.css` must have a value in every
+overlay, or the Light / Dark baseline will leak through.
+
+### Recipe
+
+1. **Create the overlay** — add `src/styles/themes/<id>.css` scoped to
+   `body.theme-<id>`. Only re-declare the tokens; never write component-level
+   selectors. Example:
+
+   ```css
+   body.theme-foo {
+     --accent: #ffb454;
+     --accent-rgb: 255 180 84;
+     --accent-hover: #ffc673;
+     --accent-deep: #cc8f43;
+     --risk-high: #f26d6d;
+     --risk-high-rgb: 242 109 109;
+     /* …every token from the contract… */
+   }
+   ```
+
+2. **Register in `CSS_FILES`** — append the overlay path to the
+   `CSS_FILES` list in `build.py` so the bytes are inlined into
+   `docs/index.html`.
+
+3. **Register in `THEMES`** — add a `{ id, label, icon, dark }` row to the
+   `THEMES` array at the top of `src/app/app-ui.js`. Set `dark: true` for
+   any theme whose tokens target a dark baseline — the runtime toggles
+   `body.dark` so `core.css`'s dark-baseline rules apply under the overlay.
+
+4. **Update the FOUC bootstrap** — add the new id to the `THEME_IDS` array
+   in the inline `<script>` in `build.py` (just after the `<style>` block).
+   If the theme is dark, also add its id to the `DARK_THEMES` map. Without
+   this the FOUC bootstrap will refuse to apply the saved theme and the
+   user will see a one-frame flash of Light/Dark before `_initTheme()` in
+   `app-ui.js` catches up.
+
+5. **Rebuild and test** — `python build.py`, then open
+   `docs/index.html` and click through every tile in ⚙ Settings → Theme.
+   Every panel, chip, border, and risk colour should flip; no hard-coded
+   hex should leak through.
+
+6. **Regenerate the code map** — `python generate-codemap.py`.
+
+**Docs to update (required):**
+
+- `FEATURES.md` — update the "Theme picker" row to mention the new theme
+  in the tile list.
+- `README.md` — only if the new theme is promoted to the compact theme
+  list under **🎨 Themes** (add a screenshot to `screenshots/` as well).
+- `CONTRIBUTING.md` — no update needed; this recipe is generic.
+
+### FOUC prevention
+
+The inline `<script>` in `build.py` (`<head>`, immediately after the
+`<style>` block) applies the saved theme class to `<body>` before the
+first paint so users never see a flash of the default palette. The logic
+mirrors `_initTheme()` in `src/app/app-ui.js` and is covered by CSP's
+`script-src 'unsafe-inline'` (which is already required by the rest of the
+single-file bundle, so no relaxation is added). If `<body>` has not been
+parsed yet, the bootstrap stashes the classes on `<html>` and copies them
+across via a one-shot `MutationObserver` the moment `<body>` appears.
+
+First-boot fallback order:
+1. Saved `localStorage['loupe_theme']` (if a valid id).
+2. OS `prefers-color-scheme: light` → Light, else Dark.
+3. Hard-coded `'dark'` if both of the above fail.
+
+---
+
 ## How to Contribute
 
 1. Fork the repo
