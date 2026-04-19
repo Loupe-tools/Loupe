@@ -1,0 +1,165 @@
+/* ══════════════════════════════════════════════════════
+   Theme: Catppuccin Latte
+   ──────────────────────────────────────────────────────
+   Overlay on top of the baseline light palette using the
+   Catppuccin Latte palette (https://catppuccin.com/):
+
+     base      #eff1f5   main background
+     mantle    #e6e9ef   panel background
+     crust     #dce0e8   deepest background
+     surface0  #ccd0da   hairlines / subtle surfaces
+     surface1  #bcc0cc   hover surface
+     text      #4c4f69   primary text
+     subtext0  #6c6f85   muted text
+     subtext1  #5c5f77
+     mauve     #8839ef   primary accent (replaces blue)
+     lavender  #7287fd   hover / focus lift
+     pink      #ea76cb   secondary accent
+     red       #d20f39   risk / warning accent
+
+   Warm, low-glare light palette. Light companion to the
+   Catppuccin Mocha dark overlay under the same family.
+
+   Activation: <body class="theme-latte">  (no .dark)
+   Registry:   src/app/app-ui.js → THEMES
+   ══════════════════════════════════════════════════════ */
+
+body.theme-latte {
+  background: #eff1f5;
+  background-image: linear-gradient(160deg, #e6e9ef 0%, #eff1f5 60%, #e6e9ef 100%);
+  color: #4c4f69;
+}
+
+/* ── Toolbar / viewer-toolbar ─────────────────────────────────────── */
+body.theme-latte #toolbar {
+  background: rgba(230, 233, 239, .92);
+  border-bottom-color: rgba(76, 79, 105, .12);
+  box-shadow: 0 1px 8px rgba(76, 79, 105, .06);
+}
+
+body.theme-latte #viewer-toolbar {
+  background: rgba(230, 233, 239, .9);
+  border-color: rgba(76, 79, 105, .12);
+}
+
+body.theme-latte #app-title { color: #4c4f69; }
+
+/* Breadcrumbs — mauve hover surface */
+body.theme-latte .crumb               { color: rgba(76, 79, 105, .8); }
+body.theme-latte .crumb:hover         { background: rgba(136, 57, 239, .1); color: #4c4f69; }
+body.theme-latte .crumb-current       { background: rgba(136, 57, 239, .12); color: #4c4f69; }
+body.theme-latte .crumb-current:hover { background: rgba(136, 57, 239, .12); }
+body.theme-latte .crumb-meta          { color: rgba(108, 111, 133, .8); }
+body.theme-latte .crumb-sep           { color: rgba(108, 111, 133, .6); }
+body.theme-latte .crumb-overflow-btn       { background: rgba(76, 79, 105, .05); color: #6c6f85; border-color: rgba(76, 79, 105, .14); }
+body.theme-latte .crumb-overflow-btn:hover { background: rgba(136, 57, 239, .1); color: #4c4f69; }
+body.theme-latte .crumb-overflow-menu      { background: rgba(239, 241, 245, .98); border-color: rgba(76, 79, 105, .16); }
+
+/* ── Toolbar buttons (mauve-accent variant) ─────────────────────── */
+body.theme-latte .tb-btn {
+  background: rgba(204, 208, 218, .45);
+  border-color: rgba(76, 79, 105, .14);
+  color: #4c4f69;
+}
+
+body.theme-latte .tb-btn:hover {
+  background: rgba(136, 57, 239, .12);
+  border-color: rgba(136, 57, 239, .38);
+  color: #8839ef;
+  box-shadow: 0 0 10px rgba(136, 57, 239, .1);
+}
+
+body.theme-latte .tb-btn:active {
+  background: rgba(136, 57, 239, .18);
+}
+
+body.theme-latte .tb-separator { background: rgba(76, 79, 105, .16); }
+
+/* Accent "⚡ Analysis" button — latte mauve */
+body.theme-latte .tb-accent-btn {
+  background: rgba(136, 57, 239, .12);
+  border-color: rgba(136, 57, 239, .4);
+  color: #8839ef;
+}
+
+body.theme-latte .tb-accent-btn:hover {
+  background: rgba(136, 57, 239, .22);
+  border-color: rgba(114, 135, 253, .55);
+  color: #7287fd;
+  box-shadow: 0 0 14px rgba(136, 57, 239, .16);
+}
+
+body.theme-latte .tb-accent-btn:active {
+  background: rgba(136, 57, 239, .3);
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────── */
+body.theme-latte #sidebar {
+  background: rgba(230, 233, 239, .96);
+  border-left-color: rgba(76, 79, 105, .14);
+  color: #4c4f69;
+}
+
+body.theme-latte .sb-details              { border-color: rgba(76, 79, 105, .1); }
+body.theme-latte .sb-section              { color: rgba(108, 111, 133, .85); border-color: rgba(76, 79, 105, .14); }
+body.theme-latte .sb-details-summary      { color: rgba(76, 79, 105, .85); }
+body.theme-latte .sb-details-summary:hover { background: rgba(76, 79, 105, .05); }
+body.theme-latte .sb-details-summary::before { color: rgba(76, 79, 105, .5); }
+
+/* Tables — soft hairlines, mauve column-1 colour */
+body.theme-latte .hash-table td,
+body.theme-latte .meta-table td,
+body.theme-latte .ext-table td            { border-color: rgba(76, 79, 105, .1); color: #4c4f69; }
+body.theme-latte .hash-table td:first-child,
+body.theme-latte .meta-table td:first-child { color: rgba(108, 111, 133, .85); }
+body.theme-latte .hash-val                { color: #ea76cb; }
+body.theme-latte .ext-table th {
+  background: rgba(204, 208, 218, .4);
+  border-color: rgba(76, 79, 105, .14);
+  color: rgba(76, 79, 105, .78);
+}
+
+/* Muted labels in toolbar */
+body.theme-latte #zoom-level,
+body.theme-latte #doc-search-count        { color: rgba(108, 111, 133, .85); }
+body.theme-latte .ioc-decoded-from        { color: rgba(108, 111, 133, .75); }
+
+/* Search input / extension search */
+body.theme-latte .vt-search input,
+body.theme-latte .ext-search {
+  background: rgba(220, 224, 232, .7);
+  border-color: rgba(76, 79, 105, .18);
+  color: #4c4f69;
+}
+
+body.theme-latte .vt-search input:focus,
+body.theme-latte .ext-search:focus {
+  border-color: #8839ef;
+  box-shadow: 0 0 0 3px rgba(136, 57, 239, .18);
+}
+
+/* Sidebar resize handle — latte mauve on hover/active */
+body.theme-latte #sidebar-resize:hover,
+body.theme-latte.sb-resizing #sidebar-resize {
+  background: #8839ef;
+  box-shadow: 0 0 8px rgba(136, 57, 239, .35);
+}
+
+/* Scrollbars */
+body.theme-latte ::-webkit-scrollbar-thumb       { background: rgba(76, 79, 105, .2); }
+body.theme-latte ::-webkit-scrollbar-thumb:hover { background: rgba(136, 57, 239, .4); }
+
+/* Drop zone */
+body.theme-latte #drop-zone {
+  border-color: rgba(76, 79, 105, .25);
+  background: rgba(204, 208, 218, .25);
+  color: #6c6f85;
+}
+
+body.theme-latte #drop-zone:hover,
+body.theme-latte #drop-zone.drag-over {
+  border-color: #8839ef;
+  background: rgba(136, 57, 239, .08);
+  color: #4c4f69;
+  box-shadow: 0 0 24px rgba(136, 57, 239, .1);
+}

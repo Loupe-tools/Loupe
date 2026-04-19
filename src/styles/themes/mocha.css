@@ -1,0 +1,161 @@
+/* ══════════════════════════════════════════════════════
+   Theme: Catppuccin Mocha
+   ──────────────────────────────────────────────────────
+   Overlay on top of `body.dark` using the flagship
+   Catppuccin Mocha palette (https://catppuccin.com/):
+
+     base      #1e1e2e   main background
+     mantle    #181825   panel background
+     crust     #11111b   deepest background
+     surface0  #313244   hairlines / subtle surfaces
+     surface1  #45475a   hover surface
+     text      #cdd6f4   primary text
+     subtext0  #a6adc8   muted text
+     subtext1  #bac2de
+     mauve     #cba6f7   primary accent (replaces cyan)
+     lavender  #b4befe   hover / focus lift
+     pink      #f5c2e7   secondary accent
+     red       #f38ba8   risk / warning accent
+
+   Soft, purple-leaning dark palette popular across the
+   modern developer-tool ecosystem. Pairs well with the
+   Latte light companion under the same family.
+
+   Activation: <body class="dark theme-mocha">
+   Registry:   src/app/app-ui.js → THEMES
+   ══════════════════════════════════════════════════════ */
+
+body.theme-mocha {
+  background: #1e1e2e;
+  background-image: linear-gradient(160deg, #181825 0%, #1e1e2e 60%, #181825 100%);
+  color: #cdd6f4;
+}
+
+/* ── Toolbar / viewer-toolbar ─────────────────────────────────────── */
+body.theme-mocha #toolbar {
+  background: rgba(24, 24, 37, .92);
+  border-bottom-color: rgba(205, 214, 244, .1);
+  box-shadow: 0 1px 16px rgba(0, 0, 0, .4);
+}
+
+body.theme-mocha #viewer-toolbar {
+  background: rgba(24, 24, 37, .9);
+  border-color: rgba(205, 214, 244, .1);
+}
+
+body.theme-mocha #app-title { color: #cdd6f4; }
+
+/* Breadcrumbs — mauve hover surface */
+body.theme-mocha .crumb               { color: rgba(205, 214, 244, .78); }
+body.theme-mocha .crumb:hover         { background: rgba(203, 166, 247, .14); color: #cdd6f4; }
+body.theme-mocha .crumb-current       { background: rgba(203, 166, 247, .16); color: #cdd6f4; }
+body.theme-mocha .crumb-current:hover { background: rgba(203, 166, 247, .16); }
+body.theme-mocha .crumb-meta          { color: rgba(166, 173, 200, .7); }
+body.theme-mocha .crumb-sep           { color: rgba(166, 173, 200, .55); }
+body.theme-mocha .crumb-overflow-btn       { background: rgba(205, 214, 244, .05); color: #a6adc8; border-color: rgba(205, 214, 244, .14); }
+body.theme-mocha .crumb-overflow-btn:hover { background: rgba(203, 166, 247, .14); color: #cdd6f4; }
+body.theme-mocha .crumb-overflow-menu      { background: rgba(24, 24, 37, .96); border-color: rgba(205, 214, 244, .2); }
+
+/* ── Toolbar buttons (mauve-accent variant of the default cyan hover) ── */
+body.theme-mocha .tb-btn {
+  background: rgba(205, 214, 244, .04);
+  border-color: rgba(205, 214, 244, .12);
+  color: #cdd6f4;
+}
+
+body.theme-mocha .tb-btn:hover {
+  background: rgba(203, 166, 247, .15);
+  border-color: rgba(203, 166, 247, .42);
+  color: #cba6f7;
+  box-shadow: 0 0 12px rgba(203, 166, 247, .14);
+}
+
+body.theme-mocha .tb-btn:active {
+  background: rgba(203, 166, 247, .22);
+}
+
+body.theme-mocha .tb-separator { background: rgba(205, 214, 244, .14); }
+
+/* Accent "⚡ Analysis" button — mocha mauve */
+body.theme-mocha .tb-accent-btn {
+  background: rgba(203, 166, 247, .16);
+  border-color: rgba(203, 166, 247, .42);
+  color: #cba6f7;
+}
+
+body.theme-mocha .tb-accent-btn:hover {
+  background: rgba(203, 166, 247, .28);
+  border-color: rgba(180, 190, 254, .6);
+  color: #b4befe;
+  box-shadow: 0 0 16px rgba(203, 166, 247, .2);
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────── */
+body.theme-mocha #sidebar {
+  background: rgba(17, 17, 27, .94);
+  border-left-color: rgba(205, 214, 244, .1);
+}
+
+body.theme-mocha .sb-details              { border-color: rgba(205, 214, 244, .08); }
+body.theme-mocha .sb-section              { color: rgba(166, 173, 200, .7); border-color: rgba(205, 214, 244, .12); }
+body.theme-mocha .sb-details-summary      { color: rgba(205, 214, 244, .78); }
+body.theme-mocha .sb-details-summary:hover { background: rgba(205, 214, 244, .04); }
+body.theme-mocha .sb-details-summary::before { color: rgba(205, 214, 244, .45); }
+
+/* Tables — soft hairlines, lavender column-1 colour */
+body.theme-mocha .hash-table td,
+body.theme-mocha .meta-table td,
+body.theme-mocha .ext-table td            { border-color: rgba(205, 214, 244, .08); color: #cdd6f4; }
+body.theme-mocha .hash-table td:first-child,
+body.theme-mocha .meta-table td:first-child { color: rgba(180, 190, 254, .78); }
+body.theme-mocha .hash-val                { color: #f5c2e7; }
+body.theme-mocha .ext-table th {
+  background: rgba(205, 214, 244, .05);
+  border-color: rgba(205, 214, 244, .14);
+  color: rgba(205, 214, 244, .72);
+}
+
+/* Muted labels in toolbar */
+body.theme-mocha #zoom-level,
+body.theme-mocha #doc-search-count        { color: rgba(166, 173, 200, .75); }
+body.theme-mocha .ioc-decoded-from        { color: rgba(166, 173, 200, .65); }
+
+/* Search input / extension search */
+body.theme-mocha .vt-search input,
+body.theme-mocha .ext-search {
+  background: rgba(17, 17, 27, .6);
+  border-color: rgba(205, 214, 244, .16);
+  color: #cdd6f4;
+}
+
+body.theme-mocha .vt-search input:focus,
+body.theme-mocha .ext-search:focus {
+  border-color: #cba6f7;
+  box-shadow: 0 0 0 3px rgba(203, 166, 247, .22);
+}
+
+/* Sidebar resize handle — mocha mauve on hover/active */
+body.theme-mocha #sidebar-resize:hover,
+body.theme-mocha.sb-resizing #sidebar-resize {
+  background: #cba6f7;
+  box-shadow: 0 0 8px rgba(203, 166, 247, .4);
+}
+
+/* Scrollbars */
+body.theme-mocha ::-webkit-scrollbar-thumb       { background: rgba(205, 214, 244, .18); }
+body.theme-mocha ::-webkit-scrollbar-thumb:hover { background: rgba(203, 166, 247, .5); }
+
+/* Drop zone */
+body.theme-mocha #drop-zone {
+  border-color: rgba(205, 214, 244, .22);
+  background: rgba(205, 214, 244, .03);
+  color: #a6adc8;
+}
+
+body.theme-mocha #drop-zone:hover,
+body.theme-mocha #drop-zone.drag-over {
+  border-color: #cba6f7;
+  background: rgba(203, 166, 247, .08);
+  color: #cdd6f4;
+  box-shadow: 0 0 30px rgba(203, 166, 247, .1);
+}
