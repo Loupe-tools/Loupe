@@ -226,7 +226,7 @@ body.dark #app-title {
   color: #e0e0e8;
 }
 
-.emoji {
+.logo {
   font-size: 1.5em;
 }
 
@@ -1855,17 +1855,56 @@ body.dark .yara-chip-x:hover {
   color: #334155;
   background: rgba(100, 116, 139, .15);
 }
-.yara-chip-severity-critical { color: var(--risk-high); background: rgba(220, 38, 38, .12); }
-.yara-chip-severity-high     { color: #ea580c;         background: rgba(234, 88, 12, .12); }
-.yara-chip-severity-medium   { color: #d97706;         background: rgba(217, 119, 6, .12); }
-.yara-chip-severity-low      { color: var(--accent-deep); background: rgba(8, 145, 178, .12); }
-.yara-chip-severity-info     { color: #64748b;         background: rgba(100, 116, 139, .12); }
 
-body.dark .yara-chip-severity-critical { color: var(--risk-high); background: rgb(var(--risk-high-rgb) / .2); }
-body.dark .yara-chip-severity-high     { color: #fb923c;          background: rgba(251, 146, 60, .18); }
-body.dark .yara-chip-severity-medium   { color: var(--risk-med);  background: rgba(251, 191, 36, .18); }
-body.dark .yara-chip-severity-low      { color: var(--accent);    background: rgb(var(--accent-rgb) / .2); }
-body.dark .yara-chip-severity-info     { color: #94a3b8;          background: rgba(148, 163, 184, .18); }
+.yara-chip-severity-critical {
+  color: var(--risk-high);
+  background: rgba(220, 38, 38, .12);
+}
+
+.yara-chip-severity-high {
+  color: #ea580c;
+  background: rgba(234, 88, 12, .12);
+}
+
+.yara-chip-severity-medium {
+  color: #d97706;
+  background: rgba(217, 119, 6, .12);
+}
+
+.yara-chip-severity-low {
+  color: var(--accent-deep);
+  background: rgba(8, 145, 178, .12);
+}
+
+.yara-chip-severity-info {
+  color: #64748b;
+  background: rgba(100, 116, 139, .12);
+}
+
+body.dark .yara-chip-severity-critical {
+  color: var(--risk-high);
+  background: rgb(var(--risk-high-rgb) / .2);
+}
+
+body.dark .yara-chip-severity-high {
+  color: #fb923c;
+  background: rgba(251, 146, 60, .18);
+}
+
+body.dark .yara-chip-severity-medium {
+  color: var(--risk-med);
+  background: rgba(251, 191, 36, .18);
+}
+
+body.dark .yara-chip-severity-low {
+  color: var(--accent);
+  background: rgb(var(--accent-rgb) / .2);
+}
+
+body.dark .yara-chip-severity-info {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, .18);
+}
 
 /* Free-text chip — neutral colouring so it stands apart from the
    palette-tinted file/category chips. */
@@ -1874,6 +1913,7 @@ body.dark .yara-chip-severity-info     { color: #94a3b8;          background: rg
   background: rgba(71, 85, 105, .1);
   font-style: italic;
 }
+
 body.dark .yara-chip-text {
   color: #cbd5e1;
   background: rgba(148, 163, 184, .15);
@@ -1927,15 +1967,42 @@ body.dark .yara-sugg-box {
   color: #475569;
 }
 
-.yara-sugg-kind-file     { background: rgba(8, 145, 178, .15);  color: var(--accent-deep); }
-.yara-sugg-kind-category { background: rgba(124, 58, 237, .15); color: #7c3aed; }
-.yara-sugg-kind-severity { background: rgba(234, 88, 12, .15);  color: #ea580c; }
-.yara-sugg-kind-text     { background: rgba(100, 116, 139, .15); color: #475569; font-style: italic; }
+.yara-sugg-kind-file {
+  background: rgba(8, 145, 178, .15);
+  color: var(--accent-deep);
+}
 
-body.dark .yara-sugg-kind-file     { color: var(--accent); }
-body.dark .yara-sugg-kind-category { color: #a78bfa; }
-body.dark .yara-sugg-kind-severity { color: #fb923c; }
-body.dark .yara-sugg-kind-text     { color: #cbd5e1; }
+.yara-sugg-kind-category {
+  background: rgba(124, 58, 237, .15);
+  color: #7c3aed;
+}
+
+.yara-sugg-kind-severity {
+  background: rgba(234, 88, 12, .15);
+  color: #ea580c;
+}
+
+.yara-sugg-kind-text {
+  background: rgba(100, 116, 139, .15);
+  color: #475569;
+  font-style: italic;
+}
+
+body.dark .yara-sugg-kind-file {
+  color: var(--accent);
+}
+
+body.dark .yara-sugg-kind-category {
+  color: #a78bfa;
+}
+
+body.dark .yara-sugg-kind-severity {
+  color: #fb923c;
+}
+
+body.dark .yara-sugg-kind-text {
+  color: #cbd5e1;
+}
 
 .yara-sugg-value {
   flex: 1 1 auto;
@@ -1958,8 +2025,13 @@ body.dark .yara-sugg-kind-text     { color: #cbd5e1; }
 }
 
 @keyframes yara-catinfo-fade {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .yara-catinfo-card {

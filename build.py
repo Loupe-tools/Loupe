@@ -284,7 +284,7 @@ HTML = f"""<!DOCTYPE html>
 
   <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
   <div id="toolbar">
-    <span id="app-title"><span class="emoji">🕵🏻</span> Loupe</span>
+    <span id="app-title"><span class="logo">🕵🏻 Loupe</span></span>
     <div class="tb-separator"></div>
     <!-- File operations group -->
     <div class="tb-group" id="file-ops">
