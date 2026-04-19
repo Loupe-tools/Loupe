@@ -995,6 +995,7 @@ class PlistRenderer {
           severity: p.sev,
           count: matches.length,
           sample: matches[0].substring(0, 120),
+          highlight: matches[0],
         });
         if (p.sev === 'critical') criticalCount++;
         else if (p.sev === 'high') highCount++;
@@ -1015,6 +1016,7 @@ class PlistRenderer {
           severity: 'high',
           count: 1,
           sample: label,
+          highlight: label,
         });
         highCount++;
       }
@@ -1032,6 +1034,7 @@ class PlistRenderer {
               severity: 'critical',
               count: 1,
               sample: execTarget.substring(0, 120),
+              highlight: 'RunAtLoad',
             });
             criticalCount++;
           }
@@ -1048,6 +1051,7 @@ class PlistRenderer {
           severity: 'high',
           count: 1,
           sample: 'KeepAlive=true, RunAtLoad=true',
+          highlight: 'KeepAlive',
         });
         highCount++;
       }
@@ -1062,6 +1066,7 @@ class PlistRenderer {
           severity: 'medium',
           count: 1,
           sample: 'StartInterval=' + interval._value,
+          highlight: 'StartInterval',
         });
         mediumCount++;
       }
@@ -1079,6 +1084,7 @@ class PlistRenderer {
             severity: 'critical',
             count: 1,
             sample: e.key + '=' + (e.value._value || '').substring(0, 100),
+            highlight: 'DYLD_INSERT_LIBRARIES',
           });
           criticalCount++;
         }
@@ -1098,6 +1104,7 @@ class PlistRenderer {
           severity: 'medium',
           count: 1,
           sample: k,
+          highlight: k,
         });
         mediumCount++;
       }
@@ -1119,6 +1126,7 @@ class PlistRenderer {
                 severity: 'low',
                 count: schemeNames.length,
                 sample: schemeNames.join(', '),
+                highlight: schemeNames[0],
               });
             }
           }
@@ -1208,12 +1216,22 @@ class PlistRenderer {
     // Mirror signatureMatches into externalRefs as IOC.PATTERN so the
     // Summary sidebar and Share view see every detection the viewer
     // surfaces (Detection → IOC parity).
+    //
+    // Each detection carries a `highlight` string naming the concrete XML
+    // token that triggered it (e.g. a matched regex hit, or a key name like
+    // "RunAtLoad" / "StartInterval" / "DYLD_INSERT_LIBRARIES"). Threading it
+    // through as `_highlightText` lets `_navigateToFinding` locate the line
+    // in the XML Source pane and flash it — without this, clicking a Pattern
+    // row in the sidebar silently no-ops because the mirrored "Label —
+    // description" string never literally appears in the rendered source.
     for (const sm of findings.signatureMatches) {
-      findings.externalRefs.push({
+      const ref = {
         type: IOC.PATTERN,
         url: `${sm.label} — ${sm.description}`,
         severity: sm.severity || 'medium',
-      });
+      };
+      if (sm.highlight) ref._highlightText = sm.highlight;
+      findings.externalRefs.push(ref);
     }
 
     // ── Risk assessment ──────────────────────────────────────────────────
