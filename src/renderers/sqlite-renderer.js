@@ -729,7 +729,7 @@ class SqliteRenderer {
           const s = val == null ? 'NULL' : String(val);
           if (s.length > 200) { td.textContent = s.substring(0, 200) + '…'; td.title = s; }
           else td.textContent = s;
-          if (val === null) td.style.color = '#999';
+          if (val === null) td.style.color = 'var(--text-dim)';
           tr.appendChild(td);
           cellTexts.push(s.toLowerCase());
         }
