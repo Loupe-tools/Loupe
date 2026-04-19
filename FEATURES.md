@@ -41,7 +41,7 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks to
 | **Email** | `.eml` `.msg` |
 | **HTML** | `.html` `.htm` `.mht` `.mhtml` `.xhtml` — sandboxed preview + source view |
 | **Archives** | `.zip` `.gz` `.gzip` `.tar` `.tar.gz` / `.tgz` `.rar` `.7z` `.cab` |
-| **Disk images** | `.iso` `.img` — ISO 9660 filesystem listing |
+| **Disk images** | `.iso` `.img` — ISO 9660 filesystem listing; click any entry to extract and re-analyse |
 | **OneNote** | `.one` — embedded object extraction + phishing detection |
 | **Windows** | `.lnk` · `.hta` · `.url` `.webloc` `.website` · `.reg` · `.inf` · `.sct` · `.msi` · PE executables (`.exe` `.dll` `.sys` `.scr` `.cpl` `.ocx` `.drv` `.com`) · `.xll` (Excel add-in DLL) · `.application` `.manifest` (ClickOnce) · `.msix` `.msixbundle` `.appx` `.appxbundle` · `.appinstaller` |
 | **Browser extensions** | `.crx` (Chrome / Chromium / Edge) · `.xpi` (Firefox / Thunderbird) |

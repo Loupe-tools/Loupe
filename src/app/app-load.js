@@ -511,7 +511,9 @@ Object.assign(App.prototype, {
     iso(file, buffer) {
       const r = new IsoRenderer();
       this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
+      const docEl = r.render(buffer, file.name);
+      this._wireInnerFileListener(docEl, file.name);
+      return { docEl };
     },
     dmg(file, buffer) {
       const r = new DmgRenderer();
@@ -969,6 +971,7 @@ Object.assign(App.prototype, {
       const name = (state.parentName || '').toLowerCase();
       if (name.endsWith('.zip')) this._reRenderZip(state, pc);
       else if (name.endsWith('.msi')) this._reRenderMsi(state, pc);
+      else if (name.endsWith('.iso') || name.endsWith('.img')) this._reRenderIso(state, pc);
       else if (name.endsWith('.jar') || name.endsWith('.war') || name.endsWith('.ear') || name.endsWith('.class')) this._reRenderJar(state, pc);
     }
 
@@ -1175,6 +1178,23 @@ Object.assign(App.prototype, {
   _reRenderMsi(state, pc) {
     try {
       const r = new MsiRenderer();
+      const buf = state.fileBuffer;
+      const docEl = r.render(buf, state.parentName);
+      docEl.addEventListener('open-inner-file', (e) => {
+        const innerFile = e.detail;
+        if (innerFile) {
+          this._pushNavState(state.parentName);
+          this._loadFile(innerFile);
+        }
+      });
+      pc.innerHTML = '';
+      pc.appendChild(docEl);
+    } catch (_) { /* fallback: static HTML already set */ }
+  },
+
+  _reRenderIso(state, pc) {
+    try {
+      const r = new IsoRenderer();
       const buf = state.fileBuffer;
       const docEl = r.render(buf, state.parentName);
       docEl.addEventListener('open-inner-file', (e) => {

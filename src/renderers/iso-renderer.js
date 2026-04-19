@@ -67,9 +67,12 @@ class IsoRenderer {
     }
 
     // File listing — shared ArchiveTree (tree + flat + search + sort).
-    // ISO/IMG are currently a passive listing (no per-file extraction), so
-    // onOpen is omitted; the component renders no Open button for those rows.
+    // ISO 9660 files are stored uncompressed as contiguous byte runs at
+    // `lba * blockSize`, so per-file extraction is a plain buffer slice —
+    // dispatch `open-inner-file` and let app-load.js drill into the child.
     if (files.length) {
+      const byPath = new Map();
+      for (const e of files) byPath.set(e.path || e.name, e);
       const archEntries = files.map(e => ({
         path: e.path || e.name,
         dir: !!e.dir,
@@ -79,6 +82,15 @@ class IsoRenderer {
       }));
       const tree = ArchiveTree.render({
         entries: archEntries,
+        onOpen: (archEntry) => {
+          const src = byPath.get(archEntry.path);
+          if (!src || src.dir) return;
+          const data = this._extractFile(bytes, src);
+          if (!data) return;
+          const name = src.name || (archEntry.path.split('/').pop());
+          const file = new File([data], name, { type: 'application/octet-stream' });
+          wrap.dispatchEvent(new CustomEvent('open-inner-file', { bubbles: true, detail: file }));
+        },
         execExts: IsoRenderer.EXEC_EXTS,
         showDate: true,
       });
@@ -86,6 +98,20 @@ class IsoRenderer {
     }
 
     return wrap;
+  }
+
+  // Slice a file's contents out of the ISO buffer. ISO 9660 stores file data
+  // uncompressed as a contiguous run starting at `lba * blockSize` for `size`
+  // bytes, so extraction is a bounds-clamped subarray.
+  _extractFile(bytes, entry) {
+    const blockSize = entry._blockSize || 2048;
+    const lba = entry._lba | 0;
+    const size = entry.size | 0;
+    if (lba <= 0 || size <= 0) return null;
+    const start = lba * blockSize;
+    if (start >= bytes.length) return null;
+    const end = Math.min(start + size, bytes.length);
+    return bytes.subarray(start, end);
   }
 
   analyzeForSecurity(buffer, fileName) {
@@ -236,7 +262,9 @@ class IsoRenderer {
       const path = prefix ? prefix + '/' + name : name;
       const date = this._readDate(bytes, pos + 18);
 
-      files.push({ name, path, size, dir: isDir, date });
+      // `_lba` / `_blockSize` are kept for `_extractFile` to slice the raw
+      // file bytes back out of the ISO buffer on drill-down.
+      files.push({ name, path, size, dir: isDir, date, _lba: lba, _blockSize: blockSize });
 
       // Recurse into subdirectories
       if (isDir && lba > 0 && size > 0) {
