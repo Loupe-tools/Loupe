@@ -14,6 +14,121 @@ const _YARA_KW = new Set([
 // localStorage key for user-uploaded YARA rules
 const _YARA_UPLOAD_KEY = 'loupe_uploaded_yara';
 
+// ─── YARA category reference dictionary ────────────────────────────────────
+// Drives the category-info popup opened from sidebar pills and (future)
+// anywhere else a category needs to be explained in plain English. Keys are
+// the CSS-safe slugs produced by:
+//
+//     name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+//
+// Keep this in sync with the palette buckets in `core.css` (.yara-cat-pill-*)
+// and with the category strings authored in `src/rules/*.yar` meta blocks.
+// Adding a new category elsewhere without a row here is fine — the popup
+// falls back to a generic "custom category" message. Linking to MITRE is
+// best-effort: Loupe-specific buckets (malware, adware, packer, etc.) have
+// no MITRE tactic and show as "Threat class" instead.
+const _YARA_CATEGORY_INFO = (() => {
+  // Standard MITRE ATT&CK enterprise tactic mapping. IDs link to the live
+  // ATT&CK site; plain `<a>` links with rel=noopener are fine under Loupe's
+  // CSP (only fetch / script / img / connect are blocked).
+  const mitre = (id, name) => ({ id, name, url: `https://attack.mitre.org/tactics/${id}/` });
+  return {
+    // ── MITRE ATT&CK tactics ────────────────────────────────────────────
+    'initial-access': {
+      tactic: mitre('TA0001', 'Initial Access'),
+      description: 'Techniques an adversary uses to get an initial foothold — phishing attachments, drive-by downloads, weaponised installers, supply-chain compromise.',
+      indicators: ['Weaponised Office / PDF / HTA documents', 'Spear-phishing links to payload archives', 'Malicious browser extensions or MSIX installers', 'Trojanised software updates'],
+    },
+    'execution': {
+      tactic: mitre('TA0002', 'Execution'),
+      description: 'Adversary-controlled code running on a victim host — script interpreters, LOLBins, macro auto-exec, shell command invocations.',
+      indicators: ['`powershell.exe -enc ...` / `rundll32` / `mshta` invocations', 'Auto-exec VBA entry points (AutoOpen, Document_Open)', 'Scheduled tasks or WMI event consumers that launch code', '`CreateProcess` / `ShellExecute` on suspicious paths'],
+    },
+    'persistence': {
+      tactic: mitre('TA0003', 'Persistence'),
+      description: 'Keeping a foothold across reboots, logins, or credential changes — Run keys, services, scheduled tasks, LaunchAgents, browser extensions.',
+      indicators: ['`HKCU\\...\\CurrentVersion\\Run` / `RunOnce` writes', 'LaunchAgents / LaunchDaemons plist drops', 'Service installs (`sc create`, `New-Service`)', 'WMI `__EventFilter` + `CommandLineEventConsumer` pairs'],
+    },
+    'privilege-escalation': {
+      tactic: mitre('TA0004', 'Privilege Escalation'),
+      description: 'Elevating permissions — UAC bypasses, token theft, exploits of SUID binaries, driver loading, DLL hijacks resolved via a higher-integrity process.',
+      indicators: ['`CMSTPLUA` / `ICMLuaUtil` COM abuse', 'Parent-PID spoofing / `SeDebugPrivilege` manipulation', 'Kernel driver loading (`sc create … type= kernel`)', 'macOS `AuthorizationExecuteWithPrivileges`'],
+    },
+    'defense-evasion': {
+      tactic: mitre('TA0005', 'Defense Evasion'),
+      description: 'Avoiding detection — AMSI / ETW patching, AV process kills, timestomp, indirect syscalls, reflective loaders, unhooking.',
+      indicators: ['AMSI bypass strings (`amsiInitFailed`, `Amsi.dll` patches)', 'ETW provider disable calls', 'Indirect syscalls / syscall number resolution', 'Certutil / mshta / regsvr32 proxy execution'],
+    },
+    'evasion': {
+      tactic: mitre('TA0005', 'Defense Evasion'),
+      description: 'Sandbox / analyst evasion — VM detection, debugger checks, sleep-skipping, environmental keying, anti-emulation tricks.',
+      indicators: ['CPUID-based hypervisor checks', '`IsDebuggerPresent` / `NtQueryInformationProcess`', 'Sleep-skip via `WaitForSingleObject` abuse', 'Mouse-movement / uptime-based gating'],
+    },
+    'credential-access': {
+      tactic: mitre('TA0006', 'Credential Access'),
+      description: 'Stealing credentials — LSASS memory reads, SAM/SECURITY hive exfil, browser password stores, Keychain dumps, DPAPI key extraction.',
+      indicators: ['LSASS handle access (`MiniDumpWriteDump` on lsass.exe)', 'Reads of `Login Data` / `Cookies` / `Keychain`', 'DPAPI masterkey or Credential Manager access', 'Kerberos ticket requests with unusual encryption'],
+    },
+    'credential-theft': {
+      tactic: mitre('TA0006', 'Credential Access'),
+      description: 'Credential-theft-focused malware families — infostealers, keyloggers, clipboard hijackers, form-grabbers, and credential-harvester documents.',
+      indicators: ['Browser profile paths (`Chrome\\User Data\\Default\\Login Data`)', 'Clipboard monitoring / `GetAsyncKeyState` polling', 'Crypto wallet / password-manager file reads', 'Keylogging DLL or hook installs'],
+    },
+    'discovery': {
+      tactic: mitre('TA0007', 'Discovery'),
+      description: 'Reconnaissance inside the target — host / domain / account / process / network enumeration, security tool detection, permission checks.',
+      indicators: ['`systeminfo`, `whoami /all`, `net user /domain`', 'AD queries (`Get-ADUser`, LDAP searches)', 'Process listings looking for AV / EDR names', 'ARP / route / netstat enumeration'],
+    },
+    'lateral-movement': {
+      tactic: mitre('TA0008', 'Lateral Movement'),
+      description: 'Moving between hosts — SMB / WMI / WinRM execution, RDP hijacking, pass-the-hash, token impersonation, SSH pivoting.',
+      indicators: ['`PsExec`-style remote service creation', 'WMI `Invoke-WMIMethod` / `wmic /node:`', 'WinRM / PowerShell Remoting targets', 'Named-pipe or admin-share writes to remote hosts'],
+    },
+    'collection': {
+      tactic: mitre('TA0009', 'Collection'),
+      description: 'Gathering data of interest prior to exfiltration — screenshots, clipboard scrapes, audio capture, file staging from documents folders.',
+      indicators: ['Screenshot APIs (`BitBlt` / `CGWindowListCreateImage`)', 'Document / archive staging in `%TEMP%` or hidden folders', 'Clipboard and keylog output buffering', 'Audio / video device enumeration'],
+    },
+    'exfiltration': {
+      tactic: mitre('TA0010', 'Exfiltration'),
+      description: 'Sending collected data out — HTTP(S) / FTP / DNS tunnels, cloud-storage APIs, messaging-platform webhooks, removable media.',
+      indicators: ['Long POST bodies to rare domains', 'DNS TXT / NULL queries with encoded payloads', 'API keys to Telegram / Discord / Pastebin / Dropbox', 'Large outbound transfers to non-business endpoints'],
+    },
+    'command-and-control': {
+      tactic: mitre('TA0011', 'Command and Control'),
+      description: 'Channels used to direct the compromised host — beacon HTTP(S), DNS, custom TCP/UDP, peer-to-peer, application-layer protocol abuse.',
+      indicators: ['Hard-coded C2 URLs / domains / IPs', 'Beaconing jitter + sleep patterns', 'DNS DGA-style lookups', 'Telegram / Discord / Pastebin as dead-drops'],
+    },
+    'impact': {
+      tactic: mitre('TA0040', 'Impact'),
+      description: 'Final-stage destructive or disruptive actions — encryption (ransomware), wiping, defacement, resource hijacking, service denial.',
+      indicators: ['Mass file enumeration followed by rename / rewrite', 'Ransom-note drop across user folders', 'Volume Shadow Copy deletion (`vssadmin delete shadows`)', 'MBR / GPT overwrite or bootloader tampering'],
+    },
+
+    // ── Loupe threat-class buckets (no direct MITRE tactic) ─────────────
+    'malware': { description: 'Rules that identify specific malware families or generic malicious behaviour patterns that don\'t map cleanly to a single ATT&CK tactic.', indicators: ['Known family strings / mutexes', 'Characteristic imports or syscall chains', 'Family-specific config blobs'] },
+    'backdoor': { description: 'Rules targeting remote-access backdoors that accept commands from an attacker — RATs, web shells, persistent agents.', indicators: ['Reverse-shell primitives (dup2 / WSASocket / CreateProcess)', 'Command-dispatch tables / opcode handlers', 'Persistent listen-port binding'] },
+    'rootkit': { description: 'Rules targeting rootkits that hide their presence at the kernel or user-mode hook layer.', indicators: ['Kernel callback / SSDT hooking', 'Hidden-file / hidden-process tricks', 'Bootkit markers (MBR / UEFI)'] },
+    'ransomware': { description: 'Rules targeting file-encrypting malware that extorts victims. A subset of Impact but high-priority enough to surface separately.', indicators: ['Bulk `CryptEncrypt` / `EncryptFile` calls', 'Extension rewrites (`.locked`, `.crypted`, random suffix)', 'Ransom-note templates across directories'] },
+    'cryptominer': { description: 'Rules targeting cryptocurrency miners using victim CPU / GPU resources without consent.', indicators: ['Mining pool URLs (`stratum+tcp://`)', 'Wallet address strings (BTC / XMR / ETH)', 'CPU-affinity calls pinning to idle cores'] },
+    'adware': { description: 'Rules targeting adware / PUA — unwanted installers, ad-injection, browser toolbar hijackers. Lower severity than malware but still unwanted.', indicators: ['Browser homepage / search-provider hijack', 'Injected ad tags in HTTP responses', 'Opt-in-buried bundler installers'] },
+    'exploit': { description: 'Rules targeting exploitation of known vulnerabilities — CVE-specific payloads, exploit kits, shellcode stubs.', indicators: ['CVE-specific ROP gadgets / shellcode', 'Stack-pivot / heap-spray primitives', 'Patch-diff-derived magic values'] },
+    'phishing': { description: 'Credential-harvesting pages, spoofed login forms, OAuth consent phishing, and HTML smuggling decoys.', indicators: ['Brand-logo strings in suspicious context', 'Password-form POSTs to non-brand origins', 'Base64-encoded HTML smuggling payloads'] },
+    'delivery': { description: 'Loaders and droppers that stage the real payload — weaponised documents, LNK loaders, HTA smuggling, first-stage downloaders.', indicators: ['Second-stage URL fetch + execution', 'Embedded encoded blobs that unpack to executables', 'Multi-layer deobfuscation chains'] },
+    'obfuscation': { description: 'Rules targeting obfuscation itself — heavy encoding, anti-analysis transformations, string scrambling, control-flow flattening.', indicators: ['Base64 / hex / char-code encoded payloads', 'XOR-decoder stubs with short keys', 'String-reversal / split-and-join patterns'] },
+    'packer': { description: 'Commercial or custom binary packers — UPX, Themida, VMProtect, Enigma, ASPack. Not malicious on their own but raise the priority of surrounding signals.', indicators: ['Packer section names (`UPX0`, `.themida`)', 'High-entropy code sections', 'Tiny import table with dynamic resolution'] },
+    'suspicious': { description: 'Behaviour that is unusual or notable but not proof of malice on its own — process hollowing primitives, rare API combinations, suspicious file paths.', indicators: ['`NtUnmapViewOfSection` + `WriteProcessMemory`', 'Script interpreters spawned from Office parents', 'Files written to `%APPDATA%\\Local\\Temp` then executed'] },
+    'suspicious-api': { description: 'Rare or abuse-prone Windows / POSIX APIs whose presence in an unexpected context (e.g. inside an Office macro) warrants attention.', indicators: ['`VirtualAllocEx` / `CreateRemoteThread`', '`RtlMoveMemory` from VBA', '`GetProcAddress` over an encoded string'] },
+    'anomaly': { description: 'Structural or semantic anomalies — mismatched headers, oversized metadata blocks, unexpected resource types, truncated sections.', indicators: ['PE with invalid section headers', 'Office file with a non-OOXML relationship target', 'Archive with zip-slip / directory-traversal entries'] },
+    'info': { description: 'Informational rules that tag file characteristics or family attributes without asserting malice. Useful for triage and pivoting.', indicators: ['Language / locale markers', 'Compiler / linker signatures', 'Benign but noteworthy metadata'] },
+    'file-type': { description: 'File-type identification rules — magic-byte and structural signatures used to classify content when the extension is missing or misleading.', indicators: ['Magic-byte matches (MZ, PK, ELF, %PDF, etc.)', 'Structural pattern checks (CFB, XAR, OLE, Mach-O)', 'Content-sniffing for plain-text script languages'] },
+    'container-escape': { description: 'Rules targeting container / sandbox escape primitives — privileged-capability abuse, kernel-module tricks, CVE-specific runtime escapes.', indicators: ['`/proc/1/root` / host filesystem access', 'Capabilities check (`CAP_SYS_ADMIN`)', 'Docker socket (`/var/run/docker.sock`) writes'] },
+    'msix-appx': { description: 'Windows MSIX / APPX packaging threats — installer hijacks, suspicious capabilities, app-installer URL abuse.', indicators: ['`.appinstaller` URLs pointing outside the Store', 'Unusually broad capabilities in `AppxManifest.xml`', 'Package-family-name collisions with trusted apps'] },
+    'clickonce': { description: 'Windows ClickOnce deployment abuse — `.application` / `.manifest` files used for web-launched payload execution.', indicators: ['`deploymentProvider` pointing to rare origins', 'Mismatched publisher / signature metadata', 'Trust-prompt-suppressing manifest options'] },
+    'browser-extension': { description: 'Browser extension threats — malicious manifests, excessive permissions, content-script injection, update-URL abuse.', indicators: ['`<all_urls>` host permissions', 'Content scripts that overwrite password fields', 'Update URLs outside the Chrome / Firefox store'] },
+  };
+})();
+
 Object.assign(App.prototype, {
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -361,16 +476,40 @@ Object.assign(App.prototype, {
     const toolbar = document.createElement('div');
     toolbar.className = 'yara-toolbar';
 
+    // ── Chip-style search with typeahead suggestions ────────────────
+    // A single composable search bar that replaces the old static
+    // "filter pill bar" + free-text input. Users can combine any number
+    // of chips — file (the @category header the rule was defined under),
+    // category (meta.category), severity (meta.severity), or raw text —
+    // and the rule browser filters on the AND of all of them. See
+    // `doSearch()` below for the predicate logic.
+    //
+    // Layout mirrors the rest of the toolbar (single flex row):
+    //   [ chip | chip | <input> ] [◀] [▶] [count]
+    // The input + chips live in one rounded container so the whole
+    // affordance visually reads as a single searchbar.
     const searchWrap = document.createElement('div');
     searchWrap.className = 'yara-search-wrap';
+
+    const chipBar = document.createElement('div');
+    chipBar.className = 'yara-chipbar';
 
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.id = 'yara-search';
     searchInput.className = 'yara-search';
-    searchInput.placeholder = 'Search rules\u2026';
+    searchInput.placeholder = 'type to filter \u2014 try "execution", "critical", a filename, or free text\u2026';
     searchInput.spellcheck = false;
-    searchWrap.appendChild(searchInput);
+    searchInput.autocomplete = 'off';
+    chipBar.appendChild(searchInput);
+    searchWrap.appendChild(chipBar);
+
+    // Suggestions dropdown — anchored to the search wrap; rendered only
+    // while the input is focused and non-empty-OR-just-clicked.
+    const suggBox = document.createElement('div');
+    suggBox.className = 'yara-sugg-box';
+    suggBox.style.display = 'none';
+    searchWrap.appendChild(suggBox);
 
     const prevBtn = document.createElement('button');
     prevBtn.className = 'yara-search-nav';
@@ -513,7 +652,39 @@ Object.assign(App.prototype, {
 
     dialog.appendChild(toolbar);
 
+    // ── Chip-search state ───────────────────────────────────────────
+    // The chip bar replaces the old filter-pill row. Chips are
+    // AND-combined; each chip has one of four kinds:
+    //   file      — matches the @category bucket the rule was defined
+    //               under (i.e. the filename-derived category authored
+    //               in build.py's YARA_CATEGORIES map).
+    //   category  — matches the rule's `meta.category` field.
+    //   severity  — matches the rule's severity (critical/high/medium/
+    //               low/info).
+    //   text      — substring match against rule name + description +
+    //               raw source.
+    // Suggestions are drawn from the three structured sources; any
+    // free-text the user commits becomes a `text:` chip.
+    /** @type {Array<{kind:'file'|'category'|'severity'|'text', value:string}>} */
+    const activeChips = [];
+    const _slugify = (s) => String(s).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'];
+
+    // Build suggestion sources up-front — cheap (<1k entries) and
+    // avoids walking the DOM on every keystroke.
+    const _fileNames = [];
+    const _fileNameSet = new Set();
+    for (const cat of categories) {
+      if (!_fileNameSet.has(cat.name)) {
+        _fileNameSet.add(cat.name);
+        _fileNames.push(cat.name);
+      }
+    }
+    const _metaCategorySet = new Set();
+
     // ── Rule browser (scrollable accordion) ─────────────────────────
+
     const browser = document.createElement('div');
     browser.className = 'yara-browser';
 
@@ -525,6 +696,9 @@ Object.assign(App.prototype, {
     for (const cat of categories) {
       const catEl = document.createElement('details');
       catEl.className = 'yara-cat';
+      // Stash category name so doSearch() can filter rules by their
+      // parent category without walking the DOM back up.
+      catEl.dataset.catName = cat.name;
 
       const catSum = document.createElement('summary');
       catSum.className = 'yara-cat-summary';
@@ -600,6 +774,15 @@ Object.assign(App.prototype, {
             const remaining = catBody.querySelectorAll('.yara-rule-row');
             if (remaining.length === 0) {
               catEl.remove();
+              // Drop any `file:` chip pinned to this category so the chip
+              // predicate logic (AND semantics) doesn't hide every remaining
+              // rule after the only matching category has been removed.
+              for (let ci = activeChips.length - 1; ci >= 0; ci--) {
+                if (activeChips[ci].kind === 'file' && activeChips[ci].value === cat.name) {
+                  activeChips.splice(ci, 1);
+                }
+              }
+              renderChips();
             } else {
               catCountSpan.textContent = '(' + remaining.length + ')';
             }
@@ -607,6 +790,7 @@ Object.assign(App.prototype, {
             const allRemaining = browser.querySelectorAll('.yara-rule-row');
             const titleEl = document.getElementById('yara-title');
             if (titleEl) titleEl.textContent = '\u{1F4D0} YARA Rules (' + allRemaining.length + ')';
+
           });
           ruleSum.appendChild(delBtn);
         }
@@ -631,7 +815,12 @@ Object.assign(App.prototype, {
         ruleEl._catEl = catEl;
         ruleEl._rule = rule;
         ruleEl._searchText = (rule.name + ' ' + rule.description + ' ' + rule.rawSource).toLowerCase();
+        ruleEl._ruleMetaCat = (rule.meta && rule.meta.category)
+          ? String(rule.meta.category).toLowerCase() : '';
+        ruleEl._ruleSeverity = rule.severity;
+        if (ruleEl._ruleMetaCat) _metaCategorySet.add(ruleEl._ruleMetaCat);
         allRuleEls.push(ruleEl);
+
 
         catBody.appendChild(ruleEl);
       }
@@ -667,8 +856,28 @@ Object.assign(App.prototype, {
       }
     };
 
+    // Does a rule element satisfy a single chip predicate?
+    const chipMatches = (re, chip) => {
+      switch (chip.kind) {
+        case 'file': {
+          const catName = re._catEl && re._catEl.dataset ? re._catEl.dataset.catName : '';
+          return catName === chip.value;
+        }
+        case 'category':
+          return re._ruleMetaCat === chip.value;
+        case 'severity':
+          return re._ruleSeverity === chip.value;
+        case 'text':
+          return re._searchText.includes(chip.value);
+        default:
+          return true;
+      }
+    };
+
     const doSearch = () => {
-      const q = searchInput.value.trim().toLowerCase();
+      const typed = searchInput.value.trim().toLowerCase();
+      const hasChips = activeChips.length > 0;
+      const hasQuery = hasChips || !!typed;
       matchedEls = [];
       matchIdx = -1;
 
@@ -676,8 +885,8 @@ Object.assign(App.prototype, {
       const prevActive = browser.querySelector('.yara-rule-active');
       if (prevActive) prevActive.classList.remove('yara-rule-active');
 
-      if (!q) {
-        // Collapse everything — default state
+      // No filters → default collapsed view (every category visible, closed)
+      if (!hasQuery) {
         for (const re of allRuleEls) {
           re.style.display = '';
           re.open = false;
@@ -690,10 +899,17 @@ Object.assign(App.prototype, {
         return;
       }
 
-      // Find matches and track categories with matches
+      // AND across all chips; live-typed text is treated as an additional
+      // text-substring predicate (but doesn't become a chip until the user
+      // commits it).
       const catsWithMatches = new Set();
       for (const re of allRuleEls) {
-        if (re._searchText.includes(q)) {
+        let pass = true;
+        for (const ch of activeChips) {
+          if (!chipMatches(re, ch)) { pass = false; break; }
+        }
+        if (pass && typed) pass = re._searchText.includes(typed);
+        if (pass) {
           re.style.display = '';
           re.open = true;
           catsWithMatches.add(re._catEl);
@@ -704,7 +920,8 @@ Object.assign(App.prototype, {
         }
       }
 
-      // Show/hide categories
+      // Show/hide categories. A category is visible iff it contains at least
+      // one visible rule.
       for (const catEl of browser.querySelectorAll('.yara-cat')) {
         if (catsWithMatches.has(catEl)) {
           catEl.style.display = '';
@@ -714,40 +931,276 @@ Object.assign(App.prototype, {
         }
       }
 
-      // Navigate to first match
       if (matchedEls.length) {
+        countSpan.textContent = matchedEls.length + ' rule' + (matchedEls.length === 1 ? '' : 's');
         matchIdx = 0;
-        scrollToMatch();
+        // Only scroll when the user is actively cycling matches, not on
+        // every keystroke — we expose ◀/▶ for that.
       } else {
         countSpan.textContent = '0';
       }
     };
 
-    let debounce;
-    searchInput.addEventListener('input', () => {
-      clearTimeout(debounce);
-      debounce = setTimeout(doSearch, 150);
-    });
+    // ── Chip rendering ──────────────────────────────────────────────
+    // `chipBar` holds the chips *and* the input, so chips visually stack
+    // to the left of the cursor. Every add / remove rebuilds the chip
+    // DOM and re-runs the search predicate.
+    const chipLabel = (ch) => {
+      const prefix = (ch.kind === 'text') ? '' : (ch.kind.charAt(0).toUpperCase() + ch.kind.slice(1) + ': ');
+      return prefix + ch.value;
+    };
+    const chipClassForKind = (ch) => {
+      if (ch.kind === 'file') {
+        return 'yara-chip yara-chip-file yara-cat-pill yara-cat-pill-' + _slugify(ch.value);
+      }
+      if (ch.kind === 'category') {
+        return 'yara-chip yara-chip-category yara-cat-pill yara-cat-pill-' + _slugify(ch.value);
+      }
+      if (ch.kind === 'severity') {
+        return 'yara-chip yara-chip-severity yara-chip-severity-' + ch.value;
+      }
+      return 'yara-chip yara-chip-text';
+    };
+    const renderChips = () => {
+      // Remove existing chip nodes (input stays).
+      const existing = chipBar.querySelectorAll('.yara-chip');
+      existing.forEach(n => n.remove());
+      // Re-insert chips before the input.
+      for (let i = 0; i < activeChips.length; i++) {
+        const ch = activeChips[i];
+        const chipEl = document.createElement('span');
+        chipEl.className = chipClassForKind(ch);
+        chipEl.dataset.idx = String(i);
 
-    searchInput.addEventListener('keydown', (e) => {
-      // Esc with text → clear search; Esc empty → let dialog close handler fire
-      if (e.key === 'Escape' && searchInput.value) {
-        e.stopPropagation();
+        const lbl = document.createElement('span');
+        lbl.className = 'yara-chip-label';
+        lbl.textContent = chipLabel(ch);
+        chipEl.appendChild(lbl);
+
+        const x = document.createElement('button');
+        x.type = 'button';
+        x.className = 'yara-chip-x';
+        x.textContent = '\u2715';
+        x.title = 'Remove filter';
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const idx = activeChips.indexOf(ch);
+          if (idx >= 0) activeChips.splice(idx, 1);
+          renderChips();
+          doSearch();
+          searchInput.focus();
+        });
+        chipEl.appendChild(x);
+
+        chipBar.insertBefore(chipEl, searchInput);
+      }
+    };
+    // Expose for external callers that tweak activeChips (delBtn handler).
+    var _renderChipsRef = renderChips;  // eslint-disable-line no-unused-vars
+
+    // ── Suggestion dropdown ─────────────────────────────────────────
+    // Built fresh on every input event. Keyboard nav mirrors most IDE
+    // typeaheads — ArrowDown/Up cycle `activeSugg`, Enter/Tab commit,
+    // Escape closes without committing.
+    /** @type {Array<{kind:string, value:string, label:string}>} */
+    let currentSuggs = [];
+    let activeSugg = -1;
+
+    const hideSuggs = () => {
+      suggBox.style.display = 'none';
+      suggBox.innerHTML = '';
+      currentSuggs = [];
+      activeSugg = -1;
+    };
+
+    const renderSuggs = () => {
+      suggBox.innerHTML = '';
+      if (!currentSuggs.length) { suggBox.style.display = 'none'; return; }
+      suggBox.style.display = '';
+      currentSuggs.forEach((sg, i) => {
+        const row = document.createElement('div');
+        row.className = 'yara-sugg-item' + (i === activeSugg ? ' yara-sugg-item-active' : '');
+
+        const kind = document.createElement('span');
+        kind.className = 'yara-sugg-kind yara-sugg-kind-' + sg.kind;
+        kind.textContent = sg.kind;
+        row.appendChild(kind);
+
+        const val = document.createElement('span');
+        val.className = 'yara-sugg-value';
+        val.textContent = sg.label || sg.value;
+        row.appendChild(val);
+
+        row.addEventListener('mousedown', (e) => {
+          // mousedown (not click) so the input keeps focus; otherwise the
+          // blur handler hides the dropdown before click fires.
+          e.preventDefault();
+          commitSugg(i);
+        });
+        suggBox.appendChild(row);
+      });
+    };
+
+    const addChip = (kind, value) => {
+      if (!value) return;
+      // Dedupe: don't add the same (kind,value) twice.
+      if (activeChips.some(c => c.kind === kind && c.value === value)) {
         searchInput.value = '';
+        hideSuggs();
         doSearch();
         return;
       }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (matchedEls.length) {
-          matchIdx = e.shiftKey
-            ? (matchIdx - 1 + matchedEls.length) % matchedEls.length
-            : (matchIdx + 1) % matchedEls.length;
-          scrollToMatch();
+      activeChips.push({ kind, value });
+      searchInput.value = '';
+      hideSuggs();
+      renderChips();
+      doSearch();
+    };
+
+    const commitSugg = (idx) => {
+      const sg = currentSuggs[idx];
+      if (!sg) return;
+      addChip(sg.kind, sg.value);
+      searchInput.focus();
+    };
+
+    const buildSuggs = (raw) => {
+      const q = raw.trim().toLowerCase();
+      const out = [];
+      const MAX_PER_KIND = 6;
+
+      // File suggestions (filename-derived @category buckets).
+      const fileHits = [];
+      for (const name of _fileNames) {
+        if (!q || name.toLowerCase().includes(q)) {
+          if (!activeChips.some(c => c.kind === 'file' && c.value === name)) {
+            fileHits.push({ kind: 'file', value: name, label: name });
+            if (fileHits.length >= MAX_PER_KIND) break;
+          }
         }
+      }
+      out.push(...fileHits);
+
+      // Category suggestions (rule meta.category).
+      const catHits = [];
+      for (const mc of _metaCategorySet) {
+        if (!q || mc.includes(q)) {
+          if (!activeChips.some(c => c.kind === 'category' && c.value === mc)) {
+            catHits.push({ kind: 'category', value: mc, label: mc });
+            if (catHits.length >= MAX_PER_KIND) break;
+          }
+        }
+      }
+      // Stable alphabetical order for readability.
+      catHits.sort((a, b) => a.value.localeCompare(b.value));
+      out.push(...catHits);
+
+      // Severity suggestions (fixed list).
+      for (const sev of SEVERITIES) {
+        if (!q || sev.includes(q)) {
+          if (!activeChips.some(c => c.kind === 'severity' && c.value === sev)) {
+            out.push({ kind: 'severity', value: sev, label: sev });
+          }
+        }
+      }
+
+      // Free-text chip hint — shown only when the user has typed anything.
+      if (q) {
+        out.push({ kind: 'text', value: q, label: '"' + raw.trim() + '"' });
+      }
+      return out;
+    };
+
+    let debounce;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        currentSuggs = buildSuggs(searchInput.value);
+        activeSugg = currentSuggs.length ? 0 : -1;
+        renderSuggs();
+        doSearch();
+      }, 80);
+    });
+
+    searchInput.addEventListener('focus', () => {
+      currentSuggs = buildSuggs(searchInput.value);
+      activeSugg = currentSuggs.length ? 0 : -1;
+      renderSuggs();
+    });
+    searchInput.addEventListener('blur', () => {
+      // Slight delay so mousedown on a suggestion can fire first.
+      setTimeout(hideSuggs, 150);
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        if (currentSuggs.length) {
+          e.preventDefault();
+          activeSugg = (activeSugg + 1) % currentSuggs.length;
+          renderSuggs();
+        }
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        if (currentSuggs.length) {
+          e.preventDefault();
+          activeSugg = (activeSugg - 1 + currentSuggs.length) % currentSuggs.length;
+          renderSuggs();
+        }
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        if (currentSuggs.length && activeSugg >= 0) {
+          e.preventDefault();
+          commitSugg(activeSugg);
+          return;
+        }
+        // No suggestion selected → commit free-text as a text chip.
+        const raw = searchInput.value.trim();
+        if (raw) {
+          e.preventDefault();
+          addChip('text', raw.toLowerCase());
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        // Priority: close suggestions → clear typed text → remove last
+        // chip → let dialog's outer Esc handler close the whole dialog.
+        if (suggBox.style.display !== 'none' && currentSuggs.length) {
+          e.stopPropagation();
+          hideSuggs();
+          return;
+        }
+        if (searchInput.value) {
+          e.stopPropagation();
+          searchInput.value = '';
+          hideSuggs();
+          doSearch();
+          return;
+        }
+        if (activeChips.length) {
+          e.stopPropagation();
+          activeChips.pop();
+          renderChips();
+          doSearch();
+          return;
+        }
+        // empty: fall through so dialog closes
+        return;
+      }
+      if (e.key === 'Backspace' && !searchInput.value && activeChips.length) {
+        // Quick-remove-last-chip affordance à la Gmail's To: field.
+        e.preventDefault();
+        activeChips.pop();
+        renderChips();
+        doSearch();
       }
     });
 
+    // Clicking ◀ / ▶ cycles through the currently-filtered rules and
+    // scrolls the chosen one into view. Useful when a filter narrows to
+    // 20+ hits and the user wants to page through them.
     prevBtn.addEventListener('click', () => {
       if (matchedEls.length) {
         matchIdx = (matchIdx - 1 + matchedEls.length) % matchedEls.length;
@@ -761,6 +1214,7 @@ Object.assign(App.prototype, {
         scrollToMatch();
       }
     });
+
 
     // ── Drop hint overlay (shown during drag) ───────────────────────
     const dropHint = document.createElement('div');
@@ -1438,6 +1892,7 @@ Object.assign(App.prototype, {
         severity: sev,
         description: desc || '',       // exposed for Summary / STIX / MISP
         _yaraRuleName: r.ruleName,
+        _yaraCategory: (r.meta && r.meta.category) ? r.meta.category : '',  // drives the sidebar's colour-coded category pill
         _yaraStrings: yaraStrings,     // structured per-string breakdown for the sidebar
         _yaraCondition: r.condition || '',  // raw condition expression for the sidebar's hover-revealed "reason for detection"
         _yaraMatches: allMatches       // For click-to-highlight cycling
@@ -1459,4 +1914,150 @@ Object.assign(App.prototype, {
     this._renderSidebar(fileName, null);
   },
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Category-info popup (opened from sidebar YARA category pills)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** Open a plain-English explanation popup for a given YARA category.
+   *  Called when the analyst clicks the colour-coded pill on a sidebar
+   *  "YARA Match" row. Looks the category up in `_YARA_CATEGORY_INFO`
+   *  and renders a small modal with description, MITRE tactic link (if
+   *  present), and typical indicators. Unknown categories fall back to
+   *  a generic "custom category" explanation. */
+  _openYaraCategoryInfo(categoryName) {
+    if (!categoryName) return;
+    // Close any existing one first so repeated clicks always refresh.
+    const existing = document.getElementById('yara-catinfo');
+    if (existing) existing.remove();
+
+    const key = String(categoryName).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const info = _YARA_CATEGORY_INFO[key];
+
+    // ── Overlay + card ──────────────────────────────────────────────
+    const ov = document.createElement('div');
+    ov.id = 'yara-catinfo';
+    ov.className = 'yara-catinfo-overlay';
+
+    const card = document.createElement('div');
+    card.className = 'yara-catinfo-card';
+
+    // ── Header (tinted with the category's palette colour) ───────────
+    const hdr = document.createElement('div');
+    // Reuse the `.yara-cat-pill-<key>` class on the header so the tint
+    // matches the sidebar pill the user clicked — no new palette to
+    // maintain.
+    hdr.className = 'yara-catinfo-header yara-cat-pill yara-cat-pill-' + key;
+
+    const hdrPill = document.createElement('span');
+    hdrPill.className = 'yara-catinfo-pill';
+    hdrPill.textContent = categoryName;
+    hdr.appendChild(hdrPill);
+
+    const hdrSub = document.createElement('span');
+    hdrSub.className = 'yara-catinfo-sub';
+    if (info && info.tactic) {
+      hdrSub.textContent = 'MITRE ATT&CK \u2014 ' + info.tactic.id + ' ' + info.tactic.name;
+    } else if (info) {
+      hdrSub.textContent = 'Threat class';
+    } else {
+      hdrSub.textContent = 'Custom category';
+    }
+    hdr.appendChild(hdrSub);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'yara-catinfo-close';
+    closeBtn.type = 'button';
+    closeBtn.textContent = '\u2715';
+    closeBtn.title = 'Close (Esc)';
+    hdr.appendChild(closeBtn);
+    card.appendChild(hdr);
+
+    // ── Body ─────────────────────────────────────────────────────────
+    const body = document.createElement('div');
+    body.className = 'yara-catinfo-body';
+
+    const descP = document.createElement('p');
+    descP.className = 'yara-catinfo-desc';
+    if (info && info.description) {
+      descP.textContent = info.description;
+    } else {
+      descP.textContent = 'This is a rule-author-defined category (' + categoryName + '). '
+        + 'It has no built-in Loupe explanation, but typically groups rules that share a '
+        + 'common analytical theme set by whoever wrote the rule.';
+    }
+    body.appendChild(descP);
+
+    // MITRE link block — plain `<a target="_blank">` is CSP-safe because
+    // the CSP only blocks fetch / script / img / connect, not navigation.
+    if (info && info.tactic) {
+      const tacBlock = document.createElement('div');
+      tacBlock.className = 'yara-catinfo-tactic';
+
+      const tacLabel = document.createElement('span');
+      tacLabel.className = 'yara-catinfo-tactic-label';
+      tacLabel.textContent = 'ATT&CK tactic';
+      tacBlock.appendChild(tacLabel);
+
+      const tacLink = document.createElement('a');
+      tacLink.href = info.tactic.url;
+      tacLink.target = '_blank';
+      tacLink.rel = 'noopener noreferrer';
+      tacLink.className = 'yara-catinfo-tactic-link';
+      tacLink.textContent = info.tactic.id + ' \u00b7 ' + info.tactic.name + ' \u2197';
+      tacBlock.appendChild(tacLink);
+
+      body.appendChild(tacBlock);
+    }
+
+    // Typical indicators list.
+    if (info && Array.isArray(info.indicators) && info.indicators.length) {
+      const h = document.createElement('h5');
+      h.className = 'yara-catinfo-indicators-heading';
+      h.textContent = 'Typical indicators';
+      body.appendChild(h);
+
+      const ul = document.createElement('ul');
+      ul.className = 'yara-catinfo-indicators';
+      for (const ind of info.indicators) {
+        const li = document.createElement('li');
+        // `ind` may contain backtick-wrapped code spans — render them as
+        // <code> without allowing arbitrary HTML.
+        const parts = String(ind).split('`');
+        for (let i = 0; i < parts.length; i++) {
+          if (i % 2 === 0) {
+            if (parts[i]) li.appendChild(document.createTextNode(parts[i]));
+          } else {
+            const codeEl = document.createElement('code');
+            codeEl.textContent = parts[i];
+            li.appendChild(codeEl);
+          }
+        }
+        ul.appendChild(li);
+      }
+      body.appendChild(ul);
+    }
+
+    card.appendChild(body);
+    ov.appendChild(card);
+
+    // ── Dismiss handlers ─────────────────────────────────────────────
+    const dismiss = () => {
+      ov.remove();
+      document.removeEventListener('keydown', escHandler, true);
+    };
+    const escHandler = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        dismiss();
+      }
+    };
+    closeBtn.addEventListener('click', dismiss);
+    ov.addEventListener('click', (e) => { if (e.target === ov) dismiss(); });
+    document.addEventListener('keydown', escHandler, true);
+
+    document.body.appendChild(ov);
+  },
+
 });
+

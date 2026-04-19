@@ -1490,7 +1490,37 @@ Object.assign(App.prototype, {
         strong.textContent = ref._yaraRuleName.replace(/_/g, ' ');
         titleRow.appendChild(strong);
 
-        // "Toggle match details" button — always visible when there are
+        // Colour-coded category pill — sits inline with the rule name,
+        // immediately left of the ➕ / 📐 buttons. Clicking opens a modal
+        // with a plain-English explanation of the category (MITRE tactic
+        // mapping, typical indicators) so an analyst who doesn't know the
+        // bucket by heart can learn it without leaving the sidebar. The
+        // palette lives in core.css alongside the Detections / IOCs
+        // type-filter classes so it can't drift.
+        if (ref._yaraCategory) {
+          // Match the key normalisation used by the YARA dialog so a rule
+          // tagged `credential_theft` or `MSIX / APPX` lands on the same
+          // palette entry in both surfaces.
+          const catKey = ref._yaraCategory.toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+          const catPill = document.createElement('span');
+          // Note: no `.type-filter` class — its generic colour rules would
+          // override the `.yara-cat-pill-<key>` tints (see CONTRIBUTING's
+          // "Category pill colouring" note).
+          catPill.className = 'yara-cat-pill yara-cat-pill-' +
+            catKey + ' yara-sidebar-cat';
+          catPill.textContent = ref._yaraCategory;
+          catPill.title = 'YARA category: ' + ref._yaraCategory +
+            ' \u2014 click to learn what this means';
+          catPill.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._openYaraCategoryInfo(ref._yaraCategory);
+          });
+          titleRow.appendChild(catPill);
+        }
+
+        // "Toggle match details" button - always visible when there are
         // per-string matches to reveal. Sticky click-driven replacement
         // for the old hover-reveal, so expanded reason rows can be read
         // (and copied from) without the mouse hovering the card.
@@ -1509,7 +1539,7 @@ Object.assign(App.prototype, {
           titleRow.appendChild(toggleBtn);
         }
 
-        // "View YARA rule" button — always visible, once per rule.
+        // "View YARA rule" button - always visible, once per rule.
         // Opens the rule viewer filtered to this rule.
         const titleViewBtn = document.createElement('button');
         titleViewBtn.className = 'yara-view-rule-btn';
@@ -1522,7 +1552,6 @@ Object.assign(App.prototype, {
         titleRow.appendChild(titleViewBtn);
 
         td2.appendChild(titleRow);
-
 
         // Description line (from rule meta.description)
         if (ref.description) {

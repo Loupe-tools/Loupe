@@ -31,26 +31,26 @@
    ══════════════════════════════════════════════════════ */
 :root {
   /* ── Accent palette ──────────────────────────────────── */
-  --accent:        #1a73e8;
-  --accent-rgb:    26 115 232;
-  --accent-hover:  #1a5fb4;
-  --accent-deep:   #0d47a1;
+  --accent: #1a73e8;
+  --accent-rgb: 26 115 232;
+  --accent-hover: #1a5fb4;
+  --accent-deep: #0d47a1;
 
   /* ── Risk colours (consistent across themes for quick
         scanning — a red badge is always a red badge, a
         green badge always means low risk; only the exact
         hue may shift for palette harmony) ─────────────── */
-  --risk-high:     #dc2626;
+  --risk-high: #dc2626;
   --risk-high-rgb: 220 38 38;
-  --risk-med:      #e67e22;
-  --risk-low:      #16a34a;
-  --risk-info:     #2563eb;
+  --risk-med: #e67e22;
+  --risk-low: #16a34a;
+  --risk-info: #2563eb;
 
   /* ── Hairlines / subtle surfaces ─────────────────────── */
-  --hairline-soft:   rgba(0, 0, 0, .05);
-  --hairline:        rgba(0, 0, 0, .08);
+  --hairline-soft: rgba(0, 0, 0, .05);
+  --hairline: rgba(0, 0, 0, .08);
   --hairline-strong: rgba(0, 0, 0, .1);
-  --hairline-bold:   rgba(0, 0, 0, .14);
+  --hairline-bold: rgba(0, 0, 0, .14);
 
   /* ── Viewer chrome surface tokens ─────────────────────
         These drive every per-format renderer's panel
@@ -58,76 +58,87 @@
         and banners. Themes (latte/mocha/solarized/midnight)
         override these alongside --accent so the full UI
         retints in one place.                            */
-  --panel-bg:          #ffffff;   /* main viewer pane */
-  --panel-bg-inset:    #fafafa;   /* hex dump / code / raw xml */
-  --panel-bg-raised:   #f5f5f5;   /* search bars, chips, badges */
-  --panel-bg-section:  #f0f0f0;   /* section headers, th cells */
-  --panel-border:      #e0e0e0;   /* panel / card border */
-  --input-bg:          #ffffff;   /* inputs, selects */
-  --input-border:      #cccccc;   /* input border */
-  --row-hover:         #f8f8f8;   /* table row hover bg */
-  --text:              #333333;   /* primary viewer body text */
-  --text-muted:        #666666;   /* labels, secondary info */
-  --text-faint:        #999999;   /* placeholders, gutter nums */
+  --panel-bg: #ffffff;
+  /* main viewer pane */
+  --panel-bg-inset: #fafafa;
+  /* hex dump / code / raw xml */
+  --panel-bg-raised: #f5f5f5;
+  /* search bars, chips, badges */
+  --panel-bg-section: #f0f0f0;
+  /* section headers, th cells */
+  --panel-border: #e0e0e0;
+  /* panel / card border */
+  --input-bg: #ffffff;
+  /* inputs, selects */
+  --input-border: #cccccc;
+  /* input border */
+  --row-hover: #f8f8f8;
+  /* table row hover bg */
+  --text: #333333;
+  /* primary viewer body text */
+  --text-muted: #666666;
+  /* labels, secondary info */
+  --text-faint: #999999;
+  /* placeholders, gutter nums */
 
   /* Banner tints — warn/danger/info/ok */
-  --banner-warn-bg:    #fff3cd;
-  --banner-warn-text:  #856404;
-  --banner-warn-border:#ffc107;
-  --banner-danger-bg:  #f8d7da;
-  --banner-danger-text:#721c24;
-  --banner-danger-border:#f5c6cb;
-  --banner-info-bg:    #f0f8ff;
-  --banner-info-border:#d0e0f0;
-  --banner-ok-bg:      #d4edda;
-  --banner-ok-text:    #155724;
-  --banner-ok-border:  #c3e6cb;
+  --banner-warn-bg: #fff3cd;
+  --banner-warn-text: #856404;
+  --banner-warn-border: #ffc107;
+  --banner-danger-bg: #f8d7da;
+  --banner-danger-text: #721c24;
+  --banner-danger-border: #f5c6cb;
+  --banner-info-bg: #f0f8ff;
+  --banner-info-border: #d0e0f0;
+  --banner-ok-bg: #d4edda;
+  --banner-ok-text: #155724;
+  --banner-ok-border: #c3e6cb;
 }
 
 body.dark {
   /* ── Accent (dark) — cyan ────────────────────────────── */
-  --accent:        #22d3ee;
-  --accent-rgb:    34 211 238;
-  --accent-hover:  #67e8f9;
-  --accent-deep:   #0891b2;
+  --accent: #22d3ee;
+  --accent-rgb: 34 211 238;
+  --accent-hover: #67e8f9;
+  --accent-deep: #0891b2;
 
   /* ── Risk colours — slightly softer on dark backgrounds */
-  --risk-high:     #f87171;
+  --risk-high: #f87171;
   --risk-high-rgb: 248 113 113;
-  --risk-med:      #fbbf24;
-  --risk-low:      #4ade80;
-  --risk-info:     #60a5fa;
+  --risk-med: #fbbf24;
+  --risk-low: #4ade80;
+  --risk-info: #60a5fa;
 
   /* ── Hairlines — inverted for dark surfaces ──────────── */
-  --hairline-soft:   rgba(255, 255, 255, .06);
-  --hairline:        rgba(255, 255, 255, .08);
+  --hairline-soft: rgba(255, 255, 255, .06);
+  --hairline: rgba(255, 255, 255, .08);
   --hairline-strong: rgba(255, 255, 255, .1);
-  --hairline-bold:   rgba(255, 255, 255, .12);
+  --hairline-bold: rgba(255, 255, 255, .12);
 
   /* ── Viewer chrome surface tokens (dark baseline) ───── */
-  --panel-bg:          #12131c;
-  --panel-bg-inset:    #0d1117;
-  --panel-bg-raised:   #1a1a2e;
-  --panel-bg-section:  #1a1e2e;
-  --panel-border:      #2a2a3e;
-  --input-bg:          #1e232e;
-  --input-border:      #3a3a4e;
-  --row-hover:         rgba(255, 255, 255, .03);
-  --text:              #d4d4dc;
-  --text-muted:        #8899aa;
-  --text-faint:        #555;
+  --panel-bg: #12131c;
+  --panel-bg-inset: #0d1117;
+  --panel-bg-raised: #1a1a2e;
+  --panel-bg-section: #1a1e2e;
+  --panel-border: #2a2a3e;
+  --input-bg: #1e232e;
+  --input-border: #3a3a4e;
+  --row-hover: rgba(255, 255, 255, .03);
+  --text: #d4d4dc;
+  --text-muted: #8899aa;
+  --text-faint: #555;
 
-  --banner-warn-bg:    #2a2520;
-  --banner-warn-text:  #f0c07a;
-  --banner-warn-border:#5a4520;
-  --banner-danger-bg:  rgba(231, 76, 60, .1);
-  --banner-danger-text:#f5b7b1;
-  --banner-danger-border:rgba(231, 76, 60, .3);
-  --banner-info-bg:    rgba(96, 165, 250, .08);
-  --banner-info-border:rgba(96, 165, 250, .25);
-  --banner-ok-bg:      rgba(39, 174, 96, .12);
-  --banner-ok-text:    #abebc6;
-  --banner-ok-border:  #196f3d;
+  --banner-warn-bg: #2a2520;
+  --banner-warn-text: #f0c07a;
+  --banner-warn-border: #5a4520;
+  --banner-danger-bg: rgba(231, 76, 60, .1);
+  --banner-danger-text: #f5b7b1;
+  --banner-danger-border: rgba(231, 76, 60, .3);
+  --banner-info-bg: rgba(96, 165, 250, .08);
+  --banner-info-border: rgba(96, 165, 250, .25);
+  --banner-ok-bg: rgba(39, 174, 96, .12);
+  --banner-ok-text: #abebc6;
+  --banner-ok-border: #196f3d;
 }
 
 
@@ -213,6 +224,10 @@ body.dark #toolbar {
 
 body.dark #app-title {
   color: #e0e0e8;
+}
+
+.emoji {
+  font-size: 1.5em;
 }
 
 /* Hidden utility class for toolbar buttons */
@@ -450,8 +465,10 @@ body.dark .tb-menu-item-active {
   align-items: center;
   gap: 4px;
   flex: 1;
-  min-width: 0;           /* allow flex children to shrink below content width */
-  overflow: hidden;       /* prevents toolbar wrap when path is very long */
+  min-width: 0;
+  /* allow flex children to shrink below content width */
+  overflow: hidden;
+  /* prevents toolbar wrap when path is very long */
   font-size: 12px;
   font-weight: 500;
   letter-spacing: -.1px;
@@ -465,7 +482,8 @@ body.dark .tb-menu-item-active {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: 220px;       /* per-crumb truncation ceiling */
+  max-width: 220px;
+  /* per-crumb truncation ceiling */
   padding: 4px 8px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -681,11 +699,11 @@ body.dark .crumb-overflow-menu {
   border-radius: 8px;
 }
 
-.btn-pill-group .tb-btn + .tb-btn {
+.btn-pill-group .tb-btn+.tb-btn {
   border-left: none;
 }
 
-body.dark .btn-pill-group .tb-btn + .tb-btn {
+body.dark .btn-pill-group .tb-btn+.tb-btn {
   border-left: 1px solid rgba(255, 255, 255, .04);
 }
 
@@ -1268,72 +1286,832 @@ body.dark .sev-filter-active {
 }
 
 /* ── Type-specific colors (light mode) ── */
-.type-filter-yara-match    { color: #7c3aed; background: rgba(124, 58, 237, .1); }
-.type-filter-url           { color: var(--risk-info); background: rgba(37, 99, 235, .1); }
-.type-filter-ip-address    { color: var(--risk-high); background: rgba(220, 38, 38, .1); }
-.type-filter-email         { color: #ea580c; background: rgba(234, 88, 12, .1); }
-.type-filter-file-path     { color: var(--risk-low); background: rgba(22, 163, 74, .1); }
-.type-filter-unc-path      { color: var(--risk-low); background: rgba(22, 163, 74, .1); }
-.type-filter-hash          { color: #475569; background: rgba(71, 85, 105, .1); }
-.type-filter-command-line  { color: #be123c; background: rgba(190, 18, 60, .1); }
-.type-filter-process       { color: #be123c; background: rgba(190, 18, 60, .1); }
-.type-filter-hostname      { color: var(--accent-deep); background: rgba(8, 145, 178, .1); }
-.type-filter-mac-address   { color: var(--accent-deep); background: rgba(8, 145, 178, .1); }
-.type-filter-username      { color: var(--accent-deep); background: rgba(8, 145, 178, .1); }
-.type-filter-attachment    { color: #d97706; background: rgba(217, 119, 6, .1); }
-.type-filter-pattern       { color: #64748b; background: rgba(100, 116, 139, .1); }
-.type-filter-info          { color: #94a3b8; background: rgba(148, 163, 184, .1); }
+.type-filter-yara-match {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, .1);
+}
+
+.type-filter-url {
+  color: var(--risk-info);
+  background: rgba(37, 99, 235, .1);
+}
+
+.type-filter-ip-address {
+  color: var(--risk-high);
+  background: rgba(220, 38, 38, .1);
+}
+
+.type-filter-email {
+  color: #ea580c;
+  background: rgba(234, 88, 12, .1);
+}
+
+.type-filter-file-path {
+  color: var(--risk-low);
+  background: rgba(22, 163, 74, .1);
+}
+
+.type-filter-unc-path {
+  color: var(--risk-low);
+  background: rgba(22, 163, 74, .1);
+}
+
+.type-filter-hash {
+  color: #475569;
+  background: rgba(71, 85, 105, .1);
+}
+
+.type-filter-command-line {
+  color: #be123c;
+  background: rgba(190, 18, 60, .1);
+}
+
+.type-filter-process {
+  color: #be123c;
+  background: rgba(190, 18, 60, .1);
+}
+
+.type-filter-hostname {
+  color: var(--accent-deep);
+  background: rgba(8, 145, 178, .1);
+}
+
+.type-filter-mac-address {
+  color: var(--accent-deep);
+  background: rgba(8, 145, 178, .1);
+}
+
+.type-filter-username {
+  color: var(--accent-deep);
+  background: rgba(8, 145, 178, .1);
+}
+
+.type-filter-attachment {
+  color: #d97706;
+  background: rgba(217, 119, 6, .1);
+}
+
+.type-filter-pattern {
+  color: #64748b;
+  background: rgba(100, 116, 139, .1);
+}
+
+.type-filter-info {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, .1);
+}
 
 /* Active state - stronger background */
-.type-filter-yara-match.type-filter-active    { background: rgba(124, 58, 237, .25); }
-.type-filter-url.type-filter-active           { background: rgba(37, 99, 235, .25); }
-.type-filter-ip-address.type-filter-active    { background: rgba(220, 38, 38, .25); }
-.type-filter-email.type-filter-active         { background: rgba(234, 88, 12, .25); }
-.type-filter-file-path.type-filter-active     { background: rgba(22, 163, 74, .25); }
-.type-filter-unc-path.type-filter-active      { background: rgba(22, 163, 74, .25); }
-.type-filter-hash.type-filter-active          { background: rgba(71, 85, 105, .25); }
-.type-filter-command-line.type-filter-active  { background: rgba(190, 18, 60, .25); }
-.type-filter-process.type-filter-active       { background: rgba(190, 18, 60, .25); }
-.type-filter-hostname.type-filter-active      { background: rgba(8, 145, 178, .25); }
-.type-filter-mac-address.type-filter-active   { background: rgba(8, 145, 178, .25); }
-.type-filter-username.type-filter-active      { background: rgba(8, 145, 178, .25); }
-.type-filter-attachment.type-filter-active    { background: rgba(217, 119, 6, .25); }
-.type-filter-pattern.type-filter-active       { background: rgba(100, 116, 139, .25); }
-.type-filter-info.type-filter-active          { background: rgba(148, 163, 184, .25); }
+.type-filter-yara-match.type-filter-active {
+  background: rgba(124, 58, 237, .25);
+}
+
+.type-filter-url.type-filter-active {
+  background: rgba(37, 99, 235, .25);
+}
+
+.type-filter-ip-address.type-filter-active {
+  background: rgba(220, 38, 38, .25);
+}
+
+.type-filter-email.type-filter-active {
+  background: rgba(234, 88, 12, .25);
+}
+
+.type-filter-file-path.type-filter-active {
+  background: rgba(22, 163, 74, .25);
+}
+
+.type-filter-unc-path.type-filter-active {
+  background: rgba(22, 163, 74, .25);
+}
+
+.type-filter-hash.type-filter-active {
+  background: rgba(71, 85, 105, .25);
+}
+
+.type-filter-command-line.type-filter-active {
+  background: rgba(190, 18, 60, .25);
+}
+
+.type-filter-process.type-filter-active {
+  background: rgba(190, 18, 60, .25);
+}
+
+.type-filter-hostname.type-filter-active {
+  background: rgba(8, 145, 178, .25);
+}
+
+.type-filter-mac-address.type-filter-active {
+  background: rgba(8, 145, 178, .25);
+}
+
+.type-filter-username.type-filter-active {
+  background: rgba(8, 145, 178, .25);
+}
+
+.type-filter-attachment.type-filter-active {
+  background: rgba(217, 119, 6, .25);
+}
+
+.type-filter-pattern.type-filter-active {
+  background: rgba(100, 116, 139, .25);
+}
+
+.type-filter-info.type-filter-active {
+  background: rgba(148, 163, 184, .25);
+}
 
 /* ── Type-specific colors (dark mode) ── */
-body.dark .type-filter-yara-match    { color: #a78bfa; background: rgba(167, 139, 250, .15); }
-body.dark .type-filter-url           { color: var(--risk-info); background: rgba(96, 165, 250, .15); }
-body.dark .type-filter-ip-address    { color: var(--risk-high); background: rgb(var(--risk-high-rgb) / .15); }
-body.dark .type-filter-email         { color: #fb923c; background: rgba(251, 146, 60, .15); }
-body.dark .type-filter-file-path     { color: var(--risk-low); background: rgba(74, 222, 128, .15); }
-body.dark .type-filter-unc-path      { color: var(--risk-low); background: rgba(74, 222, 128, .15); }
-body.dark .type-filter-hash          { color: #94a3b8; background: rgba(148, 163, 184, .15); }
-body.dark .type-filter-command-line  { color: #fb7185; background: rgba(251, 113, 133, .15); }
-body.dark .type-filter-process       { color: #fb7185; background: rgba(251, 113, 133, .15); }
-body.dark .type-filter-hostname      { color: var(--accent); background: rgb(var(--accent-rgb) / .15); }
-body.dark .type-filter-mac-address   { color: var(--accent); background: rgb(var(--accent-rgb) / .15); }
-body.dark .type-filter-username      { color: var(--accent); background: rgb(var(--accent-rgb) / .15); }
-body.dark .type-filter-attachment    { color: var(--risk-med); background: rgba(251, 191, 36, .15); }
-body.dark .type-filter-pattern       { color: #94a3b8; background: rgba(148, 163, 184, .15); }
-body.dark .type-filter-info          { color: #64748b; background: rgba(100, 116, 139, .15); }
+body.dark .type-filter-yara-match {
+  color: #a78bfa;
+  background: rgba(167, 139, 250, .15);
+}
+
+body.dark .type-filter-url {
+  color: var(--risk-info);
+  background: rgba(96, 165, 250, .15);
+}
+
+body.dark .type-filter-ip-address {
+  color: var(--risk-high);
+  background: rgb(var(--risk-high-rgb) / .15);
+}
+
+body.dark .type-filter-email {
+  color: #fb923c;
+  background: rgba(251, 146, 60, .15);
+}
+
+body.dark .type-filter-file-path {
+  color: var(--risk-low);
+  background: rgba(74, 222, 128, .15);
+}
+
+body.dark .type-filter-unc-path {
+  color: var(--risk-low);
+  background: rgba(74, 222, 128, .15);
+}
+
+body.dark .type-filter-hash {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, .15);
+}
+
+body.dark .type-filter-command-line {
+  color: #fb7185;
+  background: rgba(251, 113, 133, .15);
+}
+
+body.dark .type-filter-process {
+  color: #fb7185;
+  background: rgba(251, 113, 133, .15);
+}
+
+body.dark .type-filter-hostname {
+  color: var(--accent);
+  background: rgb(var(--accent-rgb) / .15);
+}
+
+body.dark .type-filter-mac-address {
+  color: var(--accent);
+  background: rgb(var(--accent-rgb) / .15);
+}
+
+body.dark .type-filter-username {
+  color: var(--accent);
+  background: rgb(var(--accent-rgb) / .15);
+}
+
+body.dark .type-filter-attachment {
+  color: var(--risk-med);
+  background: rgba(251, 191, 36, .15);
+}
+
+body.dark .type-filter-pattern {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, .15);
+}
+
+body.dark .type-filter-info {
+  color: #64748b;
+  background: rgba(100, 116, 139, .15);
+}
 
 /* Dark mode active states */
-body.dark .type-filter-yara-match.type-filter-active    { background: rgba(167, 139, 250, .3); }
-body.dark .type-filter-url.type-filter-active           { background: rgba(96, 165, 250, .3); }
-body.dark .type-filter-ip-address.type-filter-active    { background: rgb(var(--risk-high-rgb) / .3); }
-body.dark .type-filter-email.type-filter-active         { background: rgba(251, 146, 60, .3); }
-body.dark .type-filter-file-path.type-filter-active     { background: rgba(74, 222, 128, .3); }
-body.dark .type-filter-unc-path.type-filter-active      { background: rgba(74, 222, 128, .3); }
-body.dark .type-filter-hash.type-filter-active          { background: rgba(148, 163, 184, .3); }
-body.dark .type-filter-command-line.type-filter-active  { background: rgba(251, 113, 133, .3); }
-body.dark .type-filter-process.type-filter-active       { background: rgba(251, 113, 133, .3); }
-body.dark .type-filter-hostname.type-filter-active      { background: rgb(var(--accent-rgb) / .3); }
-body.dark .type-filter-mac-address.type-filter-active   { background: rgb(var(--accent-rgb) / .3); }
-body.dark .type-filter-username.type-filter-active      { background: rgb(var(--accent-rgb) / .3); }
-body.dark .type-filter-attachment.type-filter-active    { background: rgba(251, 191, 36, .3); }
-body.dark .type-filter-pattern.type-filter-active       { background: rgba(148, 163, 184, .3); }
-body.dark .type-filter-info.type-filter-active          { background: rgba(100, 116, 139, .3); }
+body.dark .type-filter-yara-match.type-filter-active {
+  background: rgba(167, 139, 250, .3);
+}
+
+body.dark .type-filter-url.type-filter-active {
+  background: rgba(96, 165, 250, .3);
+}
+
+body.dark .type-filter-ip-address.type-filter-active {
+  background: rgb(var(--risk-high-rgb) / .3);
+}
+
+body.dark .type-filter-email.type-filter-active {
+  background: rgba(251, 146, 60, .3);
+}
+
+body.dark .type-filter-file-path.type-filter-active {
+  background: rgba(74, 222, 128, .3);
+}
+
+body.dark .type-filter-unc-path.type-filter-active {
+  background: rgba(74, 222, 128, .3);
+}
+
+body.dark .type-filter-hash.type-filter-active {
+  background: rgba(148, 163, 184, .3);
+}
+
+body.dark .type-filter-command-line.type-filter-active {
+  background: rgba(251, 113, 133, .3);
+}
+
+body.dark .type-filter-process.type-filter-active {
+  background: rgba(251, 113, 133, .3);
+}
+
+body.dark .type-filter-hostname.type-filter-active {
+  background: rgb(var(--accent-rgb) / .3);
+}
+
+body.dark .type-filter-mac-address.type-filter-active {
+  background: rgb(var(--accent-rgb) / .3);
+}
+
+body.dark .type-filter-username.type-filter-active {
+  background: rgb(var(--accent-rgb) / .3);
+}
+
+body.dark .type-filter-attachment.type-filter-active {
+  background: rgba(251, 191, 36, .3);
+}
+
+body.dark .type-filter-pattern.type-filter-active {
+  background: rgba(148, 163, 184, .3);
+}
+
+body.dark .type-filter-info.type-filter-active {
+  background: rgba(100, 116, 139, .3);
+}
+
+/* ─── YARA category pills ─────────────────────────────────────────────────
+   Shared palette used by (a) the chip-search chips in the YARA dialog
+   and (b) the colour-coded pill shown on each "YARA Match" sidebar row.
+
+   IMPORTANT — specificity: every selector uses the compound form
+   `.yara-cat-pill.yara-cat-pill-<key>` so it beats the sibling
+   `.type-filter-<kind>` rules further up the file. The old form
+   (`.yara-cat-pill-<key>` alone) lost the cascade whenever a pill
+   shared the sidebar row's `.type-filter` class — leaving pills
+   uncoloured. Do not remove the `.yara-cat-pill.` prefix.
+
+   Categories are grouped into 7 buckets so adding a new YARA file (and
+   therefore a new category name in build.py's YARA_CATEGORIES map) falls
+   through to the grey default until a class is added below. Key
+   normalisation lives in app-yara.js `_openYaraDialog()` /
+   `_openYaraCategoryInfo()` and app-sidebar.js
+   `_renderFindingsTableSection()` — they must stay in sync.
+
+   Buckets:
+     • red     → direct-harm outcomes (execution, credential theft,
+                  impact, ransomware, cryptominer, malware, backdoor,
+                  rootkit, exploit, credential-access)
+     • purple  → evasion & obfuscation layers
+     • orange  → command-and-control & exfiltration
+     • amber   → initial access / phishing / delivery
+     • teal    → discovery, collection, lateral-movement, persistence,
+                  privilege-escalation, container-escape, msix, clickonce
+     • slate   → structural / FYI (info, file-type, anomaly, suspicious,
+                  suspicious-api, adware)
+     • default → grey fallback for unbucketed categories
+   The `.yara-sidebar-cat` modifier shrinks the pill so it sits
+   comfortably inside the sidebar row's title line without crowding it. */
+
+/* Red — direct-harm outcomes */
+.yara-cat-pill.yara-cat-pill-execution,
+.yara-cat-pill.yara-cat-pill-credential-access,
+.yara-cat-pill.yara-cat-pill-credential-theft,
+.yara-cat-pill.yara-cat-pill-impact,
+.yara-cat-pill.yara-cat-pill-ransomware,
+.yara-cat-pill.yara-cat-pill-cryptominer,
+.yara-cat-pill.yara-cat-pill-malware,
+.yara-cat-pill.yara-cat-pill-backdoor,
+.yara-cat-pill.yara-cat-pill-rootkit,
+.yara-cat-pill.yara-cat-pill-exploit {
+  color: var(--risk-high);
+  background: rgba(220, 38, 38, .1);
+}
+
+/* Purple — evasion & obfuscation */
+.yara-cat-pill.yara-cat-pill-defense-evasion,
+.yara-cat-pill.yara-cat-pill-evasion,
+.yara-cat-pill.yara-cat-pill-obfuscation,
+.yara-cat-pill.yara-cat-pill-packer {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, .1);
+}
+
+/* Orange — command-and-control & exfiltration */
+.yara-cat-pill.yara-cat-pill-command-and-control,
+.yara-cat-pill.yara-cat-pill-exfiltration {
+  color: #ea580c;
+  background: rgba(234, 88, 12, .1);
+}
+
+/* Amber — initial access / delivery / phishing */
+.yara-cat-pill.yara-cat-pill-initial-access,
+.yara-cat-pill.yara-cat-pill-phishing,
+.yara-cat-pill.yara-cat-pill-delivery {
+  color: #d97706;
+  background: rgba(217, 119, 6, .1);
+}
+
+/* Teal — post-exploitation movement, persistence & privilege */
+.yara-cat-pill.yara-cat-pill-discovery,
+.yara-cat-pill.yara-cat-pill-collection,
+.yara-cat-pill.yara-cat-pill-lateral-movement,
+.yara-cat-pill.yara-cat-pill-persistence,
+.yara-cat-pill.yara-cat-pill-privilege-escalation,
+.yara-cat-pill.yara-cat-pill-container-escape,
+.yara-cat-pill.yara-cat-pill-msix-appx,
+.yara-cat-pill.yara-cat-pill-clickonce,
+.yara-cat-pill.yara-cat-pill-browser-extension {
+  color: var(--accent-deep);
+  background: rgba(8, 145, 178, .1);
+}
+
+/* Slate — structural / FYI */
+.yara-cat-pill.yara-cat-pill-info,
+.yara-cat-pill.yara-cat-pill-file-type,
+.yara-cat-pill.yara-cat-pill-anomaly,
+.yara-cat-pill.yara-cat-pill-suspicious,
+.yara-cat-pill.yara-cat-pill-suspicious-api,
+.yara-cat-pill.yara-cat-pill-adware {
+  color: #64748b;
+  background: rgba(100, 116, 139, .1);
+}
+
+/* Default grey fallback — any category whose class suffix isn't listed
+   above gets this via `.yara-cat-pill` alone. Ensures brand-new YARA
+   files render visibly as pills before the palette is extended. */
+.yara-cat-pill {
+  color: #475569;
+  background: rgba(71, 85, 105, .08);
+}
+
+/* ── Dark-mode overlays ─────────────────────────────────────────────
+   Tints lifted to .15 alpha; colours shift to the brighter Tailwind
+   400/500 hues that already work in the dark theme. Same specificity
+   trick applies (`.yara-cat-pill.yara-cat-pill-<key>`) under
+   `body.dark`. */
+body.dark .yara-cat-pill.yara-cat-pill-execution,
+body.dark .yara-cat-pill.yara-cat-pill-credential-access,
+body.dark .yara-cat-pill.yara-cat-pill-credential-theft,
+body.dark .yara-cat-pill.yara-cat-pill-impact,
+body.dark .yara-cat-pill.yara-cat-pill-ransomware,
+body.dark .yara-cat-pill.yara-cat-pill-cryptominer,
+body.dark .yara-cat-pill.yara-cat-pill-malware,
+body.dark .yara-cat-pill.yara-cat-pill-backdoor,
+body.dark .yara-cat-pill.yara-cat-pill-rootkit,
+body.dark .yara-cat-pill.yara-cat-pill-exploit {
+  color: var(--risk-high);
+  background: rgb(var(--risk-high-rgb) / .15);
+}
+
+body.dark .yara-cat-pill.yara-cat-pill-defense-evasion,
+body.dark .yara-cat-pill.yara-cat-pill-evasion,
+body.dark .yara-cat-pill.yara-cat-pill-obfuscation,
+body.dark .yara-cat-pill.yara-cat-pill-packer {
+  color: #a78bfa;
+  background: rgba(167, 139, 250, .15);
+}
+
+body.dark .yara-cat-pill.yara-cat-pill-command-and-control,
+body.dark .yara-cat-pill.yara-cat-pill-exfiltration {
+  color: #fb923c;
+  background: rgba(251, 146, 60, .15);
+}
+
+body.dark .yara-cat-pill.yara-cat-pill-initial-access,
+body.dark .yara-cat-pill.yara-cat-pill-phishing,
+body.dark .yara-cat-pill.yara-cat-pill-delivery {
+  color: var(--risk-med);
+  background: rgba(251, 191, 36, .15);
+}
+
+body.dark .yara-cat-pill.yara-cat-pill-discovery,
+body.dark .yara-cat-pill.yara-cat-pill-collection,
+body.dark .yara-cat-pill.yara-cat-pill-lateral-movement,
+body.dark .yara-cat-pill.yara-cat-pill-persistence,
+body.dark .yara-cat-pill.yara-cat-pill-privilege-escalation,
+body.dark .yara-cat-pill.yara-cat-pill-container-escape,
+body.dark .yara-cat-pill.yara-cat-pill-msix-appx,
+body.dark .yara-cat-pill.yara-cat-pill-clickonce,
+body.dark .yara-cat-pill.yara-cat-pill-browser-extension {
+  color: var(--accent);
+  background: rgb(var(--accent-rgb) / .15);
+}
+
+body.dark .yara-cat-pill.yara-cat-pill-info,
+body.dark .yara-cat-pill.yara-cat-pill-file-type,
+body.dark .yara-cat-pill.yara-cat-pill-anomaly,
+body.dark .yara-cat-pill.yara-cat-pill-suspicious,
+body.dark .yara-cat-pill.yara-cat-pill-suspicious-api,
+body.dark .yara-cat-pill.yara-cat-pill-adware {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, .15);
+}
+
+body.dark .yara-cat-pill {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, .12);
+}
+
+/* Row-level variant: smaller than the chip so it sits neatly inside
+   the sidebar row's title line. The pill is inline inside `titleRow`
+   next to the ➕ / 📐 buttons, so it must be vertically centred rather
+   than floated on a new line. */
+.yara-sidebar-cat {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 4px 0 2px;
+  font-size: 10px;
+  padding: 1px 7px;
+  letter-spacing: .02em;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.yara-sidebar-cat:hover {
+  filter: brightness(.92);
+}
+
+body.dark .yara-sidebar-cat:hover {
+  filter: brightness(1.15);
+}
+
+/* ─── YARA chip-search (dialog toolbar) ───────────────────────────────────
+   Replaces the old `.yara-cat-bar` filter-pill row. The chipbar wraps the
+   search input so chips and the caret read as one continuous affordance.
+   The suggestions dropdown absolute-positions itself below the chipbar. */
+
+.yara-search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 420px;
+  min-width: 320px;
+  max-width: 720px;
+}
+
+.yara-chipbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-height: 32px;
+  padding: 4px 6px;
+  border: 1px solid #d0d3da;
+  border-radius: 8px;
+  background: #f6f7f9;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.yara-chipbar:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .12);
+}
+
+body.dark .yara-chipbar {
+  background: rgba(255, 255, 255, .04);
+  border-color: var(--hairline);
+}
+
+.yara-chipbar .yara-search {
+  flex: 1 1 140px;
+  min-width: 120px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: inherit;
+}
+
+/* Chip — shares `.yara-cat-pill` colours when applicable so chips tint
+   themselves from the same palette as the sidebar pills. */
+.yara-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.yara-chip-label {
+  font-weight: 500;
+}
+
+.yara-chip-x {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 4px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  opacity: .7;
+  border-radius: 50%;
+}
+
+.yara-chip-x:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, .08);
+}
+
+body.dark .yara-chip-x:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+/* Severity chips get the badge-style palette (matches the severity
+   badges shown on each rule row, so the user's mental colour-mapping
+   carries over). */
+.yara-chip-severity {
+  color: #334155;
+  background: rgba(100, 116, 139, .15);
+}
+.yara-chip-severity-critical { color: var(--risk-high); background: rgba(220, 38, 38, .12); }
+.yara-chip-severity-high     { color: #ea580c;         background: rgba(234, 88, 12, .12); }
+.yara-chip-severity-medium   { color: #d97706;         background: rgba(217, 119, 6, .12); }
+.yara-chip-severity-low      { color: var(--accent-deep); background: rgba(8, 145, 178, .12); }
+.yara-chip-severity-info     { color: #64748b;         background: rgba(100, 116, 139, .12); }
+
+body.dark .yara-chip-severity-critical { color: var(--risk-high); background: rgb(var(--risk-high-rgb) / .2); }
+body.dark .yara-chip-severity-high     { color: #fb923c;          background: rgba(251, 146, 60, .18); }
+body.dark .yara-chip-severity-medium   { color: var(--risk-med);  background: rgba(251, 191, 36, .18); }
+body.dark .yara-chip-severity-low      { color: var(--accent);    background: rgb(var(--accent-rgb) / .2); }
+body.dark .yara-chip-severity-info     { color: #94a3b8;          background: rgba(148, 163, 184, .18); }
+
+/* Free-text chip — neutral colouring so it stands apart from the
+   palette-tinted file/category chips. */
+.yara-chip-text {
+  color: #475569;
+  background: rgba(71, 85, 105, .1);
+  font-style: italic;
+}
+body.dark .yara-chip-text {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, .15);
+}
+
+/* ── Suggestion dropdown ───────────────────────────────────────────── */
+.yara-sugg-box {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .14);
+  z-index: 50;
+  padding: 4px 0;
+}
+
+body.dark .yara-sugg-box {
+  background: #1e2128;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .55);
+}
+
+.yara-sugg-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.yara-sugg-item-active,
+.yara-sugg-item:hover {
+  background: rgb(var(--accent-rgb) / .12);
+}
+
+.yara-sugg-kind {
+  flex: 0 0 auto;
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: .05em;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(100, 116, 139, .15);
+  color: #475569;
+}
+
+.yara-sugg-kind-file     { background: rgba(8, 145, 178, .15);  color: var(--accent-deep); }
+.yara-sugg-kind-category { background: rgba(124, 58, 237, .15); color: #7c3aed; }
+.yara-sugg-kind-severity { background: rgba(234, 88, 12, .15);  color: #ea580c; }
+.yara-sugg-kind-text     { background: rgba(100, 116, 139, .15); color: #475569; font-style: italic; }
+
+body.dark .yara-sugg-kind-file     { color: var(--accent); }
+body.dark .yara-sugg-kind-category { color: #a78bfa; }
+body.dark .yara-sugg-kind-severity { color: #fb923c; }
+body.dark .yara-sugg-kind-text     { color: #cbd5e1; }
+
+.yara-sugg-value {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── YARA category-info popup (sidebar pill → modal explanation) ──────── */
+.yara-catinfo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+  background: rgba(15, 17, 22, .55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: yara-catinfo-fade .12s ease-out;
+}
+
+@keyframes yara-catinfo-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.yara-catinfo-card {
+  background: var(--bg, #fff);
+  color: inherit;
+  width: min(520px, 100%);
+  max-height: 80vh;
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .35);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+body.dark .yara-catinfo-card {
+  background: #1e2128;
+}
+
+/* Header reuses .yara-cat-pill tint so the colour of the pill the user
+   clicked carries through into the modal's identity. */
+.yara-catinfo-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
+  /* !important needed because the inline `.yara-cat-pill` base rule
+     would otherwise force a pill-shaped background tint that doesn't
+     suit a 520px-wide header. */
+  border-radius: 0 !important;
+}
+
+.yara-catinfo-pill {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .55);
+  color: inherit;
+  text-transform: capitalize;
+}
+
+body.dark .yara-catinfo-pill {
+  background: rgba(0, 0, 0, .25);
+}
+
+.yara-catinfo-sub {
+  flex: 1 1 auto;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  opacity: .85;
+}
+
+.yara-catinfo-close {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  opacity: .7;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.yara-catinfo-close:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, .08);
+}
+
+body.dark .yara-catinfo-close:hover {
+  background: rgba(255, 255, 255, .12);
+}
+
+.yara-catinfo-body {
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.yara-catinfo-desc {
+  margin: 0 0 12px 0;
+}
+
+.yara-catinfo-tactic {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(100, 116, 139, .08);
+}
+
+body.dark .yara-catinfo-tactic {
+  background: rgba(148, 163, 184, .1);
+}
+
+.yara-catinfo-tactic-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  opacity: .7;
+}
+
+.yara-catinfo-tactic-link {
+  color: var(--accent-deep);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+body.dark .yara-catinfo-tactic-link {
+  color: var(--accent);
+}
+
+.yara-catinfo-tactic-link:hover {
+  text-decoration: underline;
+}
+
+.yara-catinfo-indicators-heading {
+  margin: 6px 0 6px 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  opacity: .75;
+  font-weight: 600;
+}
+
+.yara-catinfo-indicators {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.yara-catinfo-indicators li {
+  margin: 3px 0;
+}
+
+.yara-catinfo-indicators code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 11.5px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(100, 116, 139, .14);
+}
+
+body.dark .yara-catinfo-indicators code {
+  background: rgba(148, 163, 184, .18);
+}
+
 
 .ext-search {
   width: 100%;
@@ -1410,37 +2188,155 @@ body.dark .ioc-decoded-from {
   padding-left: 6px;
 }
 
-.ext-table td.ioc-type-yara-match       { border-left-color: #7c3aed; color: #7c3aed; }
-.ext-table td.ioc-type-url              { border-left-color: var(--risk-info); color: var(--risk-info); }
-.ext-table td.ioc-type-ip-address       { border-left-color: var(--risk-high); color: var(--risk-high); }
-.ext-table td.ioc-type-email            { border-left-color: #ea580c; color: #ea580c; }
-.ext-table td.ioc-type-file-path        { border-left-color: var(--risk-low); color: var(--risk-low); }
-.ext-table td.ioc-type-unc-path         { border-left-color: var(--risk-low); color: var(--risk-low); }
-.ext-table td.ioc-type-hash             { border-left-color: #475569; color: #475569; }
-.ext-table td.ioc-type-command-line     { border-left-color: #be123c; color: #be123c; }
-.ext-table td.ioc-type-process          { border-left-color: #be123c; color: #be123c; }
-.ext-table td.ioc-type-hostname         { border-left-color: var(--accent-deep); color: var(--accent-deep); }
-.ext-table td.ioc-type-mac-address      { border-left-color: var(--accent-deep); color: var(--accent-deep); }
-.ext-table td.ioc-type-username         { border-left-color: var(--accent-deep); color: var(--accent-deep); }
-.ext-table td.ioc-type-attachment       { border-left-color: #d97706; color: #d97706; }
-.ext-table td.ioc-type-pattern          { border-left-color: #64748b; color: #64748b; }
-.ext-table td.ioc-type-info             { border-left-color: #94a3b8; color: #94a3b8; }
+.ext-table td.ioc-type-yara-match {
+  border-left-color: #7c3aed;
+  color: #7c3aed;
+}
 
-body.dark .ext-table td.ioc-type-yara-match   { border-left-color: #a78bfa; color: #a78bfa; }
-body.dark .ext-table td.ioc-type-url          { border-left-color: var(--risk-info); color: var(--risk-info); }
-body.dark .ext-table td.ioc-type-ip-address   { border-left-color: var(--risk-high); color: var(--risk-high); }
-body.dark .ext-table td.ioc-type-email        { border-left-color: #fb923c; color: #fb923c; }
-body.dark .ext-table td.ioc-type-file-path    { border-left-color: var(--risk-low); color: var(--risk-low); }
-body.dark .ext-table td.ioc-type-unc-path     { border-left-color: var(--risk-low); color: var(--risk-low); }
-body.dark .ext-table td.ioc-type-hash         { border-left-color: #94a3b8; color: #94a3b8; }
-body.dark .ext-table td.ioc-type-command-line  { border-left-color: #fb7185; color: #fb7185; }
-body.dark .ext-table td.ioc-type-process       { border-left-color: #fb7185; color: #fb7185; }
-body.dark .ext-table td.ioc-type-hostname      { border-left-color: var(--accent); color: var(--accent); }
-body.dark .ext-table td.ioc-type-mac-address   { border-left-color: var(--accent); color: var(--accent); }
-body.dark .ext-table td.ioc-type-username      { border-left-color: var(--accent); color: var(--accent); }
-body.dark .ext-table td.ioc-type-attachment    { border-left-color: var(--risk-med); color: var(--risk-med); }
-body.dark .ext-table td.ioc-type-pattern       { border-left-color: #94a3b8; color: #94a3b8; }
-body.dark .ext-table td.ioc-type-info          { border-left-color: #64748b; color: #64748b; }
+.ext-table td.ioc-type-url {
+  border-left-color: var(--risk-info);
+  color: var(--risk-info);
+}
+
+.ext-table td.ioc-type-ip-address {
+  border-left-color: var(--risk-high);
+  color: var(--risk-high);
+}
+
+.ext-table td.ioc-type-email {
+  border-left-color: #ea580c;
+  color: #ea580c;
+}
+
+.ext-table td.ioc-type-file-path {
+  border-left-color: var(--risk-low);
+  color: var(--risk-low);
+}
+
+.ext-table td.ioc-type-unc-path {
+  border-left-color: var(--risk-low);
+  color: var(--risk-low);
+}
+
+.ext-table td.ioc-type-hash {
+  border-left-color: #475569;
+  color: #475569;
+}
+
+.ext-table td.ioc-type-command-line {
+  border-left-color: #be123c;
+  color: #be123c;
+}
+
+.ext-table td.ioc-type-process {
+  border-left-color: #be123c;
+  color: #be123c;
+}
+
+.ext-table td.ioc-type-hostname {
+  border-left-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+.ext-table td.ioc-type-mac-address {
+  border-left-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+.ext-table td.ioc-type-username {
+  border-left-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+.ext-table td.ioc-type-attachment {
+  border-left-color: #d97706;
+  color: #d97706;
+}
+
+.ext-table td.ioc-type-pattern {
+  border-left-color: #64748b;
+  color: #64748b;
+}
+
+.ext-table td.ioc-type-info {
+  border-left-color: #94a3b8;
+  color: #94a3b8;
+}
+
+body.dark .ext-table td.ioc-type-yara-match {
+  border-left-color: #a78bfa;
+  color: #a78bfa;
+}
+
+body.dark .ext-table td.ioc-type-url {
+  border-left-color: var(--risk-info);
+  color: var(--risk-info);
+}
+
+body.dark .ext-table td.ioc-type-ip-address {
+  border-left-color: var(--risk-high);
+  color: var(--risk-high);
+}
+
+body.dark .ext-table td.ioc-type-email {
+  border-left-color: #fb923c;
+  color: #fb923c;
+}
+
+body.dark .ext-table td.ioc-type-file-path {
+  border-left-color: var(--risk-low);
+  color: var(--risk-low);
+}
+
+body.dark .ext-table td.ioc-type-unc-path {
+  border-left-color: var(--risk-low);
+  color: var(--risk-low);
+}
+
+body.dark .ext-table td.ioc-type-hash {
+  border-left-color: #94a3b8;
+  color: #94a3b8;
+}
+
+body.dark .ext-table td.ioc-type-command-line {
+  border-left-color: #fb7185;
+  color: #fb7185;
+}
+
+body.dark .ext-table td.ioc-type-process {
+  border-left-color: #fb7185;
+  color: #fb7185;
+}
+
+body.dark .ext-table td.ioc-type-hostname {
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+
+body.dark .ext-table td.ioc-type-mac-address {
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+
+body.dark .ext-table td.ioc-type-username {
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+
+body.dark .ext-table td.ioc-type-attachment {
+  border-left-color: var(--risk-med);
+  color: var(--risk-med);
+}
+
+body.dark .ext-table td.ioc-type-pattern {
+  border-left-color: #94a3b8;
+  color: #94a3b8;
+}
+
+body.dark .ext-table td.ioc-type-info {
+  border-left-color: #64748b;
+  color: #64748b;
+}
 
 .ext-table tr.hidden {
   display: none;
@@ -1543,9 +2439,20 @@ mark.ioc-highlight-flash {
 
 
 @keyframes ioc-highlight-pulse {
-  0%   { background: rgba(255, 220, 50, .85); box-shadow: 0 0 8px rgba(255, 200, 50, .55); }
-  30%  { background: rgba(255, 220, 50, .65); box-shadow: 0 0 4px rgba(255, 200, 50, .35); }
-  100% { background: rgba(255, 220, 50, .4);  box-shadow: none; }
+  0% {
+    background: rgba(255, 220, 50, .85);
+    box-shadow: 0 0 8px rgba(255, 200, 50, .55);
+  }
+
+  30% {
+    background: rgba(255, 220, 50, .65);
+    box-shadow: 0 0 4px rgba(255, 200, 50, .35);
+  }
+
+  100% {
+    background: rgba(255, 220, 50, .4);
+    box-shadow: none;
+  }
 }
 
 body.dark mark.ioc-highlight-flash {
@@ -1553,9 +2460,20 @@ body.dark mark.ioc-highlight-flash {
 }
 
 @keyframes ioc-highlight-pulse-dark {
-  0%   { background: rgba(255, 200, 50, .75); box-shadow: 0 0 8px rgba(255, 200, 50, .45); }
-  30%  { background: rgba(255, 200, 50, .55); box-shadow: 0 0 4px rgba(255, 200, 50, .25); }
-  100% { background: rgba(255, 200, 50, .3);  box-shadow: none; }
+  0% {
+    background: rgba(255, 200, 50, .75);
+    box-shadow: 0 0 8px rgba(255, 200, 50, .45);
+  }
+
+  30% {
+    background: rgba(255, 200, 50, .55);
+    box-shadow: 0 0 4px rgba(255, 200, 50, .25);
+  }
+
+  100% {
+    background: rgba(255, 200, 50, .3);
+    box-shadow: none;
+  }
 }
 
 
@@ -1648,6 +2566,7 @@ body.dark .badge-info {
 .enc-finding-card.hidden {
   display: none;
 }
+
 .enc-finding-card:hover {
   border-color: #bbb;
 }
@@ -1772,16 +2691,19 @@ body.dark .enc-metachip {
   border-color: rgba(251, 191, 36, .3);
   color: #92400e;
 }
+
 body.dark .enc-metachip-size.enc-sizedelta-expand {
   background: rgba(251, 191, 36, .15);
   border-color: rgba(251, 191, 36, .3);
   color: #fcd34d;
 }
+
 .enc-metachip-size.enc-sizedelta-shrink {
   background: rgba(220, 38, 38, .08);
   border-color: rgba(220, 38, 38, .25);
   color: #991b1b;
 }
+
 body.dark .enc-metachip-size.enc-sizedelta-shrink {
   background: rgba(248, 113, 113, .1);
   border-color: rgba(248, 113, 113, .25);
@@ -1796,16 +2718,19 @@ body.dark .enc-metachip-size.enc-sizedelta-shrink {
   color: #92400e;
   font-weight: 600;
 }
+
 body.dark .enc-metachip-entropy.enc-metachip-entropy-high {
   background: rgba(251, 191, 36, .15);
   border-color: rgba(251, 191, 36, .3);
   color: #fcd34d;
 }
+
 .enc-metachip-entropy.enc-metachip-entropy-low {
   background: rgba(220, 38, 38, .06);
   border-color: rgba(220, 38, 38, .2);
   color: #991b1b;
 }
+
 body.dark .enc-metachip-entropy.enc-metachip-entropy-low {
   background: rgba(248, 113, 113, .08);
   border-color: rgba(248, 113, 113, .2);
@@ -1883,6 +2808,7 @@ body.dark .enc-chain-arrow {
   border-color: rgba(59, 130, 246, .25);
   color: #1e40af;
 }
+
 body.dark .enc-chain-hop-encoding {
   background: rgba(96, 165, 250, .15);
   border-color: rgba(96, 165, 250, .3);
@@ -1895,6 +2821,7 @@ body.dark .enc-chain-hop-encoding {
   border-color: rgba(251, 191, 36, .3);
   color: #92400e;
 }
+
 body.dark .enc-chain-hop-compression {
   background: rgba(251, 191, 36, .15);
   border-color: rgba(251, 191, 36, .3);
@@ -1907,6 +2834,7 @@ body.dark .enc-chain-hop-compression {
   border-color: rgba(220, 38, 38, .3);
   color: #991b1b;
 }
+
 body.dark .enc-chain-hop-payload-danger {
   background: rgba(248, 113, 113, .12);
   border-color: rgba(248, 113, 113, .3);
@@ -1919,6 +2847,7 @@ body.dark .enc-chain-hop-payload-danger {
   border-color: rgba(16, 185, 129, .25);
   color: #065f46;
 }
+
 body.dark .enc-chain-hop-payload-benign {
   background: rgba(52, 211, 153, .12);
   border-color: rgba(52, 211, 153, .3);
@@ -1932,6 +2861,7 @@ body.dark .enc-chain-hop-payload-benign {
   color: #475569;
   cursor: help;
 }
+
 body.dark .enc-chain-hop-ellipsis {
   background: rgba(203, 213, 225, .1);
   border-color: rgba(203, 213, 225, .25);
@@ -1953,6 +2883,7 @@ body.dark .enc-chain-hop-ellipsis {
   text-transform: uppercase;
   margin-left: auto;
 }
+
 body.dark .enc-depth-badge {
   background: rgba(192, 132, 252, .12);
   border-color: rgba(192, 132, 252, .3);
@@ -1969,6 +2900,7 @@ body.dark .enc-depth-badge {
   font-weight: 700 !important;
   box-shadow: 0 0 0 1px rgba(124, 58, 237, .4) inset;
 }
+
 body.dark .enc-btn-primary {
   box-shadow: 0 0 0 1px rgba(167, 139, 250, .5) inset;
 }
@@ -2123,7 +3055,8 @@ body.dark .enc-decoded-preview {
   font-size: 9px;
   font-weight: 600;
   letter-spacing: .02em;
-  color: rgba(100, 116, 139, .75);   /* muted slate-grey */
+  color: rgba(100, 116, 139, .75);
+  /* muted slate-grey */
   text-transform: uppercase;
 }
 
@@ -2137,7 +3070,8 @@ body.dark .enc-decoded-preview {
 
 /* Purple variant — sits between green and purple blocks. */
 .enc-decode-depth-sep.enc-depth-sep-deep {
-  color: rgba(107, 33, 168, .75);    /* muted purple */
+  color: rgba(107, 33, 168, .75);
+  /* muted purple */
 }
 
 .enc-decode-depth-sep.enc-depth-sep-deep::before,
@@ -2171,7 +3105,8 @@ body.dark .enc-decoded-preview {
 }
 
 body.dark .enc-decode-depth-sep {
-  color: rgba(203, 213, 225, .55);   /* muted slate on dark */
+  color: rgba(203, 213, 225, .55);
+  /* muted slate on dark */
 }
 
 body.dark .enc-decode-depth-sep::before,
@@ -2248,24 +3183,29 @@ body.dark .enc-finding-card[data-locatable]:hover {
 }
 
 /* ── Encoded content highlight in view pane ── */
-.plaintext-table tr.enc-highlight-line > td {
+.plaintext-table tr.enc-highlight-line>td {
   background: rgb(var(--accent-rgb) / .12) !important;
   box-shadow: inset 3px 0 0 var(--accent);
   transition: background .3s;
 }
 
-body.dark .plaintext-table tr.enc-highlight-line > td {
+body.dark .plaintext-table tr.enc-highlight-line>td {
   background: rgb(var(--accent-rgb) / .08) !important;
   box-shadow: inset 3px 0 0 rgb(var(--accent-rgb) / .6);
 }
 
-.plaintext-table tr.enc-highlight-flash > td {
+.plaintext-table tr.enc-highlight-flash>td {
   animation: enc-flash 2s ease-out;
 }
 
 @keyframes enc-flash {
-  0%   { background: rgb(var(--accent-rgb) / .35) !important; }
-  100% { background: rgb(var(--accent-rgb) / .08) !important; }
+  0% {
+    background: rgb(var(--accent-rgb) / .35) !important;
+  }
+
+  100% {
+    background: rgb(var(--accent-rgb) / .08) !important;
+  }
 }
 
 /* ── Encoded content card flash (bidirectional cross-link) ── */
@@ -2274,9 +3214,20 @@ body.dark .plaintext-table tr.enc-highlight-line > td {
 }
 
 @keyframes enc-card-flash-anim {
-  0%   { box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .6), 0 0 18px rgb(var(--accent-rgb) / .3); border-color: var(--accent); }
-  50%  { box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / .35), 0 0 10px rgb(var(--accent-rgb) / .15); border-color: rgb(var(--accent-rgb) / .5); }
-  100% { box-shadow: none; border-color: rgb(var(--accent-rgb) / .15); }
+  0% {
+    box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .6), 0 0 18px rgb(var(--accent-rgb) / .3);
+    border-color: var(--accent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / .35), 0 0 10px rgb(var(--accent-rgb) / .15);
+    border-color: rgb(var(--accent-rgb) / .5);
+  }
+
+  100% {
+    box-shadow: none;
+    border-color: rgb(var(--accent-rgb) / .15);
+  }
 }
 
 /* ── IOC row flash triggered from encoded content card ── */
@@ -2285,9 +3236,17 @@ body.dark .plaintext-table tr.enc-highlight-line > td {
 }
 
 @keyframes ioc-encoded-flash-anim {
-  0%   { background: rgb(var(--accent-rgb) / .4); }
-  50%  { background: rgb(var(--accent-rgb) / .2); }
-  100% { background: transparent; }
+  0% {
+    background: rgb(var(--accent-rgb) / .4);
+  }
+
+  50% {
+    background: rgb(var(--accent-rgb) / .2);
+  }
+
+  100% {
+    background: transparent;
+  }
 }
 
 /* ── "All the way" deep decode button ── */
@@ -2317,24 +3276,29 @@ body.dark .enc-btn-alltheway:hover {
 }
 
 /* ── IOC click-to-highlight in plaintext view ── */
-.plaintext-table tr.ioc-highlight-line > td {
+.plaintext-table tr.ioc-highlight-line>td {
   background: rgba(255, 200, 50, .15) !important;
   box-shadow: inset 3px 0 0 #f5a623;
   transition: background .3s;
 }
 
-body.dark .plaintext-table tr.ioc-highlight-line > td {
+body.dark .plaintext-table tr.ioc-highlight-line>td {
   background: rgba(255, 200, 50, .10) !important;
   box-shadow: inset 3px 0 0 rgba(245, 166, 35, .7);
 }
 
-.plaintext-table tr.ioc-highlight-flash > td {
+.plaintext-table tr.ioc-highlight-flash>td {
   animation: ioc-line-flash 2s ease-out;
 }
 
 @keyframes ioc-line-flash {
-  0%   { background: rgba(255, 200, 50, .45) !important; }
-  100% { background: rgba(255, 200, 50, .10) !important; }
+  0% {
+    background: rgba(255, 200, 50, .45) !important;
+  }
+
+  100% {
+    background: rgba(255, 200, 50, .10) !important;
+  }
 }
 
 /* ── YARA match inline highlight ── */
@@ -2357,9 +3321,20 @@ mark.yara-highlight-flash {
 }
 
 @keyframes yara-highlight-pulse {
-  0%   { background: rgb(var(--accent-rgb) / .7); box-shadow: 0 0 8px rgb(var(--accent-rgb) / .5); }
-  30%  { background: rgb(var(--accent-rgb) / .5); box-shadow: 0 0 4px rgb(var(--accent-rgb) / .3); }
-  100% { background: rgb(var(--accent-rgb) / .25); box-shadow: none; }
+  0% {
+    background: rgb(var(--accent-rgb) / .7);
+    box-shadow: 0 0 8px rgb(var(--accent-rgb) / .5);
+  }
+
+  30% {
+    background: rgb(var(--accent-rgb) / .5);
+    box-shadow: 0 0 4px rgb(var(--accent-rgb) / .3);
+  }
+
+  100% {
+    background: rgb(var(--accent-rgb) / .25);
+    box-shadow: none;
+  }
 }
 
 body.dark mark.yara-highlight {
@@ -2371,17 +3346,28 @@ body.dark mark.yara-highlight-flash {
 }
 
 @keyframes yara-highlight-pulse-dark {
-  0%   { background: rgb(var(--accent-rgb) / .6); box-shadow: 0 0 8px rgb(var(--accent-rgb) / .4); }
-  30%  { background: rgb(var(--accent-rgb) / .4); box-shadow: 0 0 4px rgb(var(--accent-rgb) / .2); }
-  100% { background: rgb(var(--accent-rgb) / .2); box-shadow: none; }
+  0% {
+    background: rgb(var(--accent-rgb) / .6);
+    box-shadow: 0 0 8px rgb(var(--accent-rgb) / .4);
+  }
+
+  30% {
+    background: rgb(var(--accent-rgb) / .4);
+    box-shadow: 0 0 4px rgb(var(--accent-rgb) / .2);
+  }
+
+  100% {
+    background: rgb(var(--accent-rgb) / .2);
+    box-shadow: none;
+  }
 }
 
-.plaintext-table tr.yara-line-highlight > td {
+.plaintext-table tr.yara-line-highlight>td {
   background: rgb(var(--accent-rgb) / .08) !important;
   box-shadow: inset 3px 0 0 rgb(var(--accent-rgb) / .5);
 }
 
-body.dark .plaintext-table tr.yara-line-highlight > td {
+body.dark .plaintext-table tr.yara-line-highlight>td {
   background: rgb(var(--accent-rgb) / .06) !important;
   box-shadow: inset 3px 0 0 rgb(var(--accent-rgb) / .4);
 }
@@ -2403,9 +3389,20 @@ mark.csv-yara-highlight-flash {
 }
 
 @keyframes csv-yara-highlight-pulse {
-  0%   { background: rgb(var(--accent-rgb) / .7); box-shadow: 0 0 10px rgb(var(--accent-rgb) / .6); }
-  30%  { background: rgb(var(--accent-rgb) / .5); box-shadow: 0 0 6px rgb(var(--accent-rgb) / .4); }
-  100% { background: rgb(var(--accent-rgb) / .25); box-shadow: none; }
+  0% {
+    background: rgb(var(--accent-rgb) / .7);
+    box-shadow: 0 0 10px rgb(var(--accent-rgb) / .6);
+  }
+
+  30% {
+    background: rgb(var(--accent-rgb) / .5);
+    box-shadow: 0 0 6px rgb(var(--accent-rgb) / .4);
+  }
+
+  100% {
+    background: rgb(var(--accent-rgb) / .25);
+    box-shadow: none;
+  }
 }
 
 body.dark mark.csv-yara-highlight {
@@ -2417,18 +3414,29 @@ body.dark mark.csv-yara-highlight-flash {
 }
 
 @keyframes csv-yara-highlight-pulse-dark {
-  0%   { background: rgb(var(--accent-rgb) / .6); box-shadow: 0 0 10px rgb(var(--accent-rgb) / .5); }
-  30%  { background: rgb(var(--accent-rgb) / .4); box-shadow: 0 0 6px rgb(var(--accent-rgb) / .3); }
-  100% { background: rgb(var(--accent-rgb) / .2); box-shadow: none; }
+  0% {
+    background: rgb(var(--accent-rgb) / .6);
+    box-shadow: 0 0 10px rgb(var(--accent-rgb) / .5);
+  }
+
+  30% {
+    background: rgb(var(--accent-rgb) / .4);
+    box-shadow: 0 0 6px rgb(var(--accent-rgb) / .3);
+  }
+
+  100% {
+    background: rgb(var(--accent-rgb) / .2);
+    box-shadow: none;
+  }
 }
 
-.csv-table tr.csv-yara-row-highlight > td {
+.csv-table tr.csv-yara-row-highlight>td {
   background: rgb(var(--accent-rgb) / .12) !important;
   box-shadow: inset 3px 0 0 rgb(var(--accent-rgb) / .5);
   transition: background .3s ease;
 }
 
-body.dark .csv-table tr.csv-yara-row-highlight > td {
+body.dark .csv-table tr.csv-yara-row-highlight>td {
   background: rgb(var(--accent-rgb) / .08) !important;
   box-shadow: inset 3px 0 0 rgb(var(--accent-rgb) / .4);
 }
@@ -2444,31 +3452,60 @@ mark.csv-ioc-highlight {
   border: 0;
   border-radius: 0;
 }
+
 mark.csv-ioc-highlight-flash {
   animation: csv-ioc-highlight-pulse 2.5s ease-out forwards;
 }
+
 @keyframes csv-ioc-highlight-pulse {
-  0%   { background: rgba(255, 200, 50, .75); box-shadow: 0 0 10px rgba(255, 200, 50, .6); }
-  30%  { background: rgba(255, 200, 50, .55); box-shadow: 0 0 6px rgba(255, 200, 50, .4); }
-  100% { background: rgba(255, 200, 50, .30); box-shadow: none; }
+  0% {
+    background: rgba(255, 200, 50, .75);
+    box-shadow: 0 0 10px rgba(255, 200, 50, .6);
+  }
+
+  30% {
+    background: rgba(255, 200, 50, .55);
+    box-shadow: 0 0 6px rgba(255, 200, 50, .4);
+  }
+
+  100% {
+    background: rgba(255, 200, 50, .30);
+    box-shadow: none;
+  }
 }
+
 body.dark mark.csv-ioc-highlight {
   background: rgba(255, 200, 50, .35);
 }
+
 body.dark mark.csv-ioc-highlight-flash {
   animation: csv-ioc-highlight-pulse-dark 2.5s ease-out forwards;
 }
+
 @keyframes csv-ioc-highlight-pulse-dark {
-  0%   { background: rgba(255, 200, 50, .65); box-shadow: 0 0 10px rgba(255, 200, 50, .5); }
-  30%  { background: rgba(255, 200, 50, .45); box-shadow: 0 0 6px rgba(255, 200, 50, .3); }
-  100% { background: rgba(255, 200, 50, .25); box-shadow: none; }
+  0% {
+    background: rgba(255, 200, 50, .65);
+    box-shadow: 0 0 10px rgba(255, 200, 50, .5);
+  }
+
+  30% {
+    background: rgba(255, 200, 50, .45);
+    box-shadow: 0 0 6px rgba(255, 200, 50, .3);
+  }
+
+  100% {
+    background: rgba(255, 200, 50, .25);
+    box-shadow: none;
+  }
 }
-.csv-table tr.csv-ioc-row-highlight > td {
+
+.csv-table tr.csv-ioc-row-highlight>td {
   background: rgba(255, 200, 50, .12) !important;
   box-shadow: inset 3px 0 0 rgba(255, 200, 50, .5);
   transition: background .3s ease;
 }
-body.dark .csv-table tr.csv-ioc-row-highlight > td {
+
+body.dark .csv-table tr.csv-ioc-row-highlight>td {
   background: rgba(255, 200, 50, .08) !important;
   box-shadow: inset 3px 0 0 rgba(255, 200, 50, .4);
 }
@@ -2484,24 +3521,51 @@ mark.evtx-ioc-highlight {
   border: 0;
   border-radius: 0;
 }
+
 mark.evtx-ioc-highlight-flash {
   animation: evtx-ioc-highlight-pulse 2.5s ease-out forwards;
 }
+
 @keyframes evtx-ioc-highlight-pulse {
-  0%   { background: rgba(255, 200, 50, .75); box-shadow: 0 0 10px rgba(255, 200, 50, .6); }
-  30%  { background: rgba(255, 200, 50, .55); box-shadow: 0 0 6px rgba(255, 200, 50, .4); }
-  100% { background: rgba(255, 200, 50, .30); box-shadow: none; }
+  0% {
+    background: rgba(255, 200, 50, .75);
+    box-shadow: 0 0 10px rgba(255, 200, 50, .6);
+  }
+
+  30% {
+    background: rgba(255, 200, 50, .55);
+    box-shadow: 0 0 6px rgba(255, 200, 50, .4);
+  }
+
+  100% {
+    background: rgba(255, 200, 50, .30);
+    box-shadow: none;
+  }
 }
+
 body.dark mark.evtx-ioc-highlight {
   background: rgba(255, 200, 50, .35);
 }
+
 body.dark mark.evtx-ioc-highlight-flash {
   animation: evtx-ioc-highlight-pulse-dark 2.5s ease-out forwards;
 }
+
 @keyframes evtx-ioc-highlight-pulse-dark {
-  0%   { background: rgba(255, 200, 50, .65); box-shadow: 0 0 10px rgba(255, 200, 50, .5); }
-  30%  { background: rgba(255, 200, 50, .45); box-shadow: 0 0 6px rgba(255, 200, 50, .3); }
-  100% { background: rgba(255, 200, 50, .25); box-shadow: none; }
+  0% {
+    background: rgba(255, 200, 50, .65);
+    box-shadow: 0 0 10px rgba(255, 200, 50, .5);
+  }
+
+  30% {
+    background: rgba(255, 200, 50, .45);
+    box-shadow: 0 0 6px rgba(255, 200, 50, .3);
+  }
+
+  100% {
+    background: rgba(255, 200, 50, .25);
+    box-shadow: none;
+  }
 }
 
 /* ── Drop zone ── */
@@ -3016,4 +4080,5 @@ body.dark .settings-theme-tile-active {
   opacity: .65;
   font-variant-numeric: tabular-nums;
 }
+
 </file_content_end>
