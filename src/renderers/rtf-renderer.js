@@ -36,7 +36,7 @@ class RtfRenderer {
     if (oleFindings.length) {
       const oleDiv = document.createElement('div'); oleDiv.className = 'rtf-ole-section';
       const oleH = document.createElement('h3'); oleH.textContent = `⚠ ${oleFindings.length} Embedded Object(s) Detected`;
-      oleH.style.cssText = 'color:#f88;margin:0 0 8px 0'; oleDiv.appendChild(oleH);
+      oleH.style.cssText = 'color:var(--risk-high);margin:0 0 8px 0'; oleDiv.appendChild(oleH);
       for (const o of oleFindings) {
         const item = document.createElement('div'); item.className = `rtf-ole-item rtf-ole-${o.sev}`;
         item.textContent = o.label; oleDiv.appendChild(item);
