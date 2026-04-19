@@ -92,7 +92,11 @@ src/renderers/odp-renderer.js          # OdpRenderer — OpenDocument presentati
 src/renderers/ppt-renderer.js          # PptRenderer — legacy .ppt slide extraction
 src/renderers/rtf-renderer.js          # RtfRenderer — RTF text + OLE/exploit analysis
 src/renderers/zip-renderer.js          # ZipRenderer — archive listing + threat flagging
+src/renderers/cab-renderer.js          # CabRenderer — Microsoft Cabinet (MSCF) parser w/ MSZIP extraction via pako
+src/renderers/rar-renderer.js          # RarRenderer — RAR v4 + v5 header walker (listing-only)
+src/renderers/seven7-renderer.js       # SevenZRenderer — 7-Zip header walker (plain + LZMA-encoded via vendored LZMA-JS) + AES coder detection
 src/renderers/iso-renderer.js          # IsoRenderer — ISO 9660 filesystem listing
+
 src/renderers/url-renderer.js          # UrlRenderer — .url / .webloc shortcut parser
 src/renderers/onenote-renderer.js      # OneNoteRenderer — .one embedded object extraction
 src/renderers/iqy-slk-renderer.js      # IqySlkRenderer — Internet Query + Symbolic Link files
@@ -141,7 +145,7 @@ registry and `_setTheme()` method defined there, and overrides the unbudgeted
 `_buildAnalysisText` call path in `_copyAnalysis` with the user's configured
 Summary-budget step.
 
-Vendor libraries (`vendor/jszip.min.js`, `vendor/xlsx.full.min.js`, `vendor/pdf.min.js`, `vendor/pdf.worker.min.js`, `vendor/highlight.min.js`, `vendor/utif.min.js`, `vendor/exifr.min.js`, `vendor/tldts.min.js`, `vendor/pako.min.js`) are inlined into separate `<script>` blocks before the application code. `exifr` drives EXIF/GPS/XMP extraction inside `ImageRenderer`; `tldts` powers the public-suffix-list domain derivation wired into the shared `pushIOC` helper (every `IOC.URL` auto-emits a sibling `IOC.DOMAIN` when tldts resolves a registrable domain, plus a sibling `IOC.HOSTNAME` for punycode / IDN homograph hosts and an `IOC.PATTERN` row for abuse-associated TLDs / dynamic-DNS suffixes); `pako` is the synchronous gzip / deflate / zlib fallback used by `Decompressor` when the native `DecompressionStream` is unavailable or a caller needs the bytes synchronously (e.g. the PKG TOC inflate path, eager Base64 / hex payload classification).
+Vendor libraries (`vendor/jszip.min.js`, `vendor/xlsx.full.min.js`, `vendor/pdf.min.js`, `vendor/pdf.worker.min.js`, `vendor/highlight.min.js`, `vendor/utif.min.js`, `vendor/exifr.min.js`, `vendor/tldts.min.js`, `vendor/pako.min.js`, `vendor/lzma-d-min.js`) are inlined into separate `<script>` blocks before the application code. `exifr` drives EXIF/GPS/XMP extraction inside `ImageRenderer`; `tldts` powers the public-suffix-list domain derivation wired into the shared `pushIOC` helper (every `IOC.URL` auto-emits a sibling `IOC.DOMAIN` when tldts resolves a registrable domain, plus a sibling `IOC.HOSTNAME` for punycode / IDN homograph hosts and an `IOC.PATTERN` row for abuse-associated TLDs / dynamic-DNS suffixes); `pako` is the synchronous gzip / deflate / zlib fallback used by `Decompressor` when the native `DecompressionStream` is unavailable or a caller needs the bytes synchronously (e.g. the PKG TOC inflate path, eager Base64 / hex payload classification); `lzma-d-min.js` is the decoder-only build of nmrugg/LZMA-JS used by `SevenZRenderer` to decompress LZMA-encoded 7z end-headers so the file listing survives `kEncodedHeader` archives (see **Architecture → 7-Zip LZMA-header decode** below).
 
 ---
 
@@ -217,7 +221,11 @@ Loupe/
 │   │   ├── ppt-renderer.js          # PptRenderer — legacy .ppt
 │   │   ├── rtf-renderer.js          # RtfRenderer — RTF + OLE analysis
 │   │   ├── zip-renderer.js          # ZipRenderer — archive listing
+│   │   ├── cab-renderer.js          # CabRenderer — Microsoft Cabinet (MSCF) parser + MSZIP extraction
+│   │   ├── rar-renderer.js          # RarRenderer — RAR v4 / v5 header walker (listing-only)
+│   │   ├── seven7-renderer.js       # SevenZRenderer — 7-Zip container (listing-only; decodes LZMA-encoded end-headers via vendored lzma-d-min.js)
 │   │   ├── iso-renderer.js          # IsoRenderer — ISO 9660 filesystem
+
 │   │   ├── url-renderer.js          # UrlRenderer — .url / .webloc shortcuts
 │   │   ├── onenote-renderer.js      # OneNoteRenderer — .one files
 │   │   ├── iqy-slk-renderer.js      # IqySlkRenderer — .iqy / .slk files

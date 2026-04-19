@@ -176,9 +176,16 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks to
 
 ### Archive drill-down
 
-Click any entry inside a ZIP / TAR / ISO / MSI / PKG / CRX / XPI / JAR listing to open and re-analyse it with Back navigation. ZipCrypto-encrypted entries get a lock icon; unsupported formats fall back to a hex dump but still feed YARA and IOC scanning.
+Click any entry inside a ZIP / TAR / ISO / MSI / PKG / CRX / XPI / JAR / CAB listing to open and re-analyse it with Back navigation. ZipCrypto-encrypted entries get a lock icon; unsupported formats fall back to a hex dump but still feed YARA and IOC scanning.
 
 ZIP listings additionally surface per-entry risk signals classic archive viewers hide: archive-level and per-entry `.comment` fields, Unix permission bits (suid / sgid / world-writable = medium), zip-bomb compression ratios (>1000× = high), and stale / future mtimes (< 1995 or > 1 year ahead = medium).
+
+| Format | What you get |
+|---|---|
+| **CAB (MSCF)** | Full MS-CAB parser — CFHEADER / CFFOLDER / CFFILE walk, per-folder compression type (Stored / MSZIP / LZX / Quantum), split-cabinet detection. Uncompressed and MSZIP entries are clickable for recursive analysis; LZX / Quantum entries are listed but locked (no in-browser decoder). |
+| **RAR (v4 / v5)** | Listing-only — both RAR4 fixed-header and RAR5 vuint-encoded blocks are walked to surface file names, sizes, timestamps, solid / multi-volume / encrypted-headers flags, and recovery-record presence. Extraction is not attempted (RAR's LZSS / PPMd compression is proprietary); entries show a lock icon. |
+| **7-Zip** | Full file-listing extraction for both plain `kHeader` and LZMA-encoded (`kEncodedHeader`) archives — 7-Zip's own solid LZMA header is transparently decompressed via the vendored LZMA-JS decoder. Surfaces UTF-16LE names, FILETIME mtime, directory flag, and AES-256 encryption detection (`06 F1 07 01` coder ID). Listing-only — per-file content decompression is not attempted. |
+
 
 
 ---
@@ -194,7 +201,8 @@ ZIP listings additionally surface per-entry risk signals classic archive viewers
 | **Resizable sidebar** | Drag the sidebar edge to resize it between 33 % and 50 % of the viewport |
 | **Collapsible sidebar sections** | Single-pane sidebar with collapsible `<details>`: File Info, Macros, Signatures & IOCs |
 | **Breadcrumb navigation** | Drill-down path as a clickable crumb trail (e.g. `📦 archive.zip ▸ 📄 doc.docm ▸ 🔧 Module1.bas`). Overflow `… ▾` dropdown keeps long trails on one line; the close button is anchored so its position never shifts with filename length. |
-| **Archive browser** | Shared collapsible / searchable / sortable tree used by every archive-style renderer (ZIP, JAR / WAR / EAR, MSIX / APPX, CRX / XPI, TAR / `.tar.gz`, ISO / IMG, PKG / MPKG). Tree view with child counts and one-click drill-down; flat sortable table view; instant filter box; per-entry risk badges (executable, double-extension, ZipCrypto lock, tar-symlink target). |
+| **Archive browser** | Shared collapsible / searchable / sortable tree used by every archive-style renderer (ZIP, JAR / WAR / EAR, MSIX / APPX, CRX / XPI, TAR / `.tar.gz`, ISO / IMG, PKG / MPKG, CAB, RAR, 7z). Tree view with child counts and one-click drill-down; flat sortable table view; instant filter box; per-entry risk badges (executable, double-extension, ZipCrypto lock, tar-symlink target). |
+
 | **Keyboard shortcuts** | `S` sidebar · `Y` YARA dialog · `,` Settings · `?` / `H` Help · `F` search document · `Ctrl+C` / `⌘C` copy raw file (when nothing is selected) · `Ctrl+V` paste file for analysis · `Esc` close dialog / clear search. **Archive browser:** `/` focus filter · `↑ ↓` navigate rows · `← →` collapse / expand folder · `Enter` / `Space` open selected file. |
 | **Smart whole-token select** | Double-click in any monospace viewer selects the entire non-whitespace token — expanding past `/ . : = - _` and across visual line wraps — up to the nearest whitespace boundary. Great for URLs, hashes, base64 blobs, file paths, registry keys, PE imports, x509 fingerprints. |
 | **Loading overlay** | Spinner with status message while parsing large files |

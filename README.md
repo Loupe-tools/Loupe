@@ -83,7 +83,8 @@ Every format gets risk assessment, IOC extraction, and YARA scanning on top of t
 - **PDF internals** — embedded JavaScript, `/OpenAction`, `/Launch`, attachments, XFA forms.
 - **Native binaries** — PE / ELF / Mach-O with imports, sections, entropy, security features, code signatures.
 - **Certificates & keys** — X.509 and OpenPGP with weak-key and expiry flagging.
-- **Archive drill-down** — click any entry inside a ZIP / TAR / ISO / MSI / PKG / CRX to open it with full analysis.
+- **Archive drill-down** — click any entry inside a ZIP / TAR / ISO / MSI / PKG / CRX / CAB to open it with full analysis; RAR and 7-Zip listings surface filenames, flags and encryption signals.
+
 - **Exports** — one-click clipboard brief for tickets or LLMs, plus STIX 2.1, MISP, and IOC JSON/CSV.
 
 Plus six themes (Light / Dark / Midnight OLED / Solarized / Mocha / Latte), a resizable sidebar, in-toolbar document search, and click-to-highlight for every IOC and YARA match.
