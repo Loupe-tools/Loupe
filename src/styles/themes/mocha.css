@@ -25,6 +25,38 @@
    Registry:   src/app/app-ui.js → THEMES
    ══════════════════════════════════════════════════════ */
 
+/* ── Token overrides ──────────────────────────────────────────────────
+   Mocha swaps cyan for Catppuccin mauve so every accent-tinted surface
+   (breadcrumbs, focus rings, YARA highlights, IOC row hovers, theme
+   picker, scroll-to flashes, …) recolours automatically through
+   var(--accent) / var(--accent-rgb). Risk colours are retuned to the
+   Catppuccin palette for harmony.
+
+     mauve     #cba6f7   --accent
+     lavender  #b4befe   --accent-hover
+     sky       #89dceb   --accent-deep
+     red       #f38ba8   --risk-high
+     peach     #fab387   --risk-med
+     green     #a6e3a1   --risk-low
+     blue      #89b4fa   --risk-info                                    */
+body.theme-mocha {
+  --accent:        #cba6f7;
+  --accent-rgb:    203 166 247;
+  --accent-hover:  #b4befe;
+  --accent-deep:   #89dceb;
+
+  --risk-high:     #f38ba8;
+  --risk-high-rgb: 243 139 168;
+  --risk-med:      #fab387;
+  --risk-low:      #a6e3a1;
+  --risk-info:     #89b4fa;
+
+  --hairline-soft:   rgba(205, 214, 244, .05);
+  --hairline:        rgba(205, 214, 244, .08);
+  --hairline-strong: rgba(205, 214, 244, .12);
+  --hairline-bold:   rgba(205, 214, 244, .16);
+}
+
 body.theme-mocha {
   background: #1e1e2e;
   background-image: linear-gradient(160deg, #181825 0%, #1e1e2e 60%, #181825 100%);
