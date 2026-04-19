@@ -919,8 +919,132 @@ class ZipRenderer {
     const entries = [];
     zip.forEach((path, entry) => entries.push({ path, dir: entry.dir }));
 
+    // ─── Per-entry forensic surface (JSZip + central directory) ────────
+    // JSZip exposes `unixPermissions`, `dosPermissions`, `comment`,
+    // `date`, and `_data.{compressedSize, uncompressedSize}` on each
+    // entry. We walk them once to surface:
+    //   • zip-bomb candidates    — ratio > 1000× (HIGH)
+    //   • per-entry comments     — free-form attacker notes (INFO)
+    //   • suid / world-writable  — UNIX perms indicating post-extract
+    //                              privilege escalation / malware
+    //                              staging (0o4000 / 0o2000 / 0o0002)
+    //   • stale / future dates   — mtime before 1990 or > now+1y
+    //                              (timestomp fingerprint)
+    // Cap each bucket at 20 so a pathological archive can't flood the
+    // sidebar; subsequent truncation is reported via IOC.INFO.
+    try {
+      const archiveComment = zip.comment && String(zip.comment).trim();
+      if (archiveComment) {
+        pushIOC(f, {
+          type: IOC.INFO,
+          value: `Archive comment: ${archiveComment.slice(0, 200)}${archiveComment.length > 200 ? '…' : ''}`,
+          severity: 'info',
+          bucket: 'externalRefs',
+        });
+        // Comment bodies often contain URLs (phishing kit notes) or
+        // user-visible instructions — run the URL extractor on them.
+        for (const u of extractUrls(archiveComment, 8)) {
+          pushIOC(f, { type: IOC.URL, value: u, severity: 'medium', note: 'archive comment', bucket: 'externalRefs' });
+        }
+      }
+
+      const now = Date.now();
+      const YEAR_MS = 365 * 24 * 3600 * 1000;
+      const staleBefore = new Date('1990-01-01').getTime();
+      const MAX_PER_BUCKET = 20;
+      const bombHits = [];
+      const commentHits = [];
+      const permHits = [];
+      const dateHits = [];
+      zip.forEach((path, entry) => {
+        if (entry.dir) return;
+        // Zip-bomb ratio — uncompressed / compressed > 1000×.
+        const comp = entry._data && entry._data.compressedSize;
+        const uncomp = entry._data && entry._data.uncompressedSize;
+        if (comp && uncomp && comp > 0 && uncomp / comp > 1000) {
+          bombHits.push({ path, ratio: Math.round(uncomp / comp), uncomp, comp });
+        }
+        // Per-entry comment — rarely set by legitimate tooling.
+        if (entry.comment && String(entry.comment).trim()) {
+          commentHits.push({ path, comment: String(entry.comment).trim() });
+        }
+        // Unix permissions. JSZip stores the raw mode (including file type
+        // bits) on `unixPermissions`; we only care about the lower 12
+        // permission bits (mask 0o7777).
+        if (typeof entry.unixPermissions === 'number') {
+          const mode = entry.unixPermissions & 0o7777;
+          const suid = (mode & 0o4000) !== 0;
+          const sgid = (mode & 0o2000) !== 0;
+          const worldWrite = (mode & 0o0002) !== 0;
+          if (suid || sgid || worldWrite) {
+            permHits.push({
+              path, mode,
+              flags: [suid && 'setuid', sgid && 'setgid', worldWrite && 'world-writable'].filter(Boolean),
+            });
+          }
+        }
+        // Timestamp hygiene. JSZip converts DOS time → JS Date.
+        if (entry.date instanceof Date && !isNaN(entry.date.getTime())) {
+          const t = entry.date.getTime();
+          if (t < staleBefore) dateHits.push({ path, date: entry.date, kind: 'pre-1990' });
+          else if (t > now + YEAR_MS) dateHits.push({ path, date: entry.date, kind: 'future' });
+        }
+      });
+
+      for (const b of bombHits.slice(0, MAX_PER_BUCKET)) {
+        pushIOC(f, {
+          type: IOC.PATTERN,
+          value: `Zip-bomb candidate: ${b.path} (${b.ratio}× ratio, ${this._fmtBytes(b.uncomp)} / ${this._fmtBytes(b.comp)})`,
+          severity: 'high',
+          highlightText: b.path,
+          note: 'extreme compression ratio',
+          bucket: 'externalRefs',
+        });
+        f.risk = 'high';
+      }
+      if (bombHits.length > MAX_PER_BUCKET) {
+        pushIOC(f, { type: IOC.INFO, value: `+${bombHits.length - MAX_PER_BUCKET} more zip-bomb candidate(s) truncated`, severity: 'info', bucket: 'externalRefs' });
+      }
+      for (const c of commentHits.slice(0, MAX_PER_BUCKET)) {
+        const snip = c.comment.slice(0, 120) + (c.comment.length > 120 ? '…' : '');
+        pushIOC(f, {
+          type: IOC.INFO,
+          value: `Entry comment on ${c.path}: ${snip}`,
+          severity: 'info',
+          highlightText: c.path,
+          bucket: 'externalRefs',
+        });
+        for (const u of extractUrls(c.comment, 4)) {
+          pushIOC(f, { type: IOC.URL, value: u, severity: 'medium', note: `entry comment on ${c.path}`, bucket: 'externalRefs' });
+        }
+      }
+      for (const p of permHits.slice(0, MAX_PER_BUCKET)) {
+        const octal = (p.mode & 0o7777).toString(8).padStart(4, '0');
+        pushIOC(f, {
+          type: IOC.PATTERN,
+          value: `${p.path} — ${p.flags.join(', ')} (mode ${octal})`,
+          severity: 'medium',
+          highlightText: p.path,
+          note: 'UNIX permissions flagged during extraction',
+          bucket: 'externalRefs',
+        });
+        if (f.risk === 'low') f.risk = 'medium';
+      }
+      for (const d of dateHits.slice(0, MAX_PER_BUCKET)) {
+        pushIOC(f, {
+          type: IOC.INFO,
+          value: `${d.path} — ${d.kind} mtime (${d.date.toISOString().split('T')[0]})`,
+          severity: 'info',
+          highlightText: d.path,
+          note: 'possible timestamp tampering',
+          bucket: 'externalRefs',
+        });
+      }
+    } catch (_) { /* per-entry metadata scan is best-effort */ }
+
     return this._analyzeArchiveEntries(f, entries);
   }
+
 
   _analyzeArchiveEntries(f, entries) {
     const warnings = this._checkWarnings(entries);

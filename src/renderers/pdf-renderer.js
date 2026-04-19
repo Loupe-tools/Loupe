@@ -317,10 +317,79 @@ class PdfRenderer {
       }
       f.metadata.pages = pdf.numPages;
 
+      // ─── Document permissions (encrypted PDFs only) ──────────────────
+      // pdf.js returns an array of PermissionFlag enum values or null when
+      // the PDF has no owner-password restrictions. Restrictions on PRINT
+      // + COPY + MODIFY_CONTENTS are characteristic of DRM-ish samples but
+      // also of some phishing PDFs that want to block analyst triage.
+      try {
+        const perms = await pdf.getPermissions();
+        if (Array.isArray(perms) && perms.length) {
+          // PermissionFlag values from the PDF 1.7 spec (pdf.js mirrors them):
+          //   PRINT=4, MODIFY_CONTENTS=8, COPY=16, MODIFY_ANNOTATIONS=32,
+          //   FILL_INTERACTIVE_FORMS=256, COPY_FOR_ACCESSIBILITY=512,
+          //   ASSEMBLE=1024, PRINT_HIGH_QUALITY=2048.
+          const PERM_NAMES = {
+            4: 'print', 8: 'modify', 16: 'copy', 32: 'annotate',
+            256: 'fillForms', 512: 'copyForAccessibility',
+            1024: 'assemble', 2048: 'printHighQuality',
+          };
+          const allowed = perms.map(p => PERM_NAMES[p] || `flag${p}`);
+          // Spec defines "allowed" flags; the set of *denied* capabilities
+          // is what analysts care about (what is the author trying to
+          // prevent the viewer from doing?).
+          const ALL = ['print', 'modify', 'copy', 'annotate', 'fillForms', 'assemble'];
+          const denied = ALL.filter(x => !allowed.includes(x));
+          f.metadata.permissionsAllowed = allowed;
+          if (denied.length) {
+            f.metadata.permissionsDenied = denied;
+            pushIOC(f, {
+              type: IOC.PATTERN,
+              value: `PDF restricts: ${denied.join(', ')}`,
+              severity: 'info',
+              note: 'owner-password-protected document',
+              bucket: 'externalRefs',
+            });
+          }
+        }
+      } catch (_) { /* unencrypted — nothing to surface */ }
+
+      // ─── /OpenAction — what fires when the document is opened ────────
+      // pdf.js rolls the OpenAction script into getJSActions() already, but
+      // a /Launch, /GoToR, or /URI OpenAction (non-JS) is only visible via
+      // getOpenAction(). Surface the action type regardless; a bare JS
+      // open-action is already covered below.
+      try {
+        const oa = await pdf.getOpenAction();
+        if (oa) {
+          // The pdf.js shape is `{ action: string, dest: any } | { url, newWindow }`.
+          if (oa.url) {
+            pushIOC(f, {
+              type: IOC.URL,
+              value: String(oa.url),
+              severity: 'high',
+              note: '/OpenAction auto-navigates on document open',
+              bucket: 'externalRefs',
+            });
+            f.risk = 'high';
+          } else if (oa.action && typeof oa.action === 'string' && oa.action !== 'JavaScript') {
+            pushIOC(f, {
+              type: IOC.PATTERN,
+              value: `/OpenAction: ${oa.action}`,
+              severity: 'medium',
+              note: 'non-JavaScript action fires on document open',
+              bucket: 'externalRefs',
+            });
+            if (f.risk === 'low') f.risk = 'medium';
+          }
+        }
+      } catch (_) { /* no /OpenAction */ }
+
       // Document-level JS actions: { OpenAction: ['...'], Foo: ['...'] }
       const pdfJsScripts = [];
       try {
         const docJs = await pdf.getJSActions();
+
         if (docJs) {
           for (const [trigger, scripts] of Object.entries(docJs)) {
             for (const src of (scripts || [])) {
@@ -403,6 +472,60 @@ class PdfRenderer {
                 severity: 'low',
               });
             }
+            // ─── Dangerous annotation subtypes ──────────────────────────
+            // pdf.js exposes `.subtype` on every annotation; the PDF spec
+            // defines a handful of subtypes that imply content execution
+            // or form submission on interaction. We surface each with a
+            // severity that reflects the worst-case abuse:
+            //   • Screen / Movie / Sound / RichMedia / 3D — load inline
+            //     media, historically an exploit surface in Reader plugins
+            //   • FileAttachment — clicking opens an embedded file (the
+            //     bytes are already covered by getAttachments() above, but
+            //     the annotation placement tells you *where* it's
+            //     triggered from the document)
+            if (a.subtype && typeof a.subtype === 'string') {
+              const sub = a.subtype;
+              const MEDIUM = new Set(['Movie', 'Sound', 'Screen', 'FileAttachment']);
+              const HIGH   = new Set(['RichMedia', '3D']);
+              if (HIGH.has(sub)) {
+                pushIOC(f, {
+                  type: IOC.PATTERN,
+                  value: `Annotation /${sub} on page ${p}`,
+                  severity: 'high',
+                  note: 'inline rich-media annotation (historical exploit surface)',
+                  bucket: 'externalRefs',
+                });
+                f.risk = 'high';
+              } else if (MEDIUM.has(sub)) {
+                pushIOC(f, {
+                  type: IOC.PATTERN,
+                  value: `Annotation /${sub} on page ${p}`,
+                  severity: 'medium',
+                  note: sub === 'FileAttachment' ? 'clickable embedded file' : 'inline media annotation',
+                  bucket: 'externalRefs',
+                });
+                if (f.risk === 'low') f.risk = 'medium';
+              }
+            }
+            // ─── AcroForm field fingerprints ────────────────────────────
+            // Form fields don't automatically fire JS, but fields whose
+            // name matches common credential-phish templates (password,
+            // ssn, creditcard, pin, …) are an informational pivot that
+            // complements the body-text phishing signal.
+            if (a.fieldName && typeof a.fieldName === 'string') {
+              const fn = a.fieldName.trim();
+              if (fn && /\b(password|passwd|pwd|pin|ssn|social.?security|credit.?card|ccnum|cvv|cvc|account.?number|routing|mfa|otp|2fa)\b/i.test(fn)) {
+                pushIOC(f, {
+                  type: IOC.PATTERN,
+                  value: `AcroForm credential-style field: "${fn}"`,
+                  severity: 'medium',
+                  note: `field on page ${p}`,
+                  bucket: 'externalRefs',
+                });
+                if (f.risk === 'low') f.risk = 'medium';
+              }
+            }
+
           }
           // Per-page JavaScript actions ({ O: [...], C: [...] } etc.)
           try {

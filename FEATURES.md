@@ -83,6 +83,8 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks to
 |---|---|
 | **Classic IOCs** | URLs, email addresses, IPs, file paths, UNC paths, registry keys, command lines, hostnames — pulled from document content, VBA source, binary strings, decoded payloads, and format-specific metadata |
 | **Registrable-domain pivots** | Every extracted URL auto-emits a sibling registrable domain (via the public-suffix list) so you get a domain-level pivot without double-entering the URL |
+| **Punycode & IDN homograph flags** | URL hosts in punycode (`xn--`) or mixed-script IDN form emit a sibling `Hostname` IOC with the decoded Unicode label so homograph lookalikes surface in plain sight |
+| **Abuse-TLD & dynamic-DNS flags** | URLs pointing at dynamic-DNS suffixes and high-abuse TLDs (`.tk`, `.gq`, `.ml`, `.cf`, `.xyz`, `.top`, DuckDNS, no-ip, ngrok, trycloudflare, …) auto-emit a `Pattern` row with the suffix |
 | **GUID pivots** | LNK DROID file/volume IDs, MSI ProductCodes, PDF XMP DocumentID / InstanceID, Mach-O LC_UUID |
 | **Fingerprint pivots** | X.509 SHA-1 / SHA-256 thumbprints and OpenPGP key fingerprints / key IDs |
 | **Identity pivots** | Usernames (document author, PDF `/Author`, MSI Author / Last Author, EML/MSG creator) and MAC addresses (LNK TrackerDataBlock) |
@@ -97,7 +99,11 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks to
 | **VBA / macro analysis** | Extracts and syntax-highlights VBA source; flags auto-execute entry points (`AutoOpen`, `Workbook_Open`, `Shell`, etc.) |
 | **Macro download** | Download decoded VBA as `.txt`, or the raw `vbaProject.bin` for offline analysis with olevba / oledump |
 | **OOXML relationship scan** | Deep walk of `_rels/*.rels` — surfaces external targets, remote-template injection (`attachedTemplate`), and embedded `oleObject` references that classic metadata extraction misses |
+| **Excel formula scan** | Per-cell formula walker flags `WEBSERVICE` / `IMPORTDATA` / `CALL` / `REGISTER` / `EXEC` (high) and `HYPERLINK` / `RTD` / `DDE` (medium) — catches formula-only droppers in pure `.xlsx` without needing macros |
+| **Hidden sheets & Auto_Open names** | `hidden` / `veryHidden` sheet states and `Auto_Open` / `Workbook_Open` / `Auto_Close` defined names are surfaced as medium-severity patterns — the classic Excel 4.0 macro trigger that still works today |
 | **PDF detection** | Flags `/JavaScript`, `/OpenAction`, `/Launch`, `/EmbeddedFile`, URIs, XFA forms, XMP metadata, and other risky operators via YARA |
+| **PDF open-action & annotations** | `/OpenAction` URIs flagged high; `Movie` / `Sound` / `Screen` / `FileAttachment` annotations medium; `RichMedia` / `3D` annotations high; restrictive permission flags surfaced as a Pattern row |
+| **PDF AcroForm credential sniff** | Form-field names matching `pass` / `pwd` / `ssn` / `cvv` / credential regex push a medium Pattern so weaponised pre-filled forms can't hide as benign templates |
 | **PDF extraction** | Pulls JavaScript bodies from `/JS` actions (literal, hex, and indirect-stream with `/FlateDecode`) with per-script trigger, size, SHA-256, and suspicious-API hints; extracts `/EmbeddedFile` attachments (recursively analysable in-place); extracts XFA form packets |
 | **EML / email analysis** | Full RFC 5322 / MIME parser — headers, multipart body, attachments, SPF / DKIM / DMARC auth results, tracking pixel detection |
 | **OneNote analysis** | FileDataStoreObject parsing with MIME-sniffed embedded blobs, phishing-lure detection |
@@ -163,12 +169,17 @@ Container disambiguation uses lazy OLE-stream and ZIP-central-directory peeks to
 |---|---|
 | **JAR / Java** | Parses JAR / WAR / EAR archives and standalone `.class` files — class file header, MANIFEST.MF with Main-Class and permissions, class listing with package tree, dependency extraction, constant pool string analysis with ~45 suspicious Java API patterns (deserialization, JNDI, reflection, command execution, networking) mapped to MITRE ATT&CK. Obfuscation detection (Allatori, ZKM, ProGuard, short-name heuristics). Clickable inner file extraction. 17 YARA rules. |
 | **SVG security analysis** | `<script>` extraction (inline + external), `<foreignObject>` detection (credential forms, password fields, embedded HTML), event handler scanning (~30 `on*` attributes), Base64 / data URI payload analysis, SVG-specific vectors (`<use>` external refs, `<animate>` / `<set>` href manipulation, `<feImage>` external filters), XML entity / DTD / XXE detection, JavaScript obfuscation patterns, meta refresh redirects. 18 YARA rules. |
-| **Image analysis** | Steganography indicators, polyglot file detection, hex header inspection for embedded payloads |
+| **Image analysis** | Steganography indicators, polyglot file detection, hex header inspection for embedded payloads; embedded-thumbnail extraction (JPEG thumbnail renders alongside the main image so a disagreement jumps out); expanded EXIF coverage — MakerNote, ICC profile, UserComment, Interop, IFD1 tag groups |
+| **TIFF tag metadata** | Full IFD walk surfacing ImageDescription, Make / Model, Software / DateTime, Artist / HostComputer, Copyright, XMP, IPTC — the tag numbers most commonly abused as covert channels |
+
 | **Script scanning** | `.vbs`, `.ps1`, `.bat`, `.rtf`, and similar script types are scanned for dangerous execution patterns alongside YARA matching |
 
 ### Archive drill-down
 
 Click any entry inside a ZIP / TAR / ISO / MSI / PKG / CRX / XPI / JAR listing to open and re-analyse it with Back navigation. ZipCrypto-encrypted entries get a lock icon; unsupported formats fall back to a hex dump but still feed YARA and IOC scanning.
+
+ZIP listings additionally surface per-entry risk signals classic archive viewers hide: archive-level and per-entry `.comment` fields, Unix permission bits (suid / sgid / world-writable = medium), zip-bomb compression ratios (>1000× = high), and stale / future mtimes (< 1995 or > 1 year ahead = medium).
+
 
 ---
 

@@ -687,3 +687,41 @@ rule VBA_WbemDisp_WMI
         (uint32(0) == 0xE011CFD0 or uint16(0) == 0x4B50 or uint32(0) == 0x74725C7B)
         and $vba and any of ($a, $b, $c)
 }
+
+rule Excel_High_Risk_Formula_Function
+{
+    meta:
+        description = "XLSX / XLSM contains a high-risk formula function (WEBSERVICE, IMPORTDATA, CALL, REGISTER, EXEC, RTD) — network exfil or arbitrary code execution via a cell formula"
+        severity    = "high"
+        category    = "execution"
+        mitre       = "T1559"
+
+    strings:
+        $webservice = "WEBSERVICE(" nocase
+        $importdata = "IMPORTDATA(" nocase
+        $call       = "=CALL("     nocase
+        $register   = "REGISTER("  nocase
+        $exec       = "=EXEC("     nocase
+        $rtd        = "=RTD("      nocase
+        $xlsx_zip   = "xl/worksheets/" nocase
+
+    condition:
+        uint32(0) == 0x04034B50 and $xlsx_zip and any of ($webservice, $importdata, $call, $register, $exec, $rtd)
+}
+
+rule Excel_AutoOpen_Defined_Name
+{
+    meta:
+        description = "XLSX / XLSM defines Auto_Open or Workbook_Open — legacy macro-auto-execution vector still honoured by Excel"
+        severity    = "high"
+        category    = "persistence"
+        mitre       = "T1137.001"
+
+    strings:
+        $a = "Auto_Open"      nocase
+        $b = "Workbook_Open"  nocase
+        $xlsx_zip = "xl/workbook.xml" nocase
+
+    condition:
+        uint32(0) == 0x04034B50 and $xlsx_zip and ($a or $b)
+}

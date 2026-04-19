@@ -143,3 +143,45 @@ rule Exfil_Pastebin_Reference
     condition:
         any of them
 }
+
+rule Punycode_IDN_Homograph
+{
+    meta:
+        description = "File contains punycode/xn-- domain — possible IDN homograph or lookalike-domain phishing"
+        severity    = "medium"
+        category    = "phishing"
+        mitre       = "T1036"
+
+    strings:
+        $a = /https?:\/\/[a-zA-Z0-9\-\.]*xn--[a-z0-9\-]{2,}/
+        $b = /[a-zA-Z0-9\-\.]+xn--[a-z0-9\-]{2,}\.[a-z]{2,}/
+
+    condition:
+        any of them
+}
+
+rule Abuse_TLD_DDNS_Tunnel
+{
+    meta:
+        description = "File references a domain on a high-abuse dynamic-DNS or tunnelling provider (ngrok, trycloudflare, duckdns, serveo, cloudflare workers/pages)"
+        severity    = "medium"
+        category    = "command-and-control"
+        mitre       = "T1568.002"
+
+    strings:
+        $a = ".ngrok.io" nocase
+        $b = ".ngrok-free.app" nocase
+        $c = ".trycloudflare.com" nocase
+        $d = ".loca.lt" nocase
+        $e = ".serveo.net" nocase
+        $f = ".duckdns.org" nocase
+        $g = ".no-ip.com" nocase
+        $h = ".hopto.org" nocase
+        $i = ".zapto.org" nocase
+        $j = ".dynu.net" nocase
+        $k = ".workers.dev" nocase
+        $l = ".pages.dev" nocase
+
+    condition:
+        any of them
+}

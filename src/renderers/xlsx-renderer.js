@@ -128,9 +128,169 @@ class XlsxRenderer {
           }
         } catch (e) { /* ignore */ }
       }
+
+      // ─── Sheet-level surface scanning ──────────────────────────────────
+      // Three passes that run on every workbook (not just macro-bearing
+      // files) because the risky constructs all live in the plain sheet
+      // XML and don't require VBA to fire:
+      //   1. Very-hidden sheets (Hidden===2) — state only settable from
+      //      the VBA editor; a legitimate user who "hides" a sheet from
+      //      the UI sets Hidden===1. Very-hidden is a malware-docs staple.
+      //   2. Defined Names (workbook.Workbook.Names) — historic
+      //      `Auto_Open` / `Auto_Close` / `Workbook_Open` names fire
+      //      macros on document open; external-link formulas in a Name
+      //      pull from `\\attacker\share\a.xlsx!A1`.
+      //   3. Per-cell formulas — `HYPERLINK(url, …)` is the most common
+      //      phishing vehicle in xlsx; `WEBSERVICE` / `IMPORTDATA` exfil
+      //      cell data; `CALL` / `REGISTER` / `EXEC` load DLLs directly
+      //      (Excel-4.0 macro territory but works in modern .xlsm).
+      const HIGH_RISK_FNS = new Set(['WEBSERVICE', 'IMPORTDATA', 'CALL', 'REGISTER', 'REGISTER.ID', 'EXEC', 'FORMULA', 'FWRITELN', 'FWRITE']);
+      const MEDIUM_RISK_FNS = new Set(['HYPERLINK', 'RTD', 'DDEINIT', 'DDE']);
+      const formulaHits = [];
+      const urlHits = [];
+      try {
+        for (const name of (wb.SheetNames || [])) {
+          const ws = wb.Sheets[name];
+          if (!ws) continue;
+          // (1) Hidden-state pivot: SheetJS hoists the `Hidden` attribute
+          //     onto each sheet object via bookSheets metadata; when it
+          //     isn't present fall back to `wb.Workbook.Sheets[i].Hidden`.
+          let hidden = ws.Hidden;
+          if (hidden === undefined && wb.Workbook && Array.isArray(wb.Workbook.Sheets)) {
+            const idx = wb.SheetNames.indexOf(name);
+            if (idx >= 0 && wb.Workbook.Sheets[idx]) hidden = wb.Workbook.Sheets[idx].Hidden;
+          }
+          if (hidden === 2) {
+            pushIOC(f, {
+              type: IOC.PATTERN,
+              value: `Very hidden sheet: "${name}"`,
+              severity: 'medium',
+              note: 'visibility state settable only from VBA editor',
+              bucket: 'externalRefs',
+            });
+            if (f.risk === 'low') f.risk = 'medium';
+          }
+          // (3) Per-cell formula scan. Bound by `!ref` so empty sheets and
+          //     pathological A1:XFD1048576 ranges don't churn the loop.
+          if (!ws['!ref']) continue;
+          const rng = XLSX.utils.decode_range(ws['!ref']);
+          // Hard cap: 200k cells per sheet — survives 1000×200 grids but
+          // bails out on sheet-wide fill-down formulas that would
+          // otherwise dominate analysis time on worst-case inputs.
+          const CELL_BUDGET = 200_000;
+          let scanned = 0;
+          outer:
+          for (let r = rng.s.r; r <= rng.e.r; r++) {
+            for (let c = rng.s.c; c <= rng.e.c; c++) {
+              if (++scanned > CELL_BUDGET) break outer;
+              const cell = ws[XLSX.utils.encode_cell({ r, c })];
+              if (!cell || !cell.f) continue;
+              const fml = String(cell.f);
+              // Classify every top-level function name in the formula.
+              // The regex is deliberately permissive (bare identifiers,
+              // `_xlfn.`-prefixed, and `_xlws.`-prefixed) so SheetJS's
+              // canonicalisation doesn't hide any of the risky names.
+              const fnMatches = fml.match(/(?:_xl(?:fn|ws)\.)?[A-Z][A-Z0-9_.]*(?=\s*\()/gi) || [];
+              for (const raw of fnMatches) {
+                const fn = raw.replace(/^_xl(?:fn|ws)\./i, '').toUpperCase();
+                if (HIGH_RISK_FNS.has(fn)) {
+                  formulaHits.push({ sheet: name, addr: XLSX.utils.encode_cell({ r, c }), fn, formula: fml, sev: 'high' });
+                } else if (MEDIUM_RISK_FNS.has(fn)) {
+                  formulaHits.push({ sheet: name, addr: XLSX.utils.encode_cell({ r, c }), fn, formula: fml, sev: 'medium' });
+                }
+              }
+              // Every formula-embedded URL is surfaced, even when the
+              // wrapping function isn't on the risk list — a hand-typed
+              // `="Click "&"http://…"` can exfil without HYPERLINK().
+              const urls = extractUrls(fml, 8);
+              for (const u of urls) urlHits.push({ sheet: name, addr: XLSX.utils.encode_cell({ r, c }), url: u });
+            }
+          }
+        }
+      } catch (_) { /* never let formula scan poison the rest of analysis */ }
+
+      // (2) Defined Names — two failure modes surface here:
+      //      • name matches Auto_Open / Auto_Close / Workbook_Open
+      //        (legacy XLM auto-exec hooks).
+      //      • value contains an external-link reference (`[path]` /
+      //        `\\server\share\`) or a raw URL.
+      try {
+        const names = (wb.Workbook && wb.Workbook.Names) || [];
+        for (const n of names) {
+          if (!n || !n.Name) continue;
+          const nm = String(n.Name);
+          const ref = String(n.Ref || '');
+          if (/^Auto_Open$|^Auto_Close$|^Workbook_Open$|^Auto_Activate$|^Auto_Deactivate$/i.test(nm)) {
+            pushIOC(f, {
+              type: IOC.PATTERN,
+              value: `Defined Name "${nm}" → ${ref || '(empty)'}`,
+              severity: 'high',
+              note: 'XLM/Excel-4.0 auto-exec name',
+              bucket: 'externalRefs',
+            });
+            f.risk = 'high';
+          }
+          if (ref && /^\s*[\[\\]/.test(ref)) {
+            pushIOC(f, {
+              type: IOC.PATTERN,
+              value: `Defined Name "${nm}" references external: ${ref}`,
+              severity: 'medium',
+              note: 'external-workbook or UNC-path link in defined name',
+              bucket: 'externalRefs',
+            });
+            if (f.risk === 'low') f.risk = 'medium';
+          }
+          for (const u of extractUrls(ref, 4)) {
+            pushIOC(f, { type: IOC.URL, value: u, severity: 'medium', note: `defined name "${nm}"`, bucket: 'externalRefs' });
+          }
+        }
+      } catch (_) { /* ignore */ }
+
+      // Roll formula hits back onto findings. Cap each bucket at 50 so a
+      // worksheet with 10k =HYPERLINK() rows doesn't drown the sidebar;
+      // the count is surfaced as an INFO note when truncated.
+      const FORMULA_CAP = 50;
+      const shownFormulas = formulaHits.slice(0, FORMULA_CAP);
+      for (const h of shownFormulas) {
+        pushIOC(f, {
+          type: IOC.PATTERN,
+          value: `${h.fn}() in ${h.sheet}!${h.addr}`,
+          severity: h.sev,
+          highlightText: h.formula.length > 200 ? h.formula.slice(0, 200) + '…' : h.formula,
+          note: h.sev === 'high' ? 'high-risk spreadsheet function' : 'network/hyperlink formula',
+          bucket: 'externalRefs',
+        });
+        if (h.sev === 'high') f.risk = 'high';
+        else if (h.sev === 'medium' && f.risk === 'low') f.risk = 'medium';
+      }
+      if (formulaHits.length > FORMULA_CAP) {
+        pushIOC(f, {
+          type: IOC.INFO,
+          value: `+${formulaHits.length - FORMULA_CAP} more risky formulas truncated`,
+          severity: 'info',
+          bucket: 'externalRefs',
+        });
+      }
+      const URL_CAP = 100;
+      const seenUrl = new Set();
+      let urlCount = 0;
+      for (const u of urlHits) {
+        if (seenUrl.has(u.url)) continue;
+        seenUrl.add(u.url);
+        if (++urlCount > URL_CAP) break;
+        pushIOC(f, {
+          type: IOC.URL,
+          value: u.url,
+          severity: 'medium',
+          note: `formula in ${u.sheet}!${u.addr}`,
+          bucket: 'externalRefs',
+        });
+        if (f.risk === 'low') f.risk = 'medium';
+      }
     } catch (e) { }
     return f;
   }
+
 
 
   _err(wrap, title, msg) {

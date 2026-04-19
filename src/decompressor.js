@@ -1,5 +1,16 @@
 // ════════════════════════════════════════════════════════════════════════════
-// Decompressor — async inflate/gunzip using DecompressionStream API
+// Decompressor — async inflate/gunzip using DecompressionStream API, with a
+// synchronous pako fallback for callers that can't `await` and for browsers
+// where DecompressionStream is unavailable (e.g. old Safari).
+//
+// Surface area:
+//   • tryDecompress(bytes, offset, format)   → async, preferred path
+//   • tryAll(bytes, offset)                  → async, magic-byte sniff + try
+//   • inflate(bytes, format)                 → async wrapper around tryDecompress
+//   • inflateSync(bytes, format)             → NEW sync pako-only path for
+//                                              renderers that run inside
+//                                              analyzeForSecurity (which must
+//                                              return synchronously).
 // ════════════════════════════════════════════════════════════════════════════
 
 const Decompressor = {
@@ -7,51 +18,83 @@ const Decompressor = {
   /** Maximum inflated size allowed — prevents zip-bomb expansion. Uses shared PARSER_LIMITS. */
   MAX_OUTPUT: (typeof PARSER_LIMITS !== 'undefined' ? PARSER_LIMITS.MAX_UNCOMPRESSED : 50 * 1024 * 1024),
 
+  /** Is the browser-native DecompressionStream API available? */
+  _hasNativeDS: (typeof DecompressionStream !== 'undefined'),
+
+  /** Is the vendored pako library available? */
+  _hasPako: (typeof pako !== 'undefined' && pako && typeof pako.inflate === 'function'),
+
   /**
    * Attempt to decompress `bytes` starting at `offset` using the given format.
+   * Tries the native DecompressionStream first (zero-copy, no extra JS in
+   * the hot path) and falls back to pako's synchronous inflate when the API
+   * is missing OR when the native call rejects with a generic error.
+   *
    * @param {Uint8Array} bytes   Full input buffer.
    * @param {number}     offset  Byte offset to start from.
    * @param {string}     format  'deflate' | 'gzip' | 'deflate-raw'
    * @returns {Promise<{success:boolean, data:Uint8Array|null, format:string}>}
    */
   async tryDecompress(bytes, offset, format) {
-    try {
-      const slice = bytes.subarray(offset);
-      if (slice.length < 4) return { success: false, data: null, format };
+    const slice = bytes.subarray(offset);
+    if (slice.length < 4) return { success: false, data: null, format };
 
-      const blob = new Blob([slice]);
-      const ds = new DecompressionStream(format);
-      const stream = blob.stream().pipeThrough(ds);
-      const reader = stream.getReader();
+    // ── Native DecompressionStream path ─────────────────────────────────
+    if (Decompressor._hasNativeDS) {
+      try {
+        const blob = new Blob([slice]);
+        const ds = new DecompressionStream(format);
+        const stream = blob.stream().pipeThrough(ds);
+        const reader = stream.getReader();
 
-      const chunks = [];
-      let totalLen = 0;
+        const chunks = [];
+        let totalLen = 0;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        totalLen += value.byteLength;
-        if (totalLen > Decompressor.MAX_OUTPUT) {
-          reader.cancel();
-          return { success: false, data: null, format }; // zip-bomb guard
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          totalLen += value.byteLength;
+          if (totalLen > Decompressor.MAX_OUTPUT) {
+            reader.cancel();
+            return { success: false, data: null, format }; // zip-bomb guard
+          }
+          chunks.push(value);
         }
-        chunks.push(value);
+
+        if (totalLen === 0) {
+          // Fall through to pako — empty native output on a clearly-
+          // non-empty input usually means a format mismatch rather than
+          // genuine empty data.
+          if (!Decompressor._hasPako) return { success: false, data: null, format };
+        } else {
+          const out = new Uint8Array(totalLen);
+          let pos = 0;
+          for (const c of chunks) { out.set(c, pos); pos += c.byteLength; }
+          if (out.every(b => b === 0)) return { success: false, data: null, format };
+          return { success: true, data: out, format };
+        }
+      } catch (_) {
+        // Native path refused — fall through to pako if available.
       }
-
-      if (totalLen === 0) return { success: false, data: null, format };
-
-      // Merge chunks
-      const out = new Uint8Array(totalLen);
-      let pos = 0;
-      for (const c of chunks) { out.set(c, pos); pos += c.byteLength; }
-
-      // Reject all-null output
-      if (out.every(b => b === 0)) return { success: false, data: null, format };
-
-      return { success: true, data: out, format };
-    } catch (_) {
-      return { success: false, data: null, format };
     }
+
+    // ── pako fallback ────────────────────────────────────────────────────
+    if (Decompressor._hasPako) {
+      try {
+        const out = Decompressor._pakoInflate(slice, format);
+        if (!out || out.length === 0 || out.every(b => b === 0)) {
+          return { success: false, data: null, format };
+        }
+        if (out.length > Decompressor.MAX_OUTPUT) {
+          return { success: false, data: null, format };
+        }
+        return { success: true, data: out, format };
+      } catch (_) {
+        return { success: false, data: null, format };
+      }
+    }
+
+    return { success: false, data: null, format };
   },
 
   /**
@@ -93,5 +136,51 @@ const Decompressor = {
   async inflate(compressedBytes, format) {
     const r = await this.tryDecompress(compressedBytes, 0, format);
     return r.success ? r.data : null;
+  },
+
+  /**
+   * SYNCHRONOUS inflate via pako. Used by renderers that run inside
+   * analyzeForSecurity (sync contract) — most notably deep PE resource
+   * decompression, embedded-blob decoders, and legacy CFB streams where
+   * awaiting a promise would break the caller's return path.
+   *
+   * Returns null if pako is unavailable, the format is unknown, the input
+   * is empty, inflation fails, or the output exceeds MAX_OUTPUT.
+   *
+   * @param {Uint8Array} compressedBytes
+   * @param {string}     format  'deflate' | 'gzip' | 'deflate-raw' | 'zlib'
+   * @returns {Uint8Array|null}
+   */
+  inflateSync(compressedBytes, format) {
+    if (!Decompressor._hasPako) return null;
+    if (!compressedBytes || !compressedBytes.length) return null;
+    try {
+      const out = Decompressor._pakoInflate(compressedBytes, format);
+      if (!out || out.length === 0) return null;
+      if (out.length > Decompressor.MAX_OUTPUT) return null;
+      if (out.every(b => b === 0)) return null;
+      return out;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  /**
+   * Internal pako dispatcher — maps our format names to the pako call
+   * that handles them. Any exception is allowed to propagate so callers
+   * can decide whether to swallow or log.
+   */
+  _pakoInflate(bytes, format) {
+    switch (format) {
+      case 'gzip':
+        return pako.ungzip(bytes);
+      case 'deflate':
+      case 'zlib':
+        return pako.inflate(bytes);
+      case 'deflate-raw':
+        return pako.inflateRaw(bytes);
+      default:
+        return null;
+    }
   },
 };

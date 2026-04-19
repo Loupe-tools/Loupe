@@ -188,18 +188,85 @@ function extractIpAddresses(text, cap) {
 function extractHashes(text, cap) { return _dedupCap((String(text || '').match(_HASH_RE) || []), cap); }
 
 /**
+ * Private/abuse-friendly public suffixes frequently used for phishing,
+ * DDNS, and tunnelling C2 (Cloudflare Tunnel, ngrok, localhost.run, etc.).
+ * When tldts reports a URL's registrable domain sitting on one of these
+ * suffixes the host is surfaced with an INFO note so analysts can pivot
+ * on "is this a free-host / DDNS / tunnelled service?" without having to
+ * memorise the current list of abuse-vector providers.
+ *
+ * Keep this list narrow — each entry must be a suffix that legitimate
+ * orgs rarely use as their canonical public surface but that attackers
+ * routinely spin up disposable subdomains on. Entries are matched as
+ * exact `publicSuffix` values from tldts, so both `trycloudflare.com`
+ * and `duckdns.org` register as "private" suffixes when tldts is in
+ * ICANN+PRIVATE mode (the default).
+ */
+const _ABUSE_SUFFIXES = new Set([
+  // Tunnelling / reverse-proxy-as-a-service
+  'trycloudflare.com', 'cloudflare.net', 'ngrok.io', 'ngrok-free.app',
+  'loca.lt', 'localhost.run', 'serveo.net', 'lhrtunnel.link', 'lhr.life',
+  // Dynamic DNS / free subdomains (classic C2)
+  'duckdns.org', 'no-ip.com', 'no-ip.org', 'no-ip.biz', 'ddns.net',
+  'hopto.org', 'zapto.org', 'dynu.net', 'freeddns.org', 'dynv6.net',
+  // Static-hosting-as-pastebin
+  'github.io', 'gitlab.io', 'pages.dev', 'workers.dev', 'netlify.app',
+  'vercel.app', 'firebaseapp.com', 'web.app', 'glitch.me', 'repl.co',
+  'replit.app', 'on.fleek.co', 'herokuapp.com', 'r2.dev',
+  // IPFS / decentralised web gateways
+  'ipfs.dweb.link', 'ipfs.io',
+  // Blog/CMS freemium hosts common in phishing kits
+  'blogspot.com', 'wordpress.com', 'weebly.com', 'tumblr.com',
+  'webflow.io', 'wixsite.com', 'mystrikingly.com', 'yolasite.com',
+]);
+
+/**
+ * Parse a URL with tldts and return the richest host context we can assemble
+ * cheaply. Returns `null` when tldts is unavailable or the URL has no valid
+ * host. The returned shape is:
+ *   {
+ *     hostname,       // full host incl. subdomain ("paypal.attacker.xyz")
+ *     domain,         // registrable domain ("attacker.xyz") — null for IPs
+ *     subdomain,      // "paypal" — empty string when absent
+ *     publicSuffix,   // "xyz" / "co.uk" / "trycloudflare.com"
+ *     isIp,           // true for raw-IP hosts
+ *     isIcann,        // true when publicSuffix is ICANN-managed
+ *     isPrivate,      // true when publicSuffix is a private/abuse suffix
+ *     isPunycode,     // true when any label starts with xn-- (IDN/homoglyph)
+ *     isAbuseSuffix,  // true when publicSuffix is in _ABUSE_SUFFIXES
+ *   }
+ */
+function _parseUrlHost(url) {
+  try {
+    if (typeof tldts === 'undefined' || !tldts || !tldts.parse) return null;
+    const r = tldts.parse(String(url || ''));
+    if (!r || !r.hostname) return null;
+    const hostname = String(r.hostname || '');
+    const isPunycode = /(^|\.)xn--/i.test(hostname);
+    const ps = r.publicSuffix ? String(r.publicSuffix).toLowerCase() : '';
+    return {
+      hostname,
+      domain: r.domain || null,
+      subdomain: r.subdomain || '',
+      publicSuffix: ps,
+      isIp: !!r.isIp,
+      isIcann: r.isIcann !== false && !r.isIp,
+      isPrivate: !!r.isPrivate,
+      isPunycode,
+      isAbuseSuffix: !!ps && _ABUSE_SUFFIXES.has(ps),
+    };
+  } catch (_) { return null; }
+}
+
+/**
  * Extract the registrable domain from a URL using tldts (if the vendor lib
  * has been loaded). Returns `null` if tldts is unavailable or the URL
  * doesn't parse to a public-suffix-valid domain. Used by `pushIOC` to
  * auto-emit an `IOC.DOMAIN` sibling for every `IOC.URL`.
  */
 function _domainFromUrl(url) {
-  try {
-    if (typeof tldts === 'undefined' || !tldts || !tldts.parse) return null;
-    const r = tldts.parse(String(url || ''));
-    if (!r || !r.domain || r.isIp) return null;
-    return r.domain;
-  } catch (_) { return null; }
+  const h = _parseUrlHost(url);
+  return h && h.domain && !h.isIp ? h.domain : null;
 }
 
 /**
@@ -233,21 +300,74 @@ function pushIOC(findings, opts) {
   if (opts.note) entry.note = String(opts.note);
   findings[bucket].push(entry);
 
-  // Auto-emit domain sibling when a URL lands and tldts is loaded.
+  // Auto-emit host-derived sibling IOCs when a URL lands and tldts is loaded.
+  // Three siblings can fire off a single URL push:
+  //   1. IOC.DOMAIN — registrable domain for non-IP hosts (always).
+  //   2. IOC.IP     — the raw host when the URL embeds an IP literal
+  //                   (e.g. http://192.0.2.1/a). Previously dropped on the
+  //                   floor; now surfaced so sidebar pivoting works.
+  //   3. IOC.PATTERN — punycode/IDN homoglyph detection (medium sev) and
+  //                   abuse-suffix detection (DDNS / tunnelling / free-host
+  //                   surfaces used as C2 backbones; info sev). Both are
+  //                   emitted only once per unique host so a renderer that
+  //                   pushes 30 URLs for one C2 host doesn't flood the IOC
+  //                   table with 30 duplicate punycode warnings.
   if (opts.type === IOC.URL && !opts._noDomainSibling) {
-    const dom = _domainFromUrl(opts.value);
-    if (dom) {
-      // Dedup: don't re-emit a domain that's already been pushed.
-      const existing = findings[bucket].some(
-        e => e && e.type === IOC.DOMAIN && e.url === dom
-      );
-      if (!existing) {
-        findings[bucket].push({
-          type: IOC.DOMAIN,
-          url: dom,
-          severity: IOC_CANONICAL_SEVERITY[IOC.DOMAIN],
-          note: 'derived from URL',
-        });
+    const h = _parseUrlHost(opts.value);
+    if (h) {
+      if (h.domain && !h.isIp) {
+        const existing = findings[bucket].some(
+          e => e && e.type === IOC.DOMAIN && e.url === h.domain
+        );
+        if (!existing) {
+          findings[bucket].push({
+            type: IOC.DOMAIN,
+            url: h.domain,
+            severity: IOC_CANONICAL_SEVERITY[IOC.DOMAIN],
+            note: 'derived from URL',
+          });
+        }
+      }
+      if (h.isIp && h.hostname) {
+        const existing = findings[bucket].some(
+          e => e && e.type === IOC.IP && e.url === h.hostname
+        );
+        if (!existing) {
+          findings[bucket].push({
+            type: IOC.IP,
+            url: h.hostname,
+            severity: 'medium',
+            note: 'URL uses raw IP literal (no domain validation)',
+          });
+        }
+      }
+      if (h.isPunycode) {
+        const patternNote = `Punycode/IDN host: ${h.hostname} — possible homoglyph`;
+        const existing = findings[bucket].some(
+          e => e && e.type === IOC.PATTERN && e.url === patternNote
+        );
+        if (!existing) {
+          findings[bucket].push({
+            type: IOC.PATTERN,
+            url: patternNote,
+            severity: 'medium',
+            _highlightText: h.hostname,
+          });
+        }
+      }
+      if (h.isAbuseSuffix && h.domain) {
+        const note = `Disposable/abuse-prone host: ${h.hostname} (suffix: ${h.publicSuffix})`;
+        const existing = findings[bucket].some(
+          e => e && e.type === IOC.PATTERN && e.url === note
+        );
+        if (!existing) {
+          findings[bucket].push({
+            type: IOC.PATTERN,
+            url: note,
+            severity: 'info',
+            _highlightText: h.hostname,
+          });
+        }
       }
     }
   }

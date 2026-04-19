@@ -19,6 +19,7 @@ highlight_js = read('vendor/highlight.min.js')
 utif_js      = read('vendor/utif.min.js')
 exifr_js     = read('vendor/exifr.min.js')
 tldts_js     = read('vendor/tldts.min.js')
+pako_js      = read('vendor/pako.min.js')
 
 # CSS files — concatenated in order.
 # Each optional theme overlay lives in src/styles/themes/<id>.css and contains
@@ -396,6 +397,13 @@ HTML = f"""<!DOCTYPE html>
         used by pushIOC() to auto-derive IOC.DOMAIN from every URL) ──── -->
   <script>
 {tldts_js}
+  </script>
+
+  <!-- ── pako (inlined — synchronous zlib/deflate/gzip fallback used by
+        Decompressor when DecompressionStream is unavailable or the
+        caller needs a sync inflate) ──────────────────────────────── -->
+  <script>
+{pako_js}
   </script>
 
   <!-- ── Application ─────────────────────────────────────────────────── -->

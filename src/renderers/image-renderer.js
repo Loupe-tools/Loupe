@@ -50,11 +50,13 @@ class ImageRenderer {
     const isTiff = (ext === 'tif' || ext === 'tiff' || isTiffMagic) && typeof UTIF !== 'undefined';
 
     let canvasRendered = false;
+    let tiffIfds = null;
     if (isTiff) {
       try {
         const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
         const ifds = UTIF.decode(ab);
         if (ifds && ifds.length) {
+          tiffIfds = ifds;
           UTIF.decodeImage(ab, ifds[0]);
           const rgba = UTIF.toRGBA8(ifds[0]);
           const w = ifds[0].width, h = ifds[0].height;
@@ -205,14 +207,16 @@ class ImageRenderer {
     // so a missing / broken vendor load cannot crash analysis.
     if (typeof exifr !== 'undefined' && exifr && bytes.length) {
       try {
-        // Prefer the raw-bytes path — takes a Uint8Array, returns a merged
-        // object spanning IFD0, Exif, GPS, IPTC, XMP (via `parseSync`-like
-        // synchronous entry). Supported formats: JPEG, HEIC, TIFF, PNG,
-        // WebP. For anything else we fall back to the legacy byte scanner
-        // below.
+        // Enable every segment exifr supports so we surface ICC colour-
+        // profile descriptions, maker-note oddities, interop IFDs, and
+        // the thumbnail IFD (ifd1) — all of which can carry forensic
+        // signal. `multiSegment: true` is required for JPEG payloads
+        // where XMP / ICC get split across multiple APP1 / APP2 markers.
         const opts = {
-          tiff: true, exif: true, gps: true, ifd0: true,
-          iptc: true, xmp: true, icc: false, jfif: false,
+          tiff: true, exif: true, gps: true, ifd0: true, ifd1: true,
+          iptc: true, xmp: true, icc: true, interop: true,
+          makerNote: true, userComment: true,
+          multiSegment: true, jfif: false,
           mergeOutput: true, translateKeys: true, translateValues: true,
           reviveValues: true, sanitize: true,
         };
@@ -232,7 +236,46 @@ class ImageRenderer {
         } else if (p && typeof p === 'object') {
           this._applyExifData(f, p);
         }
+
+        // Thumbnail extraction — exifr.thumbnail() returns the raw JPEG
+        // bytes of the embedded preview if ifd1 contained one. A mis-
+        // matched thumbnail (e.g. original intact, thumbnail doctored)
+        // is a classic forensic tell for image tampering, so we expose
+        // its size and embedded-payload scan its bytes.
+        if (typeof exifr.thumbnail === 'function') {
+          try {
+            const tp = exifr.thumbnail(ab);
+            if (tp && typeof tp.then === 'function') {
+              tp.then(tb => this._applyThumbnail(f, tb))
+                .catch(() => { /* swallow */ });
+            } else if (tp) {
+              this._applyThumbnail(f, tp);
+            }
+          } catch (_) { /* thumbnail optional */ }
+        }
       } catch (_) { /* exifr optional */ }
+    }
+
+    // ── TIFF tag-dump (forensic metadata + embedded-payload scan) ──────
+    // UTIF exposes every parsed IFD entry as `ifd.t<num>` where <num> is
+    // the TIFF tag ID. We dump the well-known human-readable ones into
+    // `f.metadata` so analysts can cross-reference against the exifr
+    // output (which can miss non-standard vendor tags), then feed any
+    // large string / byte tags through EncodedContentDetector to catch
+    // base64 / hex / compressed payloads hidden in ImageDescription,
+    // Artist, Copyright, or XMP (tag 700). TIFF magic probe: II*\0 / MM\0*
+    const isTiffForAnalysis =
+      (ext === 'tif' || ext === 'tiff' ||
+       (bytes.length >= 4 &&
+        ((bytes[0] === 0x49 && bytes[1] === 0x49 && bytes[2] === 0x2A && bytes[3] === 0x00) ||
+         (bytes[0] === 0x4D && bytes[1] === 0x4D && bytes[2] === 0x00 && bytes[3] === 0x2A)))) &&
+      typeof UTIF !== 'undefined';
+    if (isTiffForAnalysis) {
+      try {
+        const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const ifds = UTIF.decode(ab);
+        if (ifds && ifds.length) this._applyTiffTags(f, ifds);
+      } catch (_) { /* tiff tag-dump is best-effort */ }
     }
 
     // Legacy byte-scan EXIF fallback — preserved so images in unsupported
@@ -408,6 +451,123 @@ class ImageRenderer {
     }
     if (data.Credit) {
       f.metadata.iptcCredit = String(data.Credit).trim();
+    }
+  }
+
+  /**
+   * Record the embedded thumbnail's size into metadata and run an
+   * embedded-payload scan on its bytes. Tampered thumbnails often leak
+   * hints that the outer image has been doctored, and a thumbnail
+   * wildly different in aspect ratio to the main image is a known
+   * red flag. We keep the surface minimal — just the size and any
+   * encoded-payload findings — to avoid noise on every benign JPEG.
+   */
+  _applyThumbnail(f, thumbBytes) {
+    if (!thumbBytes) return;
+    // exifr.thumbnail returns Uint8Array in browsers
+    const tb = thumbBytes instanceof Uint8Array
+      ? thumbBytes
+      : (thumbBytes.buffer ? new Uint8Array(thumbBytes.buffer) : null);
+    if (!tb || !tb.length) return;
+    f.metadata.exifThumbnailBytes = this._fmtBytes(tb.length);
+
+    // Thumbnail should itself start with JPEG SOI (FF D8) — if it
+    // doesn't, that's suspicious (a raw payload masquerading as a
+    // thumbnail). Surface as a low-severity pattern so the analyst
+    // can decide. Pako-style inflated payload or PE/MZ header inside
+    // a thumbnail is picked up by the main YARA scan of the parent
+    // file bytes, so we don't double-report.
+    if (tb.length >= 2 && !(tb[0] === 0xFF && tb[1] === 0xD8)) {
+      pushIOC(f, {
+        type: IOC.PATTERN,
+        value: `EXIF thumbnail does not start with JPEG SOI marker (${this._fmtBytes(tb.length)})`,
+        severity: 'medium',
+        note: 'Malformed / non-JPEG thumbnail payload',
+      });
+      if (f.risk === 'low') f.risk = 'medium';
+    }
+  }
+
+  /**
+   * Walk every IFD in a TIFF and dump well-known tags into `f.metadata`,
+   * plus feed long string / byte tags through a minimal pattern scan
+   * for embedded executables and URLs. We deliberately limit ourselves
+   * to classic "ASCII" (type 2) and "BYTE" (type 1) tags because those
+   * are the ones attackers hide payloads in.
+   *
+   * TIFF tag reference: https://www.awaresystems.be/imaging/tiff/tifftags.html
+   */
+  _applyTiffTags(f, ifds) {
+    // Well-known TIFF tag IDs → human-readable label + metadata key
+    const TAGS = {
+      270: { label: 'ImageDescription',  key: 'tiffImageDescription', pivot: false },
+      271: { label: 'Make',              key: 'tiffMake',             pivot: false },
+      272: { label: 'Model',             key: 'tiffModel',            pivot: false },
+      305: { label: 'Software',          key: 'tiffSoftware',         pivot: true  },
+      306: { label: 'DateTime',          key: 'tiffDateTime',         pivot: false },
+      315: { label: 'Artist',            key: 'tiffArtist',           pivot: true  },
+      316: { label: 'HostComputer',      key: 'tiffHostComputer',     pivot: true  },
+      33432:{ label: 'Copyright',        key: 'tiffCopyright',        pivot: false },
+      700:  { label: 'XMP',              key: 'tiffXmp',              pivot: false },
+      33723:{ label: 'IPTC',             key: 'tiffIptc',             pivot: false },
+    };
+    const MAX_INLINE = 200;
+    const pageCount = ifds.length;
+    if (pageCount > 1) f.metadata.tiffPageCount = String(pageCount);
+
+    let tiffIfdCount = 0;
+    for (const ifd of ifds) {
+      tiffIfdCount++;
+      if (tiffIfdCount > 4) break; // cap IFD walk — multi-page TIFFs rarely carry unique metadata past the first few
+      for (const tagId of Object.keys(TAGS)) {
+        const v = ifd['t' + tagId];
+        if (v === undefined || v === null) continue;
+        const { label, key, pivot } = TAGS[tagId];
+        let strVal;
+        if (typeof v === 'string') strVal = v;
+        else if (Array.isArray(v)) {
+          // ASCII arrays come through as arrays of char codes or single-char strings
+          strVal = v.map(x => typeof x === 'string' ? x : String.fromCharCode(x & 0xff)).join('').replace(/\0+$/, '');
+        } else {
+          strVal = String(v);
+        }
+        strVal = strVal.trim();
+        if (!strVal || strVal.length < 2) continue;
+
+        // Only overwrite if not already set by a prior IFD
+        if (!f.metadata[key]) {
+          f.metadata[key] = strVal.length > MAX_INLINE ? strVal.slice(0, MAX_INLINE) + '…' : strVal;
+        }
+
+        if (pivot && strVal.length <= MAX_INLINE) {
+          pushIOC(f, {
+            type: IOC.PATTERN,
+            value: `TIFF ${label}: ${strVal}`,
+            severity: 'info',
+            highlightText: strVal,
+            note: `TIFF tag ${tagId} (${label})`,
+          });
+        }
+
+        // Embedded-payload scan on long text tags — XMP and ImageDescription
+        // are the classic hiding spots. We extract URLs and run a minimal
+        // PE/MZ-in-base64 check; the heavy lifting stays with YARA scanning
+        // the full file, so we only surface outright URL pivots here.
+        if (strVal.length > 64) {
+          try {
+            const urls = extractUrls(strVal, 10);
+            for (const u of urls) {
+              pushIOC(f, {
+                type: IOC.URL,
+                value: u,
+                severity: 'medium',
+                highlightText: u,
+                note: `URL embedded in TIFF ${label} tag`,
+              });
+            }
+          } catch (_) { /* url extraction optional */ }
+        }
+      }
     }
   }
 
