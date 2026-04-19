@@ -2954,6 +2954,12 @@ body.dark .zip-summary {
   font-weight: 600;
 }
 
+.zip-warning-critical {
+  background: rgba(220, 38, 38, .18);
+  color: #fca5a5;
+  border-left: 3px solid #dc2626;
+}
+
 .zip-warning-high {
   background: rgba(239, 68, 68, .12);
   color: #f87171;
@@ -2966,12 +2972,36 @@ body.dark .zip-summary {
   border-left: 3px solid #f59e0b;
 }
 
+.zip-warning-low {
+  background: rgba(148, 163, 184, .12);
+  color: #94a3b8;
+  border-left: 3px solid #64748b;
+}
+
+.zip-warning-info {
+  background: rgba(59, 130, 246, .1);
+  color: #60a5fa;
+  border-left: 3px solid #3b82f6;
+}
+
+body.dark .zip-warning-critical {
+  background: rgba(220, 38, 38, .22);
+}
+
 body.dark .zip-warning-high {
   background: rgba(239, 68, 68, .15);
 }
 
 body.dark .zip-warning-medium {
   background: rgba(251, 191, 36, .12);
+}
+
+body.dark .zip-warning-low {
+  background: rgba(148, 163, 184, .15);
+}
+
+body.dark .zip-warning-info {
+  background: rgba(59, 130, 246, .14);
 }
 
 .zip-table {
