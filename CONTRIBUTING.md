@@ -83,6 +83,7 @@ src/content-renderer.js                # ContentRenderer — DOCX DOM → HTML e
 src/security-analyzer.js               # SecurityAnalyzer — findings, metadata, external refs
 src/renderers/protobuf-reader.js       # ProtobufReader — minimal protobuf wire-format decoder (CRX v3 CrxFileHeader)
 src/renderers/ole-cfb-parser.js        # OleCfbParser — CFB/OLE2 compound file reader
+src/renderers/archive-tree.js          # ArchiveTree — shared collapsible / searchable / sortable archive browser (zip, msix, crx/xpi)
 
 src/renderers/xlsx-renderer.js         # XlsxRenderer — spreadsheet view (SheetJS)
 src/renderers/pptx-renderer.js         # PptxRenderer — slide canvas renderer
@@ -208,6 +209,7 @@ Loupe/
 │   ├── renderer-registry.js         # RendererRegistry — auto-detection (magic → ext → text-sniff)
 │   ├── renderers/
 │   │   ├── ole-cfb-parser.js        # OleCfbParser — CFB compound file parser
+│   │   ├── archive-tree.js          # ArchiveTree — shared collapsible/searchable/sortable archive browser (zip/msix/crx/xpi)
 │   │   ├── xlsx-renderer.js         # XlsxRenderer
 │   │   ├── pptx-renderer.js         # PptxRenderer
 │   │   ├── odt-renderer.js          # OdtRenderer — OpenDocument text
@@ -286,7 +288,8 @@ Loupe is optimised for AI coding agents (Cline, Cursor, Copilot Workspace, etc.)
 - **HTA analysis** — Treats `.hta` files as inherently high-risk, extracting embedded scripts, `<HTA:APPLICATION>` attributes, and scanning against 40+ suspicious patterns including obfuscation techniques.
 - **HTML rendering** — `HtmlRenderer` provides a sandboxed iframe preview (with all scripts and network disabled) and a source-code view with line numbers.
 - **Image analysis** — `ImageRenderer` renders image previews and checks for steganography indicators, polyglot file structures, and suspicious embedded data.
-- **Archive drill-down** — `ZipRenderer` lists archive contents with threat flagging, and allows clicking individual entries to extract and open them for full analysis, with Back navigation.
+- **Archive drill-down** — `ZipRenderer` lists archive contents with threat flagging, and allows clicking individual entries to extract and open them for full analysis, with Back navigation. The listing UI itself is delegated to the shared `ArchiveTree` component (`src/renderers/archive-tree.js`), which provides the collapsible folder tree, flat sortable view, instant search, keyboard navigation, and per-entry risk badges. `MsixRenderer` and `BrowserExtRenderer` (both ZIP-based) reuse the same component so all three surfaces behave identically. Entries passed in are the shape `{ path, dir, size, compressed?, date?, encrypted?, linkName? }`; the component emits an `onOpen(entry)` callback that each host renderer wires back to its own `open-inner-file` CustomEvent dispatch.
+
 - **Encoded content detection** — `EncodedContentDetector` scans file text for Base64, hex, and Base32 encoded blobs plus embedded compressed streams (gzip/deflate). High-confidence patterns (PE headers, gzip magic, PowerShell `-EncodedCommand`) are decoded eagerly; other candidates offer a manual "Decode" button. Decoded payloads are classified, IOCs are extracted, and a "Load for analysis" button feeds decoded content back through the full analysis pipeline with breadcrumb navigation.
 - **PE analysis** — `PeRenderer` parses PE32/PE32+ binaries (EXE, DLL, SYS, DRV, OCX, CPL, COM, `.xll`) — headers, sections, imports (~140 flagged APIs), exports, resources, Rich header, strings, and security features (ASLR, DEP, CFG, SEH, Authenticode). Also surfaces "what is this binary?" heuristics (XLL, compiled AutoHotkey, Inno Setup, NSIS, Go), emitted as flat `pe.*` fields and backed by `pe-threats.yar`. See `FEATURES.md` for the full capability list.
 - **ELF analysis** — `ElfRenderer` parses ELF32/ELF64 binaries (LE/BE) — ELF header, program headers, section headers, dynamic linking (NEEDED, SONAME, RPATH/RUNPATH), symbol tables with suspicious symbol flagging, note sections, and security feature detection (RELRO, Stack Canary, NX, PIE, FORTIFY_SOURCE). Also performs Go binary detection via `.go.buildinfo` section parsing (module path + Go version), surfaced in the `⚡ Summary` and backed by an `ELF_Go_Binary` YARA rule.
