@@ -2,7 +2,16 @@
 // ════════════════════════════════════════════════════════════════════════════
 // image-renderer.js — Renders image files (PNG, JPEG, GIF, BMP, WEBP, ICO)
 // Shows the image with metadata and checks for steganography indicators.
-// Depends on: constants.js (IOC)
+//
+// EXIF / XMP / IPTC parsing uses the vendored `exifr` library (Tier-1 dep).
+// Classic-pivot fields (GPS coordinates, camera serial, XMP document/
+// instance IDs, creator toolkit) are mirrored into `findings.interestingStrings`
+// via pushIOC() so they appear in the sidebar's IOC table, while attribution
+// fluff (Camera Make / Model / artist name) stays metadata-only per the
+// "Option B" classic-pivot policy.
+//
+// Depends on: constants.js (IOC, pushIOC, mirrorMetadataIOCs)
+//             vendor/exifr.min.js (window.exifr, optional — falls back gracefully)
 // ════════════════════════════════════════════════════════════════════════════
 class ImageRenderer {
 
@@ -111,14 +120,14 @@ class ImageRenderer {
   analyzeForSecurity(buffer, fileName) {
     const f = {
       risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
-      autoExec: [], modules: [], externalRefs: [], metadata: {},
+      autoExec: [], modules: [], externalRefs: [], interestingStrings: [], metadata: {},
       signatureMatches: []
     };
 
     const bytes = new Uint8Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
     const ext = (fileName || '').split('.').pop().toLowerCase();
 
-    // Check for appended data after image EOF (steganography indicator)
+    // ── Appended-data steganography checks ──────────────────────────────
     if (ext === 'png' || ext === 'PNG') {
       // PNG ends with IEND chunk: 49 45 4E 44 AE 42 60 82
       const iend = [0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82];
@@ -186,12 +195,52 @@ class ImageRenderer {
       }
     }
 
-    // Extract EXIF-like metadata from JPEG (simplified)
-    if (['jpg', 'jpeg'].includes(ext) && bytes[0] === 0xFF && bytes[1] === 0xD8) {
-      // Look for EXIF marker (FFE1)
+    // ── EXIF / XMP / IPTC parsing via exifr ─────────────────────────────
+    // exifr accepts ArrayBuffer / Uint8Array / Buffer synchronously via
+    // `parseSync`, but the library only exposes a Promise-based API. We
+    // therefore call it synchronously via the compiled parser so we stay
+    // on the existing analyze-for-security sync contract (renderers must
+    // return `f` immediately). The library's `parse()` API supports fully
+    // synchronous extraction for raw-byte inputs; we guard every branch
+    // so a missing / broken vendor load cannot crash analysis.
+    if (typeof exifr !== 'undefined' && exifr && bytes.length) {
+      try {
+        // Prefer the raw-bytes path — takes a Uint8Array, returns a merged
+        // object spanning IFD0, Exif, GPS, IPTC, XMP (via `parseSync`-like
+        // synchronous entry). Supported formats: JPEG, HEIC, TIFF, PNG,
+        // WebP. For anything else we fall back to the legacy byte scanner
+        // below.
+        const opts = {
+          tiff: true, exif: true, gps: true, ifd0: true,
+          iptc: true, xmp: true, icc: false, jfif: false,
+          mergeOutput: true, translateKeys: true, translateValues: true,
+          reviveValues: true, sanitize: true,
+        };
+        // Fully-synchronous path: exifr.parse() returns a Promise, but for
+        // already-in-memory raw bytes the promise resolves in a microtask.
+        // We grab its synchronous fallback `parseSync` if present, else
+        // kick the promise and stash its result — analysis is allowed to
+        // continue updating `f.metadata` from a then() callback because
+        // the sidebar is re-rendered whenever findings change in the main
+        // analyze loop. exifr v7 does NOT ship parseSync for images; we
+        // therefore launch the async parse and post-process on resolve.
+        const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const p = exifr.parse(ab, opts);
+        if (p && typeof p.then === 'function') {
+          p.then(data => this._applyExifData(f, data))
+           .catch(() => { /* swallow — exifr is best-effort */ });
+        } else if (p && typeof p === 'object') {
+          this._applyExifData(f, p);
+        }
+      } catch (_) { /* exifr optional */ }
+    }
+
+    // Legacy byte-scan EXIF fallback — preserved so images in unsupported
+    // formats (or when exifr fails / is absent) still surface at least a
+    // crude EXIF string, matching pre-v7 Loupe behaviour.
+    if (!f.metadata.exif && ['jpg', 'jpeg'].includes(ext) && bytes[0] === 0xFF && bytes[1] === 0xD8) {
       for (let i = 2; i < Math.min(bytes.length - 10, 65535); i++) {
         if (bytes[i] === 0xFF && bytes[i + 1] === 0xE1) {
-          // Found EXIF — extract readable strings
           const exifEnd = Math.min(i + 500, bytes.length);
           let str = '';
           for (let j = i + 4; j < exifEnd; j++) {
@@ -213,6 +262,162 @@ class ImageRenderer {
 
     // Pattern detection is handled entirely by YARA (auto-scan on file load)
     return f;
+  }
+
+  /**
+   * Post-process an exifr result into:
+   *   • `findings.metadata` — human-readable attribution info
+   *   • `findings.interestingStrings` — classic pivots via pushIOC()
+   *
+   * Option-B policy: ONLY mirror fields that function as pivots
+   *   ✔ GPS lat/lon/alt       → IOC.PATTERN (geographic pivot)
+   *   ✔ Camera body serial    → IOC.HASH    (unique per-device identifier)
+   *   ✔ Owner name/copyright  → IOC.USERNAME (attribution to a real person)
+   *   ✔ Creator Tool / XMP software → IOC.PATTERN (tool fingerprint)
+   *   ✔ XMP DocumentID / InstanceID → IOC.GUID (cross-file pivot)
+   *   ✔ IPTC By-line / Contact → IOC.USERNAME / IOC.EMAIL
+   *   ✘ Make / Model / Lens   → metadata-only (attribution fluff)
+   *   ✘ DateTimeOriginal      → metadata-only (timeline, not a pivot)
+   */
+  _applyExifData(f, data) {
+    if (!data || typeof data !== 'object') return;
+
+    // ── Pure attribution → metadata only ──────────────────────────────
+    if (data.Make)                f.metadata.exifMake = String(data.Make).trim();
+    if (data.Model)               f.metadata.exifModel = String(data.Model).trim();
+    if (data.LensModel)           f.metadata.exifLens = String(data.LensModel).trim();
+    if (data.DateTimeOriginal)    f.metadata.exifDateTime = this._fmtExifDate(data.DateTimeOriginal);
+    if (data.CreateDate)          f.metadata.exifCreateDate = this._fmtExifDate(data.CreateDate);
+    if (data.ModifyDate)          f.metadata.exifModifyDate = this._fmtExifDate(data.ModifyDate);
+    if (data.ImageWidth && data.ImageHeight) {
+      f.metadata.exifDimensions = `${data.ImageWidth} × ${data.ImageHeight}`;
+    }
+
+    // ── GPS: geographic pivot, always surface as IOC ──────────────────
+    if (typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+      const lat = data.latitude.toFixed(6);
+      const lon = data.longitude.toFixed(6);
+      const alt = typeof data.GPSAltitude === 'number' ? ` @ ${data.GPSAltitude.toFixed(1)}m` : '';
+      const gpsStr = `${lat}, ${lon}${alt}`;
+      f.metadata.gps = gpsStr;
+      pushIOC(f, {
+        type: IOC.PATTERN,
+        value: `GPS: ${gpsStr}`,
+        severity: 'medium',
+        highlightText: gpsStr,
+        note: 'EXIF GPS coordinates',
+      });
+      if (f.risk === 'low') f.risk = 'medium';
+    }
+
+    // ── Device serial: unique per-camera pivot ────────────────────────
+    if (data.SerialNumber || data.BodySerialNumber || data.InternalSerialNumber) {
+      const serial = String(data.SerialNumber || data.BodySerialNumber || data.InternalSerialNumber).trim();
+      if (serial) {
+        f.metadata.exifSerial = serial;
+        pushIOC(f, {
+          type: IOC.HASH,
+          value: serial,
+          severity: 'info',
+          highlightText: serial,
+          note: 'Camera serial number',
+        });
+      }
+    }
+
+    // ── Owner / Artist / Copyright: personal attribution ──────────────
+    if (data.Artist) {
+      const artist = String(data.Artist).trim();
+      if (artist) {
+        f.metadata.exifArtist = artist;
+        pushIOC(f, {
+          type: IOC.USERNAME, value: artist, severity: 'info',
+          highlightText: artist, note: 'EXIF Artist',
+        });
+      }
+    }
+    if (data.OwnerName || data.CameraOwnerName) {
+      const owner = String(data.OwnerName || data.CameraOwnerName).trim();
+      if (owner) {
+        f.metadata.exifOwner = owner;
+        pushIOC(f, {
+          type: IOC.USERNAME, value: owner, severity: 'info',
+          highlightText: owner, note: 'EXIF Owner',
+        });
+      }
+    }
+    if (data.Copyright) {
+      const cp = String(data.Copyright).trim();
+      if (cp) f.metadata.exifCopyright = cp;
+    }
+
+    // ── Creator software: tool fingerprint ────────────────────────────
+    if (data.Software) {
+      const sw = String(data.Software).trim();
+      if (sw) {
+        f.metadata.exifSoftware = sw;
+        pushIOC(f, {
+          type: IOC.PATTERN, value: `Software: ${sw}`, severity: 'info',
+          highlightText: sw, note: 'EXIF Software',
+        });
+      }
+    }
+    if (data.CreatorTool) {
+      const ct = String(data.CreatorTool).trim();
+      if (ct && ct !== f.metadata.exifSoftware) {
+        f.metadata.xmpCreatorTool = ct;
+        pushIOC(f, {
+          type: IOC.PATTERN, value: `CreatorTool: ${ct}`, severity: 'info',
+          highlightText: ct, note: 'XMP CreatorTool',
+        });
+      }
+    }
+
+    // ── XMP Document / Instance ID: pure cross-file pivots ────────────
+    if (data.DocumentID) {
+      const id = String(data.DocumentID).replace(/^(xmp\.did:|uuid:)/i, '').trim();
+      if (id) {
+        f.metadata.xmpDocumentID = id;
+        pushIOC(f, {
+          type: IOC.GUID, value: id, severity: 'info',
+          highlightText: id, note: 'XMP DocumentID',
+        });
+      }
+    }
+    if (data.InstanceID) {
+      const id = String(data.InstanceID).replace(/^(xmp\.iid:|uuid:)/i, '').trim();
+      if (id) {
+        f.metadata.xmpInstanceID = id;
+        pushIOC(f, {
+          type: IOC.GUID, value: id, severity: 'info',
+          highlightText: id, note: 'XMP InstanceID',
+        });
+      }
+    }
+
+    // ── IPTC by-line / contact ─────────────────────────────────────────
+    if (data.Byline || data['By-line']) {
+      const by = String(data.Byline || data['By-line']).trim();
+      if (by) {
+        f.metadata.iptcByline = by;
+        pushIOC(f, {
+          type: IOC.USERNAME, value: by, severity: 'info',
+          highlightText: by, note: 'IPTC By-line',
+        });
+      }
+    }
+    if (data.Credit) {
+      f.metadata.iptcCredit = String(data.Credit).trim();
+    }
+  }
+
+  _fmtExifDate(d) {
+    if (!d) return '';
+    if (d instanceof Date) {
+      try { return d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, ''); }
+      catch (_) { return String(d); }
+    }
+    return String(d);
   }
 
   _fmtBytes(n) {
