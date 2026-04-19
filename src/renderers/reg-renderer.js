@@ -54,7 +54,7 @@ class RegRenderer {
         keyDiv.style.cssText = 'margin:8px 0 2px 0;';
 
         const keyLabel = document.createElement('div');
-        keyLabel.style.cssText = `padding:4px 8px;font-family:monospace;font-size:13px;border-left:3px solid ${key.isDeletion ? '#f44' : key.isSuspicious ? '#f88' : '#4af'};background:${key.isDeletion ? 'rgba(255,68,68,0.08)' : key.isSuspicious ? 'rgba(255,136,136,0.08)' : 'rgba(68,170,255,0.05)'};`;
+        keyLabel.style.cssText = `padding:4px 8px;font-family:monospace;font-size:13px;border-left:3px solid ${key.isDeletion ? 'var(--risk-high)' : key.isSuspicious ? 'var(--risk-high)' : 'var(--accent)'};background:${key.isDeletion ? 'rgb(var(--risk-high-rgb) / .12)' : key.isSuspicious ? 'rgb(var(--risk-high-rgb) / .08)' : 'rgb(var(--accent-rgb) / .05)'};`;
         keyLabel.textContent = (key.isDeletion ? '🗑 DELETE: ' : '📁 ') + key.path;
         keyDiv.appendChild(keyLabel);
 
@@ -67,14 +67,14 @@ class RegRenderer {
             const tr = document.createElement('tr');
             const tdN = document.createElement('td'); tdN.className = 'lnk-lbl';
             tdN.textContent = v.name || '(Default)';
-            tdN.style.cssText += v.isSuspicious ? 'color:#f88;' : '';
+            tdN.style.cssText += v.isSuspicious ? 'color:var(--risk-high);' : '';
             const tdT = document.createElement('td'); tdT.className = 'lnk-lbl';
             tdT.textContent = v.type;
             tdT.style.cssText = 'opacity:0.6;min-width:80px;';
             const tdV = document.createElement('td'); tdV.className = 'lnk-val';
             tdV.textContent = v.isDeletion ? '(DELETED)' : v.data;
-            tdV.style.cssText += v.isSuspicious ? 'color:#f88;' : '';
-            tdV.style.cssText += v.isDeletion ? 'color:#f44;font-style:italic;' : '';
+            tdV.style.cssText += v.isSuspicious ? 'color:var(--risk-high);' : '';
+            tdV.style.cssText += v.isDeletion ? 'color:var(--risk-high);font-style:italic;' : '';
             tr.appendChild(tdN); tr.appendChild(tdT); tr.appendChild(tdV);
             tbl.appendChild(tr);
           }
