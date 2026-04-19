@@ -60,7 +60,7 @@ class InfSctRenderer {
         const secDiv = document.createElement('div'); secDiv.style.cssText = 'margin:8px 0 2px 0;';
 
         const secLabel = document.createElement('div');
-        secLabel.style.cssText = `padding:4px 8px;font-family:monospace;font-size:13px;font-weight:bold;border-left:3px solid ${sec.isSuspicious ? '#f88' : '#4af'};background:${sec.isSuspicious ? 'rgba(255,136,136,0.08)' : 'rgba(68,170,255,0.05)'};`;
+        secLabel.style.cssText = `padding:4px 8px;font-family:monospace;font-size:13px;font-weight:bold;border-left:3px solid ${sec.isSuspicious ? 'var(--risk-high)' : 'var(--accent)'};background:${sec.isSuspicious ? 'rgb(var(--risk-high-rgb) / .08)' : 'rgb(var(--accent-rgb) / .05)'};`;
         secLabel.textContent = `[${sec.name}]`;
         secDiv.appendChild(secLabel);
 
@@ -71,10 +71,10 @@ class InfSctRenderer {
             const tr = document.createElement('tr');
             const tdK = document.createElement('td'); tdK.className = 'lnk-lbl';
             tdK.textContent = entry.key || '';
-            tdK.style.cssText += entry.isSuspicious ? 'color:#f88;' : '';
+            tdK.style.cssText += entry.isSuspicious ? 'color:var(--risk-high);' : '';
             const tdV = document.createElement('td'); tdV.className = 'lnk-val';
             tdV.textContent = entry.value || entry.line;
-            tdV.style.cssText += entry.isSuspicious ? 'color:#f88;' : '';
+            tdV.style.cssText += entry.isSuspicious ? 'color:var(--risk-high);' : '';
             tr.appendChild(tdK); tr.appendChild(tdV);
             tbl.appendChild(tr);
           }
@@ -119,7 +119,7 @@ class InfSctRenderer {
         const sec = document.createElement('div'); sec.className = 'wsf-script-block';
         const h = document.createElement('h3');
         h.textContent = `Script ${i + 1}: ${s.language}`;
-        h.style.cssText = 'margin:12px 0 4px 0;padding:4px 8px;background:#332;border-left:3px solid #f88;';
+        h.style.cssText = 'margin:12px 0 4px 0;padding:4px 8px;background:#332;border-left:3px solid var(--risk-high);';
         sec.appendChild(h);
 
         if (s.code) {
@@ -153,7 +153,7 @@ class InfSctRenderer {
       const pSec = document.createElement('div'); pSec.style.cssText = 'padding:0 8px;';
       const h = document.createElement('h3');
       h.textContent = `${analysis.warnings.length} Suspicious Pattern(s)`;
-      h.style.cssText = 'margin:12px 0 4px 0;color:#f88;';
+      h.style.cssText = 'margin:12px 0 4px 0;color:var(--risk-high);';
       pSec.appendChild(h);
       for (const p of analysis.warnings) {
         const d = document.createElement('div'); d.className = `zip-warning zip-warning-${p.sev}`;
