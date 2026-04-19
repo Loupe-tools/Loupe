@@ -20,6 +20,38 @@
    Registry:   src/app/app-ui.js → THEMES
    ══════════════════════════════════════════════════════ */
 
+/* ── Token overrides ──────────────────────────────────────────────────
+   Solarized swaps cyan for Schoonover's signature yellow so every
+   accent-tinted surface (breadcrumbs, focus rings, YARA highlights,
+   IOC row hovers, theme picker, scroll-to flashes, …) recolours
+   automatically through var(--accent) / var(--accent-rgb). Risk
+   colours map to the canonical Solarized accent ring.
+
+     yellow  #b58900   --accent
+     orange  #cb4b16   --accent-hover
+     cyan    #2aa198   --accent-deep
+     red     #dc322f   --risk-high
+     orange  #cb4b16   --risk-med
+     green   #859900   --risk-low
+     blue    #268bd2   --risk-info                                     */
+body.theme-solarized {
+  --accent:        #b58900;
+  --accent-rgb:    181 137 0;
+  --accent-hover:  #cb4b16;
+  --accent-deep:   #2aa198;
+
+  --risk-high:     #dc322f;
+  --risk-high-rgb: 220 50 47;
+  --risk-med:      #cb4b16;
+  --risk-low:      #859900;
+  --risk-info:     #268bd2;
+
+  --hairline-soft:   rgba(147, 161, 161, .06);
+  --hairline:        rgba(147, 161, 161, .1);
+  --hairline-strong: rgba(147, 161, 161, .14);
+  --hairline-bold:   rgba(147, 161, 161, .18);
+}
+
 body.theme-solarized {
   background: #002b36;
   background-image: linear-gradient(160deg, #002b36 0%, #073642 60%, #002b36 100%);
