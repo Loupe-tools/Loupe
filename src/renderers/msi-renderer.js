@@ -122,7 +122,7 @@ class MsiRenderer {
       chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
       for (const t of analysis.tables) {
         const chip = document.createElement('span');
-        chip.style.cssText = `display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-family:monospace;${t.isSuspicious ? 'background:rgba(255,136,136,0.15);color:#f88;border:1px solid rgba(255,136,136,0.3);' : 'background:rgba(68,170,255,0.08);color:#8cf;border:1px solid rgba(68,170,255,0.15);'}`;
+        chip.style.cssText = `display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-family:monospace;${t.isSuspicious ? 'background:rgb(var(--risk-high-rgb) / .15);color:var(--risk-high);border:1px solid rgb(var(--risk-high-rgb) / .3);' : 'background:rgb(var(--accent-rgb) / .08);color:var(--accent);border:1px solid rgb(var(--accent-rgb) / .15);'}`;
         chip.textContent = t.name;
         chip.title = t.isSuspicious ? 'Potentially dangerous table' : '';
         chips.appendChild(chip);
