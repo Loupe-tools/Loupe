@@ -1440,20 +1440,55 @@ Object.assign(App.prototype, {
     const full = sources.join('\n');
 
     // Extract and process URLs (check for SafeLinks) — now with offset tracking
+    // Track URL spans so we can suppress redundant IP matches that live inside a URL
+    // (e.g. https://1.2.3.4:8080/ would otherwise surface the IP as a separate IOC).
+    const urlSpans = [];
     for (const m of full.matchAll(/https?:\/\/[^\s"'<>()\[\]{}\u0000-\u001F]{6,}/g)) {
+      urlSpans.push([m.index, m.index + m[0].length]);
       processUrl(m[0], 'info', m.index, m[0].length);
     }
+    const _insideUrl = (idx) => urlSpans.some(([s, e]) => idx >= s && idx < e);
 
     // Other IOC types — now with offset tracking
     for (const m of full.matchAll(/\b[a-zA-Z0-9._%+\-]{2,}@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,6}\b/g)) {
       add(IOC.EMAIL, m[0], 'info', null, { offset: m.index, length: m[0].length });
     }
-    for (const m of full.matchAll(/(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?![\d.])/g)) {
-      const parts = m[0].split('.').map(Number);
-      if (parts.every(p => p <= 255) && !m[0].startsWith('0.')) {
-        add(IOC.IP, m[0], 'medium', null, { offset: m.index, length: m[0].length });
-      }
+    // IPv4 extraction — URL > Domain > IP severity tiering.
+    // Baseline is 'info' (per IOC_CANONICAL_SEVERITY). Escalate to 'medium' only when
+    // a port is attached (`1.2.3.4:8080`) — that's almost never a version number.
+    // Private / loopback / link-local / reserved / multicast / broadcast IPs are
+    // dropped entirely: they're noise in this generic text scan, and structural
+    // renderers (EVTX network events, x509 SAN, plist, etc.) keep their own medium.
+    // Anti-version lookbehind kills `v1.2.3.4`, `build 2.0.0.1`, etc.
+    const _isReservedIp = (octets) => {
+      const [a, b] = octets;
+      if (a === 0) return true;                          // 0.0.0.0/8
+      if (a === 10) return true;                         // 10/8 private
+      if (a === 127) return true;                        // loopback
+      if (a === 169 && b === 254) return true;           // link-local
+      if (a === 172 && b >= 16 && b <= 31) return true;  // 172.16/12 private
+      if (a === 192 && b === 168) return true;           // 192.168/16 private
+      if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
+      if (a >= 224) return true;                         // multicast + reserved + 255.255.255.255
+      return false;
+    };
+    const ipRe = /(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?::(\d{1,5}))?(?![\d.])/g;
+    for (const m of full.matchAll(ipRe)) {
+      // Suppress IPs that live inside an already-captured URL — the URL row covers it.
+      if (_insideUrl(m.index)) continue;
+      // Anti-version: skip if preceded (within ~12 chars) by v/ver/version/build/release/rev/revision/compiled.
+      const preceding = full.slice(Math.max(0, m.index - 16), m.index);
+      if (/\b(?:v|ver|version|build|release|rev|revision|compiled)\b[\s.:#=_-]*$/i.test(preceding)) continue;
+      const ipPart = m[0].split(':')[0];
+      const parts = ipPart.split('.').map(Number);
+      if (!parts.every(p => p <= 255)) continue;
+      if (_isReservedIp(parts)) continue;                // drop private / loopback / reserved
+      const port = m[1] ? Number(m[1]) : null;
+      if (port !== null && (port < 1 || port > 65535)) continue;
+      const sev = port !== null ? 'medium' : 'info';
+      add(IOC.IP, m[0], sev, port !== null ? 'With port' : null, { offset: m.index, length: m[0].length });
     }
+
     for (const m of full.matchAll(/[A-Za-z]:\\(?:[\w\-. ]+\\)+[\w\-. ]{2,}/g)) {
       const path = _trimPathExtGarbage(m[0]);
       add(IOC.FILE_PATH, path, 'medium', null, { offset: m.index, length: path.length });
