@@ -51,6 +51,37 @@
   --hairline:        rgba(0, 0, 0, .08);
   --hairline-strong: rgba(0, 0, 0, .1);
   --hairline-bold:   rgba(0, 0, 0, .14);
+
+  /* ── Viewer chrome surface tokens ─────────────────────
+        These drive every per-format renderer's panel
+        background, inset code blocks, inputs, row hovers,
+        and banners. Themes (latte/mocha/solarized/midnight)
+        override these alongside --accent so the full UI
+        retints in one place.                            */
+  --panel-bg:          #ffffff;   /* main viewer pane */
+  --panel-bg-inset:    #fafafa;   /* hex dump / code / raw xml */
+  --panel-bg-raised:   #f5f5f5;   /* search bars, chips, badges */
+  --panel-bg-section:  #f0f0f0;   /* section headers, th cells */
+  --panel-border:      #e0e0e0;   /* panel / card border */
+  --input-bg:          #ffffff;   /* inputs, selects */
+  --input-border:      #cccccc;   /* input border */
+  --row-hover:         #f8f8f8;   /* table row hover bg */
+  --text:              #333333;   /* primary viewer body text */
+  --text-muted:        #666666;   /* labels, secondary info */
+  --text-faint:        #999999;   /* placeholders, gutter nums */
+
+  /* Banner tints — warn/danger/info/ok */
+  --banner-warn-bg:    #fff3cd;
+  --banner-warn-text:  #856404;
+  --banner-warn-border:#ffc107;
+  --banner-danger-bg:  #f8d7da;
+  --banner-danger-text:#721c24;
+  --banner-danger-border:#f5c6cb;
+  --banner-info-bg:    #f0f8ff;
+  --banner-info-border:#d0e0f0;
+  --banner-ok-bg:      #d4edda;
+  --banner-ok-text:    #155724;
+  --banner-ok-border:  #c3e6cb;
 }
 
 body.dark {
@@ -72,7 +103,33 @@ body.dark {
   --hairline:        rgba(255, 255, 255, .08);
   --hairline-strong: rgba(255, 255, 255, .1);
   --hairline-bold:   rgba(255, 255, 255, .12);
+
+  /* ── Viewer chrome surface tokens (dark baseline) ───── */
+  --panel-bg:          #12131c;
+  --panel-bg-inset:    #0d1117;
+  --panel-bg-raised:   #1a1a2e;
+  --panel-bg-section:  #1a1e2e;
+  --panel-border:      #2a2a3e;
+  --input-bg:          #1e232e;
+  --input-border:      #3a3a4e;
+  --row-hover:         rgba(255, 255, 255, .03);
+  --text:              #d4d4dc;
+  --text-muted:        #8899aa;
+  --text-faint:        #555;
+
+  --banner-warn-bg:    #2a2520;
+  --banner-warn-text:  #f0c07a;
+  --banner-warn-border:#5a4520;
+  --banner-danger-bg:  rgba(231, 76, 60, .1);
+  --banner-danger-text:#f5b7b1;
+  --banner-danger-border:rgba(231, 76, 60, .3);
+  --banner-info-bg:    rgba(96, 165, 250, .08);
+  --banner-info-border:rgba(96, 165, 250, .25);
+  --banner-ok-bg:      rgba(39, 174, 96, .12);
+  --banner-ok-text:    #abebc6;
+  --banner-ok-border:  #196f3d;
 }
+
 
 *,
 *::before,

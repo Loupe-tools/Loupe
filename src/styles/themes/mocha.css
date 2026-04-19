@@ -55,6 +55,35 @@ body.theme-mocha {
   --hairline:        rgba(205, 214, 244, .08);
   --hairline-strong: rgba(205, 214, 244, .12);
   --hairline-bold:   rgba(205, 214, 244, .16);
+
+  /* ── Viewer chrome surface tokens ── Catppuccin Mocha ──
+        Soft purple-leaning panels built from the Mocha
+        base / mantle / crust family so every renderer
+        (Mach-O strings search, PE imports, PDF viewer,
+        PGP key badges, YARA dialog, …) paints in-palette. */
+  --panel-bg:          #1e1e2e;   /* base — panel background */
+  --panel-bg-inset:    #11111b;   /* crust — deepest inset */
+  --panel-bg-raised:   #181825;   /* mantle — lifted panel */
+  --panel-bg-section:  #313244;   /* surface0 — section headers */
+  --panel-border:      rgba(205, 214, 244, .12);
+  --input-bg:          #181825;
+  --input-border:      rgba(205, 214, 244, .16);
+  --row-hover:         rgba(203, 166, 247, .08);
+  --text:              #cdd6f4;   /* text — primary text */
+  --text-muted:        rgba(166, 173, 200, .8);
+  --text-faint:        rgba(166, 173, 200, .55);
+
+  --banner-warn-bg:    rgba(250, 179, 135, .12);
+  --banner-warn-text:  #fab387;
+  --banner-warn-border:rgba(250, 179, 135, .35);
+  --banner-danger-bg:  rgba(243, 139, 168, .1);
+  --banner-danger-text:#f38ba8;
+  --banner-danger-border:rgba(243, 139, 168, .3);
+  --banner-info-bg:    rgba(137, 180, 250, .08);
+  --banner-info-border:rgba(137, 180, 250, .25);
+  --banner-ok-bg:      rgba(166, 227, 161, .12);
+  --banner-ok-text:    #a6e3a1;
+  --banner-ok-border:  rgba(166, 227, 161, .3);
 }
 
 body.theme-mocha {

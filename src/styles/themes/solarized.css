@@ -50,7 +50,37 @@ body.theme-solarized {
   --hairline:        rgba(147, 161, 161, .1);
   --hairline-strong: rgba(147, 161, 161, .14);
   --hairline-bold:   rgba(147, 161, 161, .18);
+
+  /* ── Viewer chrome surface tokens ── Solarized Dark ───
+        Warm, low-contrast panels built from the Solarized
+        base03 / base02 family so every renderer (Mach-O
+        strings search, PE imports, PDF viewer, PGP key
+        badges, YARA dialog, …) paints in-palette. */
+  --panel-bg:          #073642;  /* base02 — panel background */
+  --panel-bg-inset:    #002b36;  /* base03 — deepest inset */
+  --panel-bg-raised:   #0b4250;  /* slightly lifted panel */
+  --panel-bg-section:  #0a3d4a;  /* section headers, th bg */
+  --panel-border:      rgba(147, 161, 161, .18);
+  --input-bg:          #002b36;
+  --input-border:      rgba(147, 161, 161, .22);
+  --row-hover:         rgba(181, 137, 0, .08);
+  --text:              #93a1a1;   /* base0 — primary text */
+  --text-muted:        rgba(147, 161, 161, .72);
+  --text-faint:        rgba(147, 161, 161, .5);
+
+  --banner-warn-bg:    rgba(181, 137, 0, .12);
+  --banner-warn-text:  #b58900;
+  --banner-warn-border:rgba(181, 137, 0, .35);
+  --banner-danger-bg:  rgba(220, 50, 47, .1);
+  --banner-danger-text:#dc322f;
+  --banner-danger-border:rgba(220, 50, 47, .3);
+  --banner-info-bg:    rgba(38, 139, 210, .08);
+  --banner-info-border:rgba(38, 139, 210, .25);
+  --banner-ok-bg:      rgba(133, 153, 0, .12);
+  --banner-ok-text:    #859900;
+  --banner-ok-border:  rgba(133, 153, 0, .3);
 }
+
 
 body.theme-solarized {
   background: #002b36;

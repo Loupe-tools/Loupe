@@ -18,6 +18,35 @@ body.theme-midnight {
   --hairline:        rgba(255, 255, 255, .1);
   --hairline-strong: rgba(255, 255, 255, .12);
   --hairline-bold:   rgba(255, 255, 255, .16);
+
+  /* ── Viewer chrome surface tokens ── Midnight (OLED) ──
+        Flatten the dark baseline's layered panels onto pure
+        black so hex dumps, search bars, section headers and
+        inputs all read as #000 / near-#000 under OLED use.
+        Borders and muted text are lifted for legibility. */
+  --panel-bg:          #000000;
+  --panel-bg-inset:    #000000;
+  --panel-bg-raised:   #0a0a0a;
+  --panel-bg-section:  #0a0a0a;
+  --panel-border:      rgba(255, 255, 255, .14);
+  --input-bg:          #0a0a0a;
+  --input-border:      rgba(255, 255, 255, .18);
+  --row-hover:         rgba(255, 255, 255, .04);
+  --text:              #e5e5ec;
+  --text-muted:        rgba(255, 255, 255, .68);
+  --text-faint:        rgba(255, 255, 255, .48);
+
+  --banner-warn-bg:    rgba(251, 191, 36, .08);
+  --banner-warn-text:  #fbbf24;
+  --banner-warn-border:rgba(251, 191, 36, .28);
+  --banner-danger-bg:  rgba(248, 113, 113, .08);
+  --banner-danger-text:#f87171;
+  --banner-danger-border:rgba(248, 113, 113, .28);
+  --banner-info-bg:    rgba(96, 165, 250, .08);
+  --banner-info-border:rgba(96, 165, 250, .28);
+  --banner-ok-bg:      rgba(74, 222, 128, .08);
+  --banner-ok-text:    #4ade80;
+  --banner-ok-border:  rgba(74, 222, 128, .28);
 }
 
 body.theme-midnight {

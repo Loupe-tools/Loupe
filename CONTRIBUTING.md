@@ -43,7 +43,7 @@ the `THEMES` array in `src/app/app-ui.js` and add the CSS path to `CSS_FILES` in
 ### YARA Rule Files
 
 ```
-src/rules/office-macros.yar            # Office/VBA macro detection (33 rules)
+src/rules/office-macros.yar            # Office/VBA macro detection (34 rules)
 src/rules/script-threats.yar           # Script threats: PS, JS, VBS, CMD, Python (61 rules)
 src/rules/document-threats.yar         # PDF, RTF, OLE, HTML, SVG, OneNote (41 rules)
 src/rules/windows-threats.yar          # LNK, HTA, MSI, registry, LOLBins (129 rules)
@@ -429,11 +429,20 @@ The canonical tokens every theme must define live at the top of
 | `--accent` / `--accent-rgb` / `--accent-hover` / `--accent-deep` | Primary brand colour (buttons, focus rings, links). `--accent-rgb` is the **space-separated** RGB channel triplet (`"r g b"`, not `"r,g,b"`) used by CSS Colors 4 `rgb(var(--accent-rgb) / .12)` syntax for themed transparency |
 | `--risk-high` / `--risk-high-rgb` / `--risk-med` / `--risk-low` / `--risk-info` | Four-tier risk palette consumed by the risk bar, detection chips, and every `container.style.color = 'var(--risk-high)'` site inside renderers |
 | `--hairline-soft` / `--hairline` / `--hairline-strong` / `--hairline-bold` | Four-tier border palette used by all dividers, table grids, and card outlines |
-| `--bg` / `--bg-panel` / `--bg-raised` / `--text` / `--text-muted` / `--text-dim` | Base surface and foreground tokens |
+| `--panel-bg` / `--panel-bg-inset` / `--panel-bg-raised` / `--panel-bg-section` | Four-tier panel surface palette used by every per-format renderer. `--panel-bg` is the main viewer pane; `--panel-bg-inset` is deeper (hex dumps, raw XML, code blocks); `--panel-bg-raised` lifts a level (search bars, chips, side cards); `--panel-bg-section` is the section-header / `<th>` / subheading tier |
+| `--panel-border` / `--input-border` | Solid-colour borders for panels and form controls respectively (used alongside the hairline tokens for renderer chrome) |
+| `--input-bg` / `--row-hover` | Form control background; table-row and list-item hover tint |
+| `--text` / `--text-muted` / `--text-faint` | Three-tier foreground palette: primary body text, labels / secondary info, and placeholders / gutter numerals |
+| `--banner-warn-*` / `--banner-danger-*` / `--banner-info-*` / `--banner-ok-*` | Per-severity banner tints. Each family has `-bg`, `-text` (where applicable), and `-border` so warnings, danger bars, info callouts, and success notices all retint with the theme's palette instead of the default yellow/red/blue/green |
 
-The full list is enumerated in the `:root` / `body.dark` blocks in
-`core.css` — any token used by `viewers.css` must have a value in every
-overlay, or the Light / Dark baseline will leak through.
+The full list is enumerated in the `:root` / `body.dark` blocks at the top
+of `core.css` — any token used by `viewers.css` must have a value in every
+overlay, or the Light / Dark baseline will leak through. **In practice
+this means you never reach for a hardcoded hex or `rgba(255, 255, 255, …)`
+in a `body.dark` rule; there is a semantic token for every renderer-chrome
+surface.** A one-off CI-style check: `grep -nE '#[0-9a-f]{3,8}|rgba\('
+src/styles/viewers.css | grep -v 'var(--' | grep 'body\.dark'` should only
+return `.hljs-*` syntax-highlighting rules (which are intentionally fixed).
 
 ### Recipe
 

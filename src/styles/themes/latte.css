@@ -54,6 +54,35 @@ body.theme-latte {
   --hairline:        rgba(76, 79, 105, .1);
   --hairline-strong: rgba(76, 79, 105, .14);
   --hairline-bold:   rgba(76, 79, 105, .18);
+
+  /* ── Viewer chrome surface tokens ── Catppuccin Latte ──
+        Warm cream panels built from the Latte base /
+        mantle / crust family. Re-tints every per-format
+        renderer's panel background, inset code blocks,
+        inputs, row hovers, and banners in one place. */
+  --panel-bg:          #eff1f5;   /* base — panel background */
+  --panel-bg-inset:    #e6e9ef;   /* mantle — deepest inset */
+  --panel-bg-raised:   #dce0e8;   /* crust — lifted panel */
+  --panel-bg-section:  #ccd0da;   /* surface0 — section headers */
+  --panel-border:      rgba(76, 79, 105, .14);
+  --input-bg:          #ffffff;
+  --input-border:      rgba(76, 79, 105, .2);
+  --row-hover:         rgba(136, 57, 239, .06);
+  --text:              #4c4f69;   /* text — primary text */
+  --text-muted:        #6c6f85;   /* subtext0 — muted */
+  --text-faint:        rgba(108, 111, 133, .7);
+
+  --banner-warn-bg:    rgba(254, 100, 11, .12);
+  --banner-warn-text:  #fe640b;
+  --banner-warn-border:rgba(254, 100, 11, .35);
+  --banner-danger-bg:  rgba(210, 15, 57, .08);
+  --banner-danger-text:#d20f39;
+  --banner-danger-border:rgba(210, 15, 57, .28);
+  --banner-info-bg:    rgba(30, 102, 245, .08);
+  --banner-info-border:rgba(30, 102, 245, .25);
+  --banner-ok-bg:      rgba(64, 160, 43, .1);
+  --banner-ok-text:    #40a02b;
+  --banner-ok-border:  rgba(64, 160, 43, .3);
 }
 
 body.theme-latte {
