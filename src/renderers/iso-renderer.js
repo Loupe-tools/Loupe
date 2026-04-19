@@ -26,14 +26,14 @@ class IsoRenderer {
 
     const entries = this._parseISO9660(bytes);
     if (!entries) {
-      const p = document.createElement('p'); p.style.cssText = 'color:#f88;padding:20px';
+      const p = document.createElement('p'); p.style.cssText = 'color:var(--risk-high);padding:20px';
       p.textContent = 'Could not parse ISO 9660 filesystem. File may be UDF-only, corrupted, or a different image format.';
       wrap.appendChild(p);
 
       // Show basic file info
       const det = document.createElement('div'); det.style.cssText = 'padding:10px 20px;';
       det.innerHTML = `<p><strong>File size:</strong> ${this._fmtBytes(bytes.length)}</p>` +
-        `<p style="color:#f88;margin-top:8px">⚠ ISO/IMG files are used in phishing to deliver malicious payloads while bypassing MOTW.</p>`;
+        `<p style="color:var(--risk-high);margin-top:8px">⚠ ISO/IMG files are used in phishing to deliver malicious payloads while bypassing MOTW.</p>`;
       wrap.appendChild(det);
       return wrap;
     }
