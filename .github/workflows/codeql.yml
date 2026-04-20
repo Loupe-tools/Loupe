@@ -1,0 +1,80 @@
+name: CodeQL
+
+# GitHub's CodeQL static analysis — satisfies OpenSSF Scorecard's SAST
+# check and surfaces real vulnerabilities (XSS sinks, prototype
+# pollution, command injection in build scripts, etc.) in the repo's
+# Security tab before they ship.
+#
+# Scope:
+#   * javascript-typescript — analyses every .js under src/ (the
+#     single-file bundle's entire source tree). The extension covers
+#     TypeScript too even though Loupe is vanilla JS, which future-
+#     proofs the check.
+#   * python — analyses scripts/*.py (build.py, verify_vendored.py,
+#     generate_codemap.py, generate_sbom.py). These aren't user-facing
+#     but they DO produce the bytes that get signed + shipped, so
+#     bugs here have supply-chain impact.
+#
+# Loupe has no runtime package dependencies and no compiled step,
+# so the `autobuild` stage is a no-op — we skip it and let CodeQL
+# index the source directly. This is the standard "interpreted
+# languages" recipe from the CodeQL docs.
+#
+# All actions pinned by full 40-char commit SHA per Scorecard's
+# Pinned-Dependencies check. Dependabot bumps these weekly.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays 07:15 UTC — offset from the Scorecard cron (07:00) so
+    # the two analysis jobs don't compete for runner slots.
+    - cron: '15 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed to upload SARIF results to the Security tab.
+      security-events: write
+      # Needed to read the repo contents for indexing.
+      contents: read
+      # Needed for private repos; harmless here.
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - javascript-typescript
+          - python
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a # v3.35.2
+        with:
+          languages: ${{ matrix.language }}
+          # security-extended adds a handful of higher-signal queries
+          # that aren't in the default pack (e.g. tainted path traversal,
+          # unsafe deserialisation, weak crypto). Runtime impact is
+          # minor for a repo this size.
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a # v3.35.2
+        with:
+          category: /language:${{ matrix.language }}

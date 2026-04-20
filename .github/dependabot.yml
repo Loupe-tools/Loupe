@@ -1,0 +1,37 @@
+# Dependabot config — keeps the SHA-pinned GitHub Actions in
+# .github/workflows/*.yml up to date. The pinning itself is required
+# by OpenSSF Scorecard's Pinned-Dependencies check; Dependabot is the
+# companion piece that stops those pins from rotting: it opens a PR
+# every week with the new commit SHA and the human-readable version
+# in the commit message, so upgrades stay reviewable and auditable.
+#
+# Loupe has no runtime package dependencies — the browser bundle is
+# vanilla JS + a small set of vendored libraries tracked in
+# VENDORED.md with hand-rotated SHA-256 pins (deliberately excluded
+# from Dependabot; see CONTRIBUTING.md § Vendored libraries). So the
+# only ecosystem this file watches is `github-actions`.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Etc/UTC
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
+    # Group minor + patch bumps into a single PR per week to avoid
+    # PR spam. Major bumps stay individual so each one gets a
+    # dedicated review (action majors occasionally change inputs /
+    # outputs / default node version).
+    groups:
+      actions-minor:
+        update-types:
+          - minor
+          - patch

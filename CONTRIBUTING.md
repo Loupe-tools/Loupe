@@ -66,6 +66,13 @@ loaded file.
 | `static-checks` | On the **built** `docs/index.html`: CSP meta tag is present, `default-src 'none'` is still there, no inline HTML event-handler attributes (`onclick="…"` etc.), no `'unsafe-eval'`, no remote hosts in CSP directives. |
 | `lint` | ESLint 9 over `src/**/*.js` using `eslint.config.mjs`. The ruleset targets real foot-guns (`no-eval`, `no-new-func`, `no-const-assign`, `no-unreachable`, …) rather than style. |
 
+Two additional workflows run on push-to-main + weekly cron:
+
+| Workflow | What it guarantees |
+|---|---|
+| `codeql.yml` | GitHub CodeQL static analysis over `src/**/*.js` and `scripts/**/*.py` with the `security-extended` query pack. Satisfies OpenSSF Scorecard's SAST check and surfaces real tainted-sink / deserialisation / weak-crypto findings in the Security tab. |
+| `scorecard.yml` | Weekly OpenSSF Scorecard run. Results publish to the Security tab and to `api.securityscorecards.dev` (the README badge). |
+
 The ESLint config is ESM (`eslint.config.mjs`) and uses `sourceType: 'script'`
 because the `src/` files are concatenated into a single inline `<script>` at
 build time. `no-undef` and `no-implicit-globals` are **off** — every
@@ -73,6 +80,37 @@ cross-file class reference (`XlsxRenderer`, `App`, `OleCfbParser`, …) and
 every vendored global (`JSZip`, `XLSX`, `pdfjsLib`, `hljs`, `UTIF`, `exifr`,
 `tldts`, `pako`, `LZMA`, `DEFAULT_YARA_RULES`) is an implicit global by
 design.
+
+### GitHub Actions — SHA pinning & Dependabot
+
+Every `uses:` in `.github/workflows/*.yml` is pinned by **full 40-character
+commit SHA**, with the human-readable version (`v4.2.2`, `v5.6.0`, …) in the
+trailing `# vX.Y.Z` comment. This satisfies OpenSSF Scorecard's
+Pinned-Dependencies check and stops a compromised or force-pushed tag from
+silently swapping action source underneath the pipeline. Example:
+
+```yaml
+- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+```
+
+`.github/dependabot.yml` watches the `github-actions` ecosystem weekly and
+opens grouped PRs that rotate each SHA with the new version in the commit
+message — so pins stay current without manual churn. There is deliberately
+no `npm` / `pip` ecosystem entry: Loupe has zero runtime package
+dependencies (vanilla browser JS), and vendored libraries under `vendor/`
+are hand-pinned by SHA-256 in `VENDORED.md` with a bespoke upgrade recipe
+— see `README.md` § Vendored libraries. Dependabot would have nothing to
+do for either surface.
+
+When upgrading an action manually (e.g. to land a security fix before the
+weekly cron), resolve the new SHA with:
+
+```
+curl -s https://api.github.com/repos/<owner>/<repo>/git/ref/tags/<vX.Y.Z> \
+  | jq -r .object.sha
+```
+
+and replace both the SHA and the trailing `# vX.Y.Z` comment.
 
 ---
 
