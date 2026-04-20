@@ -16,16 +16,16 @@ model is deliberately narrow:
 | **No network access** | A strict `Content-Security-Policy` (`default-src 'none'`) blocks all outbound requests — fetch, XHR, WebSocket, `<img src="https://…">`, `<script src>`, etc. No telemetry, no analytics, no CDN loads. |
 | **No server component** | The tool runs entirely inside a single HTML file opened with `file://` or a static host. There is no backend, no API, no database. |
 | **No code evaluation** | `eval()`, `new Function()`, and inline event handlers from untrusted content are never used. |
-| **Sandboxed previews** | HTML and SVG previews are rendered inside `<iframe sandbox="allow-same-origin" srcdoc="…">` with an inner CSP of `default-src 'none'`. `allow-same-origin` is kept only so the inner CSP meta tag can govern the frame's own origin; every other sandbox permission (scripts, forms, popups, top-navigation, pointer-lock, etc.) is revoked by omission. Script execution, form submission, and navigation are all blocked inside the preview frame. |
-| **Parser safety limits** | Centralised `PARSER_LIMITS` constants enforce: max nesting depth (32, gated across every recursive traversal — `app-load` drill-down plus `archive-tree`, `cab`, `rar`, `seven7`, `iso`, and `plist`), max decompressed size (50 MB), per-entry compression-ratio abort (100×), archive entry cap (10 000, enforced in every archive-like renderer — `zip`, `iso`, `msix`, `cab`, `rar`, `seven7`, `browserext`), and a 60-second parser timeout. `ParserWatchdog.run()` wraps the entire renderer dispatch in `app-load.js`, not just the initial `file.arrayBuffer()` read, so every format parser inherits the timeout. |
+| **Sandboxed previews** | HTML and SVG previews render inside `<iframe sandbox="allow-same-origin" srcdoc="…">` with an inner CSP of `default-src 'none'`. `allow-same-origin` is kept only so the inner CSP meta tag governs the frame's own origin; every other sandbox permission is revoked by omission. |
+| **Parser safety limits** | Centralised `PARSER_LIMITS` cap nesting depth (32), decompressed size (50 MB), per-entry compression ratio (100×), archive entry count (10 000), and wall-clock parser runtime (60 s). Every format parser inherits the timeout via `ParserWatchdog.run()`. |
 
 ### What Loupe does **not** protect against
 
 - **Browser zero-days** — if the browser's own HTML/CSS/image parsers have
   vulnerabilities, Loupe inherits them (as does every web page).
-- **Denial-of-service via CPU** — a synchronous parser that enters a tight
-  loop cannot be interrupted by the main-thread timeout watchdog; it will
-  eventually be killed by the browser's own tab-crash heuristics.
+- **Denial-of-service via CPU** — a synchronous parser in a tight loop cannot
+  be interrupted by the main-thread watchdog; the browser's own tab-crash
+  heuristics handle it.
 - **Side-channel attacks** — Spectre-class timing side-channels are out of
   scope for a file-analysis tool.
 
@@ -38,18 +38,81 @@ receives security fixes. There are no LTS branches.
 
 ---
 
+## Verify Your Download
+
+Every release is signed with [Sigstore](https://www.sigstore.dev/) keyless
+signing — short-lived Fulcio certificate issued to the release workflow's
+OIDC identity, entry logged in Rekor, no long-lived key material. Each
+release ships:
+
+| File | Purpose |
+|---|---|
+| `loupe.html` | The bundle itself |
+| `loupe.html.sha256` | Plain-text SHA-256 for a quick eyeball check |
+| `loupe.html.sigstore` | Sigstore bundle (certificate + signature + Rekor inclusion proof) |
+| `loupe.cdx.json` | CycloneDX 1.5 SBOM — every vendored library with SHA-256 pin |
+| `loupe.cdx.json.sigstore` | Sigstore bundle for the SBOM |
+
+With [cosign](https://docs.sigstore.dev/cosign/installation/) installed:
+
+```bash
+cosign verify-blob \
+  --bundle loupe.html.sigstore \
+  --certificate-identity "https://github.com/Loupe-tools/Loupe/.github/workflows/release.yml@refs/heads/main" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  loupe.html
+```
+
+A successful verification proves the bytes of `loupe.html` were produced by
+`.github/workflows/release.yml` in `Loupe-tools/Loupe`. It attests
+**provenance**, not that the source is benign.
+
+---
+
+## Reproducible Build
+
+Given the same commit, `python scripts/build.py` emits a byte-identical
+`docs/index.html`. The release workflow rebuilds from source on a clean
+runner with `SOURCE_DATE_EPOCH` pinned to HEAD's commit-author timestamp,
+`TZ=UTC`, and `LC_ALL=C.UTF-8`, then Sigstore-signs the resulting bytes.
+`docs/index.html` is not committed to the repository — it exists only as
+CI output.
+
+To verify a release corresponds to the tagged source:
+
+```sh
+git clone https://github.com/Loupe-tools/Loupe && cd Loupe
+git checkout v20260420.1402        # the release tag
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD) \
+  TZ=UTC LC_ALL=C.UTF-8 \
+  python scripts/build.py
+sha256sum docs/index.html loupe.html
+```
+
+Matching hashes means the signed asset corresponds exactly to the tagged
+source. Only `LOUPE_VERSION` (the UI's version string) is time-derived;
+everything else in the bundle is a deterministic concatenation in a fixed
+order. `build.py` auto-derives `SOURCE_DATE_EPOCH` from HEAD in a git
+checkout, so contributors don't need to export it.
+
+Reproducibility proves **source → bytes**, not **source → benign**: it
+confirms the signed bundle is what the public tree compiled to, not that
+the tree itself is safe. Cross-check the Sigstore signature above for
+provenance.
+
+---
+
 ## Reporting a Vulnerability
 
-Security reports are handled on a best-effort basis by a single person—
+Security reports are handled on a best-effort basis by a single person —
 please allow reasonable time for triage.
 
-Please report vulnerabilities **privately** via one of:
+Report privately via one of:
 
-1. **GitHub Security Advisories (preferred)**
-   → [Open a draft advisory](https://github.com/Loupe-tools/Loupe/security/advisories/new)
-
-2. **Email** → `security@loupe.tools`
-   Encryption with the PGP key below is encouraged for sensitive reports.
+1. **GitHub Security Advisories (preferred)** →
+   [Open a draft advisory](https://github.com/Loupe-tools/Loupe/security/advisories/new)
+2. **Email** → `security@loupe.tools` (PGP key below encouraged for
+   sensitive reports)
 
 Please include:
 
@@ -57,9 +120,8 @@ Please include:
 - Steps to reproduce, or a proof-of-concept file if applicable.
 - The Loupe version or commit hash you tested against.
 
-Reporters will be credited in the release notes unless they prefer anonymity.
-Please allow reasonable time for a fix before public disclosure — coordinated
-disclosure is appreciated.
+Reporters are credited in release notes unless they prefer anonymity.
+Coordinated disclosure is appreciated.
 
 ### PGP Public Key
 
@@ -92,14 +154,12 @@ LCTQfYKVR/BsSTwCXga1BV1w3RMf1vaMWhB0nJQSRgEA2wjBKwwepSNHlarD
 |----------|-----------|
 | Vanilla JS, no npm runtime deps | Zero supply-chain surface from transitive dependencies |
 | Vendored libraries pinned by SHA-256 in [`VENDORED.md`](VENDORED.md) | Tamper-evident; upgrades require hash rotation in review |
-| Release artefacts signed with [Sigstore](https://www.sigstore.dev/) keyless OIDC | Short-lived Fulcio certificate tied to the release-workflow OIDC identity; entry logged in Rekor; no long-lived key material in the repo. See [README § Verify Your Download](README.md#-verify-your-download) |
-| Reproducible build, signed on the CI runner ([`release.yml`](.github/workflows/release.yml)) | Release workflow rebuilds `docs/index.html` from source on a clean runner with `SOURCE_DATE_EPOCH` pinned to HEAD's commit-author timestamp, `TZ=UTC`, and `LC_ALL=C.UTF-8`, then Sigstore-signs the resulting bytes. The committed tree does not contain `docs/index.html` — the bundle only exists as CI output. The commit hash and epoch are recorded in every release's notes, so auditors can run the same build.py on the same commit and confirm the SHA-256 matches the signed asset without trusting the build infrastructure. See [REPRODUCIBILITY.md](REPRODUCIBILITY.md) |
-| CycloneDX 1.5 SBOM signed and attached to every release | `loupe.cdx.json` + `loupe.cdx.json.sigstore` enumerate every vendored library with SHA-256, licence, and upstream URL — machine-readable supply-chain inventory for Dependency-Track / Trivy / etc. Generated deterministically from [`VENDORED.md`](VENDORED.md) by [`scripts/generate_sbom.py`](scripts/generate_sbom.py) |
-| OpenSSF Scorecard runs weekly ([`scorecard.yml`](.github/workflows/scorecard.yml)) | Automated scoring of pinned dependencies, branch protection, token permissions, signed releases, and SAST coverage. Results publish to the [public Scorecard API](https://securityscorecards.dev/) and the repo's Security tab |
-| `Content-Security-Policy` meta tag | Defence-in-depth even when served from `file://` (no HTTP headers) |
-| Inline theme-bootstrap `<script>` in `<head>` | Applies the saved theme class to `<body>` before first paint so a dark-theme user never sees a flash of the light palette. Logic is a pure mirror of `_initTheme()` in `src/app/app-ui.js`: reads `localStorage['loupe_theme']`, falls back to `prefers-color-scheme`, then to the hard-coded `'dark'` default. Covered by the pre-existing `script-src 'unsafe-inline'` CSP directive that already permits the rest of the single-file bundle — **no CSP relaxation added**. The script is static, build-time-generated, and contains zero user-controlled input. |
-| `<iframe sandbox="allow-same-origin">` for untrusted previews | Strongest browser-native isolation for rendered HTML/SVG — only `allow-same-origin` is kept so the frame's own inner CSP meta tag applies |
+| Release artefacts signed with [Sigstore](https://www.sigstore.dev/) keyless OIDC | Short-lived Fulcio cert tied to the release-workflow OIDC identity; Rekor-logged; no long-lived key material. See [§ Verify Your Download](#verify-your-download) |
+| Reproducible build, signed on the CI runner | Same commit → byte-identical bundle. See [§ Reproducible Build](#reproducible-build) |
+| CycloneDX 1.5 SBOM signed and attached to every release | `loupe.cdx.json` + `loupe.cdx.json.sigstore` enumerate every vendored library with SHA-256, licence, and upstream URL. Generated deterministically from [`VENDORED.md`](VENDORED.md) by [`scripts/generate_sbom.py`](scripts/generate_sbom.py) |
+| OpenSSF Scorecard runs weekly ([`scorecard.yml`](.github/workflows/scorecard.yml)) | Automated scoring of pinned dependencies, branch protection, token permissions, signed releases, SAST coverage |
+| `Content-Security-Policy` meta tag | Defence-in-depth even when served from `file://` |
+| Inline theme-bootstrap `<script>` in `<head>` | Applies the saved theme class to `<body>` before first paint. Static, build-time-generated, zero user-controlled input; covered by the same `script-src 'unsafe-inline'` the rest of the bundle already uses — no CSP relaxation added |
+| `<iframe sandbox="allow-same-origin">` for untrusted previews | Strongest browser-native isolation for rendered HTML/SVG; only `allow-same-origin` is kept so the frame's own inner CSP meta applies |
 | `PARSER_LIMITS` constants | Single source of truth for all safety thresholds; easy to audit and tighten |
-| EML / MSG anchor tags rendered as inert `<span class="eml-link-inert">` with the original `href` preserved only in a `title` tooltip | Loupe is a forensic viewer — an analyst triaging a phishing sample must be able to inspect a hostile URL without the risk of accidentally navigating to it. `<a href>` is stripped during HTML sanitisation in `src/renderers/eml-renderer.js` |
-
-
+| EML / MSG anchor tags rendered as inert `<span>` with `href` preserved only in `title` | An analyst must be able to inspect a hostile URL without accidentally navigating to it |
