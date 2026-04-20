@@ -2414,6 +2414,98 @@ body.dark .ext-table td.ioc-type-info {
   display: none;
 }
 
+/* ── Nicelist bar + toggle (IOCs section only) ──────────────────────────
+ *
+ * A slim status strip above the text search input that shows how many
+ * rows belong to the curated "common global infrastructure" list
+ * (cloud APIs, package registries, CA/OCSP, XML schemas, etc. — see
+ * `src/nicelist.js`) and lets the analyst flip between two states:
+ *   • 🙈 Hide            — drop nicelisted rows from the table entirely.
+ *   • 👁 Show (dimmed)   — default; keep them at the bottom at ~55% opacity
+ *                          with a dashed divider separating them from the
+ *                          real IOCs.
+ * The toggle itself is a boring <button>, not a native checkbox/switch,
+ * so its visual state is wholly driven by the `.nice-toggle-hiding`
+ * modifier (set in app-sidebar.js).
+ */
+.nice-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 6px;
+  font-size: 11px;
+  color: #666;
+}
+.nice-bar-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nice-toggle {
+  cursor: pointer;
+  background: rgba(0, 0, 0, .06);
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: inherit;
+  font-family: inherit;
+  line-height: 1.4;
+  transition: background .12s ease;
+}
+.nice-toggle:hover {
+  background: rgba(0, 0, 0, .12);
+}
+.nice-toggle-hiding {
+  background: rgba(0, 120, 215, .15);
+  border-color: rgba(0, 120, 215, .35);
+}
+.nice-toggle-hiding:hover {
+  background: rgba(0, 120, 215, .25);
+}
+body.dark .nice-bar {
+  color: #9aa4b2;
+}
+body.dark .nice-toggle {
+  background: rgba(255, 255, 255, .06);
+}
+body.dark .nice-toggle:hover {
+  background: rgba(255, 255, 255, .14);
+}
+body.dark .nice-toggle-hiding {
+  background: rgba(88, 166, 255, .22);
+  border-color: rgba(88, 166, 255, .5);
+}
+
+/* ── Nicelisted IOC rows ────────────────────────────────────────────────
+ *
+ * Rows flagged as `_nicelisted` in app-sidebar.js get demoted visually:
+ * they sort to the bottom of the IOCs table (the sort happens in JS,
+ * here we just style them) and render at ~55% opacity so the analyst's
+ * eye skips them. Hovering a row restores full opacity so clicking to
+ * copy / locate still feels responsive. The first nicelisted row after
+ * any real IOC gets a dashed top border acting as a "below-the-fold"
+ * divider — visually separates curated infrastructure from genuine
+ * findings without taking vertical space.
+ */
+.ext-table tbody tr.ioc-nicelisted {
+  opacity: 0.55;
+  transition: opacity .15s ease;
+}
+.ext-table tbody tr.ioc-nicelisted:hover {
+  opacity: 1;
+}
+.ext-table tbody tr:not(.ioc-nicelisted) + tr.ioc-nicelisted td {
+  border-top: 2px dashed var(--hairline);
+}
+body.dark .ext-table tbody tr.ioc-nicelisted {
+  opacity: 0.45;
+}
+body.dark .ext-table tbody tr.ioc-nicelisted:hover {
+  opacity: 1;
+}
+
 /* ── Clickable IOC rows ─────────────────────────────── */
 .ext-table tr.ioc-clickable {
   cursor: pointer;

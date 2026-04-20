@@ -141,6 +141,12 @@ default_yara_js = f'const DEFAULT_YARA_RULES = `{yar_rules_escaped}`;\n'
 # JS files concatenated in dependency order
 JS_FILES = [
     'src/constants.js',
+    # nicelist.js — known-good global infrastructure (NICELIST) used by the
+    # sidebar IOC table to demote / hide benign cloud / registry / CA /
+    # XML-namespace surfaces. Pure data + string helpers, no dependencies,
+    # must load after constants.js (for the type-string contract) and before
+    # app-sidebar.js (which consumes `isNicelisted`).
+    'src/nicelist.js',
     'src/parser-watchdog.js',
     'src/vba-utils.js',
     'src/yara-engine.js',

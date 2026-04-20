@@ -11,6 +11,25 @@ Object.assign(App.prototype, {
     return s.length > max ? s.slice(0, max - 1) + '…' : s;
   },
 
+  // ── Nicelist hide-toggle persistence ────────────────────────────────────
+  // Tiny accessors for the "Hide common infrastructure" preference in the
+  // IOCs section. Default is **false** (show nicelisted rows, just dimmed
+  // and demoted below the divider) so a first-time user still sees every
+  // IOC. The toggle is a pure presentation / sort concern — it never
+  // affects Detections, never drops anything from the analyser's evidence
+  // store, and cannot escalate or suppress severity.
+  //
+  // Key: `loupe_ioc_hide_nicelisted`  →  "0" | "1"
+  // (see the persistence-keys table in CONTRIBUTING.md).
+  _getHideNicelisted() {
+    try { return localStorage.getItem('loupe_ioc_hide_nicelisted') === '1'; }
+    catch (_) { return false; }
+  },
+  _setHideNicelisted(v) {
+    try { localStorage.setItem('loupe_ioc_hide_nicelisted', v ? '1' : '0'); }
+    catch (_) { /* storage blocked — in-memory only, toggle still works for this session */ }
+  },
+
   _renderSidebar(fileName, analyzer) {
     // Clear any lingering encoded-content highlights from previous view
     this._clearEncodedHighlight();
@@ -1362,13 +1381,36 @@ Object.assign(App.prototype, {
       return;
     }
 
-    // Sort by severity: critical → high → medium → info
+    // ── Nicelist: mark benign global-infrastructure IOCs so they sort to
+    //    the bottom of the table and can be hidden via toggle. Applied only
+    //    to the IOCs section (never to Detections — a YARA hit that names a
+    //    nicelisted host is still authoritative). `isNicelisted` is defined
+    //    in src/nicelist.js and loads before this file per JS_FILES order.
+    const isIocSection = _sbKey === 'iocs';
+    if (isIocSection && typeof isNicelisted === 'function') {
+      for (const r of refs) {
+        r._nicelisted = isNicelisted(r.url, r.type);
+      }
+    }
+    const niceCount = isIocSection ? refs.filter(r => r._nicelisted).length : 0;
+
+    // Sort by: nicelisted (false first) → severity (critical → info).
+    // Nicelisted rows land at the end regardless of severity so an info-
+    // tier benign CDN URL never sits above a medium-tier genuine IOC.
     const sevOrder = { critical: 0, high: 1, medium: 2, info: 3 };
-    refs.sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9));
+    refs.sort((a, b) => {
+      const an = a._nicelisted ? 1 : 0;
+      const bn = b._nicelisted ? 1 : 0;
+      if (an !== bn) return an - bn;
+      return (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9);
+    });
 
     // ── Filter state ─────────────────────────────────────────────────────
     const activeSeverities = new Set();
     const activeTypes = new Set();
+    // Nicelist hide toggle — IOCs section only. Persisted to
+    // localStorage['loupe_ioc_hide_nicelisted'].
+    let hideNicelisted = isIocSection && this._getHideNicelisted();
 
     // ── Severity config ──────────────────────────────────────────────────
     const sevConfig = {
@@ -1443,6 +1485,47 @@ Object.assign(App.prototype, {
     }
     body.appendChild(typeBar);
 
+    // ── Nicelist toggle (IOCs section only, shown only if any row is flagged)
+    //    Two-state switch: "Show dimmed at bottom" (default) vs. "Hide".
+    //    The Show state sorts nicelisted rows below a dashed divider and
+    //    fades them to ~50% opacity; Hide removes them from the table
+    //    entirely until toggled back on. State is persisted across loads
+    //    via localStorage['loupe_ioc_hide_nicelisted'].
+    let niceToggleBtn = null;
+    if (isIocSection && niceCount > 0) {
+      const niceBar = document.createElement('div');
+      niceBar.className = 'nice-bar';
+      const niceLbl = document.createElement('span');
+      niceLbl.className = 'nice-bar-label';
+      niceLbl.textContent = `🌐 Common infrastructure: ${niceCount}`;
+      niceLbl.title = 'Known-good global infrastructure (cloud APIs, package registries, CA/OCSP, XML schemas). Never affects Detections. See src/nicelist.js for the full list.';
+      niceBar.appendChild(niceLbl);
+
+      niceToggleBtn = document.createElement('button');
+      niceToggleBtn.type = 'button';
+      niceToggleBtn.className = 'nice-toggle';
+      const syncToggle = () => {
+        if (hideNicelisted) {
+          niceToggleBtn.textContent = '👁 Show';
+          niceToggleBtn.classList.add('nice-toggle-hiding');
+          niceToggleBtn.title = 'Nicelisted rows hidden — click to show them (dimmed, at bottom).';
+        } else {
+          niceToggleBtn.textContent = '🙈 Hide';
+          niceToggleBtn.classList.remove('nice-toggle-hiding');
+          niceToggleBtn.title = 'Nicelisted rows shown (dimmed, at bottom) — click to hide them.';
+        }
+      };
+      syncToggle();
+      niceToggleBtn.addEventListener('click', () => {
+        hideNicelisted = !hideNicelisted;
+        this._setHideNicelisted(hideNicelisted);
+        syncToggle();
+        applyFilters();
+      });
+      niceBar.appendChild(niceToggleBtn);
+      body.appendChild(niceBar);
+    }
+
     // ── Text search input ────────────────────────────────────────────────
     const srch = document.createElement('input');
     srch.type = 'text'; srch.placeholder = 'Filter findings…'; srch.className = 'ext-search';
@@ -1464,6 +1547,14 @@ Object.assign(App.prototype, {
       tr.dataset.search = (ref.type + ' ' + (ref.url || '')).toLowerCase();
       tr.dataset.severity = ref.severity;
       tr.dataset.type = ref.type;
+      // Nicelist: tag row so CSS can dim it + dashed-divider it from the
+      // first non-nicelisted row, and `applyFilters()` can hide it when
+      // `hideNicelisted` is on. Only set on IOC rows (the `_nicelisted`
+      // flag is never populated for the Detections section).
+      if (ref._nicelisted) {
+        tr.classList.add('ioc-nicelisted');
+        tr.dataset.nicelisted = '1';
+      }
 
       const td1 = document.createElement('td'); td1.textContent = ref.type;
       td1.className = 'ioc-type ioc-type-' + ref.type.toLowerCase().replace(/\s+/g, '-');
@@ -1757,14 +1848,18 @@ Object.assign(App.prototype, {
         }
       }
 
-      // Step 6: Filter table rows using all three filters
+      // Step 6: Filter table rows using all four filters (text, severity,
+      // type, and nicelist-hide). Nicelisted rows are sorted to the bottom
+      // already; this just drops them from the DOM when the user clicks
+      // the "🙈 Hide" toggle.
       let visibleCount = 0;
       for (const tr of tbody.rows) {
         const matchesText = !q || tr.dataset.search.includes(q);
         const matchesSev = activeSeverities.size === 0 || activeSeverities.has(tr.dataset.severity);
         const matchesType = activeTypes.size === 0 || activeTypes.has(tr.dataset.type);
+        const matchesNice = !hideNicelisted || !tr.dataset.nicelisted;
 
-        const visible = matchesText && matchesSev && matchesType;
+        const visible = matchesText && matchesSev && matchesType && matchesNice;
         tr.classList.toggle('hidden', !visible);
         if (visible) visibleCount++;
       }
