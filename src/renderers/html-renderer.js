@@ -250,10 +250,17 @@ class HtmlRenderer {
       // "\tjavascript:" and "java\nscript:" both resolve to javascript:
       // (see CodeQL js/incomplete-url-scheme-check #60).
       const normalized = lower.replace(/[\x00-\x20\x7f]/g, '');
-      // Skip data:image/* URLs — these are embedded images, not IOCs
+      // Pre-filter: skip `data:image/*` before the broader `data:` check
+      // below. image/* is the only data: subtype considered benign when
+      // inlined into a document; everything else (text/html,
+      // text/javascript, application/pdf;base64, application/octet-stream,
+      // text/xml polyglots, …) is treated as high-severity. CodeQL's
+      // js/incomplete-url-scheme-check requires the guard to match bare
+      // `data:`, not a sub-MIME, to be considered complete.
       if (normalized.startsWith('data:image/')) continue;
       // eslint-disable-next-line no-script-url -- detecting, not navigating
-      if (normalized.startsWith('javascript:') || normalized.startsWith('vbscript:') || normalized.startsWith('data:text/html')) {
+      if (normalized.startsWith('javascript:') || normalized.startsWith('vbscript:') || normalized.startsWith('data:')) {
+
         sev = 'high';
         if (risk !== 'high') risk = 'high';
       } else if (normalized.startsWith('http:') || normalized.startsWith('https:')) {

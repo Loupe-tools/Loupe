@@ -692,9 +692,17 @@ class SvgRenderer {
       // "java\nscript:" can't bypass the scheme check — browsers strip
       // these when resolving the URL (js/incomplete-url-scheme-check #61).
       const normalized = lower.replace(/[\x00-\x20\x7f]/g, '');
-      if (normalized.startsWith('data:image/')) continue; // skip embedded images
+      // Pre-filter: skip `data:image/*` before the broader `data:` check
+      // below. image/* is the only data: subtype considered benign when
+      // inlined into a document; everything else (text/html,
+      // text/javascript, application/pdf;base64, application/octet-stream,
+      // text/xml polyglots, …) is treated as high-severity. CodeQL's
+      // js/incomplete-url-scheme-check requires the guard to match bare
+      // `data:`, not a sub-MIME, to be considered complete.
+      if (normalized.startsWith('data:image/')) continue;
       // eslint-disable-next-line no-script-url -- detecting, not navigating
-      if (normalized.startsWith('javascript:') || normalized.startsWith('vbscript:') || normalized.startsWith('data:text/html')) {
+      if (normalized.startsWith('javascript:') || normalized.startsWith('vbscript:') || normalized.startsWith('data:')) {
+
         sev = 'high';
         setRisk('high');
       } else if (normalized.startsWith('http:') || normalized.startsWith('https:') || normalized.startsWith('//')) {
