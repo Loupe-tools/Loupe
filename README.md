@@ -47,6 +47,30 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 
 ---
 
+## ✅ Verify Your Download
+
+Every release is signed with [Sigstore](https://www.sigstore.dev/) keyless signing — no long-lived key material, short-lived certificate issued by Fulcio to the release workflow's OIDC identity, transparency-log entry in Rekor. Each GitHub release ships three files:
+
+| File | Purpose |
+|---|---|
+| `loupe.html` | The bundle itself |
+| `loupe.html.sha256` | Plain-text SHA-256 for a quick eyeball check |
+| `loupe.html.sigstore` | Sigstore bundle (certificate + signature + Rekor inclusion proof) |
+
+With [cosign](https://docs.sigstore.dev/cosign/installation/) installed, verify the bundle was built by the release workflow in this repository:
+
+```bash
+cosign verify-blob \
+  --bundle loupe.html.sigstore \
+  --certificate-identity "https://github.com/Loupe-tools/Loupe/.github/workflows/release.yml@refs/heads/main" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  loupe.html
+```
+
+A successful verification proves the exact bytes of `loupe.html` were produced by `.github/workflows/release.yml` in `Loupe-tools/Loupe` — it does **not** attest that the source is benign, only its provenance. See [SECURITY.md](SECURITY.md) for the full threat model.
+
+---
+
 ## 🛡 Supported Formats
 
 | Category | Extensions |

@@ -28,9 +28,9 @@
 // chosen target. 'unlimited' short-circuits every cap so raw scripts, small
 // binaries, and tiny plists emit byte-identical to the legacy MAX output.
 const SUMMARY_TARGETS = [
-  { id: 'default',   chars: 64000,    label: 'Default',   sub: '~16K tokens' },
-  { id: 'large',     chars: 200000,   label: 'Large',     sub: '~50K tokens' },
-  { id: 'unlimited', chars: Infinity, label: 'Unlimited', sub: 'no limit'    },
+  { id: 'default', chars: 64000, label: 'Default', sub: '~16K tokens' },
+  { id: 'large', chars: 200000, label: 'Large', sub: '~50K tokens' },
+  { id: 'unlimited', chars: Infinity, label: 'Unlimited', sub: 'no limit' },
 ];
 const SUMMARY_DEFAULT_ID = 'default';
 const SUMMARY_PREF_KEY = 'loupe_summary_target';
@@ -50,12 +50,12 @@ Object.assign(App.prototype, {
         if (legacy != null) {
           const n = parseInt(legacy, 10);
           if (Number.isFinite(n)) {
-            if (n >= 9)      saved = 'unlimited';
+            if (n >= 9) saved = 'unlimited';
             else if (n >= 5) saved = 'large';
-            else             saved = 'default';
+            else saved = 'default';
           }
           try { localStorage.setItem(SUMMARY_PREF_KEY, saved); } catch (_) { /* storage blocked */ }
-          try { localStorage.removeItem(SUMMARY_LEGACY_KEY); }   catch (_) { /* storage blocked */ }
+          try { localStorage.removeItem(SUMMARY_LEGACY_KEY); } catch (_) { /* storage blocked */ }
         }
       }
     } catch (_) { /* storage blocked */ }
@@ -229,7 +229,7 @@ Object.assign(App.prototype, {
         <tr><td><kbd class="help-kbd">,</kbd></td><td>Open Settings</td></tr>
         <tr><td><kbd class="help-kbd">?</kbd> / <kbd class="help-kbd">H</kbd></td><td>Open Help</td></tr>
         <tr><td><kbd class="help-kbd">F</kbd></td><td>Focus document search</td></tr>
-        <tr><td><kbd class="help-kbd">Ctrl+C</kbd> / <kbd class="help-kbd">⌘C</kbd></td><td>Copy raw file content (when nothing is selected)</td></tr>
+        <tr><td><kbd class="help-kbd">Ctrl+C</kbd></td><td>Copy raw file content (when nothing is selected)</td></tr>
         <tr><td><kbd class="help-kbd">Ctrl+V</kbd></td><td>Paste file from clipboard</td></tr>
         <tr><td><kbd class="help-kbd">Esc</kbd></td><td>Close dialog / clear search</td></tr>
       </table>

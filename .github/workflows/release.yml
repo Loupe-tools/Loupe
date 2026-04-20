@@ -5,8 +5,12 @@ on:
     branches: [main]
     paths: [docs/index.html]
 
+# id-token: write is required for Sigstore keyless signing via GitHub's
+# OIDC provider. Without it cosign fails with an opaque "failed to get
+# OIDC token" error. contents: write is required to create the release.
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -35,10 +39,58 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         run: cp docs/index.html loupe.html
 
+      # ──────────────────────────────────────────────────────────────
+      # Supply-chain transparency. Every release asset ships with:
+      #   loupe.html              — the bundle itself
+      #   loupe.html.sha256       — plain-text SHA-256 for eyeball / CI diff
+      #   loupe.html.sigstore     — Sigstore bundle (cert + sig + Rekor proof)
+      #
+      # The bundle is signed via Sigstore keyless (Fulcio short-lived
+      # cert issued to this workflow's OIDC identity, Rekor transparency
+      # log entry). Users verify with `cosign verify-blob --bundle …`
+      # anchored to the workflow identity — see README § Verify your
+      # download. No long-lived key material is stored in this repo.
+      # ──────────────────────────────────────────────────────────────
+      - name: Record SHA-256
+        if: steps.check.outputs.exists == 'false'
+        run: sha256sum loupe.html | awk '{print $1"  loupe.html"}' > loupe.html.sha256
+
+      - name: Install cosign
+        if: steps.check.outputs.exists == 'false'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign loupe.html with Sigstore keyless
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          cosign sign-blob \
+            --yes \
+            --bundle loupe.html.sigstore \
+            loupe.html
+
+      - name: Self-verify signed bundle
+        # Fail the release rather than ship an asset nobody can verify.
+        # Identity is anchored to this workflow file on refs/heads/main
+        # — the same values the README instructs downstream users to
+        # pass to `cosign verify-blob`.
+        if: steps.check.outputs.exists == 'false'
+        env:
+          COSIGN_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/heads/${{ github.ref_name }}
+          COSIGN_ISSUER: https://token.actions.githubusercontent.com
+        run: |
+          cosign verify-blob \
+            --bundle loupe.html.sigstore \
+            --certificate-identity "${COSIGN_IDENTITY}" \
+            --certificate-oidc-issuer "${COSIGN_ISSUER}" \
+            loupe.html
+          echo "OK  Sigstore bundle verifies against workflow identity"
+
       - name: Create Release
         if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          files: loupe.html
+          files: |
+            loupe.html
+            loupe.html.sha256
+            loupe.html.sigstore
           generate_release_notes: true

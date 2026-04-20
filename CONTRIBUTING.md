@@ -208,7 +208,8 @@ Loupe/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml                   # CI — build, vendor-hash verify, static HTML/src checks, ESLint
-│   │   └── release.yml              # Release — tags + publishes loupe.html on docs/index.html change
+│   │   └── release.yml              # Release — tags, Sigstore-keyless-signs, and publishes loupe.html + .sha256 + .sigstore bundle on docs/index.html change
+
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── config.yml               # Disables blank issues; routes security reports to private advisories
 │   │   ├── bug_report.yml           # Structured bug template (version, browser, repro, console)
