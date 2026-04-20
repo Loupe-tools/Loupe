@@ -147,16 +147,33 @@ jobs:
         # Guard against someone loosening the CSP to 'unsafe-eval' or
         # allowing remote hosts. script-src 'unsafe-inline' is OK
         # (it's the whole delivery mechanism) but 'unsafe-eval' is not.
+        #
+        # The audit is scoped to the top-level <meta http-equiv="Content-
+        # Security-Policy"> content attribute only. A raw grep over the
+        # whole bundle false-positives on YARA rules and renderer code
+        # that legitimately detect 'unsafe-eval' / remote hosts inside
+        # *analysed* files (e.g. browser-extension manifests, SVGs).
         run: |
-          if grep -q "'unsafe-eval'" docs/index.html; then
-            echo "::error file=docs/index.html::CSP contains 'unsafe-eval' — this breaks the 'no code evaluation' guarantee in SECURITY.md"
-            exit 1
-          fi
-          if grep -qE "(default-src|script-src|connect-src|img-src)[^;]*https?://" docs/index.html; then
-            echo "::error file=docs/index.html::CSP references a remote host — Loupe must remain 100% offline"
-            exit 1
-          fi
-          echo "OK  CSP has no unsafe-eval and no remote hosts"
+          python3 - <<'PY'
+          import re, sys
+          html = open('docs/index.html', encoding='utf-8', errors='replace').read()
+          m = re.search(
+              r'<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"',
+              html,
+          )
+          if not m:
+              print("::error file=docs/index.html::CSP meta tag not found in built bundle")
+              sys.exit(1)
+          csp = m.group(1)
+          print(f"Loupe top-level CSP: {csp}")
+          if "'unsafe-eval'" in csp:
+              print("::error file=docs/index.html::CSP contains 'unsafe-eval' — breaks the 'no code evaluation' guarantee in SECURITY.md")
+              sys.exit(1)
+          if re.search(r'(default-src|script-src|connect-src|img-src)[^;]*https?://', csp):
+              print("::error file=docs/index.html::CSP references a remote host — Loupe must remain 100% offline")
+              sys.exit(1)
+          print("OK  CSP has no unsafe-eval and no remote hosts")
+          PY
 
   # ──────────────────────────────────────────────────────────────────
   # ESLint over src/. Deliberately minimal config (see eslint.config.mjs
