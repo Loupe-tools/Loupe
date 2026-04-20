@@ -1,0 +1,36 @@
+# Loupe code ownership
+#
+# GitHub uses this file to auto-request review from the listed owners
+# when a pull request touches matching paths. It is also the file that
+# the "Require review from Code Owners" branch-protection toggle on
+# `main` consults — without a CODEOWNERS file, that toggle is a no-op
+# and OpenSSF Scorecard's Branch-Protection check flags the repo.
+#
+# Syntax reference:
+#   https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+#
+# Loupe is a single-maintainer project; every path currently resolves
+# to the same owner. As co-maintainers join, add more specific rules
+# above the catch-all — later matches win.
+
+# Catch-all: everything in the repo is owned by the maintainer.
+*                               @Sam-Dowling
+
+# Source tree — the hand-written code that ships in docs/index.html.
+/src/                           @Sam-Dowling
+
+# Build + maintenance tooling.
+/scripts/                       @Sam-Dowling
+/make.py                        @Sam-Dowling
+
+# Vendored third-party libraries. Any change here is a supply-chain
+# event and must rotate the SHA-256 pin in VENDORED.md.
+/vendor/                        @Sam-Dowling
+/VENDORED.md                    @Sam-Dowling
+
+# Repo automation: CI, CodeQL, Scorecard, Dependabot, issue templates.
+/.github/                       @Sam-Dowling
+
+# Security-relevant docs and config.
+/SECURITY.md                    @Sam-Dowling
+/eslint.config.mjs              @Sam-Dowling
