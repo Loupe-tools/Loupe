@@ -1384,15 +1384,36 @@ Object.assign(App.prototype, {
     // ── Nicelist: mark benign global-infrastructure IOCs so they sort to
     //    the bottom of the table and can be hidden via toggle. Applied only
     //    to the IOCs section (never to Detections — a YARA hit that names a
-    //    nicelisted host is still authoritative). `isNicelisted` is defined
-    //    in src/nicelist.js and loads before this file per JS_FILES order.
+    //    nicelisted host is still authoritative). Two sources:
+    //      • `isNicelisted` (src/nicelist.js) — the built-in "Default
+    //        Nicelist" of global infrastructure.
+    //      • `_NicelistUser.match` (src/nicelist-user.js) — user-defined
+    //        custom lists managed from Settings → Nicelists.
+    //    Both load before this file per JS_FILES order. When a row matches
+    //    a user list we stash the list's display name on `_nicelistSource`
+    //    so the bar tooltip can break down the hit-count by source.
     const isIocSection = _sbKey === 'iocs';
-    if (isIocSection && typeof isNicelisted === 'function') {
+    const _hasUserNicelists = typeof _NicelistUser !== 'undefined' && _NicelistUser && typeof _NicelistUser.match === 'function';
+    if (isIocSection) {
       for (const r of refs) {
-        r._nicelisted = isNicelisted(r.url, r.type);
+        let source = null;
+        if (typeof isNicelisted === 'function' && isNicelisted(r.url, r.type)) {
+          source = 'Default Nicelist';
+        } else if (_hasUserNicelists) {
+          const userHit = _NicelistUser.match(r.url, r.type);
+          if (userHit) source = userHit;
+        }
+        if (source) {
+          r._nicelisted = true;
+          r._nicelistSource = source;
+        } else {
+          r._nicelisted = false;
+          r._nicelistSource = null;
+        }
       }
     }
     const niceCount = isIocSection ? refs.filter(r => r._nicelisted).length : 0;
+
 
     // Sort by: nicelisted (false first) → severity (critical → info).
     // Nicelisted rows land at the end regardless of severity so an info-
@@ -1497,9 +1518,22 @@ Object.assign(App.prototype, {
       niceBar.className = 'nice-bar';
       const niceLbl = document.createElement('span');
       niceLbl.className = 'nice-bar-label';
-      niceLbl.textContent = `🌐 Common infrastructure: ${niceCount}`;
-      niceLbl.title = 'Known-good global infrastructure (cloud APIs, package registries, CA/OCSP, XML schemas). Never affects Detections. See src/nicelist.js for the full list.';
+      // Always show the total count in the visible label — the per-source
+      // breakdown lives in the hover tooltip so the bar stays compact and
+      // predictable regardless of how many user lists are active.
+      niceLbl.textContent = `🌐 Nicelisted: ${niceCount}`;
+      const bySource = new Map();
+      for (const r of refs) {
+        if (!r._nicelisted) continue;
+        const key = r._nicelistSource || 'Default Nicelist';
+        bySource.set(key, (bySource.get(key) || 0) + 1);
+      }
+      const sources = [...bySource.entries()].sort((a, b) => b[1] - a[1]);
+      const breakdown = sources.map(([k, v]) => `${v} from ${k}`).join(', ');
+      niceLbl.title = 'Rows matched by an active nicelist (sorted to the bottom of the IOCs table, never affects Detections). Breakdown: ' +
+        breakdown + '. Manage custom nicelists from Settings → Nicelists (press N).';
       niceBar.appendChild(niceLbl);
+
 
       niceToggleBtn = document.createElement('button');
       niceToggleBtn.type = 'button';

@@ -187,6 +187,14 @@ function _nicelistUrlMatches(url) {
  */
 function isNicelisted(value, type) {
   if (!value || !type) return false;
+  // Built-in nicelist can be disabled from Settings → Nicelists. Persisted
+  // as `loupe_nicelist_builtin_enabled` — "0" means off, anything else (or
+  // missing) means on. Kept opt-out so first-time users still get the
+  // Default Nicelist demoting noise.
+  try {
+    if (localStorage.getItem('loupe_nicelist_builtin_enabled') === '0') return false;
+  } catch (_) { /* storage blocked → treat as enabled */ }
+
   const v = String(value).trim();
   if (!v) return false;
 
@@ -201,9 +209,21 @@ function isNicelisted(value, type) {
     case 'Hostname':
       return _nicelistHostMatches(v.toLowerCase());
     case 'Email': {
-      const at = v.lastIndexOf('@');
+      // Unwrap display-name forms like `Bob Smith <bob.smith@example.com>`
+      // so the host match sees `example.com` instead of `example.com>`.
+      // We use the LAST `<…>` pair defensively — a quoted display name
+      // could in theory contain `<`, and the real address is always the
+      // tail bracketed pair.
+      let addr = v;
+      const lt = addr.lastIndexOf('<');
+      const gt = addr.lastIndexOf('>');
+      if (lt >= 0 && gt > lt) addr = addr.slice(lt + 1, gt);
+      const at = addr.lastIndexOf('@');
       if (at < 0) return false;
-      return _nicelistHostMatches(v.slice(at + 1).toLowerCase());
+      // Strip anything after the first non-host character (stray `>`,
+      // trailing `)`, whitespace, …) so the matcher only sees the domain.
+      const host = addr.slice(at + 1).toLowerCase().replace(/[^a-z0-9.-].*$/, '');
+      return _nicelistHostMatches(host);
     }
     default:
       return false;

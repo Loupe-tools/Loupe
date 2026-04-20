@@ -2490,7 +2490,7 @@ body.dark .nice-toggle-hiding {
  * findings without taking vertical space.
  */
 .ext-table tbody tr.ioc-nicelisted {
-  opacity: 0.55;
+  opacity: 0.78;
   transition: opacity .15s ease;
 }
 .ext-table tbody tr.ioc-nicelisted:hover {
@@ -2500,7 +2500,7 @@ body.dark .nice-toggle-hiding {
   border-top: 2px dashed var(--hairline);
 }
 body.dark .ext-table tbody tr.ioc-nicelisted {
-  opacity: 0.45;
+  opacity: 0.72;
 }
 body.dark .ext-table tbody tr.ioc-nicelisted:hover {
   opacity: 1;
@@ -3947,13 +3947,15 @@ body.dark .settings-overlay {
 .settings-dialog {
   display: flex;
   flex-direction: column;
-  width: 560px;
+  width: 720px;
   max-width: 100%;
   /* Fixed height keeps the dialog from jumping vertically when the user
-     switches between the Settings and Help tabs (they have very
-     different content heights). `max-height: 86vh` still kicks in on
-     short viewports; `.settings-body` flexes + scrolls to fill the gap. */
-  height: 560px;
+     switches between the Settings, Nicelists, and Help tabs (they have
+     very different content heights). `max-height: 86vh` still kicks in
+     on short viewports; `.settings-body` flexes + scrolls to fill the
+     gap. Bumped from 560×560 to 720×640 when the Nicelists tab landed
+     so the per-list cards + entry editor fit without feeling cramped. */
+  height: 640px;
   max-height: 86vh;
   background: #f7f8fa;
   border: 1px solid #c3c7cf;
@@ -4244,5 +4246,332 @@ body.dark .settings-theme-tile-active {
   opacity: .65;
   font-variant-numeric: tabular-nums;
 }
+
+/* ══════════════════════════════════════════════════════
+   Nicelists tab (Settings → 🛡 Nicelists)
+   ─────────────────────────────────────────────────────
+   Renders one card per user-uploaded list plus a pinned
+   "Default Nicelist" (built-in) card at the top. Visual
+   language reuses the accent / hairline tokens so it
+   inherits every theme's palette automatically.
+   ══════════════════════════════════════════════════════ */
+
+/* Top toolbar row — header title + New / Import / Export-all buttons. */
+.nicelists-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.nicelists-toolbar-title {
+  flex: 1 1 auto;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.nicelists-toolbar-hint {
+  flex: 1 1 100%;
+  font-size: 11px;
+  color: #777;
+  line-height: 1.5;
+  margin-top: -4px;
+}
+
+body.dark .nicelists-toolbar-hint {
+  color: rgba(255, 255, 255, .55);
+}
+
+/* Small pill-button used in the toolbar + per-card actions. */
+.nicelist-btn {
+  padding: 5px 10px;
+  border: 1px solid #c3c7cf;
+  border-radius: 6px;
+  background: #f0f1f4;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+
+.nicelist-btn:hover {
+  background: rgb(var(--accent-rgb) / .08);
+  border-color: rgb(var(--accent-rgb) / .3);
+  color: var(--accent-hover);
+}
+
+body.dark .nicelist-btn {
+  background: rgba(255, 255, 255, .04);
+  border-color: var(--hairline);
+  color: rgba(255, 255, 255, .75);
+}
+
+body.dark .nicelist-btn:hover {
+  background: rgb(var(--accent-rgb) / .12);
+  border-color: rgb(var(--accent-rgb) / .35);
+  color: var(--accent);
+}
+
+.nicelist-btn-danger:hover {
+  background: rgb(var(--risk-high-rgb) / .12);
+  border-color: rgb(var(--risk-high-rgb) / .35);
+  color: var(--risk-high);
+}
+
+body.dark .nicelist-btn-danger:hover {
+  background: rgb(var(--risk-high-rgb) / .18);
+  border-color: rgb(var(--risk-high-rgb) / .4);
+  color: var(--risk-high);
+}
+
+.nicelist-btn-primary {
+  background: rgb(var(--accent-rgb) / .12);
+  border-color: rgb(var(--accent-rgb) / .3);
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
+body.dark .nicelist-btn-primary {
+  background: rgb(var(--accent-rgb) / .15);
+  border-color: rgb(var(--accent-rgb) / .35);
+  color: var(--accent);
+}
+
+/* One card per list. */
+.nicelist-card {
+  border: 1px solid #d8dce3;
+  border-radius: 10px;
+  background: #ffffff;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+body.dark .nicelist-card {
+  background: rgba(255, 255, 255, .03);
+  border-color: var(--hairline-strong);
+}
+
+.nicelist-card-builtin {
+  border-color: rgb(var(--accent-rgb) / .3);
+  background: rgb(var(--accent-rgb) / .04);
+}
+
+body.dark .nicelist-card-builtin {
+  border-color: rgb(var(--accent-rgb) / .35);
+  background: rgb(var(--accent-rgb) / .06);
+}
+
+.nicelist-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid transparent;
+}
+
+.nicelist-card.nicelist-card-open .nicelist-card-header {
+  border-bottom-color: #e8eaef;
+}
+
+body.dark .nicelist-card.nicelist-card-open .nicelist-card-header {
+  border-bottom-color: var(--hairline-soft);
+}
+
+.nicelist-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 6px;
+  border-radius: 5px;
+}
+
+.nicelist-name-input:hover {
+  background: rgba(0, 0, 0, .04);
+}
+
+body.dark .nicelist-name-input:hover {
+  background: rgba(255, 255, 255, .05);
+}
+
+.nicelist-name-input:focus {
+  outline: none;
+  background: var(--input-bg);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .12);
+}
+
+.nicelist-name-static {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nicelist-builtin-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgb(var(--accent-rgb) / .15);
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
+body.dark .nicelist-builtin-badge {
+  background: rgb(var(--accent-rgb) / .2);
+  color: var(--accent);
+}
+
+.nicelist-count {
+  font-size: 10px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+body.dark .nicelist-count {
+  color: rgba(255, 255, 255, .55);
+}
+
+/* Small native-styled enabled-switch. Uses the browser's checkbox
+   accent colour so it picks up the theme's --accent via color-scheme. */
+.nicelist-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #666;
+  cursor: pointer;
+  user-select: none;
+}
+
+body.dark .nicelist-switch {
+  color: rgba(255, 255, 255, .62);
+}
+
+.nicelist-switch input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.nicelist-card-body {
+  padding: 10px 12px 12px;
+  display: none;
+}
+
+.nicelist-card.nicelist-card-open .nicelist-card-body {
+  display: block;
+}
+
+/* Entry editor — textarea holds one entry per line; add-entry input sits
+   below it. */
+.nicelist-entries {
+  width: 100%;
+  min-height: 120px;
+  max-height: 220px;
+  resize: vertical;
+  padding: 8px 10px;
+  font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: inherit;
+  box-sizing: border-box;
+}
+
+.nicelist-entries:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .12);
+}
+
+.nicelist-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.nicelist-card-foot .nicelist-btn {
+  font-size: 11px;
+}
+
+.nicelist-foot-spacer {
+  flex: 1 1 auto;
+}
+
+.nicelist-entries-meta {
+  font-size: 10px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
+}
+
+body.dark .nicelist-entries-meta {
+  color: rgba(255, 255, 255, .5);
+}
+
+.nicelist-disclosure {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: inherit;
+  opacity: .75;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.nicelist-disclosure:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, .05);
+}
+
+body.dark .nicelist-disclosure:hover {
+  background: rgba(255, 255, 255, .06);
+}
+
+.nicelist-disclosure::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 4px;
+  font-size: 9px;
+  transition: transform .15s ease;
+}
+
+.nicelist-card.nicelist-card-open .nicelist-disclosure::before {
+  transform: rotate(90deg);
+}
+
+.nicelist-empty {
+  padding: 18px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+body.dark .nicelist-empty {
+  color: rgba(255, 255, 255, .55);
+}
+
 
 </file_content_end>

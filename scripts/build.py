@@ -147,6 +147,13 @@ JS_FILES = [
     # must load after constants.js (for the type-string contract) and before
     # app-sidebar.js (which consumes `isNicelisted`).
     'src/nicelist.js',
+    # nicelist-user.js — user-defined nicelists (custom "known-good" lists
+    # managed from Settings → Nicelists). Exposes `_NicelistUser` as a
+    # singleton with load/save/match/parse/export/import helpers. Must load
+    # AFTER nicelist.js (built-in takes priority for the "Default Nicelist"
+    # label) and BEFORE app-sidebar.js / app-settings.js (both consume it).
+    'src/nicelist-user.js',
+
     'src/parser-watchdog.js',
     'src/vba-utils.js',
     'src/yara-engine.js',
