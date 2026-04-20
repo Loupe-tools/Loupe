@@ -30,15 +30,28 @@ No server, no uploads, no tracking — just drop a file and inspect it.
 
 ## 🤔 Why Loupe?
 
-SOC analysts, incident responders, and security-conscious users need a way to safely inspect suspicious files without uploading them to third-party services or spinning up a sandbox. Loupe runs entirely in your browser — **nothing ever leaves your machine**.
+SOC analysts, MDR responders, phishing teams, and DFIR practitioners need a way to safely inspect suspicious files without uploading them to third-party services or spinning up a sandbox. Loupe runs entirely in your browser — **nothing ever leaves your machine**.
 
 - **Zero network access** — a strict Content-Security-Policy blocks all external fetches.
 - **Single HTML file** — no install, no dependencies, works on any OS with a modern browser.
-- **Broad format coverage** — Office documents, PDFs, emails, archives, native binaries (PE/ELF/Mach-O), certificates, scripts, images, and more.
+- **Built for scripts and documents** — PowerShell, VBS, JScript, HTA, WSF, AppleScript / JXA, shell one-liners, Office, PDF, email, and archives get deep per-format analysis; recursive decoding peels nested Base64 / hex / gzip / zlib payloads layer by layer with the full lineage on screen.
+- **Broad format coverage** — plus native binaries (PE / ELF / Mach-O), certificates, forensic artefacts (EVTX / SQLite), browser extensions, npm packages, and images.
+
+---
+
+## 🎯 When to reach for Loupe
+
+- **Abuse mailbox:** a user-reported `.eml` / `.msg` lands in the queue — headers, SPF / DKIM / DMARC verdicts, tracking-pixel hosts, and every embedded URL are inspectable without a single click firing.
+- **ClickFix / `osascript` paste:** an EDR alert surfaces an obfuscated one-liner — Base64 PowerShell, `curl … | sh`, or `osascript -e …`. Paste it straight in with `Ctrl+V` and Loupe peels every nested Base64 / hex / gzip / zlib layer with the full decode lineage on screen, surfacing the C2 URL, hashes, and file paths as one-click MISP / STIX attributes.
+- **Host triage:** drop the `.evtx` from live response to auto-flag 4688 / 4624 / 1102 / 4104, or a browser `History.sqlite` to timeline a suspected compromise.
+- **Refang & pivot:** paste the raw body of a reported SMS / Teams lure — Loupe refangs `hxxp://` / `1[.]2[.]3[.]4` into live IOCs you can export as STIX / MISP / CSV without leaving the tab.
+- **Airgap / compliance:** single HTML file, zero network — usable on a SCIF / classified / locked-down analyst VM where VirusTotal and Any.Run are off-limits.
+- **Detection-content authoring:** drag a candidate `.yar` file onto Loupe to validate it against a corpus of samples before promoting to the production ruleset.
 
 ---
 
 ## 🚀 Quick Start
+
 
 [⬇️ **Download latest loupe.html**](https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html)
 
@@ -79,20 +92,29 @@ Every format gets risk assessment, IOC extraction, and YARA scanning on top of t
 
 ## 🔍 What It Finds
 
-- **YARA rule engine** — 500+ default rules auto-scan every file; drop in your own `.yar` files to extend detection.
+- **Scripts & one-liners** — PowerShell, VBS, JScript, HTA, WSF, AppleScript / JXA, and shell wrappers get syntax highlighting and are risk-scored against hundreds of dedicated YARA rules; auto-execute entry points are flagged.
+- **Recursive decoder** — Base64 / hex / gzip / zlib layers unwind in-place with every hop visible as a coloured pill, so a ClickFix blob reveals its real payload without leaving the tab.
+- **Office, PDF & email** — VBA and Excel-formula droppers decoded, OOXML external relationships surfaced, PDF `/JavaScript` / `/OpenAction` / `/Launch` / attachments extracted, `.eml` / `.msg` headers and SPF / DKIM / DMARC verdicts parsed.
 - **IOCs** — URLs, IPs, emails, hostnames, domains, file paths, UNC paths, GUIDs, key fingerprints. Defanged indicators (`hxxp://`, `1[.]2[.]3[.]4`) are refanged automatically.
+- **YARA rule engine** — 500+ default rules auto-scan every file; drop any `.yar` file onto Loupe to extend detection — rules are validated, saved locally, and rescans are instant.
 - **File hashes** — MD5, SHA-1, SHA-256 with one-click VirusTotal lookup.
-- **Macros & scripts** — decoded VBA, PowerShell, JScript, HTA; auto-exec entry points flagged.
-- **Encoded payload drill-down** — Base64 / hex / gzip / zlib layers decoded recursively with full lineage.
-- **PDF internals** — embedded JavaScript, `/OpenAction`, `/Launch`, attachments, XFA forms.
-- **Native binaries** — PE / ELF / Mach-O with imports, sections, entropy, security features, code signatures.
+- **Native binaries** — PE / ELF / Mach-O with imports, sections, entropy, security features, and code-signature parsing for quick triage.
 - **Certificates & keys** — X.509 and OpenPGP with weak-key and expiry flagging.
-- **Archive drill-down** — click any entry inside a ZIP / TAR / ISO / MSI / PKG / CRX / CAB to open it with full analysis.
+- **Recursive drill-down** — a macro inside a `.docm` inside a `.zip` inside a `.msi` — every layer gets its own full analysis with Back navigation and a breadcrumb trail.
 - **Exports** — one-click clipboard brief for tickets or LLMs, plus STIX 2.1, MISP, and IOC JSON/CSV.
 
 Six themes, a resizable sidebar, in-toolbar document search, and click-to-highlight for every IOC and YARA match.
 
+### Fits your workflow
+
+Every export is generated client-side — paste directly into the next tool in your pipeline:
+
+- **→ ticket / LLM:** one-shot **Summarize** copies a Markdown report to the clipboard, sized to ~16 K / 50 K / unlimited tokens.
+- **→ TIP:** STIX 2.1 bundle or MISP event JSON, with deterministic UUIDs so re-imports dedupe cleanly.
+- **→ CLI / spreadsheet:** flat JSON (jq-friendly) and RFC 4180 CSV for quick grep / pivot / triage runs.
+
 ---
+
 
 ## 🎨 Themes
 
