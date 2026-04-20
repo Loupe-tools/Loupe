@@ -102,6 +102,13 @@ const NICELIST = Object.freeze([
   // Windows Update / Microsoft Store / Defender def-channel
   'update.microsoft.com', 'download.microsoft.com', 'windowsupdate.com',
   'microsoft.com/pkiops', 'go.microsoft.com',
+  // Microsoft PKI surfaces referenced in Authenticode-signed binaries:
+  // `www.microsoft.com/pki/certs/...` (MicRootCA, MicCodSigPCA .crt)
+  // and `www.microsoft.com/PKI/docs/CPS/...` CPS documents. Kept
+  // path-scoped — the bare `microsoft.com` stays off the list because
+  // it is a heavy homoglyph target (see top-of-file non-goals).
+  'microsoft.com/pki', 'www.microsoft.com/pki',
+  'www.microsoft.com/pkiops',
   // Apple software update / App Store. `icloud.com` is kept here for
   // shared-links / iCloud-Drive noise, NOT for @icloud.com mail pivots —
   // the Email branch in `isNicelisted` still matches, which is an
@@ -158,6 +165,19 @@ const NICELIST = Object.freeze([
   'valicert.com', 'rootca.com',
   'lencr.org', 'identrust.com', 'starfieldtech.com',
   'ssl.com', 'trust-provider.com',
+  // Symantec's legacy code-signing OCSP/CRL CDNs (separate reg-domains,
+  // NOT subdomains of `symantec.com`). Still referenced in Authenticode
+  // signatures on older signed binaries: `symcb.com` = CRL distribution,
+  // `symcd.com` = OCSP responder.
+  'symcb.com', 'symcd.com',
+  // Microsoft OCSP responder — separate reg-domain from `microsoft.com`,
+  // referenced in Authenticode timestamp chains.
+  'msocsp.com',
+  // Other mainstream public CAs whose OCSP / CRL / timestamp fetches
+  // turn up as IOCs on any signed executable, installer, driver, or
+  // S/MIME message:
+  'quovadisglobal.com', 'buypass.com', 'swisssign.net',
+  'certum.pl', 'actalis.it', 'rapidsslonline.com',
 
   // ── JS / CSS library CDNs (benign dev tooling) ──────────────────────
   'jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com', 'bootstrapcdn.com',
