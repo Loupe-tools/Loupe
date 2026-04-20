@@ -507,6 +507,25 @@ class PlainTextRenderer {
     const count = Math.min(lines.length, maxLines);
     const chunkSize = PlainTextRenderer.SOFT_WRAP_CHUNK;
 
+    // Pre-size the line-number column via <colgroup>. `.plaintext-table`
+    // uses `table-layout: fixed` (load-bearing defence against multi-
+    // megabyte minified-JS lines blowing out the viewer width — see
+    // viewers.css), which resolves column widths from the first row only.
+    // Without an explicit width the gutter locks to the width of "1" in
+    // row 1, and every subsequent multi-digit line number ("10", "100",
+    // …) overflows past the gutter's `border-right`, producing a visual
+    // "1|0" glitch. Reserving `<digits>ch + padding + border` up front
+    // keeps all line numbers inside their cell.
+    const gutterDigits = String(count).length;
+    const colgroup = document.createElement('colgroup');
+    const colLn   = document.createElement('col');
+    const colCode = document.createElement('col');
+    // padding-left (10px) + padding-right (12px) + border-right (1px) = 23px
+    colLn.style.width = `calc(${gutterDigits}ch + 23px)`;
+    colgroup.appendChild(colLn);
+    colgroup.appendChild(colCode);
+    table.appendChild(colgroup);
+
     // Logical-line → first-<tr>-index map. Soft-wrap produces multiple
     // <tr>s per logical line, so the sidebar's YARA/IOC/encoded-content
     // highlighter can no longer assume `rows[lineIndex]` is the right
