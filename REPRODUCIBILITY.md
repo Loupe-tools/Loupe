@@ -6,15 +6,16 @@ verify that the byte sequence inside that file was produced by the source
 tree at a specific commit, **without having to trust the build
 infrastructure**.
 
-Given the same source tree and the same `SOURCE_DATE_EPOCH`,
-`python scripts/build.py` is expected to emit a byte-identical
-`docs/index.html`. Independent runs should produce identical SHA-256
-hashes. The `reproducibility.yml` GitHub Actions workflow asserts this
-continuously by building twice in parallel runners and comparing hashes.
+Given the same commit, `python scripts/build.py` is expected to emit a
+byte-identical `docs/index.html`. Two contributors on two machines at the
+same commit should get the same SHA-256. The CI build job on every push
+rebuilds with the same pinned environment the release pipeline uses, so
+an auditor's local rebuild matches the signed release asset byte-for-byte.
 
-This document is the recipe. If any step drifts from reality, the
-[`reproducibility`](.github/workflows/reproducibility.yml) job will fail
-before the drift ships.
+`docs/index.html` is **not committed to the repository** — it is only ever
+produced by CI (for deployment and signing) or locally by contributors
+(for smoke-testing). This document is the recipe for recreating it from
+any tagged source tree.
 
 ## Who this is for
 
@@ -33,19 +34,16 @@ git clone https://github.com/Loupe-tools/Loupe
 cd Loupe
 git checkout v20260420.1402       # substitute the release tag
 
-# 2. Pin the embedded timestamp. The canonical choice is the tag's
-#    commit-author timestamp. Any fixed integer works — the important
-#    thing is that the *release pipeline* and *your rebuild* use the
-#    same value. The workflow that produced the release recorded the
-#    epoch it used in the release notes.
-export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)
-export TZ=UTC
-export LC_ALL=C.UTF-8
+# 2. Rebuild.
+#    The build script auto-derives SOURCE_DATE_EPOCH from HEAD's
+#    commit-author timestamp when the env var isn't set, so the
+#    explicit export is optional for a plain git checkout — it's
+#    included here to mirror exactly what CI does.
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD) \
+  TZ=UTC LC_ALL=C.UTF-8 \
+  python scripts/build.py
 
-# 3. Rebuild.
-python scripts/build.py
-
-# 4. Compare to the signed release asset you downloaded.
+# 3. Compare to the signed release asset you downloaded.
 sha256sum docs/index.html loupe.html
 ```
 
@@ -55,9 +53,13 @@ either the signed asset was rebuilt from a different source state, or
 something in your local environment (Python version, line-ending
 handling, locale) has perturbed the output — see "Non-determinism rules".
 
+The release workflow records the exact commit hash and `SOURCE_DATE_EPOCH`
+it used in every release's notes, so you never have to guess which epoch
+was in play.
+
 ## What `SOURCE_DATE_EPOCH` controls
 
-| Field | Without `SOURCE_DATE_EPOCH` | With `SOURCE_DATE_EPOCH` |
+| Field | Without `SOURCE_DATE_EPOCH` (non-git archive) | With `SOURCE_DATE_EPOCH` *or* a git checkout |
 |---|---|---|
 | `LOUPE_VERSION` (embedded in bundle, shown in UI) | `datetime.now()` — local wall clock | `datetime.fromtimestamp(epoch, tz=UTC)` |
 | Everything else in the bundle | Byte-identical across builds | Byte-identical across builds |
@@ -66,12 +68,25 @@ Only the version string is time-derived. The rest of the bundle is a
 deterministic concatenation of files read in a fixed order from
 `scripts/build.py`.
 
+When `SOURCE_DATE_EPOCH` is unset, `scripts/build.py` falls back to
+`git log -1 --format=%ct HEAD` automatically if the working tree is a
+git checkout. This makes `python make.py` in a clone reproducible
+without the contributor having to think about the env var. The
+wall-clock fallback only kicks in for source archives (ZIP / tarball)
+where git metadata is unavailable.
+
 ## Non-determinism rules (for contributors)
 
 Any change that adds a time-, host-, locale-, or randomness-derived byte
-to `docs/index.html` will break reproducibility and the CI job will
-block the PR. When in doubt, ask: *"if I ran this build on a different
-machine one week from now, would the output differ?"*
+to `docs/index.html` will break reproducibility. The CI build job
+rebuilds with a pinned environment (`TZ=UTC`, `LC_ALL=C.UTF-8`,
+`SOURCE_DATE_EPOCH` from HEAD) on every push, so a change that only
+looks deterministic on the author's machine but drifts under the CI
+environment will show up in the CI build SHA-256 in the job summary
+and can be diffed against a local rebuild.
+
+When in doubt, ask: *"if I ran this build on a different machine one
+week from now, would the output differ?"*
 
 The rules are short but strict:
 
@@ -109,13 +124,19 @@ This is worth being honest about so users don't over-rotate on it.
 
 ## CI enforcement
 
-The
-[`reproducibility.yml`](.github/workflows/reproducibility.yml) workflow
-builds the bundle twice in parallel fresh runners with a fixed
-`SOURCE_DATE_EPOCH` and compares SHA-256 hashes. It runs on every push
-to `main` and on pull requests. A mismatch fails the run and prints
-`cmp -l` output of the first differing bytes to help diagnose what
-became non-deterministic.
+The [`ci.yml`](.github/workflows/ci.yml) **Build** job runs on every
+push to `main` and on pull requests. It builds with the same pinned
+environment the release pipeline uses (`SOURCE_DATE_EPOCH` from HEAD,
+`TZ=UTC`, `LC_ALL=C.UTF-8`) and writes the resulting SHA-256 to the
+job summary. The built bundle is uploaded as a retained artefact so
+reviewers can diff against their own local rebuild from the same
+commit. Any PR that perturbs determinism will show a different hash
+in its job summary than a clean rebuild from the same commit produces.
+
+The [`release.yml`](.github/workflows/release.yml) workflow is the
+canonical build: it rebuilds from source on the runner (never from a
+committed artefact), records the commit hash and epoch in the release
+notes, and Sigstore-signs the resulting bytes.
 
 ## Related documents
 

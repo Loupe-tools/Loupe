@@ -3,26 +3,49 @@
 
 Reproducible-build support
 --------------------------
-If the SOURCE_DATE_EPOCH environment variable is set (a Unix timestamp —
-the standard from https://reproducible-builds.org/docs/source-date-epoch/),
-the embedded LOUPE_VERSION is derived from that epoch instead of wall-clock
-time. Given a fixed commit + fixed SOURCE_DATE_EPOCH, `python scripts/build.py`
-produces byte-identical output — asserted by the reproducibility CI job.
+Given a fixed commit, `python scripts/build.py` produces byte-identical
+output. The only time-derived byte in the bundle is the embedded
+``LOUPE_VERSION`` string, which is resolved in this order:
 
-The canonical choice in CI / REPRODUCIBILITY.md is the commit-author
-timestamp:  SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD).
+  1. ``SOURCE_DATE_EPOCH``  (the reproducible-builds.org standard) — used
+     verbatim if set. This is the path CI takes at release time.
+  2. The commit-author timestamp of ``HEAD`` in the current git checkout —
+     used automatically when step 1 is unset. This makes local contributor
+     builds deterministic too (two contributors at the same commit get the
+     same bundle bytes), without anyone having to remember an env var.
+  3. Wall-clock ``datetime.now()`` — last-resort fallback for source
+     archives that are not a git checkout.
+
+See REPRODUCIBILITY.md for the full recipe and non-goals.
 """
 import os
+import subprocess
 from datetime import datetime, timezone
 
+# scripts/build.py → repo root is the parent of this file's directory.
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 _epoch = os.environ.get('SOURCE_DATE_EPOCH')
+if not _epoch:
+    # Git-checkout fallback: use HEAD's commit-author timestamp so local
+    # builds are reproducible without the contributor having to export
+    # SOURCE_DATE_EPOCH themselves. Silently falls through to wall-clock
+    # time if this isn't a git checkout or git isn't on PATH.
+    try:
+        _res = subprocess.run(
+            ['git', 'log', '-1', '--format=%ct', 'HEAD'],
+            cwd=BASE, capture_output=True, text=True, timeout=5, check=False,
+        )
+        _out = _res.stdout.strip()
+        if _res.returncode == 0 and _out.isdigit():
+            _epoch = _out
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
 if _epoch:
     VERSION = datetime.fromtimestamp(int(_epoch), tz=timezone.utc).strftime('%Y%m%d.%H%M')
 else:
     VERSION = datetime.now().strftime('%Y%m%d.%H%M')
-
-# scripts/build.py → repo root is the parent of this file's directory.
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def read(rel):
     with open(os.path.join(BASE, rel), 'r', encoding='utf-8') as f:

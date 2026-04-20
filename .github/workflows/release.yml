@@ -1,13 +1,43 @@
 name: Release
 
+# Release pipeline — rebuilds docs/index.html from source on the runner
+# under a deterministic SOURCE_DATE_EPOCH (HEAD's commit-author timestamp)
+# and signs the resulting bytes with Sigstore keyless. The committed tree
+# no longer contains docs/index.html — the bundle is produced here, in a
+# clean runner, and never round-trips through a contributor's machine.
+#
+# Why this shape:
+#
+#   * SOURCE_DATE_EPOCH = `git log -1 --format=%ct HEAD` is public, immutable
+#     metadata on the release commit. Any auditor can run the same command
+#     on the same tag and get the same integer, then feed it to build.py
+#     to reproduce the signed bytes. No need for the workflow to "record"
+#     the epoch anywhere — it IS the commit timestamp.
+#
+#   * LOUPE_VERSION is derived from that epoch by build.py (formatted as
+#     YYYYMMDD.HHMM UTC), so the release tag (vLOUPE_VERSION) is a direct
+#     function of the commit timestamp too.
+#
+#   * The trigger is `paths` scoped to bundle inputs (src/, vendor/,
+#     scripts/build.py) so doc-only / workflow-only commits don't cut a
+#     release. Edge case: a commit that touches nothing-under-paths but
+#     would still produce a new LOUPE_VERSION minute is intentionally
+#     ignored — we only release when the bundle bytes have reason to
+#     have changed.
 on:
   push:
     branches: [main]
-    paths: [docs/index.html]
+    paths:
+      - 'src/**'
+      - 'vendor/**'
+      - 'scripts/build.py'
+      - 'scripts/generate_sbom.py'
+  workflow_dispatch:
 
 # id-token: write is required for Sigstore keyless signing via GitHub's
 # OIDC provider. Without it cosign fails with an opaque "failed to get
-# OIDC token" error. contents: write is required to create the release.
+# OIDC token" error. contents: write is required to create the release
+# (and the tag that pins the signed bytes to a specific commit).
 permissions:
   contents: write
   id-token: write
@@ -25,17 +55,41 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Extract version
+      # ──────────────────────────────────────────────────────────────
+      # Reproducible build. The runner rebuilds docs/index.html from
+      # source with SOURCE_DATE_EPOCH pinned to HEAD's commit-author
+      # timestamp. Any auditor who checks out the tag and runs
+      #     SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD) \
+      #     TZ=UTC LC_ALL=C.UTF-8 python scripts/build.py
+      # gets byte-identical output — see REPRODUCIBILITY.md.
+      # ──────────────────────────────────────────────────────────────
+      - name: Compute SOURCE_DATE_EPOCH from HEAD
+        id: epoch
+        run: |
+          EPOCH=$(git log -1 --format=%ct HEAD)
+          echo "epoch=${EPOCH}" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=${EPOCH}"
+
+      - name: Build docs/index.html (deterministic)
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.epoch }}
+          TZ: UTC
+          LC_ALL: C.UTF-8
+        run: python scripts/build.py
+
+      - name: Extract LOUPE_VERSION from built bundle
         id: version
         run: |
           VER=$(grep -oP "LOUPE_VERSION = '\K[^']+" docs/index.html)
           echo "version=v${VER}" >> "$GITHUB_OUTPUT"
+          echo "Built version: v${VER}"
 
-      - name: Check if tag exists
+      - name: Check if tag already exists
         id: check
         run: |
           if git rev-parse "${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
+            echo "Tag ${{ steps.version.outputs.version }} already exists — skipping release."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
@@ -46,7 +100,7 @@ jobs:
 
       # ──────────────────────────────────────────────────────────────
       # Supply-chain transparency. Every release asset ships with:
-      #   loupe.html              — the bundle itself
+      #   loupe.html              — the bundle itself (rebuilt here)
       #   loupe.html.sha256       — plain-text SHA-256 for eyeball / CI diff
       #   loupe.html.sigstore     — Sigstore bundle (cert + sig + Rekor proof)
       #   loupe.cdx.json          — CycloneDX 1.5 SBOM (vendored libs + hash)
@@ -61,17 +115,21 @@ jobs:
       # ──────────────────────────────────────────────────────────────
       - name: Record SHA-256
         if: steps.check.outputs.exists == 'false'
-        run: sha256sum loupe.html | awk '{print $1"  loupe.html"}' > loupe.html.sha256
+        id: hash
+        run: |
+          HASH=$(sha256sum loupe.html | awk '{print $1}')
+          echo "${HASH}  loupe.html" > loupe.html.sha256
+          echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+          echo "SHA-256: ${HASH}"
 
       - name: Generate CycloneDX SBOM
         # Builds an SBOM from VENDORED.md + the just-built docs/index.html
         # so the application hash inside the SBOM matches the signed
-        # release asset byte-for-byte. Honours SOURCE_DATE_EPOCH when
-        # set but is not reproducibility-critical at this step.
-        # Emitted to the repo root for the release step (co-located with
-        # loupe.html and its .sigstore sibling); the script defaults to
-        # dist/loupe.cdx.json for ordinary local runs.
+        # release asset byte-for-byte. Honours SOURCE_DATE_EPOCH so the
+        # SBOM timestamp is itself reproducible.
         if: steps.check.outputs.exists == 'false'
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.epoch }}
         run: python scripts/generate_sbom.py --out loupe.cdx.json
 
       - name: Install cosign
@@ -120,15 +178,48 @@ jobs:
             loupe.cdx.json
           echo "OK  Sigstore bundles verify against workflow identity"
 
+      # ──────────────────────────────────────────────────────────────
+      # Release notes: the reproducibility recipe is prepended to the
+      # auto-generated commit log so anyone landing on the release page
+      # sees the exact command to rebuild from the tagged source and
+      # confirm the SHA-256. The commit timestamp + build epoch are the
+      # only things anchoring "what bytes correspond to this source" —
+      # putting them in the release body removes any guesswork.
+      # ──────────────────────────────────────────────────────────────
+      - name: Write reproducibility notes
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          cat > release-notes.md <<EOF
+          ## 🔁 Reproducible build
+
+          This release was built from commit \`${{ github.sha }}\` at commit-author timestamp \`${{ steps.epoch.outputs.epoch }}\` (UTC). To verify the signed \`loupe.html\` corresponds to this exact source tree, rebuild it yourself:
+
+          \`\`\`sh
+          git clone https://github.com/${{ github.repository }} && cd Loupe
+          git checkout ${{ steps.version.outputs.version }}
+          SOURCE_DATE_EPOCH=\$(git log -1 --format=%ct HEAD) \\
+            TZ=UTC LC_ALL=C.UTF-8 python scripts/build.py
+          sha256sum docs/index.html
+          # Expect: ${{ steps.hash.outputs.hash }}
+          \`\`\`
+
+          See [REPRODUCIBILITY.md](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.version }}/REPRODUCIBILITY.md) for the full recipe, and [SECURITY.md § Verify Your Download](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.version }}/README.md#-verify-your-download) for the Sigstore verification step.
+
+          ---
+          EOF
+
       - name: Create Release
         if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          body_path: release-notes.md
+          append_body: true
+          generate_release_notes: true
           files: |
             loupe.html
             loupe.html.sha256
             loupe.html.sigstore
             loupe.cdx.json
             loupe.cdx.json.sigstore
-          generate_release_notes: true

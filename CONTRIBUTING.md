@@ -45,7 +45,22 @@ The build script reads CSS files from `src/styles/`, YARA rules from `src/rules/
 
 | Output | Purpose |
 |---|---|
-| `docs/index.html` | GitHub Pages deployment (sole build output) |
+| `docs/index.html` | Single build output — **not committed to git**. Produced locally for smoke-testing; produced by CI for Pages deployment and release signing. See [REPRODUCIBILITY.md](REPRODUCIBILITY.md). |
+
+### Determinism & `SOURCE_DATE_EPOCH`
+
+`build.py` is reproducible: given the same commit, the output is
+byte-identical. The only time-derived byte is the embedded
+`LOUPE_VERSION` string, resolved in this order:
+
+1. `SOURCE_DATE_EPOCH` env var (the reproducible-builds.org standard) — CI uses this at release time.
+2. `git log -1 --format=%ct HEAD` — auto-derived in a git checkout, so local `python make.py` is deterministic without any env-var fiddling.
+3. `datetime.now()` — last-resort fallback for source archives (tarball / ZIP) that aren't a git checkout.
+
+Contributors normally don't need to think about this — just run
+`python make.py`. If you're verifying a release, see
+[REPRODUCIBILITY.md](REPRODUCIBILITY.md) for the auditor recipe.
+
 
 ### Continuous Integration
 
@@ -215,8 +230,8 @@ Loupe/
 ├── VENDORED.md                      # SHA-256 pins for every file in vendor/
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml                   # CI — build, vendor-hash verify, static HTML/src checks, ESLint
-│   │   └── release.yml              # Release — tags, Sigstore-keyless-signs, and publishes loupe.html + .sha256 + .sigstore bundle on docs/index.html change
+│   │   ├── ci.yml                   # CI — build (deterministic), vendor-hash verify, static HTML/src checks, ESLint, deploy to GitHub Pages
+│   │   └── release.yml              # Release — rebuilds from source on the runner with pinned SOURCE_DATE_EPOCH, Sigstore-keyless-signs, and publishes loupe.html + .sha256 + .sigstore bundle
 
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── config.yml               # Disables blank issues; routes security reports to private advisories
@@ -225,8 +240,7 @@ Loupe/
 │   │   ├── format_request.yml      # New file-format requests (extensions, magic bytes, spec, samples)
 │   │   └── yara_rule.yml           # New YARA rule proposals (category, draft, FP profile)
 │   └── PULL_REQUEST_TEMPLATE.md     # PR checklist — build, docs-to-update, security invariants
-├── docs/
-│   └── index.html                   # Built output (GitHub Pages) — DO NOT EDIT
+├── docs/                            # CI output target (not tracked in git) — CNAME + .nojekyll are the only committed files here
 ├── vendor/
 │   ├── jszip.min.js                 # JSZip — ZIP parsing for DOCX/XLSX/PPTX
 │   ├── xlsx.full.min.js             # SheetJS — spreadsheet parsing
@@ -343,9 +357,11 @@ probably still build, then subtly misbehave.
 
 ### Build artefacts & source of truth
 
-- **`docs/index.html` is a build artefact — never edit it.** Every edit you
-  make in `docs/index.html` is discarded by the next `python scripts/build.py`.
-  Always edit `src/` and rebuild.
+- **`docs/index.html` is a build artefact — not tracked in git.**
+  `scripts/build.py` produces it locally (for smoke-testing) and CI produces
+  it for Pages deployment + release signing. Always edit `src/` and rebuild.
+  `docs/index.html` is in `.gitignore`; do not commit it even if your editor
+  stages it for you.
 - **`CODEMAP.md` is auto-generated.** Don't touch it by hand — regenerate with
   `python scripts/generate_codemap.py` after code changes.
 - **The `JS_FILES` order in `scripts/build.py` is load-bearing.** The
@@ -732,8 +748,12 @@ First-boot fallback order:
 1. Fork the repo
 2. Make your changes in `src/`
 3. Run `python make.py` — chains `scripts/verify_vendored.py` → `scripts/build.py` → `scripts/generate_codemap.py` in one shot
-4. Test by opening `docs/index.html` in a browser
-5. Submit a pull request
+4. Test by opening `docs/index.html` in a browser (the file is
+   `.gitignore`d — build locally, never commit it; CI rebuilds and
+   deploys on merge)
+5. Stage only your `src/` edits and the regenerated `CODEMAP.md` —
+   `docs/index.html` should never appear in `git status`
+6. Submit a pull request
 
 YARA rule submissions, new format parsers, and build-process improvements are especially welcome.
 

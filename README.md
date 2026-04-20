@@ -41,7 +41,7 @@ SOC analysts, incident responders, and security-conscious users need a way to sa
 
 [⬇️ **Download latest loupe.html**](https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html)
 
-1. **Download** — grab `loupe.html` from the release link above, or clone the repo and open `docs/index.html`.
+1. **Download** — grab `loupe.html` from the release link above, or clone the repo, run `python make.py`, and open `docs/index.html` (the bundle is built from source, not tracked in git).
 2. **Open** — double-click the file in any modern browser (2023+: Chrome, Firefox, Edge, Safari). No server needed.
 3. **Drop a file** — drag a suspicious file onto the drop zone, click **📁 Open File**, or paste with **Ctrl+V**.
 4. **Inspect** — press **S** to toggle the security sidebar, **Y** for the YARA rules dialog, **?** for all shortcuts.

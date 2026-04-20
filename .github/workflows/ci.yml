@@ -1,5 +1,14 @@
 name: CI
 
+# CI + Pages deployment. This is the only path that produces and
+# deploys docs/index.html — the file is no longer tracked in git.
+# Contributors edit src/; this workflow rebuilds, lints, audits, and
+# publishes to GitHub Pages. The reproducibility invariant ("same
+# source → same bytes") is exercised here on every push: build.py
+# runs with SOURCE_DATE_EPOCH pinned to HEAD's commit-author timestamp
+# so the CI bundle is byte-identical to any auditor's local rebuild
+# from the same commit. See REPRODUCIBILITY.md.
+
 on:
   push:
     branches: [main]
@@ -18,23 +27,37 @@ concurrency:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────
-  # Build: assembles docs/index.html and records its SHA-256 in the
-  # job summary so every build has a visible, diffable supply-chain
-  # fingerprint. Also uploads the built file as an artefact so
-  # reviewers can download and diff against their own build.
+  # Build: rebuilds docs/index.html from source under a pinned
+  # SOURCE_DATE_EPOCH (HEAD's commit-author timestamp). The output's
+  # SHA-256 and size are written to the GitHub Actions job summary so
+  # every build has a visible, diffable supply-chain fingerprint. The
+  # bundle is uploaded as an artefact so reviewers can download and
+  # diff against their own local rebuild.
   # ──────────────────────────────────────────────────────────────────
   build:
     name: Build single-file bundle
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Build docs/index.html
+      - name: Compute SOURCE_DATE_EPOCH from HEAD
+        id: epoch
+        run: |
+          EPOCH=$(git log -1 --format=%ct HEAD)
+          echo "epoch=${EPOCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Build docs/index.html (deterministic)
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.epoch }}
+          TZ: UTC
+          LC_ALL: C.UTF-8
         run: python scripts/build.py
 
       - name: Verify build output exists
@@ -55,6 +78,7 @@ jobs:
             echo "| File | \`docs/index.html\` |"
             echo "| Size | ${SIZE} bytes ($((SIZE / 1024)) KB) |"
             echo "| SHA-256 | \`${HASH}\` |"
+            echo "| SOURCE_DATE_EPOCH | \`${{ steps.epoch.outputs.epoch }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload built bundle
@@ -63,6 +87,15 @@ jobs:
           name: loupe-html
           path: docs/index.html
           retention-days: 14
+
+      # Also upload as a Pages artefact so the deploy job downstream
+      # can publish it. Only kept from pushes to main — PR builds don't
+      # deploy.
+      - name: Upload Pages artefact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
 
   # ──────────────────────────────────────────────────────────────────
   # Vendored-library hash verification. The source of truth is the
@@ -198,3 +231,29 @@ jobs:
       # lockstep with local dev environments when upgrading the ruleset.
       - name: Run ESLint
         run: npx --yes eslint@9.39.4 --config eslint.config.mjs "src/**/*.js"
+
+  # ──────────────────────────────────────────────────────────────────
+  # Deploy the built bundle to GitHub Pages. Runs only on pushes to
+  # main, only after build + static-checks + lint + verify-vendored
+  # all pass. This replaces the old "commit docs/index.html to git"
+  # dance — Pages now serves the CI-produced bytes directly.
+  #
+  # Requires repository Pages settings to be set to "GitHub Actions"
+  # as the build source (Settings → Pages → Build and deployment →
+  # Source → GitHub Actions).
+  # ──────────────────────────────────────────────────────────────────
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, verify-vendored, static-checks, lint]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

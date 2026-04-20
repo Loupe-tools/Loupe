@@ -16,8 +16,14 @@ desktop.ini
 *.swo
 *~
 
-# Build output (only docs/index.html is committed)
+# Build output — produced by scripts/build.py, never committed.
+# CI rebuilds it on every push (deterministically, via SOURCE_DATE_EPOCH)
+# and deploys it to GitHub Pages + signs it on release. Contributors can
+# build locally to smoke-test but should never stage the result.
+docs/index.html
 loupe.html
+loupe.html.sha256
+loupe.html.sigstore
 
 # Generated SBOM + release artefacts (emitted by scripts/generate_sbom.py
 # and the release workflow; built into dist/ locally)
