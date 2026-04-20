@@ -870,7 +870,10 @@ class PdfRenderer {
       // Suspicious script constructs (XFA scripts are JS-like)
       if (/<script[^>]*>/i.test(m[0])) {
         // count script blocks and collect unique hints
-        const scripts = m[0].match(/<script[^>]*>([\s\S]*?)<\/script>/gi) || [];
+        // Tolerant closing tag — `</script foo>` is accepted by browsers
+        // and would bypass a plain `</script>` (js/bad-tag-filter #56).
+        const scripts = m[0].match(/<script[^>]*>[\s\S]*?<\/script\b[^>]*>/gi) || [];
+
         const hintPatterns = [
           { pat: /\bapp\.launchURL\b/i,      label: 'XFA: app.launchURL' },
           { pat: /\bxfa\.host\.messageBox\b/i, label: 'XFA: messageBox' },
