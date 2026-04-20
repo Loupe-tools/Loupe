@@ -282,6 +282,7 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_theme` | string | `_setTheme()` in `src/app/app-ui.js` | one of `light` / `dark` / `midnight` / `solarized` / `mocha` / `latte` | Canonical list is the `THEMES` array at the top of `app-ui.js`. Applied before first paint by the inline `<head>` bootstrap in `scripts/build.py`; missing / invalid value falls back to OS `prefers-color-scheme`, then `dark`. |
 | `loupe_summary_target` | string | `_setSummaryTarget()` in `src/app/app-settings.js` | one of `default` / `large` / `unlimited` | Drives the build-full → measure → shrink-to-fit assembler in `_buildAnalysisText()`. Character budgets `64 000` / `200 000` / `Infinity` respectively. `unlimited` short-circuits truncation entirely. |
 | `loupe_yara_rules` | string | `app-yara.js` (YARA dialog "Save" action) | raw concatenated `.yar` rule text | User-uploaded rules are merged with the default ruleset at scan time. Cleared when the user clicks "Reset to defaults" in the YARA dialog. |
+| `loupe_ioc_hide_nicelisted` | string | `_setHideNicelisted()` in `src/app/app-sidebar.js` | `"0"` (show, dimmed — default) or `"1"` (hide) | Controls the IOCs-section toggle that drops known-good global-infrastructure rows (`src/nicelist.js`) from the sidebar. Sort-to-bottom + dim is the default; hiding is opt-in and never affects the Detections section or the underlying `findings.externalRefs` array. |
 
 **Adding a new key**
 

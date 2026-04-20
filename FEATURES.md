@@ -84,6 +84,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **Image-metadata pivots** | EXIF GPS coordinates, camera serial numbers, software/firmware strings, XMP DocumentID / InstanceID, full XMP tree |
 | **Defanged-indicator refanging** | `hxxp://`, `1[.]2[.]3[.]4`, and similar obfuscations are refanged automatically before extraction |
 | **Metadata → IOC mirroring** | Every renderer ships the same classic-pivot fields (hashes, paths, GUIDs, MAC, emails, cert fingerprints) to the sidebar. Attribution-only strings like `CompanyName` / `FileDescription` stay metadata-only by design. |
+| **Common-infrastructure demotion** | Known-good global infrastructure (cloud APIs, package registries, CA/OCSP, XML schemas) is dimmed and sorted to the bottom with an optional "Hide" toggle; never affects Detections. |
 
 ### Documents & Office
 
