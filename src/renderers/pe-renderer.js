@@ -1403,6 +1403,11 @@ class PeRenderer {
     try {
       const pe = this._parse(bytes);
       this._lastStrings = [...pe.strings.ascii, ...pe.strings.unicode];
+      // Stashed so the `_rawText` post-processing block below can pull
+      // pe.versionInfo values out of the IOC-extractor corpus without
+      // re-parsing the file.
+      this._lastPe = pe;
+
 
       // ── Banner ─────────────────────────────────────────────────────
       const banner = document.createElement('div');
@@ -1559,11 +1564,32 @@ class PeRenderer {
     // Expose extracted strings as _rawText for IOC + EncodedContentDetector.
     // On parse failure we still populate this from the fallback string scan
     // so sidebar YARA / IOC extraction keep working on truncated binaries.
-    if (this._lastStrings) {
-      wrap._rawText = this._lastStrings.join('\n');
-    } else if (wrap._fallbackStrings) {
-      wrap._rawText = wrap._fallbackStrings.join('\n');
+    //
+    // VersionInfo values are stripped from the buffer fed to the generic IOC
+    // regexes below — FileVersion strings like "1.9.0.8" / "10.0.17763.1"
+    // are perfectly valid dotted-quad IPv4 literals and otherwise pattern-
+    // match as IP IOCs even though they're pure attribution metadata. The
+    // values still render in the Metadata panel via findings.metadata; this
+    // only keeps them out of the IOC extractor's corpus. Consistent with
+    // the "Metadata → IOC mirroring" convention in CONTRIBUTING.md — only
+    // classic pivots (hashes, paths, GUIDs, MAC, emails, fingerprints)
+    // should be mirrored to IOC, never attribution fluff.
+    const _viSuppress = new Set();
+    if (this._lastPe && this._lastPe.versionInfo) {
+      for (const k of Object.keys(this._lastPe.versionInfo)) {
+        const v = this._lastPe.versionInfo[k];
+        if (v && typeof v === 'string') _viSuppress.add(v);
+      }
     }
+    const _filterVi = arr => _viSuppress.size
+      ? arr.filter(s => !_viSuppress.has(s))
+      : arr;
+    if (this._lastStrings) {
+      wrap._rawText = _filterVi(this._lastStrings).join('\n');
+    } else if (wrap._fallbackStrings) {
+      wrap._rawText = _filterVi(wrap._fallbackStrings).join('\n');
+    }
+
 
     return wrap;
   }

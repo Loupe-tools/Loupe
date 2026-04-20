@@ -136,7 +136,14 @@ const _UNC_RE   = /\\\\[A-Za-z0-9._\-$]+(?:\\[A-Za-z0-9._\-$%]+){1,}/g;
 const _EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
 const _MAC_RE   = /\b(?:[0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}\b/g;
 const _GUID_RE  = /\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b/g;
-const _IPV4_RE  = /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\b/g;
+// IPv4 dotted-decimal. Each octet must be either a single `0`, a 1–3 digit
+// number that does NOT start with `0` (so `01`, `007`, `09` are rejected),
+// or one of the explicit 2xx forms. This deliberately rejects leading-zero
+// forms like `01.9.0.8` / `001.009.000.008` which never appear in
+// RFC-strict IPv4 text but DO appear in zero-padded build numbers that
+// pattern-matched as IPs in earlier revisions.
+const _IPV4_RE  = /\b(?:(?:0|[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])\.){3}(?:0|[1-9]\d?|1\d\d|2[0-4]\d|25[0-5])\b/g;
+
 const _HASH_RE  = /\b(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})\b/g;
 
 function _dedupCap(arr, cap) {
@@ -173,7 +180,19 @@ function extractGuids(text, cap) {
 }
 function extractIpAddresses(text, cap) {
   const raw = String(text || '').match(_IPV4_RE) || [];
-  // Drop private / loopback / broadcast noise — pure pivot use
+  // Drop bogon ranges — these never appear on the public internet and
+  // are pure pivot noise if they ever match. Explicit ranges covered:
+  //   0.0.0.0, 255.255.255.255, 127.0.0.1         — classic null / broadcast / loopback
+  //   10.0.0.0/8, 127.0.0.0/8                     — RFC1918 + loopback
+  //   169.254.0.0/16                              — link-local (APIPA)
+  //   172.16.0.0/12, 192.168.0.0/16               — RFC1918
+  //   224.0.0.0/4                                 — multicast + class-E reserved + broadcast
+  //   100.64.0.0/10                               — CGNAT / shared space (RFC 6598)
+  //   192.0.0.0/24                                — IETF protocol assignments (RFC 6890)
+  //   192.0.2.0/24                                — TEST-NET-1 (RFC 5737)
+  //   198.18.0.0/15                               — benchmarking (RFC 2544)
+  //   198.51.100.0/24                             — TEST-NET-2 (RFC 5737)
+  //   203.0.113.0/24                              — TEST-NET-3 (RFC 5737)
   const filtered = raw.filter(ip => {
     if (ip === '0.0.0.0' || ip === '255.255.255.255' || ip === '127.0.0.1') return false;
     const o = ip.split('.').map(Number);
@@ -183,10 +202,21 @@ function extractIpAddresses(text, cap) {
     if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return false;
     if (o[0] === 192 && o[1] === 168) return false;
     if (o[0] >= 224) return false;
+    // CGNAT — 100.64.0.0/10 covers 100.64.0.0 through 100.127.255.255
+    if (o[0] === 100 && o[1] >= 64 && o[1] <= 127) return false;
+    // IETF protocol assignments + TEST-NET-1
+    if (o[0] === 192 && o[1] === 0 && (o[2] === 0 || o[2] === 2)) return false;
+    // Benchmarking — 198.18.0.0/15 covers 198.18.x.x and 198.19.x.x
+    if (o[0] === 198 && (o[1] === 18 || o[1] === 19)) return false;
+    // TEST-NET-2
+    if (o[0] === 198 && o[1] === 51 && o[2] === 100) return false;
+    // TEST-NET-3
+    if (o[0] === 203 && o[1] === 0 && o[2] === 113) return false;
     return true;
   });
   return _dedupCap(filtered, cap);
 }
+
 function extractHashes(text, cap) { return _dedupCap((String(text || '').match(_HASH_RE) || []), cap); }
 
 /**

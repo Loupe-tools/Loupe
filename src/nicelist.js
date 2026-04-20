@@ -14,7 +14,7 @@
 // bottom of the IOCs table and optionally hides it behind a toggle.
 //
 // Important non-goals — audit these before adding entries:
-//   • Never suppresses YARA detections. If a rule names `github.com`,
+//   • Never suppresses YARA detections. If a rule names `apache.org`,
 //     the Detection fires at full severity regardless.
 //   • Never suppresses findings on anything other than pure pivot types
 //     (URL / DOMAIN / HOSTNAME / EMAIL). Hashes, file paths, command
@@ -38,6 +38,21 @@
 //     MDR customer wants to demote their own employees' webmail addrs,
 //     that is exactly what the user nicelist (`nicelist-user.js`) is
 //     for.
+//   • **Public VCS / code-hosting platforms are explicitly out-of-scope.**
+//     Domains like `github.com`, `raw.githubusercontent.com`, `gitlab.com`,
+//     `bitbucket.org`, `codeberg.org`, `sr.ht`, etc. are deliberately NOT
+//     nicelisted: on a triage, any URL landing on one of those hosts is
+//     almost certainly the pivot the analyst wants first (staged loader,
+//     gist-hosted shell script, poisoned-dependency tarball, raw-content
+//     payload drop, tunnelling-client binary). Same reasoning as the
+//     free-webmail surfaces above. If an org wants to demote their own
+//     internal GitLab mirror or enterprise VCS host, that is exactly what
+//     the user nicelist (`nicelist-user.js`) is for.
+//   • **Serverless / PaaS hosting surfaces are explicitly out-of-scope.**
+//     `*.appspot.com` (App Engine) and `*.firebaseio.com` (Firebase RTDB)
+//     in particular are heavily abused for phishing-kit hosting and
+//     low-effort exfil / C2 via open Realtime-DB endpoints. Kept off the
+//     list for the same reason as VCS hosts.
 //
 // The list is deliberately narrow; every entry should be pasteable into
 // a threat-intel chat and get a nod of "yeah, that's infrastructure".
@@ -46,9 +61,11 @@ const NICELIST = Object.freeze([
   // ── Cloud provider APIs & instance metadata ─────────────────────────
   // AWS (STS, IAM, S3, metadata-service proxy endpoints, Cognito, …)
   'amazonaws.com', 'aws.amazon.com', 'awsstatic.com', 'amazon.com',
-  // Google Cloud (GCE metadata, APIs, Firebase, gstatic CDN, …)
+  // Google Cloud (GCE metadata, APIs, gstatic CDN, …). `appspot.com`
+  // (App Engine) and `firebaseio.com` (Firebase RTDB) are deliberately
+  // absent — see the out-of-scope note at the top of the file.
   'metadata.google.internal', 'googleapis.com', 'gstatic.com',
-  'google.com', 'googleusercontent.com', 'appspot.com', 'firebaseio.com',
+  'google.com', 'googleusercontent.com',
   // Azure / Microsoft Graph / M365 auth. `live.com` is Microsoft auth
   // plumbing here (login.live.com, onedrive.live.com), NOT the free
   // webmail surface — see the out-of-scope note at the top of the file.
@@ -87,12 +104,11 @@ const NICELIST = Object.freeze([
   'nodejs.org', 'python.org', 'rust-lang.org', 'swift.org',
   'golang.org', 'java.com', 'hashicorp.com', 'terraform.io',
 
-  // ── VCS hosts (plain browsing + raw-content subdomains) ─────────────
-  'github.com', 'githubusercontent.com', 'githubassets.com',
-  'raw.githubusercontent.com', 'codeload.github.com', 'api.github.com',
-  'gitlab.com', 'gitlab.io',
-  'bitbucket.org', 'bitbucket.io',
-  'codeberg.org', 'sr.ht', 'pagure.io',
+  // ── VCS hosts ───────────────────────────────────────────────────────
+  // Deliberately empty. Public code-hosting platforms (GitHub, GitLab,
+  // Bitbucket, Codeberg, sr.ht, Pagure, …) are out-of-scope for the
+  // default nicelist — see the non-goals block at the top of the file.
+  // Demote your own internal VCS mirrors via `nicelist-user.js`.
 
   // ── OS distributions (package mirrors, release notes, docs) ─────────
   'debian.org', 'ubuntu.com', 'archlinux.org', 'fedoraproject.org',
@@ -189,8 +205,10 @@ const NICELIST = Object.freeze([
   'iso.org', 'itu.int', 'nist.gov',
 
   // NOTE: free-webmail providers (gmail.com, outlook.com, yahoo.com,
-  // hotmail.com, proton.me, protonmail.com, googlemail.com, …) are
-  // deliberately NOT in this list. See the out-of-scope block at the
+  // hotmail.com, proton.me, protonmail.com, googlemail.com, …), public
+  // VCS hosts (github.com, gitlab.com, bitbucket.org, codeberg.org,
+  // sr.ht, …), and serverless-abuse surfaces (appspot.com, firebaseio.com)
+  // are deliberately NOT in this list. See the out-of-scope block at the
   // top of the file before re-adding any of them.
 ]);
 
