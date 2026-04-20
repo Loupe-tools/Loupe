@@ -51,7 +51,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **Data** | `.csv` `.tsv` · `.iqy` (Internet Query) · `.slk` (Symbolic Link) |
 | **Images** | `.jpg` `.jpeg` `.png` `.gif` `.bmp` `.webp` `.ico` `.tif` `.tiff` `.avif` — preview + steganography / polyglot detection |
 | **SVG** | `.svg` — sandboxed preview + source view, deep SVG-specific security analysis |
-| **Catch-all** | *Any file* — plain-text view with line numbers, or hex dump for binary data |
+| **Catch-all** | *Any file* — line-numbered text view (encoding auto-detect, syntax highlighting toggle, soft-wraps minified single-line files) or hex dump for binary data |
 
 ---
 

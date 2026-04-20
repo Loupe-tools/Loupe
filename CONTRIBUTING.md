@@ -191,6 +191,21 @@ subtly misbehave.
 - **`_rawText` must be `\n`-normalised.** The sidebar's click-to-focus uses
   character offsets into `_rawText`; a single CRLF misaligns every offset
   after it.
+- **Renderer roots must opt into full width.** `#viewer` is a flex column
+  with `align-items: center`, which shrink-wraps any unconstrained child
+  to its own content width. A `<table>` or `<pre>` that contains a
+  multi-megabyte minified-JS line will happily size itself to the widest
+  cell and push the whole viewer off-screen. A renderer root that holds
+  wide content must declare `align-self: stretch; width: 100%; min-width: 0`
+  (and, for tables, `table-layout: fixed`) so flex shrink can engage and
+  the CSS wrap rules (`word-break: break-all`, `white-space: pre-wrap`)
+  actually kick in.
+- **Soft-wrap pathologically long lines in display.** When a renderer shows
+  a line-numbered text view, any logical line over a few thousand
+  characters should be split into display-only chunks before it reaches
+  the DOM. A single 2 MB `<td>` tanks layout / paint / click-to-focus even
+  with `table-layout: fixed`. See `PlainTextRenderer.LONG_LINE_THRESHOLD`
+  / `SOFT_WRAP_CHUNK` for the canonical values.
 - **Long IOC lists must end with an `IOC.INFO` truncation marker.** When a
   renderer walks a large space and caps at (say) 500 entries, push exactly
   one `IOC.INFO` row after the cap explaining the reason and the cap count
@@ -285,6 +300,7 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_ioc_hide_nicelisted` | string | `_setHideNicelisted()` in `src/app/app-sidebar.js` | `"0"` (show, dimmed — default) or `"1"` (hide) | Controls the IOCs-section toggle that drops known-good global-infrastructure rows (`src/nicelist.js`) from the sidebar. Sort-to-bottom + dim is the default; hiding is opt-in and never affects the Detections section or the underlying `findings.externalRefs` array. |
 | `loupe_nicelist_builtin_enabled` | string | `setBuiltinEnabled()` in `src/nicelist-user.js` (toggled from Settings → 🛡 Nicelists) | `"1"` (on — default) or `"0"` (off) | Master switch for the Default Nicelist shipped in `src/nicelist.js`. When `"0"`, `isNicelisted()` short-circuits to `false` so every curated global-infrastructure entry stops demoting rows. Missing / unparseable value is treated as on so first-time users still get the noise reduction. |
 | `loupe_nicelists_user` | string (JSON) | `save()` / mutation helpers in `src/nicelist-user.js` (Settings → 🛡 Nicelists UI) | `{version:1, lists:[{id,name,enabled,createdAt,updatedAt,entries}]}` | User-defined nicelists (MDR customer domains, employee emails, on-network hostnames, …). Capped at 64 lists × 10 000 entries × 1 MB serialised to stay inside the localStorage quota; overflow writes are refused without corrupting the previous blob. Entries are normalised + deduplicated on save; matching uses the same label-boundary semantics as the built-in list. Exported / imported via the toolbar buttons in the Nicelists tab. |
+| `loupe_plaintext_highlight` | string | `PlainTextRenderer._writeHighlightPref()` in `src/renderers/plaintext-renderer.js` (info-bar "Highlight" button in the plaintext / catch-all viewer) | `"on"` (default) or `"off"` | Syntax-highlighting master switch for the plaintext / catch-all renderer. When `"off"`, hljs is never invoked regardless of file size or language. Independent of the automatic per-file gates (`HIGHLIGHT_SIZE_LIMIT`, `LONG_LINE_THRESHOLD`) which always disable highlighting on minified / pathological inputs. |
 
 **Adding a new key**
 
