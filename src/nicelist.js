@@ -28,6 +28,16 @@
 //     NOT surfaces that attackers commonly abuse (those belong in the
 //     `_ABUSE_SUFFIXES` list in `constants.js` and are flagged, not
 //     nicelisted).
+//   • **Free-webmail providers are explicitly out-of-scope.** Domains
+//     like `gmail.com`, `outlook.com`, `yahoo.com`, `proton.me`,
+//     `icloud.com`, `hotmail.com` etc. are deliberately NOT nicelisted:
+//     on a triage, any email IOC at one of those hosts is almost
+//     certainly the pivot the analyst wants first (phishing sender,
+//     credential-stuffing recipient, throwaway exfil inbox). Demoting
+//     them to the bottom of the IOC table is the wrong default. If an
+//     MDR customer wants to demote their own employees' webmail addrs,
+//     that is exactly what the user nicelist (`nicelist-user.js`) is
+//     for.
 //
 // The list is deliberately narrow; every entry should be pasteable into
 // a threat-intel chat and get a nod of "yeah, that's infrastructure".
@@ -39,11 +49,13 @@ const NICELIST = Object.freeze([
   // Google Cloud (GCE metadata, APIs, Firebase, gstatic CDN, …)
   'metadata.google.internal', 'googleapis.com', 'gstatic.com',
   'google.com', 'googleusercontent.com', 'appspot.com', 'firebaseio.com',
-  // Azure / Microsoft Graph / M365 auth
+  // Azure / Microsoft Graph / M365 auth. `live.com` is Microsoft auth
+  // plumbing here (login.live.com, onedrive.live.com), NOT the free
+  // webmail surface — see the out-of-scope note at the top of the file.
   'azure.com', 'azureedge.net', 'windows.net', 'core.windows.net',
-  'microsoftonline.com', 'microsoft.com', 'msft.net', 'msftauth.net',
+  'microsoftonline.com', 'msft.net', 'msftauth.net',
   'live.com', 'office.com', 'office365.com', 'sharepoint.com',
-  'outlook.com', 'onedrive.com',
+  'onedrive.com',
   // CDNs used constantly by benign software
   'cloudflare.com', 'cloudfront.net', 'akamaihd.net', 'akamai.net',
   'akamaized.net', 'fastly.net', 'fastlylb.net',
@@ -55,20 +67,46 @@ const NICELIST = Object.freeze([
   'repo.maven.apache.org', 'repo1.maven.org', 'maven.apache.org',
   'nuget.org', 'api.nuget.org',
   'packagist.org', 'repo.packagist.org',
-  'go.dev', 'proxy.golang.org', 'sum.golang.org',
+  'go.dev', 'pkg.go.dev', 'proxy.golang.org', 'sum.golang.org',
   'hex.pm', 'cpan.org', 'metacpan.org',
+  'plugins.gradle.org', 'repo.gradle.org',
+
+  // ── Container registries ────────────────────────────────────────────
+  // Pulls and image references from benign Dockerfiles, Kubernetes
+  // manifests, Helm charts, SBOMs, build logs, etc. `mcr.microsoft.com`
+  // is the Microsoft Container Registry (distinct from the PKI/update
+  // surfaces kept under `microsoft.com/...` path-scope).
+  'docker.io', 'docker.com', 'quay.io',
+  'ghcr.io', 'gcr.io', 'mcr.microsoft.com',
+  'k8s.io', 'kubernetes.io',
+
+  // ── Language ecosystems / toolchain homes ───────────────────────────
+  // Documentation / download / release surfaces for major toolchains.
+  // These show up in every sample that ships a runtime, a crash report,
+  // or an installer stub.
+  'nodejs.org', 'python.org', 'rust-lang.org', 'swift.org',
+  'golang.org', 'java.com', 'hashicorp.com', 'terraform.io',
 
   // ── VCS hosts (plain browsing + raw-content subdomains) ─────────────
   'github.com', 'githubusercontent.com', 'githubassets.com',
   'raw.githubusercontent.com', 'codeload.github.com', 'api.github.com',
   'gitlab.com', 'gitlab.io',
   'bitbucket.org', 'bitbucket.io',
+  'codeberg.org', 'sr.ht', 'pagure.io',
+
+  // ── OS distributions (package mirrors, release notes, docs) ─────────
+  'debian.org', 'ubuntu.com', 'archlinux.org', 'fedoraproject.org',
+  'redhat.com', 'kernel.org',
 
   // ── OS / browser update endpoints ───────────────────────────────────
   // Windows Update / Microsoft Store / Defender def-channel
   'update.microsoft.com', 'download.microsoft.com', 'windowsupdate.com',
   'microsoft.com/pkiops', 'go.microsoft.com',
-  // Apple software update / App Store
+  // Apple software update / App Store. `icloud.com` is kept here for
+  // shared-links / iCloud-Drive noise, NOT for @icloud.com mail pivots —
+  // the Email branch in `isNicelisted` still matches, which is an
+  // accepted trade-off: iCloud email IOCs are rare and the Apple
+  // software-update surface is very noisy.
   'swcdn.apple.com', 'swscan.apple.com', 'mzstatic.com', 'apple.com',
   'itunes.apple.com', 'icloud.com',
   // Mozilla auto-updater / add-ons
@@ -81,16 +119,36 @@ const NICELIST = Object.freeze([
   // These show up in every single OOXML, ClickOnce, MSIX manifest, SVG,
   // RSS, plist, etc. They're namespace URIs — not meant to be
   // dereferenced — but they parse as URLs so the regex scoops them up.
+  // `microsoft.com` stays deliberately absent (huge homoglyph target);
+  // only the narrow PKI and marketing-redirect paths are whitelisted,
+  // and `schemas.microsoft.com` covers the namespace identifiers.
   'w3.org', 'xmlns.com', 'schemas.microsoft.com',
   'schemas.openxmlformats.org', 'schemas.xmlsoap.org', 'openoffice.org',
   'oasis-open.org', 'purl.org', 'dublincore.org', 'adobe.com/xap',
   'ns.adobe.com', 'docbook.org', 'relaxng.org',
+  'schema.org', 'spdx.org', 'creativecommons.org',
+
+  // ── Open-source foundations / licence homes ─────────────────────────
+  // Referenced by every LICENSE / NOTICE / manifest.json / pom.xml.
+  'apache.org', 'eclipse.org', 'opensource.org', 'gnu.org', 'fsf.org',
+  // Oracle Java licence / release-notes URLs show up in every JAR
+  // MANIFEST.MF and most Windows Java installers. Big corp tent, but
+  // the noise-to-signal on Oracle.com in triage is genuinely dismal.
+  'oracle.com',
 
   // ── Time / NTP anchors ──────────────────────────────────────────────
   'pool.ntp.org', 'time.windows.com', 'time.apple.com', 'time.google.com',
   'time.nist.gov', 'ntp.org',
 
   // ── Certificate Authorities / OCSP / CRL (signed-binary noise) ──────
+  //
+  // Parent-domain matching covers most CAs (e.g. `digicert.com` picks
+  // up `ocsp.digicert.com`). The separate-reg-domain responders below
+  // need explicit entries because they are NOT subdomains of their
+  // parent CA: `lencr.org` is Let's Encrypt's OCSP/CRL CDN (not a
+  // subdomain of `letsencrypt.org`), `identrust.com` cross-signs LE,
+  // `starfieldtech.com` is GoDaddy's OCSP responder, `ssl.com` is a
+  // mid-volume CA, and `trust-provider.com` is Sectigo's OCSP host.
   'digicert.com', 'verisign.com', 'geotrust.com', 'thawte.com',
   'sectigo.com', 'entrust.net', 'letsencrypt.org', 'pki.goog',
   'symantec.com', 'globalsign.com', 'usertrust.com',
@@ -98,20 +156,24 @@ const NICELIST = Object.freeze([
   'ocsp.apple.com', 'certs.apple.com',
   'crl.microsoft.com', 'ctldl.windowsupdate.com',
   'valicert.com', 'rootca.com',
+  'lencr.org', 'identrust.com', 'starfieldtech.com',
+  'ssl.com', 'trust-provider.com',
 
   // ── JS / CSS library CDNs (benign dev tooling) ──────────────────────
   'jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com', 'bootstrapcdn.com',
   'maxcdn.bootstrapcdn.com', 'jquery.com', 'googleapis.com/ajax',
   'ajax.googleapis.com', 'fonts.googleapis.com', 'fonts.gstatic.com',
 
-  // ── Email / messaging anchors (email IOCs only, not attachment) ─────
-  'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com',
-  'yahoo.com', 'icloud.com', 'protonmail.com', 'proton.me',
-
   // ── Standards orgs / RFC / protocol docs (URLs, not network) ────────
   'ietf.org', 'rfc-editor.org', 'iana.org', 'unicode.org',
   'iso.org', 'itu.int', 'nist.gov',
+
+  // NOTE: free-webmail providers (gmail.com, outlook.com, yahoo.com,
+  // hotmail.com, proton.me, protonmail.com, googlemail.com, …) are
+  // deliberately NOT in this list. See the out-of-scope block at the
+  // top of the file before re-adding any of them.
 ]);
+
 
 /**
  * Strip a URL down to its hostname (lower-cased). Pure string work; no
