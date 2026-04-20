@@ -16,7 +16,7 @@ output. The only time-derived byte in the bundle is the embedded
   3. Wall-clock ``datetime.now()`` — last-resort fallback for source
      archives that are not a git checkout.
 
-See REPRODUCIBILITY.md for the full recipe and non-goals.
+See SECURITY.md § Reproducible Build for the full recipe and non-goals.
 """
 import os
 import subprocess

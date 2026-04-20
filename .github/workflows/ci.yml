@@ -7,7 +7,7 @@ name: CI
 # source → same bytes") is exercised here on every push: build.py
 # runs with SOURCE_DATE_EPOCH pinned to HEAD's commit-author timestamp
 # so the CI bundle is byte-identical to any auditor's local rebuild
-# from the same commit. See REPRODUCIBILITY.md.
+# from the same commit. See SECURITY.md § Reproducible Build.
 
 on:
   push:

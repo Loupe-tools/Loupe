@@ -61,7 +61,7 @@ jobs:
       # timestamp. Any auditor who checks out the tag and runs
       #     SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD) \
       #     TZ=UTC LC_ALL=C.UTF-8 python scripts/build.py
-      # gets byte-identical output — see REPRODUCIBILITY.md.
+      # gets byte-identical output — see SECURITY.md § Reproducible Build.
       # ──────────────────────────────────────────────────────────────
       - name: Compute SOURCE_DATE_EPOCH from HEAD
         id: epoch
@@ -179,31 +179,17 @@ jobs:
           echo "OK  Sigstore bundles verify against workflow identity"
 
       # ──────────────────────────────────────────────────────────────
-      # Release notes: the reproducibility recipe is prepended to the
-      # auto-generated commit log so anyone landing on the release page
-      # sees the exact command to rebuild from the tagged source and
-      # confirm the SHA-256. The commit timestamp + build epoch are the
-      # only things anchoring "what bytes correspond to this source" —
-      # putting them in the release body removes any guesswork.
+      # Release notes: one SHA-256 line + one link to the verify /
+      # reproduce recipe in SECURITY.md. Everything else comes from
+      # generate_release_notes (auto-generated commit log).
       # ──────────────────────────────────────────────────────────────
       - name: Write reproducibility notes
         if: steps.check.outputs.exists == 'false'
         run: |
           cat > release-notes.md <<EOF
-          ## 🔁 Reproducible build
+          SHA-256: \`${{ steps.hash.outputs.hash }}\`
 
-          This release was built from commit \`${{ github.sha }}\` at commit-author timestamp \`${{ steps.epoch.outputs.epoch }}\` (UTC). To verify the signed \`loupe.html\` corresponds to this exact source tree, rebuild it yourself:
-
-          \`\`\`sh
-          git clone https://github.com/${{ github.repository }} && cd Loupe
-          git checkout ${{ steps.version.outputs.version }}
-          SOURCE_DATE_EPOCH=\$(git log -1 --format=%ct HEAD) \\
-            TZ=UTC LC_ALL=C.UTF-8 python scripts/build.py
-          sha256sum docs/index.html
-          # Expect: ${{ steps.hash.outputs.hash }}
-          \`\`\`
-
-          See [REPRODUCIBILITY.md](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.version }}/REPRODUCIBILITY.md) for the full recipe, and [SECURITY.md § Verify Your Download](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.version }}/README.md#-verify-your-download) for the Sigstore verification step.
+          [Verify & reproduce →](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.version }}/SECURITY.md#verify-your-download)
 
           ---
           EOF
