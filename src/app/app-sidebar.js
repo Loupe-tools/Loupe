@@ -2500,15 +2500,10 @@ Object.assign(App.prototype, {
   // ── Clear YARA + IOC inline highlights ──────────────────────────────────
   //
   // Single clear-all for both YARA (blue) and IOC (yellow) match highlights.
-  // Cancels any pending auto-clear timer (both legacy `_yaraHighlightTimer`
-  // used by the CSV path and the newer unified `_matchHighlightTimer`).
+  // Cancels any pending auto-clear timer (unified `_matchHighlightTimer`).
   _clearMatchHighlight() {
-    // Cancel any pending auto-clear timers so they don't fire later and
+    // Cancel any pending auto-clear timer so it doesn't fire later and
     // reset an unrelated ref's _currentMatchIndex.
-    if (this._yaraHighlightTimer) {
-      clearTimeout(this._yaraHighlightTimer);
-      this._yaraHighlightTimer = null;
-    }
     if (this._matchHighlightTimer) {
       clearTimeout(this._matchHighlightTimer);
       this._matchHighlightTimer = null;
@@ -2646,85 +2641,12 @@ Object.assign(App.prototype, {
         });
         if (!anyInView) filters.scrollToYaraFocus();
       });
-      return;
     }
-
-    // ─── Legacy fallback (stale renderer build) ─────────────────────────
-    // Preserved verbatim as a safety net. Can be removed once all bundled
-    // code ships the new API.
-    const dataIdx = focusRow.dataIndex;
-    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const highlightPane = (detailPane, rowMatches) => {
-      let focusMarkEl = null;
-      const detailVals = detailPane.querySelectorAll('.csv-detail-val');
-      for (const valEl of detailVals) {
-        const cellText = valEl.textContent;
-        if (!cellText) continue;
-        const hits = [];
-        for (const rm of rowMatches) {
-          const matchStr = sourceText.substring(rm.offset, rm.offset + rm.length);
-          if (!matchStr) continue;
-          let idx = cellText.indexOf(matchStr);
-          if (idx === -1) idx = cellText.toLowerCase().indexOf(matchStr.toLowerCase());
-          if (idx !== -1) hits.push({ start: idx, end: idx + matchStr.length, matchIdx: rm._matchIdx });
-        }
-        if (!hits.length) continue;
-        hits.sort((a, b) => a.start - b.start);
-        const keep = [];
-        let cursor = -1;
-        for (const h of hits) { if (h.start >= cursor) { keep.push(h); cursor = h.end; } }
-        let out = '';
-        let pos = 0;
-        for (const h of keep) {
-          if (h.start > pos) out += esc(cellText.substring(pos, h.start));
-          const matchedText = cellText.substring(h.start, h.end);
-          out += `<mark class="csv-yara-highlight csv-yara-highlight-flash" data-yara-match="${h.matchIdx}">${esc(matchedText)}</mark>`;
-          pos = h.end;
-        }
-        if (pos < cellText.length) out += esc(cellText.substring(pos));
-        valEl.innerHTML = out;
-        if (!focusMarkEl) {
-          focusMarkEl = valEl.querySelector(`mark.csv-yara-highlight[data-yara-match="${focusIdx}"]`);
-        }
-      }
-      return focusMarkEl;
-    };
-    if (filters.scrollToRow) filters.scrollToRow(dataIdx, false);
-    setTimeout(() => {
-      const tbody = csvView.querySelector('tbody');
-      if (!tbody) return;
-      let focusMarkEl = null;
-      for (const [rowDataIdx, rowMatches] of matchesByRowIdx) {
-        const tr = tbody.querySelector(`tr[data-idx="${rowDataIdx}"]`);
-        if (!tr) continue;
-        tr.classList.add('csv-yara-row-highlight');
-        const detailTr = tr.nextElementSibling;
-        if (!detailTr || !detailTr.classList.contains('csv-detail-row')) continue;
-        const detailPane = detailTr.querySelector('.csv-detail-pane');
-        if (!detailPane) continue;
-        const fm = highlightPane(detailPane, rowMatches);
-        if (fm && !focusMarkEl) focusMarkEl = fm;
-      }
-      let shouldScroll = forceScroll;
-      if (!forceScroll && focusMarkEl) {
-        const vh = window.innerHeight || document.documentElement.clientHeight;
-        const vw = window.innerWidth || document.documentElement.clientWidth;
-        const allMarks = csvView.querySelectorAll('mark.csv-yara-highlight');
-        const anyInView = Array.from(allMarks).some(m => {
-          const rc = m.getBoundingClientRect();
-          return rc.bottom > 0 && rc.top < vh && rc.right > 0 && rc.left < vw && rc.width > 0 && rc.height > 0;
-        });
-        shouldScroll = !anyInView;
-      }
-      if (shouldScroll && focusMarkEl) {
-        focusMarkEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      this._yaraHighlightTimer = setTimeout(() => {
-        this._clearYaraHighlight();
-        if (ref) ref._currentMatchIndex = undefined;
-        this._yaraHighlightTimer = null;
-      }, 5000);
-    }, 400);
+    // The renderer-owned API (setYaraHighlight + scrollToRow) is part of
+    // the core _csvFilters contract — every bundled build ships both — so
+    // there is no conditional fallback. If the guard above fails, the
+    // archive is corrupt or the view was disposed mid-call; either way
+    // silently dropping the highlight is the right outcome.
   },
 
 
@@ -2856,78 +2778,25 @@ Object.assign(App.prototype, {
     const filters = csvView && csvView._csvFilters;
     if (!filters || !searchTerm) return;
 
-    // Preferred path: renderer-owned highlight.
+    // Renderer-owned highlight. The renderer's `onExpire` callback is
+    // invoked when (and only when) its own timer fires and this
+    // highlight hasn't been superseded — rapid clicks replace the
+    // renderer's timer and the old timer's `onExpire` never runs.
     //
-    // Parallel sidebar timer dropped — the renderer's `onExpire` callback
-    // is invoked when (and only when) the renderer's own timer fires and
-    // this highlight hasn't been superseded. That makes rapid-click
-    // navigation race-free: a later click replaces the renderer's timer,
-    // and the old timer's `onExpire` never runs.
+    // `scrollToRowWithIocHighlight` is part of the core _csvFilters
+    // contract — every bundled build ships it — so there is no
+    // conditional fallback. If the guard below fails, the view was
+    // disposed mid-call; silently dropping the highlight is correct.
     if (filters.scrollToRowWithIocHighlight) {
       this._iocCsvHighlightActiveView = csvView;
       filters.scrollToRowWithIocHighlight(dataIdx, searchTerm, 5000, () => {
         if (ref) ref._currentMatchIndex = undefined;
         this._iocCsvHighlightActiveView = null;
       });
-      return;
     }
-
-    // Legacy fallback (only hit if a stale renderer build is mixed with a
-    // newer sidebar). Preserved verbatim for safety — can be removed in a
-    // future release once all bundled code ships the new API.
-    if (filters.scrollToRow) filters.scrollToRow(dataIdx, false);
-
-    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const termLower = searchTerm.toLowerCase();
-    const deadline = performance.now() + 1500;
-    const tryHighlight = () => {
-      const tbody = csvView.querySelector('tbody');
-      const tr = tbody && tbody.querySelector(`tr[data-idx="${dataIdx}"]`);
-      const detailTr = tr && tr.nextElementSibling;
-      const detailReady = detailTr && detailTr.classList.contains('csv-detail-row');
-      if (!detailReady) {
-        if (performance.now() < deadline) {
-          this._iocCsvHighlightPoll = setTimeout(tryHighlight, 60);
-        } else {
-          this._iocCsvHighlightPoll = null;
-        }
-        return;
-      }
-      this._iocCsvHighlightPoll = null;
-      tr.classList.add('csv-ioc-row-highlight');
-      const valEls = detailTr.querySelectorAll('.csv-detail-val');
-      let firstMark = null;
-      for (const valEl of valEls) {
-        const text = valEl.textContent;
-        if (!text) continue;
-        const idx = text.toLowerCase().indexOf(termLower);
-        if (idx === -1) continue;
-        const before = esc(text.slice(0, idx));
-        const matched = esc(text.slice(idx, idx + searchTerm.length));
-        const after = esc(text.slice(idx + searchTerm.length));
-        valEl.innerHTML = `${before}<mark class="csv-ioc-highlight csv-ioc-highlight-flash">${matched}</mark>${after}`;
-        if (!firstMark) firstMark = valEl.querySelector('mark.csv-ioc-highlight');
-      }
-      if (firstMark) firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      this._iocCsvHighlightTimer = setTimeout(() => {
-        this._clearIocCsvHighlight();
-        if (ref) ref._currentMatchIndex = undefined;
-        this._iocCsvHighlightTimer = null;
-      }, 5000);
-    };
-    this._iocCsvHighlightPoll = setTimeout(tryHighlight, 450);
   },
 
   _clearIocCsvHighlight() {
-    if (this._iocCsvHighlightPoll) {
-      clearTimeout(this._iocCsvHighlightPoll);
-      this._iocCsvHighlightPoll = null;
-    }
-    if (this._iocCsvHighlightTimer) {
-      clearTimeout(this._iocCsvHighlightTimer);
-      this._iocCsvHighlightTimer = null;
-    }
-
     // Renderer-owned path: ask the active CSV view to clear its state.
     const activeView = this._iocCsvHighlightActiveView;
     if (activeView && activeView._csvFilters && activeView._csvFilters.clearIocHighlight) {
@@ -2935,9 +2804,10 @@ Object.assign(App.prototype, {
     }
     this._iocCsvHighlightActiveView = null;
 
-    // Legacy DOM sweep — still needed to cover stale renderer builds and
-    // any residue from prior pages. Renderer-owned path also naturally
-    // tears down on re-render, so double-removal here is safe.
+    // Defensive DOM sweep — covers residue from prior pages where a CSV
+    // view got detached before its renderer's clearIocHighlight could
+    // fire. The renderer-owned path also tears down on re-render, so
+    // double-removal here is safe.
     document.querySelectorAll('mark.csv-ioc-highlight').forEach(m => {
       const parent = m.parentNode;
       if (!parent) return;
