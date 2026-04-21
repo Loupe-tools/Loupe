@@ -227,7 +227,95 @@ const BinaryStrings = (() => {
     return counts;
   }
 
-  return { classify, emit, CAPS };
+  // ── Viewer helper ───────────────────────────────────────────────────
+  //
+  // renderCategorisedStringsTable(strings, [opts]) → HTMLElement | null
+  //
+  // Returns a compact "Categorised strings" preview card the three
+  // native-binary renderers prepend to their 🔤 Strings view. Six
+  // sections:
+  //   • Mutexes        (synchronisation / cluster keys — T1027)
+  //   • Named Pipes    (IPC / lateral movement — T1559.001)
+  //   • Registry Keys  (persistence / config — T1547.001)
+  //   • PDB Paths      (build-host attribution)
+  //   • User / Build Paths   (build-tree attribution)
+  //   • Rust Panic Paths     (rustc source-file leaks)
+  //
+  // Each section is a `<details>` collapsed-by-default, expanding into
+  // a monospaced list of the (deduped, capped) entries. When every
+  // category is empty the function returns null so callers can
+  // conditionally skip the card.
+  //
+  // Pure presentation — the helper does NOT touch `findings` (emit()
+  // already pushed each entry as the correct IOC.* type).
+  function _esc(s) {
+    if (typeof escHtml === 'function') return escHtml(s);
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderCategorisedStringsTable(strings, _opts) {
+    const cats = classify(strings);
+    const sections = [
+      { key: 'mutexes',       label: '🔒 Mutexes',           note: 'synchronisation / cluster keys (T1027)',     cap: CAPS.mutex,     items: cats.mutexes     },
+      { key: 'namedPipes',    label: '🪈 Named Pipes',       note: 'IPC / lateral movement (T1559.001)',         cap: CAPS.pipe,      items: cats.namedPipes  },
+      { key: 'registryPaths', label: '🗝 Registry Keys',     note: 'persistence / config (T1547.001)',           cap: CAPS.registry,  items: cats.registryPaths },
+      { key: 'pdbPaths',      label: '🧩 PDB Paths',         note: 'debug-info (build-host attribution)',        cap: CAPS.pdb,       items: cats.pdbPaths    },
+      { key: 'userPaths',     label: '🏠 User / Build Paths', note: 'build-tree attribution',                    cap: CAPS.userPath,  items: cats.userPaths   },
+      { key: 'rustPanics',    label: '🦀 Rust Panic Paths',  note: 'rustc source-file leaks',                    cap: CAPS.rustPanic, items: cats.rustPanics  },
+    ];
+    const anyHits = sections.some(s => s.items.length);
+    if (!anyHits) return null;
+
+    const card = document.createElement('div');
+    card.className = 'bin-strings-cats';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'bin-strings-cats-hdr';
+    hdr.textContent = '🧭 Categorised strings (triage preview)';
+    card.appendChild(hdr);
+
+    const sub = document.createElement('div');
+    sub.className = 'bin-strings-cats-sub';
+    sub.textContent = 'Forensically-relevant string categories auto-classified from the binary\'s ASCII + UTF-16LE corpus. Full lists are also emitted as IOCs in the sidebar.';
+    card.appendChild(sub);
+
+    for (const s of sections) {
+      if (!s.items.length) continue;
+      const det = document.createElement('details');
+      det.className = 'bin-strings-cat';
+      const sum = document.createElement('summary');
+      sum.className = 'bin-strings-cat-sum';
+      const capped = s.items.length > s.cap;
+      const shown = capped ? s.cap : s.items.length;
+      sum.innerHTML =
+        '<span class="bin-strings-cat-label">' + _esc(s.label) + '</span>' +
+        ' <span class="bin-strings-cat-count">(' + shown +
+        (capped ? ' of ' + s.items.length : '') +
+        ')</span>' +
+        ' <span class="bin-strings-cat-note">' + _esc(s.note) + '</span>';
+      det.appendChild(sum);
+      const list = document.createElement('ul');
+      list.className = 'bin-strings-cat-list';
+      for (const v of s.items.slice(0, s.cap)) {
+        const li = document.createElement('li');
+        li.className = 'bin-strings-cat-item';
+        li.textContent = v;
+        list.appendChild(li);
+      }
+      if (capped) {
+        const li = document.createElement('li');
+        li.className = 'bin-strings-cat-trunc';
+        li.textContent = '… ' + (s.items.length - s.cap) + ' more (see sidebar IOCs)';
+        list.appendChild(li);
+      }
+      det.appendChild(list);
+      card.appendChild(det);
+    }
+    return card;
+  }
+
+  return { classify, emit, CAPS, renderCategorisedStringsTable };
 })();
+
 
 if (typeof window !== 'undefined') window.BinaryStrings = BinaryStrings;
