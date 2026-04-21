@@ -5887,7 +5887,107 @@ body.dark .bin-collapse-note {
   display: none !important;
 }
 
+/* ── Categorised-strings triage card ─────────────────────────────────
+ * BinaryStrings.renderCategorisedStringsTable() builds this card and the
+ * three native-binary renderers prepend it to their 🔤 Strings section.
+ * Six <details> sub-cards (mutexes / named-pipes / registry / PDB /
+ * user-paths / Rust panics), each collapsed by default. Pure
+ * presentation — IOCs are emitted separately into the sidebar.
+ *
+ * Uses Loupe's canonical theme tokens: --panel-bg, --panel-bg-inset,
+ * --hairline, --text, --text-muted, --text-faint, --accent.
+ */
+.bin-strings-cats {
+  margin: 0 0 14px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 0, 0, .10);
+  border-radius: 6px;
+  background: var(--panel-bg-inset, rgba(0, 0, 0, .02));
+}
+body.dark .bin-strings-cats {
+  border-color: var(--hairline, rgba(255, 255, 255, .08));
+  background: var(--panel-bg-inset, rgba(255, 255, 255, .02));
+}
+.bin-strings-cats-hdr {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text, #333);
+  margin-bottom: 4px;
+}
+.bin-strings-cats-sub {
+  font-size: 11px;
+  color: var(--text-muted, #777);
+  margin-bottom: 8px;
+  line-height: 1.35;
+}
+.bin-strings-cat {
+  margin: 4px 0;
+  padding: 4px 6px;
+  border: 1px solid rgba(0, 0, 0, .08);
+  border-radius: 4px;
+  background: var(--panel-bg, #fff);
+}
+body.dark .bin-strings-cat {
+  border-color: var(--hairline, rgba(255, 255, 255, .08));
+  background: var(--panel-bg, #1a1a1e);
+}
+.bin-strings-cat[open] {
+  padding-bottom: 6px;
+}
+.bin-strings-cat-sum {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 0;
+  user-select: none;
+  list-style: revert;
+}
+.bin-strings-cat-sum:hover {
+  color: var(--accent, #3498db);
+}
+.bin-strings-cat-label {
+  font-weight: 600;
+  color: var(--text, #333);
+}
+.bin-strings-cat-count {
+  color: var(--text-muted, #777);
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+.bin-strings-cat-note {
+  color: var(--text-faint, #999);
+  font-size: 11px;
+  margin-left: 6px;
+}
+.bin-strings-cat-list {
+  list-style: none;
+  margin: 6px 0 2px 0;
+  padding: 0 0 0 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;
+  font-size: 11.5px;
+}
+.bin-strings-cat-item {
+  padding: 1px 6px;
+  color: var(--text, #333);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+.bin-strings-cat-item:nth-child(even) {
+  background: rgba(0, 0, 0, .03);
+}
+body.dark .bin-strings-cat-item:nth-child(even) {
+  background: rgba(255, 255, 255, .03);
+}
+.bin-strings-cat-trunc {
+  padding: 4px 6px;
+  color: var(--text-muted, #777);
+  font-style: italic;
+  font-size: 11px;
+}
+
 /* Floating tooltip for suspicious imports — fixed positioning to avoid clipping */
+
 .bin-tooltip {
   position: fixed;
   z-index: 10000;
@@ -9374,3 +9474,498 @@ body.dark .bin-summary-badge-warn {
   color: #f28272;
 }
 
+/* "signer present" tri-state — signature blob is parsed but the
+   certificate chain has not been validated (Loupe is offline, so the
+   CMS root-of-trust cannot be walked). Cooler than -ok (green) so it
+   visually distinguishes from a fully-verified "signed" badge; warmer
+   than -warn (red) so it doesn't imply risk. */
+.bin-summary-badge-info {
+  background: rgba(52, 152, 219, .14);
+  color: #1f6391;
+}
+
+body.dark .bin-summary-badge-info {
+  background: rgba(52, 152, 219, .22);
+  color: #7ec2ec;
+}
+
+/* ── Binary Triage — Tier-A verdict band (PE/ELF/Mach-O) ─────────────
+   Layered on top of .bin-summary-card and .section-card.
+   Renders above the Binary Pivot card. Triage-first: the verdict
+   one-liner + anomaly ribbon + MITRE rollup must fit above-the-fold
+   without the analyst scrolling. */
+
+.bin-triage {
+  display: block;
+  margin: 0 0 12px;
+  border: 1px solid rgba(0, 0, 0, .12);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  overflow: hidden;
+}
+
+body.dark .bin-triage {
+  border-color: var(--hairline, rgba(255, 255, 255, .08));
+  background: var(--surface, #1c1c1f);
+  color: var(--text, #e8e8ea);
+}
+
+/* ── Verdict band ─────────────────────────────────────────────── */
+
+.bin-triage-verdict {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  padding: 12px 14px;
+  border-left: 5px solid #999;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .02), transparent 55%);
+}
+
+body.dark .bin-triage-verdict {
+  background: linear-gradient(90deg, rgba(255, 255, 255, .035), transparent 55%);
+}
+
+.bin-triage-tier-critical { border-left-color: #b5121b; }
+.bin-triage-tier-high     { border-left-color: #e74c3c; }
+.bin-triage-tier-medium   { border-left-color: #e39f1c; }
+.bin-triage-tier-low      { border-left-color: #3498db; }
+.bin-triage-tier-clean    { border-left-color: #27ae60; }
+
+.bin-triage-tier-critical { background: linear-gradient(90deg, rgba(181, 18, 27, .14), transparent 55%); }
+.bin-triage-tier-high     { background: linear-gradient(90deg, rgba(231, 76, 60, .12), transparent 55%); }
+.bin-triage-tier-medium   { background: linear-gradient(90deg, rgba(227, 159, 28, .12), transparent 55%); }
+.bin-triage-tier-low      { background: linear-gradient(90deg, rgba(52, 152, 219, .10), transparent 55%); }
+.bin-triage-tier-clean    { background: linear-gradient(90deg, rgba(39, 174, 96, .10), transparent 55%); }
+
+body.dark .bin-triage-tier-critical { background: linear-gradient(90deg, rgba(181, 18, 27, .22), transparent 55%); }
+body.dark .bin-triage-tier-high     { background: linear-gradient(90deg, rgba(231, 76, 60, .18), transparent 55%); }
+body.dark .bin-triage-tier-medium   { background: linear-gradient(90deg, rgba(227, 159, 28, .18), transparent 55%); }
+body.dark .bin-triage-tier-low      { background: linear-gradient(90deg, rgba(52, 152, 219, .16), transparent 55%); }
+body.dark .bin-triage-tier-clean    { background: linear-gradient(90deg, rgba(39, 174, 96, .16), transparent 55%); }
+
+/* ── Risk gauge (large numeric on the left of the verdict band) ─── */
+
+.bin-triage-gauge {
+  flex: 0 0 78px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-right: 1px solid rgba(0, 0, 0, .08);
+  min-height: 56px;
+}
+
+body.dark .bin-triage-gauge {
+  border-right-color: rgba(255, 255, 255, .08);
+}
+
+.bin-triage-risk-num {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #444;
+}
+
+body.dark .bin-triage-risk-num {
+  color: var(--text, #e8e8ea);
+}
+
+.bin-triage-tier-critical .bin-triage-risk-num { color: #b5121b; }
+.bin-triage-tier-high     .bin-triage-risk-num { color: #b02a18; }
+.bin-triage-tier-medium   .bin-triage-risk-num { color: #a06618; }
+.bin-triage-tier-low      .bin-triage-risk-num { color: #1f6fa8; }
+.bin-triage-tier-clean    .bin-triage-risk-num { color: #1e7e44; }
+
+body.dark .bin-triage-tier-critical .bin-triage-risk-num { color: #ff6b6b; }
+body.dark .bin-triage-tier-high     .bin-triage-risk-num { color: #f28272; }
+body.dark .bin-triage-tier-medium   .bin-triage-risk-num { color: #f0c674; }
+body.dark .bin-triage-tier-low      .bin-triage-risk-num { color: #7fb8e6; }
+body.dark .bin-triage-tier-clean    .bin-triage-risk-num { color: #5ee291; }
+
+.bin-triage-risk-label {
+  margin-top: 2px;
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #888;
+  font-weight: 600;
+}
+
+body.dark .bin-triage-risk-label {
+  color: var(--text-muted, #aaa);
+}
+
+/* ── Headline + tier text + badges ───────────────────────────────── */
+
+.bin-triage-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.bin-triage-tier {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #666;
+}
+
+body.dark .bin-triage-tier {
+  color: var(--text-muted, #bbb);
+}
+
+.bin-triage-tier-critical .bin-triage-tier { color: #b5121b; }
+.bin-triage-tier-high     .bin-triage-tier { color: #b02a18; }
+.bin-triage-tier-medium   .bin-triage-tier { color: #a06618; }
+.bin-triage-tier-low      .bin-triage-tier { color: #1f6fa8; }
+.bin-triage-tier-clean    .bin-triage-tier { color: #1e7e44; }
+
+body.dark .bin-triage-tier-critical .bin-triage-tier { color: #ff8a84; }
+body.dark .bin-triage-tier-high     .bin-triage-tier { color: #f28272; }
+body.dark .bin-triage-tier-medium   .bin-triage-tier { color: #f0c674; }
+body.dark .bin-triage-tier-low      .bin-triage-tier { color: #7fb8e6; }
+body.dark .bin-triage-tier-clean    .bin-triage-tier { color: #5ee291; }
+
+.bin-triage-headline {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #222;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+body.dark .bin-triage-headline {
+  color: var(--text, #e8e8ea);
+}
+
+.bin-triage-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bin-triage-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, .06);
+  color: #555;
+  white-space: nowrap;
+}
+
+body.dark .bin-triage-badge {
+  background: rgba(255, 255, 255, .08);
+  color: var(--text, #ddd);
+}
+
+.bin-triage-badge-ok {
+  background: rgba(39, 174, 96, .16);
+  color: #1e7e44;
+}
+
+body.dark .bin-triage-badge-ok {
+  background: rgba(39, 174, 96, .22);
+  color: #5ee291;
+}
+
+.bin-triage-badge-warn {
+  background: rgba(227, 159, 28, .18);
+  color: #a06618;
+}
+
+body.dark .bin-triage-badge-warn {
+  background: rgba(227, 159, 28, .24);
+  color: #f0c674;
+}
+
+.bin-triage-badge-bad {
+  background: rgba(231, 76, 60, .18);
+  color: #b02a18;
+}
+
+body.dark .bin-triage-badge-bad {
+  background: rgba(231, 76, 60, .24);
+  color: #f28272;
+}
+
+.bin-triage-badge-info {
+  background: rgba(52, 152, 219, .16);
+  color: #1f6fa8;
+}
+
+body.dark .bin-triage-badge-info {
+  background: rgba(52, 152, 219, .24);
+  color: #7fb8e6;
+}
+
+/* ── Anomaly ribbon ─────────────────────────────────────────────── */
+
+.bin-triage-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(0, 0, 0, .08);
+  background: rgba(0, 0, 0, .02);
+}
+
+body.dark .bin-triage-ribbon {
+  border-top-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .03);
+}
+
+.bin-triage-ribbon-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #666;
+  margin-right: 4px;
+  letter-spacing: .02em;
+}
+
+body.dark .bin-triage-ribbon-label {
+  color: var(--text-muted, #bbb);
+}
+
+.bin-triage-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, .06);
+  color: #444;
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+body.dark .bin-triage-chip {
+  background: rgba(255, 255, 255, .08);
+  color: var(--text, #ddd);
+}
+
+.bin-triage-chip-critical {
+  background: rgba(181, 18, 27, .14);
+  color: #b5121b;
+  border-color: rgba(181, 18, 27, .3);
+}
+
+body.dark .bin-triage-chip-critical {
+  background: rgba(181, 18, 27, .28);
+  color: #ff8a84;
+  border-color: rgba(181, 18, 27, .5);
+}
+
+.bin-triage-chip-high {
+  background: rgba(231, 76, 60, .14);
+  color: #b02a18;
+  border-color: rgba(231, 76, 60, .3);
+}
+
+body.dark .bin-triage-chip-high {
+  background: rgba(231, 76, 60, .22);
+  color: #f28272;
+  border-color: rgba(231, 76, 60, .45);
+}
+
+.bin-triage-chip-medium {
+  background: rgba(227, 159, 28, .16);
+  color: #a06618;
+  border-color: rgba(227, 159, 28, .3);
+}
+
+body.dark .bin-triage-chip-medium {
+  background: rgba(227, 159, 28, .24);
+  color: #f0c674;
+  border-color: rgba(227, 159, 28, .45);
+}
+
+.bin-triage-chip-low {
+  background: rgba(52, 152, 219, .14);
+  color: #1f6fa8;
+  border-color: rgba(52, 152, 219, .3);
+}
+
+body.dark .bin-triage-chip-low {
+  background: rgba(52, 152, 219, .22);
+  color: #7fb8e6;
+  border-color: rgba(52, 152, 219, .45);
+}
+
+.bin-triage-chip-info {
+  background: rgba(0, 0, 0, .06);
+  color: #555;
+}
+
+body.dark .bin-triage-chip-info {
+  background: rgba(255, 255, 255, .08);
+  color: var(--text-muted, #bbb);
+}
+
+/* ── MITRE ATT&CK strip ─────────────────────────────────────────── */
+
+.bin-triage-mitre {
+  padding: 8px 14px 12px;
+  border-top: 1px solid rgba(0, 0, 0, .08);
+  background: rgba(0, 0, 0, .015);
+}
+
+body.dark .bin-triage-mitre {
+  border-top-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .02);
+}
+
+.bin-triage-mitre-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #555;
+  letter-spacing: .03em;
+  margin-bottom: 8px;
+}
+
+body.dark .bin-triage-mitre-title {
+  color: var(--text, #ddd);
+}
+
+.bin-triage-mitre-tactics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.bin-triage-tactic {
+  border: 1px solid rgba(0, 0, 0, .08);
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: var(--surface, #fff);
+  min-width: 0;
+}
+
+body.dark .bin-triage-tactic {
+  border-color: var(--hairline, rgba(255, 255, 255, .08));
+  background: rgba(255, 255, 255, .02);
+}
+
+.bin-triage-tactic-hdr {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed rgba(0, 0, 0, .08);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+body.dark .bin-triage-tactic-hdr {
+  color: var(--text, #e8e8ea);
+  border-bottom-color: rgba(255, 255, 255, .08);
+}
+
+.bin-triage-tactic-icon {
+  font-size: 12px;
+  filter: saturate(.85);
+}
+
+.bin-triage-tactic-label {
+  flex: 1;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-size: 10.5px;
+}
+
+.bin-triage-tactic-count {
+  flex: 0 0 auto;
+  background: rgba(0, 0, 0, .08);
+  color: #555;
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+body.dark .bin-triage-tactic-count {
+  background: rgba(255, 255, 255, .1);
+  color: var(--text-muted, #bbb);
+}
+
+.bin-triage-tech {
+  padding: 2px 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.bin-triage-tech-id {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #1f6fa8;
+  background: rgba(52, 152, 219, .10);
+  text-decoration: none;
+  border: 1px solid rgba(52, 152, 219, .25);
+}
+
+.bin-triage-tech-id:hover {
+  background: rgba(52, 152, 219, .22);
+  text-decoration: underline;
+}
+
+body.dark .bin-triage-tech-id {
+  color: #7fb8e6;
+  background: rgba(52, 152, 219, .18);
+  border-color: rgba(52, 152, 219, .4);
+}
+
+.bin-triage-tech-name {
+  color: #444;
+}
+
+body.dark .bin-triage-tech-name {
+  color: var(--text, #ddd);
+}
+
+.bin-triage-tech-critical .bin-triage-tech-id {
+  color: #b5121b;
+  background: rgba(181, 18, 27, .10);
+  border-color: rgba(181, 18, 27, .3);
+}
+.bin-triage-tech-high .bin-triage-tech-id {
+  color: #b02a18;
+  background: rgba(231, 76, 60, .10);
+  border-color: rgba(231, 76, 60, .3);
+}
+.bin-triage-tech-medium .bin-triage-tech-id {
+  color: #a06618;
+  background: rgba(227, 159, 28, .12);
+  border-color: rgba(227, 159, 28, .3);
+}
+
+body.dark .bin-triage-tech-critical .bin-triage-tech-id {
+  color: #ff8a84;
+  background: rgba(181, 18, 27, .24);
+  border-color: rgba(181, 18, 27, .45);
+}
+body.dark .bin-triage-tech-high .bin-triage-tech-id {
+  color: #f28272;
+  background: rgba(231, 76, 60, .22);
+  border-color: rgba(231, 76, 60, .45);
+}
+body.dark .bin-triage-tech-medium .bin-triage-tech-id {
+  color: #f0c674;
+  background: rgba(227, 159, 28, .22);
+  border-color: rgba(227, 159, 28, .45);
+}
