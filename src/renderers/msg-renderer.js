@@ -249,15 +249,69 @@ class MsgRenderer {
       if (msg.bodyHtml) {
         // Extract body URLs with a hard cap; emit _highlightText so the
         // sidebar can find the URL inside the rendered HTML body pane.
+        // The cap applies to WRAPPERS only — a SafeLink / URLDefense
+        // wrapper always emits its decoded inner URL alongside, so the
+        // analyst never sees a wrapper without its real destination.
         const BODY_URL_CAP = 10;
         const allBodyUrls = msg.bodyHtml.match(/https?:\/\/[^\s"'<>()]+/gi) || [];
+        const seenUrls = new Set();
+        const seenEmails = new Set();
+        let sawUnwrap = false;
         for (const u of allBodyUrls.slice(0, BODY_URL_CAP)) {
-          f.externalRefs.push({
-            type: IOC.URL,
-            url: u,
-            severity: 'info',
-            _highlightText: u,
-          });
+          const key = u.toLowerCase();
+          if (seenUrls.has(key)) continue;
+          seenUrls.add(key);
+
+          // ── SafeLink / URLDefense unwrap ──
+          let unwrapped = null;
+          if (typeof EncodedContentDetector !== 'undefined') {
+            try { unwrapped = EncodedContentDetector.unwrapSafeLink(u); }
+            catch (_) { unwrapped = null; }
+          }
+
+          if (unwrapped) {
+            sawUnwrap = true;
+            // Wrapper (info) — the URL visible in the HTML body.
+            f.externalRefs.push({
+              type: IOC.URL,
+              url: u,
+              severity: 'info',
+              note: `${unwrapped.provider} wrapper`,
+              _highlightText: u,
+            });
+            // Decoded inner URL (high) — the real destination.
+            const innerKey = (unwrapped.originalUrl || '').toLowerCase();
+            if (unwrapped.originalUrl && !seenUrls.has(innerKey)) {
+              seenUrls.add(innerKey);
+              f.externalRefs.push({
+                type: IOC.URL,
+                url: unwrapped.originalUrl,
+                severity: 'high',
+                note: `Extracted from ${unwrapped.provider}`,
+                _highlightText: u,
+              });
+            }
+            // Microsoft SafeLinks embeds the recipient email in `data=`.
+            for (const em of (unwrapped.emails || [])) {
+              const ek = em.toLowerCase();
+              if (seenEmails.has(ek)) continue;
+              seenEmails.add(ek);
+              f.externalRefs.push({
+                type: IOC.EMAIL,
+                url: em,
+                severity: 'medium',
+                note: `Extracted from ${unwrapped.provider}`,
+                _highlightText: u,
+              });
+            }
+          } else {
+            f.externalRefs.push({
+              type: IOC.URL,
+              url: u,
+              severity: 'info',
+              _highlightText: u,
+            });
+          }
         }
         if (allBodyUrls.length > BODY_URL_CAP) {
           f.externalRefs.push({
@@ -266,6 +320,9 @@ class MsgRenderer {
             severity: 'info',
           });
         }
+        // A decoded SafeLink in the body is a phishing-worthy signal on
+        // its own — escalate risk past the baseline.
+        if (sawUnwrap && f.risk === 'low') f.risk = 'medium';
         if (/width=.{0,5}[01].{0,5}height=.{0,5}[01]/i.test(msg.bodyHtml))
           f.externalRefs.push({ type: IOC.PATTERN, url: '1x1 or 0x0 image detected', severity: 'medium' });
       }
