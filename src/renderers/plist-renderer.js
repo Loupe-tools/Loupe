@@ -1144,24 +1144,26 @@ class PlistRenderer {
     const emitTruncation = (reason) => {
       if (truncatedEmitted) return;
       truncatedEmitted = true;
-      findings.externalRefs.push({
+      pushIOC(findings, {
         type: IOC.INFO,
-        url: `IOC extraction truncated — ${reason}. Additional indicators may be present in the plist.`,
+        value: `IOC extraction truncated — ${reason}. Additional indicators may be present in the plist.`,
         severity: 'info',
+        bucket: 'externalRefs',
       });
     };
 
-    // URLs
+    // URLs — pushIOC will auto-emit IOC.DOMAIN / IOC.IP siblings via tldts
+    // when the host resolves to a registrable domain or raw IP literal.
     const urlRe = /https?:\/\/[^\s"'<>\])}]{6,200}/gi;
     const seenUrls = new Set();
     let um;
     while ((um = urlRe.exec(allText)) !== null) {
       if (!seenUrls.has(um[0])) {
         seenUrls.add(um[0]);
-        findings.externalRefs.push({
-          type: IOC.URL, url: um[0], severity: 'medium',
-          _sourceOffset: um.index, _sourceLength: um[0].length,
-          _highlightText: um[0],
+        pushIOC(findings, {
+          type: IOC.URL, value: um[0], severity: 'medium',
+          highlightText: um[0],
+          bucket: 'externalRefs',
         });
       }
       if (findings.externalRefs.length >= 100) { emitTruncation('URL cap (100) reached'); break; }
@@ -1173,10 +1175,10 @@ class PlistRenderer {
     while ((um = ipRe.exec(allText)) !== null) {
       if (!seenIPs.has(um[0])) {
         seenIPs.add(um[0]);
-        findings.externalRefs.push({
-          type: IOC.IP, url: um[0], severity: 'medium',
-          _sourceOffset: um.index, _sourceLength: um[0].length,
-          _highlightText: um[0],
+        pushIOC(findings, {
+          type: IOC.IP, value: um[0], severity: 'medium',
+          highlightText: um[0],
+          bucket: 'externalRefs',
         });
       }
       if (findings.externalRefs.length >= 150) { emitTruncation('IP cap reached'); break; }
@@ -1188,10 +1190,10 @@ class PlistRenderer {
     while ((um = pathRe.exec(allText)) !== null) {
       if (!seenPaths.has(um[0])) {
         seenPaths.add(um[0]);
-        findings.externalRefs.push({
-          type: IOC.FILE_PATH, url: um[0], severity: 'info',
-          _sourceOffset: um.index, _sourceLength: um[0].length,
-          _highlightText: um[0],
+        pushIOC(findings, {
+          type: IOC.FILE_PATH, value: um[0], severity: 'info',
+          highlightText: um[0],
+          bucket: 'externalRefs',
         });
       }
       if (findings.externalRefs.length >= 200) { emitTruncation('file-path cap reached'); break; }
@@ -1204,10 +1206,10 @@ class PlistRenderer {
       const d = um[0].toLowerCase();
       if (!seenDomains.has(d)) {
         seenDomains.add(d);
-        findings.externalRefs.push({
-          type: IOC.HOSTNAME, url: d, severity: 'info',
-          _sourceOffset: um.index, _sourceLength: um[0].length,
-          _highlightText: um[0],
+        pushIOC(findings, {
+          type: IOC.HOSTNAME, value: d, severity: 'info',
+          highlightText: um[0],
+          bucket: 'externalRefs',
         });
       }
       if (findings.externalRefs.length >= 250) { emitTruncation('hostname cap reached'); break; }
@@ -1220,18 +1222,18 @@ class PlistRenderer {
     // Each detection carries a `highlight` string naming the concrete XML
     // token that triggered it (e.g. a matched regex hit, or a key name like
     // "RunAtLoad" / "StartInterval" / "DYLD_INSERT_LIBRARIES"). Threading it
-    // through as `_highlightText` lets `_navigateToFinding` locate the line
+    // through as `highlightText` lets `_navigateToFinding` locate the line
     // in the XML Source pane and flash it — without this, clicking a Pattern
     // row in the sidebar silently no-ops because the mirrored "Label —
     // description" string never literally appears in the rendered source.
     for (const sm of findings.signatureMatches) {
-      const ref = {
+      pushIOC(findings, {
         type: IOC.PATTERN,
-        url: `${sm.label} — ${sm.description}`,
+        value: `${sm.label} — ${sm.description}`,
         severity: sm.severity || 'medium',
-      };
-      if (sm.highlight) ref._highlightText = sm.highlight;
-      findings.externalRefs.push(ref);
+        highlightText: sm.highlight || undefined,
+        bucket: 'externalRefs',
+      });
     }
 
     // ── Risk assessment ──────────────────────────────────────────────────

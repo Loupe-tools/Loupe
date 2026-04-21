@@ -1341,10 +1341,14 @@ class X509Renderer {
         if (cert.isCA) findings.formatSpecific.push({ label: 'CA Certificate', value: 'Yes' });
 
         // Extract Subject CN as IOC (hostname — not a scheme-bearing URL).
+        // Route every IOC through `pushIOC` so the canonical on-wire shape is
+        // emitted and URL-typed pushes automatically get an `IOC.DOMAIN`
+        // sibling via tldts — which is how the sidebar's domain-pivot row
+        // gets populated for CRL / AIA endpoints and any scheme-bearing SAN.
         const subjectCN = cert.subject.CN || '';
         if (subjectCN && subjectCN.includes('.')) {
-          findings.interestingStrings.push({
-            type: IOC.HOSTNAME, url: subjectCN, severity: 'info', note: 'Subject CN',
+          pushIOC(findings, {
+            type: IOC.HOSTNAME, value: subjectCN, severity: 'info', note: 'Subject CN',
           });
         }
 
@@ -1354,16 +1358,16 @@ class X509Renderer {
         if (sanExt && sanExt.altNames) {
           for (const an of sanExt.altNames) {
             if (an.type === 'DNS') {
-              findings.interestingStrings.push({ type: IOC.HOSTNAME, url: an.value, severity: 'medium', note: 'SAN (DNS)' });
+              pushIOC(findings, { type: IOC.HOSTNAME, value: an.value, severity: 'medium', note: 'SAN (DNS)' });
             } else if (an.type === 'IP') {
-              findings.interestingStrings.push({ type: IOC.IP, url: an.value, severity: 'medium', note: 'SAN (IP)' });
+              pushIOC(findings, { type: IOC.IP, value: an.value, severity: 'medium', note: 'SAN (IP)' });
             } else if (an.type === 'Email') {
-              findings.interestingStrings.push({ type: IOC.EMAIL, url: an.value, severity: 'medium', note: 'SAN (Email)' });
+              pushIOC(findings, { type: IOC.EMAIL, value: an.value, severity: 'medium', note: 'SAN (Email)' });
             } else if (an.type === 'URI') {
               const isUrl = /^[a-z][a-z0-9+.\-]*:/i.test(an.value);
-              findings.interestingStrings.push({
+              pushIOC(findings, {
                 type: isUrl ? IOC.URL : IOC.HOSTNAME,
-                url: an.value, severity: 'medium', note: 'SAN (URI)',
+                value: an.value, severity: 'medium', note: 'SAN (URI)',
               });
             }
           }
@@ -1373,13 +1377,13 @@ class X509Renderer {
         for (const ext of cert.extensions) {
           if (ext.crlPoints) {
             for (const uri of ext.crlPoints) {
-              findings.interestingStrings.push({ type: IOC.URL, url: uri, severity: 'info', note: 'CRL Distribution Point' });
+              pushIOC(findings, { type: IOC.URL, value: uri, severity: 'info', note: 'CRL Distribution Point' });
             }
           }
           if (ext.accessMethods) {
             for (const am of ext.accessMethods) {
               if (am.location) {
-                findings.interestingStrings.push({ type: IOC.URL, url: am.location, severity: 'info', note: `AIA (${am.method})` });
+                pushIOC(findings, { type: IOC.URL, value: am.location, severity: 'info', note: `AIA (${am.method})` });
               }
             }
           }

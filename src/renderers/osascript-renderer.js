@@ -664,22 +664,26 @@ class OsascriptRenderer {
         const emitTruncation = (reason) => {
             if (truncatedEmitted) return;
             truncatedEmitted = true;
-            findings.externalRefs.push({
+            pushIOC(findings, {
                 type: IOC.INFO,
-                url: `IOC extraction truncated — ${reason}. Additional indicators may be present in the source.`,
+                value: `IOC extraction truncated — ${reason}. Additional indicators may be present in the source.`,
                 severity: 'info',
+                bucket: 'externalRefs',
             });
         };
+        // URLs — pushIOC will auto-emit IOC.DOMAIN / IOC.IP siblings via tldts
+        // when the host resolves to a registrable domain or raw IP literal,
+        // restoring sidebar domain-pivot for every URL hit.
         const urlRe = /https?:\/\/[^\s"'<>\])}]{6,200}/gi;
         const seenUrls = new Set();
         let um;
         while ((um = urlRe.exec(analysisText)) !== null) {
             if (!seenUrls.has(um[0])) {
                 seenUrls.add(um[0]);
-                findings.externalRefs.push({
-                    type: IOC.URL, url: um[0], severity: 'medium',
-                    _sourceOffset: um.index, _sourceLength: um[0].length,
-                    _highlightText: um[0],
+                pushIOC(findings, {
+                    type: IOC.URL, value: um[0], severity: 'medium',
+                    highlightText: um[0],
+                    bucket: 'externalRefs',
                 });
             }
             if (findings.externalRefs.length >= 100) { emitTruncation('URL cap (100) reached'); break; }
@@ -690,10 +694,10 @@ class OsascriptRenderer {
         while ((um = ipRe.exec(analysisText)) !== null) {
             if (!seenIPs.has(um[0])) {
                 seenIPs.add(um[0]);
-                findings.externalRefs.push({
-                    type: IOC.IP, url: um[0], severity: 'medium',
-                    _sourceOffset: um.index, _sourceLength: um[0].length,
-                    _highlightText: um[0],
+                pushIOC(findings, {
+                    type: IOC.IP, value: um[0], severity: 'medium',
+                    highlightText: um[0],
+                    bucket: 'externalRefs',
                 });
             }
             if (findings.externalRefs.length >= 150) { emitTruncation('IP cap reached'); break; }
@@ -704,10 +708,10 @@ class OsascriptRenderer {
         while ((um = pathRe.exec(analysisText)) !== null) {
             if (!seenPaths.has(um[0])) {
                 seenPaths.add(um[0]);
-                findings.externalRefs.push({
-                    type: IOC.FILE_PATH, url: um[0], severity: 'medium',
-                    _sourceOffset: um.index, _sourceLength: um[0].length,
-                    _highlightText: um[0],
+                pushIOC(findings, {
+                    type: IOC.FILE_PATH, value: um[0], severity: 'medium',
+                    highlightText: um[0],
+                    bucket: 'externalRefs',
                 });
             }
             if (findings.externalRefs.length >= 200) { emitTruncation('file-path cap reached'); break; }
@@ -719,10 +723,10 @@ class OsascriptRenderer {
             const d = um[0].toLowerCase();
             if (!seenDomains.has(d)) {
                 seenDomains.add(d);
-                findings.externalRefs.push({
-                    type: IOC.HOSTNAME, url: d, severity: 'info',
-                    _sourceOffset: um.index, _sourceLength: um[0].length,
-                    _highlightText: um[0],
+                pushIOC(findings, {
+                    type: IOC.HOSTNAME, value: d, severity: 'info',
+                    highlightText: um[0],
+                    bucket: 'externalRefs',
                 });
             }
             if (findings.externalRefs.length >= 250) { emitTruncation('hostname cap reached'); break; }
@@ -732,31 +736,32 @@ class OsascriptRenderer {
          * Summary sidebar and Share view see every detection the viewer
          * surfaces (Detection → IOC parity).
          *
-         * Thread `_firstMatch` through as `_highlightText` so clicking the
+         * Thread `_firstMatch` through as `highlightText` so clicking the
          * Pattern row in the sidebar locates the concrete offending substring
          * in the Source viewer. Without it the mirrored "Label — description"
          * string never literally appears in the rendered source and the
          * click would silently no-op (see plist-renderer.js for the same
          * pattern with the same explanation). */
         for (const sm of findings.signatureMatches) {
-            const ref = {
+            pushIOC(findings, {
                 type: IOC.PATTERN,
-                url: `${sm.label} — ${sm.description}`,
+                value: `${sm.label} — ${sm.description}`,
                 severity: sm.severity || 'medium',
-            };
-            if (sm._firstMatch) ref._highlightText = sm._firstMatch;
-            findings.externalRefs.push(ref);
+                highlightText: sm._firstMatch || undefined,
+                bucket: 'externalRefs',
+            });
         }
 
         /* Mirror auto-exec triggers. Each entry is {label, hit} — thread `hit`
-         * through as _highlightText so clicking the sidebar row scrolls the
+         * through as highlightText so clicking the sidebar row scrolls the
          * Source viewer to the actual trigger token. */
         for (const ae of findings.autoExec) {
-            findings.externalRefs.push({
+            pushIOC(findings, {
                 type: IOC.PATTERN,
-                url: `Auto-exec trigger: ${ae.label}`,
+                value: `Auto-exec trigger: ${ae.label}`,
                 severity: 'medium',
-                _highlightText: ae.hit,
+                highlightText: ae.hit,
+                bucket: 'externalRefs',
             });
         }
 
