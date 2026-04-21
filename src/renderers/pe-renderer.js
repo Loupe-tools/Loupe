@@ -937,8 +937,21 @@ class PeRenderer {
       entries.push({ compId, buildId, count });
     }
 
-    return { xorKey: key, entries };
+    // Canonical Rich-header fingerprint (matches YARA's
+    // `pe.rich_signature.hash`). Clusters binaries by the exact toolchain +
+    // object-count profile that produced them — survives most re-signings
+    // and light repacking because the Rich header is built into the PE at
+    // link time, not adjusted afterwards.
+    let richHash = null;
+    try {
+      if (typeof computeRichHash === 'function') {
+        richHash = computeRichHash(bytes, danSOff, richOff, key);
+      }
+    } catch (_) { /* rich-hash is best-effort */ }
+
+    return { xorKey: key, entries, danSOff, richOff, richHash };
   }
+
 
   // ═══════════════════════════════════════════════════════════════════════
   //  Import Table parser
@@ -2329,6 +2342,10 @@ class PeRenderer {
       if (pe.imphash) {
         findings.metadata['Imphash'] = pe.imphash;
       }
+      if (pe.richHeader && pe.richHeader.richHash) {
+        findings.metadata['RichHash'] = pe.richHeader.richHash;
+      }
+
 
       // ── Security feature checks ────────────────────────────────────
       if (!pe.security.aslr) { issues.push('ASLR disabled — vulnerable to memory exploitation'); riskScore += 1; }
@@ -2505,12 +2522,45 @@ class PeRenderer {
       // metadata-only per the "Option B" classic-pivot policy.
       mirrorMetadataIOCs(findings, {
         'Imphash':           IOC.HASH,
+        'RichHash':          IOC.HASH,
         'PDB Path':          IOC.FILE_PATH,
         'Original Filename': IOC.FILE_PATH,
         'Internal Name':     IOC.FILE_PATH,
         'Export DLL Name':   IOC.FILE_PATH,
         'Go Module Path':    IOC.PATTERN,
       });
+
+      // ── Capability tagging (capa-lite) ─────────────────────────────
+      // Turn the wall of "X suspicious APIs" into named MITRE-tagged
+      // behaviours. Evidence is carried on each IOC.PATTERN row so the
+      // sidebar's click-to-focus jumps to the matched API name in the
+      // imports / strings pane. Severity contributes to the risk score.
+      try {
+        const capImports = [];
+        for (const imp of (pe.imports || [])) {
+          for (const fn of (imp.functions || [])) {
+            if (fn && fn.name) capImports.push(String(fn.name).toLowerCase());
+          }
+        }
+        const capDylibs = (pe.imports || []).map(i => String(i.dllName || '').toLowerCase());
+        const capStrings = [...pe.strings.ascii, ...pe.strings.unicode];
+        const caps = (typeof Capabilities !== 'undefined' && Capabilities && Capabilities.detect)
+          ? Capabilities.detect({ imports: capImports, dylibs: capDylibs, strings: capStrings })
+          : [];
+        findings.capabilities = caps;
+        const sevWeight = { critical: 3, high: 2, medium: 1, low: 0.5, info: 0 };
+        for (const c of caps) {
+          pushIOC(findings, {
+            type: IOC.PATTERN,
+            value: `${c.name} [${c.mitre}]`,
+            severity: c.severity === 'critical' ? 'high' : c.severity,
+            note: c.description + (c.evidence && c.evidence.length ? ` — evidence: ${c.evidence.slice(0, 4).join(', ')}` : ''),
+            _noDomainSibling: true,
+          });
+          issues.push(`${c.name} (${c.mitre})`);
+          riskScore += sevWeight[c.severity] || 0;
+        }
+      } catch (_) { /* capability detection is best-effort */ }
 
       // ── Risk assessment ────────────────────────────────────────────
       findings.autoExec = issues;

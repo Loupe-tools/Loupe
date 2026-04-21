@@ -270,6 +270,23 @@ subtly misbehave.
   auto-emitted IOC in an object nobody is rendering. `PdfRenderer` is
   the model: it already awaits `pdfjs` page rendering and calls the
   sync `decodeRGBA()` on pixels it already owns.
+- **Shared binary-analysis modules (`src/hashes.js`, `src/capabilities.js`)**
+  are loaded before the renderers and are the canonical path for
+  cross-format pivots. `hashes.js` exposes `md5()`,
+  `computeImportHashFromList(items)` (PE imphash),
+  `computeRichHash(bytes, danSOff, richOff, xorKey)`, and
+  `computeSymHash(importedSymbols, dylibs)` — used by `PeRenderer`,
+  `ElfRenderer` (telfhash-style MD5 of sorted imported-symbol names),
+  and `MachoRenderer` (SymHash of imported symbols + dylib basenames).
+  `capabilities.js` exposes `Capabilities.detect({imports, dylibs, strings})`
+  returning `[{id, name, severity, mitre, description, evidence}]` rows
+  mapped to MITRE ATT&CK. Each renderer's `analyzeForSecurity` should
+  call it inside a `try / catch` so a capability-match failure never
+  aborts analysis, then push each hit onto `externalRefs` as
+  `IOC.PATTERN` with `_noDomainSibling: true` (patterns never imply a
+  registrable domain). Mirror the hash results via `mirrorMetadataIOCs`
+  with `{RichHash: IOC.HASH, 'Import Hash (MD5)': IOC.HASH, SymHash: IOC.HASH}`
+  so they reach the sidebar as clickable pivots.
 - **`NpmRenderer` accepts three input shapes** — gzip tarball (`.tgz`),
   a bare `package.json` manifest, or a `package-lock.json` /
   `npm-shrinkwrap.json` lockfile — routed by dedicated sniff helpers in

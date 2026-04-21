@@ -155,8 +155,20 @@ JS_FILES = [
     'src/nicelist-user.js',
 
     'src/parser-watchdog.js',
+    # hashes.js — shared non-cryptographic fingerprint hashes (imphash
+    # helpers, Rich-header hash, Mach-O symhash). Must load BEFORE any
+    # native-binary renderer (pe/elf/macho) so they can call
+    # `computeImportHashFromList`, `computeRichHash`, `computeSymHash`
+    # without redefining their own MD5.
+    'src/hashes.js',
+    # capabilities.js — static capability tagging (capa-lite). Consumed by
+    # PE / ELF / Mach-O renderers via `Capabilities.detect({imports,strings,dylibs})`
+    # to turn a wall of suspicious APIs into named behaviours with MITRE
+    # ATT&CK IDs. Must load BEFORE the native-binary renderers.
+    'src/capabilities.js',
     'src/vba-utils.js',
     'src/yara-engine.js',
+
     'src/decompressor.js',
     'src/encoded-content-detector.js',
     'src/qr-decoder.js',

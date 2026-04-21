@@ -1974,6 +1974,24 @@ class MachoRenderer {
       if (mo.idDylib) findings.metadata['Library ID'] = mo.idDylib;
       if (mo.sourceVersion) findings.metadata['Source Version'] = mo.sourceVersion;
 
+      // ── SymHash (Mach-O symbol-import hash) ────────────────────────
+      // Anchalysis / symhash-style cross-sample pivot: MD5 of the
+      // sorted, de-duplicated list of imported (UNDEF + external)
+      // symbol names combined with their source dylib basenames.
+      try {
+        const importedSymNames = mo.symbols
+          .filter(s => s.name && s.typeField === 0 && s.isExternal)
+          .map(s => s.name);
+        const dylibBasenames = (mo.dylibs || []).map(d =>
+          typeof d === 'string' ? d : (d && d.name) || ''
+        );
+        if (typeof computeSymHash === 'function') {
+          const sh = computeSymHash(importedSymNames, dylibBasenames);
+          if (sh) findings.metadata['SymHash'] = sh;
+        }
+      } catch (_) { /* hash computation is best-effort */ }
+
+
       // ── Extract embedded Info.plist for Bundle ID ──────────────────
       try {
         const plistSec = mo.sections.find(s => s.sectname === '__info_plist' && s.size > 0 && s.offset > 0);
@@ -2223,7 +2241,45 @@ class MachoRenderer {
         'Dynamic Linker':    IOC.FILE_PATH,
         'Library ID':        IOC.FILE_PATH,
         'Source Version':    IOC.PATTERN,
+        'SymHash':           IOC.HASH,
       });
+
+      // ── Capability tagging (capa-lite) ─────────────────────────────
+      // Cross-platform behaviour-tagging: feed imported symbol names
+      // (with leading underscore stripped — Mach-O convention), linked
+      // dylib basenames, and the string corpus into the shared
+      // Capabilities engine. Each hit becomes an IOC.PATTERN + issue
+      // and contributes a severity-weighted bump to riskScore.
+      try {
+        if (typeof Capabilities !== 'undefined' && Capabilities && typeof Capabilities.detect === 'function') {
+          const importTokens = mo.symbols
+            .filter(s => s.name && s.typeField === 0 && s.isExternal)
+            .map(s => s.name.startsWith('_') ? s.name.substring(1) : s.name);
+          const dylibTokens = (mo.dylibs || []).map(d =>
+            typeof d === 'string' ? d : (d && d.name) || ''
+          ).filter(Boolean);
+          const caps = Capabilities.detect({
+            imports: importTokens,
+            dylibs:  dylibTokens,
+            strings: mo.strings || [],
+          }) || [];
+          if (caps.length) {
+            findings.capabilities = caps;
+            const sevWeight = { critical: 3, high: 2, medium: 1, low: 0.5 };
+            for (const cap of caps) {
+              pushIOC(findings, {
+                type: IOC.PATTERN,
+                value: `[capability] ${cap.name}` + (cap.mitre ? ` (${cap.mitre})` : ''),
+                severity: cap.severity || 'info',
+                note: cap.description || '',
+                _noDomainSibling: true,
+              });
+              issues.push(`Capability — ${cap.name}` + (cap.mitre ? ` [${cap.mitre}]` : ''));
+              riskScore += sevWeight[cap.severity] || 0;
+            }
+          }
+        }
+      } catch (_) { /* capability detection is best-effort */ }
 
       // ── Risk assessment ────────────────────────────────────────────
       findings.autoExec = issues;
@@ -2231,6 +2287,7 @@ class MachoRenderer {
       else if (riskScore >= 5) findings.risk = 'high';
       else if (riskScore >= 2) findings.risk = 'medium';
       else findings.risk = 'low';
+
 
     } catch (e) {
       findings.risk = 'medium';

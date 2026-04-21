@@ -1780,6 +1780,25 @@ class ElfRenderer {
       if (elf.soname) findings.metadata['SONAME'] = elf.soname;
       if (elf.neededLibs.length > 0) findings.metadata['Libraries'] = elf.neededLibs.length.toString();
 
+      // ── ELF import hash (telfhash-style) ────────────────────────────
+      // MD5 of the sorted, deduplicated list of dynamic-symbol imports
+      // (entries with shndx === 0, i.e. defined elsewhere). Lets the
+      // analyst cluster ELF malware variants that share a common libc
+      // import shape independently of compilation artefacts. The hash
+      // is stable under re-linking, light repacking, and most re-strips.
+      try {
+        const importNames = [...new Set(
+          (elf.dynsyms || [])
+            .filter(s => s && s.name && s.shndx === 0)
+            .map(s => String(s.name).toLowerCase())
+        )].sort();
+        if (importNames.length && typeof computeImportHashFromList === 'function') {
+          const ih = computeImportHashFromList(importNames);
+          if (ih) findings.metadata['Import Hash (MD5)'] = ih;
+        }
+      } catch (_) { /* best-effort */ }
+
+
       // ── Security feature checks ────────────────────────────────────
       if (elf.security.relro === 'None') {
         issues.push('No RELRO — GOT is writable, vulnerable to GOT overwrite attacks');
@@ -2003,13 +2022,46 @@ class ElfRenderer {
       // build-host VCS URL. Attribution fluff stays metadata-only per the
       // "Option B" classic-pivot policy.
       mirrorMetadataIOCs(findings, {
-        'Interpreter':    IOC.FILE_PATH,
-        'SONAME':         IOC.FILE_PATH,
-        'Go Module Path': IOC.PATTERN,
+        'Interpreter':        IOC.FILE_PATH,
+        'SONAME':             IOC.FILE_PATH,
+        'Go Module Path':     IOC.PATTERN,
+        'Import Hash (MD5)':  IOC.HASH,
       });
+
+      // ── Capability tagging (capa-lite) ─────────────────────────────
+      // Turn the wall of "X suspicious symbols" into named MITRE-tagged
+      // behaviours. ELF symbol names carry no leading `_`, so we pass
+      // dynsym names directly; the string corpus covers LD_PRELOAD /
+      // systemd paths / /etc/shadow references captured by _extractStrings.
+      try {
+        const capImports = [...new Set(
+          (elf.dynsyms || [])
+            .filter(s => s && s.name && s.shndx === 0)
+            .map(s => String(s.name).toLowerCase())
+        )];
+        const capDylibs = (elf.neededLibs || []).map(n => String(n || '').toLowerCase());
+        const capStrings = elf.strings || [];
+        const caps = (typeof Capabilities !== 'undefined' && Capabilities && Capabilities.detect)
+          ? Capabilities.detect({ imports: capImports, dylibs: capDylibs, strings: capStrings })
+          : [];
+        findings.capabilities = caps;
+        const sevWeight = { critical: 3, high: 2, medium: 1, low: 0.5, info: 0 };
+        for (const c of caps) {
+          pushIOC(findings, {
+            type: IOC.PATTERN,
+            value: `${c.name} [${c.mitre}]`,
+            severity: c.severity === 'critical' ? 'high' : c.severity,
+            note: c.description + (c.evidence && c.evidence.length ? ` — evidence: ${c.evidence.slice(0, 4).join(', ')}` : ''),
+            _noDomainSibling: true,
+          });
+          issues.push(`${c.name} (${c.mitre})`);
+          riskScore += sevWeight[c.severity] || 0;
+        }
+      } catch (_) { /* capability detection is best-effort */ }
 
       // ── Risk assessment ────────────────────────────────────────────
       findings.autoExec = issues;
+
       if (riskScore >= 8) findings.risk = 'critical';
       else if (riskScore >= 5) findings.risk = 'high';
       else if (riskScore >= 2) findings.risk = 'medium';

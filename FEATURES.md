@@ -121,6 +121,8 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 |---|---|
 | **ELF analysis** | Parses ELF32 / ELF64 (LE/BE) — headers, segments, sections, dynamic linking (NEEDED, SONAME, RPATH/RUNPATH), symbol tables with suspicious-symbol flagging, note sections; security features (RELRO, Stack Canary, NX, PIE, FORTIFY_SOURCE); detects Go-compiled binaries (module path + version). 18 YARA rules: Mirai, cryptominers, reverse shells, LD_PRELOAD hijacking, rootkits, container escapes, packers. |
 | **Mach-O analysis** | Parses Mach-O 32/64-bit and Fat/Universal — header, load commands, segments with section-level entropy, symbol tables (~30 flagged macOS APIs), dynamic libraries, RPATH, code signature (CodeDirectory, entitlements, CMS); security features (PIE, NX, Stack Canary, ARC, Hardened Runtime, Library Validation, Encrypted). 17 YARA rules for macOS stealers (Atomic, AMOS), RATs, reverse shells, persistence, anti-debug / VM detection. |
+| **Binary pivot hashes** | PE imphash + RichHash, ELF telfhash-style import hash, Mach-O SymHash — cross-sample clustering pivots surfaced as clickable IOC hashes for VT / Malpedia lookup. |
+| **Capability tagging** | Shared capa-lite engine flags behavioural clusters (process injection, reverse shell, keylogging, credential theft, persistence, anti-debug, crypto/ransomware, network C2) across PE / ELF / Mach-O with MITRE ATT&CK IDs. |
 | **Graceful binary fallback** | If PE / ELF / Mach-O parsing fails on a truncated or malformed binary, the renderer switches to a strings-plus-hex fallback and keeps the extracted strings wired into the sidebar so IOC extraction, YARA scanning, and encoded-content detection still work. |
 
 ### macOS scripts, property lists & installers
