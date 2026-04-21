@@ -161,11 +161,20 @@ JS_FILES = [
     # `computeImportHashFromList`, `computeRichHash`, `computeSymHash`
     # without redefining their own MD5.
     'src/hashes.js',
+    # mitre.js — canonical MITRE ATT&CK technique registry + rollup
+    # helpers used by the sidebar "MITRE ATT&CK Coverage" section, the
+    # Tier-A capability strip, and `Copy Analysis`. Exposes `window.MITRE`
+    # with `lookup`, `rollupByTactic`, `primaryTactic`, `urlFor`,
+    # `tacticMeta`. Must load BEFORE `capabilities.js` (and BEFORE the
+    # three native-binary renderers) so every emit site can cite a
+    # canonical technique id instead of rolling its own table.
+    'src/mitre.js',
     # capabilities.js — static capability tagging (capa-lite). Consumed by
     # PE / ELF / Mach-O renderers via `Capabilities.detect({imports,strings,dylibs})`
     # to turn a wall of suspicious APIs into named behaviours with MITRE
     # ATT&CK IDs. Must load BEFORE the native-binary renderers.
     'src/capabilities.js',
+
     # binary-overlay.js — shared overlay detection + clickable drill-down
     # used by PE / ELF / Mach-O renderers. Exposes BinaryOverlay on window.
     # Must load BEFORE the native-binary renderers.
@@ -190,7 +199,28 @@ JS_FILES = [
     # `BinarySummary.renderCard({...})`. Must load AFTER hashes.js (needs
     # `md5`) and BEFORE the native-binary renderers.
     'src/binary-summary.js',
+    # binary-verdict.js — Tier-A verdict one-liner + coarse 0..100 risk
+    # score derived from the parsed object, findings, and MITRE-tagged
+    # capability counts. Exposes `window.BinaryVerdict.summarize({parsed,
+    # findings, format, fileSize})`. Pure presentation — never mutates.
+    # Must load AFTER binary-summary.js and BEFORE the native renderers.
+    'src/binary-verdict.js',
+    # binary-anomalies.js — anomaly-ribbon feeder + "should this card
+    # auto-open?" predicate. Tier-C reference cards collapse by default
+    # on clean samples and auto-open when this module flags them.
+    # Exposes `window.BinaryAnomalies.detect({parsed, findings, format})`.
+    # Must load AFTER binary-summary.js / binary-verdict.js and BEFORE
+    # the native renderers.
+    'src/binary-anomalies.js',
+    # binary-triage.js — Tier-A "verdict band" composer. Glues
+    # BinaryVerdict (one-liner + 0-100 risk), BinaryAnomalies (coloured
+    # ribbon), and MITRE.rollupByTactic (tactic-grouped capability strip)
+    # into a single DOM node the three native-binary renderers append
+    # above the Binary Pivot card. Pure presentation — never mutates.
+    # Must load AFTER binary-anomalies.js and BEFORE the native renderers.
+    'src/binary-triage.js',
     'src/vba-utils.js',
+
     'src/yara-engine.js',
 
     'src/decompressor.js',
