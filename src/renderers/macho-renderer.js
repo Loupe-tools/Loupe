@@ -2311,6 +2311,34 @@ class MachoRenderer {
         }
       } catch (_) { /* classification is best-effort */ }
 
+      // ── Export-anomaly flags (side-loading + re-export proxying) ────
+      // Mach-O has no ordinal notion, but LC_REEXPORT_DYLIB (cmd 0x1F)
+      // is the direct analogue of a PE forwarder — a dylib that re-
+      // exports every symbol from another dylib, optionally running its
+      // own __attribute__((constructor)) init functions on load. Classic
+      // dylib-proxy side-loading technique. The side-loading filename
+      // check is gated on MH_DYLIB (filetype 6) so we don't warn about
+      // an EXE accidentally named version.dll.
+      try {
+        if (typeof BinaryExports !== 'undefined' && BinaryExports.emit) {
+          const exportNames = (mo.symbols || [])
+            .filter(s => s.name && s.typeField === 7 && (s.isExternal || s.isPrivateExternal))
+            .map(s => s.name);
+          const reexports = (mo.dylibs || [])
+            .filter(d => d && d.type === 'reexport' && d.name)
+            .map(d => d.name);
+          const expCounts = BinaryExports.emit(findings, {
+            isLib: mo.filetype === 6,
+            fileName: fileName || '',
+            exportNames,
+            forwardedExports: reexports,
+            ordinalOnlyCount: 0,
+          });
+          if (expCounts.sideLoadHit)    { findings.metadata['DLL Side-Load Host'] = 'Yes'; riskScore += 2; }
+          if (expCounts.forwarderCount) { findings.metadata['Re-exported Dylibs'] = String(expCounts.forwarderCount); riskScore += Math.min(expCounts.forwarderCount * 0.5, 2); }
+        }
+      } catch (_) { /* export-anomaly analysis is best-effort */ }
+
       // ── Mirror dylibs + RPATHs as individual IOCs ──────────────────
       // `mirrorMetadataIOCs` can't see these because the metadata row only
       // stores a count ("Dynamic Libraries" = "5"); emit directly instead.

@@ -176,6 +176,13 @@ JS_FILES = [
     # load BEFORE the native-binary renderers and AFTER constants.js so
     # it can reach pushIOC / IOC.* at emit-time.
     'src/binary-strings.js',
+    # binary-exports.js — export-anomaly flags (DLL side-loading host,
+    # forwarded / proxy-DLL exports, ordinal-only exports). Consumed by
+    # PE / ELF / Mach-O renderers via `BinaryExports.emit(findings,
+    # {isLib, fileName, exportNames, forwardedExports, ordinalOnlyCount})`.
+    # Must load BEFORE the native-binary renderers and AFTER constants.js
+    # (pushIOC / IOC.*).
+    'src/binary-exports.js',
     'src/vba-utils.js',
     'src/yara-engine.js',
 

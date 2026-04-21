@@ -430,6 +430,54 @@ subtly misbehave.
   bumps: managed assembly `+1`; mixed-mode / native-hosted CLR `+0.5`
   on top because managed + native in one image is a common unmanaged-
   shellcode host.
+- **Export-anomaly flags (`src/binary-exports.js`)** surface three
+  well-known library-export triage signals across PE / ELF / Mach-O.
+  `BinaryExports.emit(findings, {isLib, fileName, exportNames,
+  forwardedExports, ordinalOnlyCount})` returns
+  `{sideLoadHit, forwarderCount, ordinalOnly, ordinalOnlyRatio}` and
+  is called from each binary renderer's `analyzeForSecurity()` inside
+  a `try / catch` immediately after the `BinaryStrings.emit` block.
+  Three checks, each gated so benign binaries stay quiet:
+  1. **Side-loading host match** — `SIDE_LOADING` is a case-insensitive
+     Set of ~40 canonical T1574.002 target basenames (`version.dll`,
+     `winmm.dll`, `uxtheme.dll`, `winhttp.dll`, `dbghelp.dll`,
+     `cryptbase.dll`, VC runtime redistributables, `libcurl.dll`,
+     `libssl-1_1.dll`, …). Only fires when `isLib` is true — we never
+     want to flag an EXE that happens to be named `version.dll`.
+     Emits `IOC.PATTERN` high.
+  2. **Forwarded / proxy-DLL exports** — each forwarder string in
+     `forwardedExports` is emitted as its own medium-severity
+     `IOC.PATTERN`. `_looksLikeSystemPathForwarder` filters Windows
+     platform forwarders (`api-ms-win-*`, `ext-ms-win-*`, `kernel32.*`,
+     `ntdll.*`, `kernelbase.*`, `ucrtbase.*`, …) so the signal
+     represents *unusual* proxying. Cap: 30 forwarders; overflow
+     marker pushed when more exist.
+  3. **Ordinal-only exports** — flagged when
+     `ordinalOnlyCount / (ordinalOnlyCount + exportNames.length)` ≥
+     `ORDINAL_ONLY_ANOMALY_RATIO` (0.5) **and** the absolute count is
+     at least `ORDINAL_ONLY_ABS_FLOOR` (4). Single medium-severity
+     `IOC.PATTERN` with the ratio in the message.
+  Per-format wiring:
+  - **PE** — `_parseExports` walks the function-RVA table in addition
+    to the name-ordinal table. A function RVA that falls inside
+    `[dataDirs[0].rva, dataDirs[0].rva + dataDirs[0].size]` is a
+    forwarder: the NUL-terminated string at `_rvaToOffset(funcRva,
+    sections)` gives the `OtherDll.FuncName` target.
+    `ordinalOnlyCount` is `NumberOfFunctions - NumberOfNames`,
+    computed against a `namedOrdinals` Set.
+    `isLib: !!(pe.coff && pe.coff.isDLL)`. Risk: `+2` side-load,
+    `+0.5 × forwarderCount` (cap `+2`), `+1` ordinal-only anomaly.
+    Metadata rows: `'DLL Side-Load Host'`, `'Forwarded Exports'`,
+    `'Ordinal-Only Exports'`.
+  - **Mach-O** — `isLib: mo.filetype === 6` (MH_DYLIB); the forwarder
+    analogue is LC_REEXPORT_DYLIB (cmd `0x1F`), already captured during
+    load-command parsing as `mo.dylibs[i].type === 'reexport'`. No
+    ordinal concept. Metadata row: `'Re-exported Dylibs'`.
+  - **ELF** — `isLib: !!(elf.isDyn && elf.soname)` — ET_DYN alone is
+    ambiguous (PIE EXE vs .so), so `DT_SONAME` is required. No
+    forwarded-export or ordinal concept; only the side-loading filename
+    check contributes. `exportNames` is sourced from dynsyms with
+    `shndx !== 0` and `STB_GLOBAL` / `STB_WEAK` binding.
 - **`NpmRenderer` accepts three input shapes** — gzip tarball (`.tgz`),
   a bare `package.json` manifest, or a `package-lock.json` /
   `npm-shrinkwrap.json` lockfile — routed by dedicated sniff helpers in

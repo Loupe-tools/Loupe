@@ -1088,7 +1088,37 @@ class PeRenderer {
       names.push({ name: funcName, ordinal });
     }
 
-    return { dllName, ordinalBase, numFunctions, numNames, names };
+    // ── Walk the function-RVA table to detect forwarders and to count
+    //    ordinal-only slots. A PE export whose function RVA lands *inside*
+    //    the export directory range is a forwarder: the bytes at that RVA
+    //    spell out "OtherDll.FuncName". Slots that hold a non-zero RVA but
+    //    have no corresponding entry in the name-ordinal table are the
+    //    classic "ordinal-only" exports (packer / crypter tell when the
+    //    ratio is high). See src/binary-exports.js for the risk rubric.
+    const forwarders = [];
+    let ordinalOnlyCount = 0;
+    const namedOrdinals = new Set();
+    for (const n of names) {
+      namedOrdinals.add(n.ordinal - ordinalBase);
+    }
+    const funcsOff = this._rvaToOffset(funcRva, sections);
+    const expRvaStart = dataDirs[0].rva;
+    const expRvaEnd = dataDirs[0].rva + dataDirs[0].size;
+    const maxFns = Math.min(numFunctions, 4096);
+    for (let i = 0; i < maxFns; i++) {
+      const fOff = funcsOff + i * 4;
+      if (fOff + 4 > bytes.length) break;
+      const fnRva = this._u32(bytes, fOff);
+      if (fnRva === 0) continue;
+      if (fnRva >= expRvaStart && fnRva < expRvaEnd) {
+        const fwdOff = this._rvaToOffset(fnRva, sections);
+        const fwd = (fwdOff < bytes.length) ? this._str(bytes, fwdOff, 256) : '';
+        if (fwd) forwarders.push(fwd);
+      }
+      if (!namedOrdinals.has(i)) ordinalOnlyCount++;
+    }
+
+    return { dllName, ordinalBase, numFunctions, numNames, names, forwarders, ordinalOnlyCount };
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -3228,6 +3258,28 @@ class PeRenderer {
           if (strCounts.rustPanics)    findings.metadata['Rust Panic Paths'] = String(strCounts.rustPanics);
         }
       } catch (_) { /* classification is best-effort */ }
+
+      // ── Export-anomaly flags (side-loading / forwarders / ordinal-only) ─
+      // See src/binary-exports.js. All three signals apply to PE DLLs: a
+      // filename match against the hijack-libs side-load set (high), every
+      // non-platform forwarder string (medium), and ordinal-only-heavy
+      // export tables (medium). Passing isLib gates the side-load check so
+      // EXEs accidentally named version.dll don't flag.
+      try {
+        if (typeof BinaryExports !== 'undefined' && BinaryExports.emit && pe.exports) {
+          const expCounts = BinaryExports.emit(findings, {
+            isLib: !!(pe.coff && pe.coff.isDLL),
+            fileName: fileName || pe._fileName || '',
+            exportNames: pe.exports.names.map(n => n.name).filter(Boolean),
+            forwardedExports: pe.exports.forwarders || [],
+            ordinalOnlyCount: pe.exports.ordinalOnlyCount || 0,
+          });
+          if (expCounts.sideLoadHit)    { findings.metadata['DLL Side-Load Host']   = 'Yes'; riskScore += 2; }
+          if (expCounts.forwarderCount) { findings.metadata['Forwarded Exports']    = String(expCounts.forwarderCount); riskScore += Math.min(expCounts.forwarderCount * 0.5, 2); }
+          if (expCounts.ordinalOnly)    { findings.metadata['Ordinal-Only Exports'] = String(expCounts.ordinalOnly); }
+          if (expCounts.ordinalOnlyRatio >= 0.5 && expCounts.ordinalOnly >= 4) riskScore += 1;
+        }
+      } catch (_) { /* export-anomaly analysis is best-effort */ }
 
 
       // ── Format-family heuristics (XLL / AutoHotkey / Installer / Go) ─

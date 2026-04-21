@@ -2035,6 +2035,29 @@ class ElfRenderer {
         }
       } catch (_) { /* classification is best-effort */ }
 
+      // ── Export-anomaly flags (side-loading host filename only) ───────
+      // ELF has no forwarder / ordinal-export notion, but the side-loading
+      // *filename* check still fires if a cross-compiled attacker drops a
+      // DLL-named .so next to a Windows-targeting payload (seen in dual-
+      // target stealers). `isLib` is only true for ET_DYN shared objects
+      // that carry a DT_SONAME — rules out PIE executables, which are
+      // ET_DYN too but have no SONAME and are never side-load targets.
+      try {
+        if (typeof BinaryExports !== 'undefined' && BinaryExports.emit) {
+          const exportNames = (elf.dynsyms || [])
+            .filter(s => s.name && s.shndx !== 0 && (s.bind === 1 || s.bind === 2))
+            .map(s => s.name);
+          const expCounts = BinaryExports.emit(findings, {
+            isLib: !!(elf.isDyn && elf.soname),
+            fileName: elf.soname || fileName || '',
+            exportNames,
+            forwardedExports: [],
+            ordinalOnlyCount: 0,
+          });
+          if (expCounts.sideLoadHit) { findings.metadata['DLL Side-Load Host'] = 'Yes'; riskScore += 2; }
+        }
+      } catch (_) { /* export-anomaly analysis is best-effort */ }
+
       // ── Go binary metadata ─────────────────────────────────────────
       // Surface the Go-specific fields on findings.metadata so the Summary
       // (_copyAnalysisELF in app-ui.js) can display them alongside the
