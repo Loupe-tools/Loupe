@@ -780,12 +780,11 @@ class EmlRenderer {
 
   _downloadAttachment(att) {
     if (!att.data) return;
-    const blob = new Blob([att.data], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = att.filename || 'attachment';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    window.FileDownload.downloadBytes(
+      att.data,
+      att.filename || 'attachment',
+      'application/octet-stream',
+    );
   }
 
   _getFileIcon(name) {

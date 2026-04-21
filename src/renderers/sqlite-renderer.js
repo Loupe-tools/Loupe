@@ -865,10 +865,7 @@ class SqliteRenderer {
       const csv = this._toCsv(columns, rows);
       const base = (fileName || 'data').replace(/\.[^.]+$/, '');
       const suffix = tableName ? '_' + tableName : '';
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = base + suffix + '.csv'; a.click();
-      URL.revokeObjectURL(url);
+      window.FileDownload.downloadText(csv, base + suffix + '.csv', 'text/csv;charset=utf-8');
       this._showToast('Downloaded!');
     });
 

@@ -1148,21 +1148,11 @@ class PdfRenderer {
   _downloadEmbedded(entry) {
     if (!entry.data) return;
     const bytes = entry.data instanceof Uint8Array ? entry.data : new Uint8Array(entry.data);
-    const blob = new Blob([bytes], { type: entry.mime || 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = entry.name || 'embedded';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  _downloadText(text, filename) {
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    window.FileDownload.downloadBytes(
+      bytes,
+      entry.name || 'embedded',
+      entry.mime || 'application/octet-stream',
+    );
   }
 
   _getFileIcon(name) {

@@ -78,11 +78,7 @@ Object.assign(App.prototype, {
     // (the toolbar used to render this via #file-info.textContent but that
     // element has been replaced by the breadcrumb trail).
     const name = (this._fileMeta && this._fileMeta.name) || 'file';
-
-    const blob = new Blob([this._fileBuffer], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = name; a.click();
-    URL.revokeObjectURL(url);
+    this._downloadBytes(this._fileBuffer, name, 'application/octet-stream');
     this._toast('File saved');
   },
 
@@ -2511,11 +2507,8 @@ Object.assign(App.prototype, {
       this._downloadText(lines.join('\n'), base + '_macros.txt', 'text/plain;charset=utf-8');
       this._toast('Macro source downloaded');
     } else if (f.rawBin && f.rawBin.length) {
-      const blob = new Blob([f.rawBin], { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = base + '_vbaProject.bin';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url); this._toast('Raw VBA binary downloaded — use olevba/oledump to inspect');
+      this._downloadBytes(f.rawBin, base + '_vbaProject.bin', 'application/octet-stream');
+      this._toast('Raw VBA binary downloaded — use olevba/oledump to inspect');
     } else { this._toast('No macro data available', 'error'); }
   },
 
@@ -2558,24 +2551,34 @@ Object.assign(App.prototype, {
   },
 
   // ── Generic download helpers ─────────────────────────────────────────────
-  // Single choke-point for turning text/JSON into a browser download. Every
-  // exporter (and the three legacy _downloadMacros/_downloadPdfScripts/
-  // _downloadExtracted sites) routes through here so the blob-and-anchor
-  // dance lives in exactly one place and object URLs are consistently
-  // revoked.
+  // Single choke-point for turning text / JSON / raw bytes into a browser
+  // download. Every exporter (and the legacy _downloadMacros /
+  // _downloadPdfScripts / _downloadExtracted / _saveContent sites, plus
+  // attachment / strings-dump / object-carving paths in the renderers)
+  // routes through these helpers so the blob-and-anchor dance lives in
+  // exactly one place and object URLs are consistently revoked.
+  // These thin wrappers exist so app-level call sites read naturally
+  // (`this._downloadText(...)`) without having to know about the global
+  // `FileDownload` module. The real ceremony lives in `src/file-download.js`
+  // so renderers (which don't have `this` = App) share exactly one code path.
   _downloadText(text, filename, mime) {
-    const blob = new Blob([text], { type: mime || 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    // Give the browser a tick to pick up the href before we revoke it.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    window.FileDownload.downloadText(text, filename, mime);
+  },
+
+  _downloadBytes(bytes, filename, mime) {
+    // Accepts a Uint8Array, ArrayBuffer, or anything Blob's constructor
+    // understands. Binary MIME defaults to application/octet-stream.
+    window.FileDownload.downloadBytes(bytes, filename, mime);
+  },
+
+  _downloadBlob(blob, filename) {
+    window.FileDownload.downloadBlob(blob, filename);
   },
 
   _downloadJson(obj, filename) {
-    this._downloadText(JSON.stringify(obj, null, 2), filename, 'application/json');
+    window.FileDownload.downloadJson(obj, filename);
   },
+
 
   // Build "<base>.<suffix>.<ext>" from the loaded file's name, stripping the
   // original extension and sanitising to word-chars so the filename is safe

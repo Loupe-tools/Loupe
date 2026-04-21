@@ -824,7 +824,7 @@ The toolbar's **📤 Export** dropdown is driven by a declarative menu in `src/a
    - `this._fileSourceRecord()` — identical `{name,size,detectedType,magic,entropy,hashes{…}}` block that every threat-intel exporter embeds so the file is unambiguously identified.
    - `this._copyToClipboard(text)` + `this._toast('Xxx copied to clipboard')` — the default destination.
    - `this._buildAnalysisText(Infinity)` — unbudgeted plaintext report (same content as the ⚡ Summary button).
-   - `this._downloadText(text, filename, mime)` / `this._downloadJson(obj, filename)` / `this._exportFilename(suffix, ext)` — only when the output is genuinely a file (e.g. `💾 Save raw file`). Never call `URL.createObjectURL` directly.
+   - `this._downloadText(text, filename, mime)` / `this._downloadBytes(bytes, filename, mime)` / `this._downloadJson(obj, filename)` / `this._exportFilename(suffix, ext)` — only when the output is genuinely a file (e.g. `💾 Save raw file`). These are thin delegates to `window.FileDownload.*` in `src/file-download.js`, which owns the sole `URL.createObjectURL → <a download> → revoke` ceremony in the codebase. **Never call `URL.createObjectURL` directly** — add a helper to `src/file-download.js` instead.
 2. **Register the menu item.** Add an entry to the array returned by `_getExportMenuItems()` — `{ id, icon, label, action: () => this._exportXxx() }`. Use `{ separator: true }` to add a divider. Prefix the label with `Copy ` when the action writes to the clipboard.
 3. **Wrap it.** The click dispatcher in `_openExportMenu()` wraps every action in `try { … } catch (err) { console.error(…); this._toast('Export failed — see console', 'error'); }`. Your exporter just needs to `_toast('Xxx copied to clipboard')` on success.
 

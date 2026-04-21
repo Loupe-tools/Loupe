@@ -1778,10 +1778,7 @@ class ElfRenderer {
     saveBtn.textContent = '💾 Save';
     saveBtn.title = 'Save strings as .txt';
     saveBtn.addEventListener('click', () => {
-      const blob = new Blob([elf.strings.join('\n')], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'strings.txt'; a.click();
-      URL.revokeObjectURL(url);
+      window.FileDownload.downloadText(elf.strings.join('\n'), 'strings.txt', 'text/plain');
     });
     const copyBtn = document.createElement('button');
     copyBtn.className = 'tb-btn tb-action-btn';

@@ -2835,10 +2835,7 @@ class EvtxRenderer {
     dlBtn.addEventListener('click', () => {
       const csv = this._toCsv(events);
       const base = (fileName || 'events').replace(/\.[^.]+$/, '');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = base + '.csv'; a.click();
-      URL.revokeObjectURL(url);
+      window.FileDownload.downloadText(csv, base + '.csv', 'text/csv;charset=utf-8');
       this._showToast(bar, 'Downloaded!');
     });
 

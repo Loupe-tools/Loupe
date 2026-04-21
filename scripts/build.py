@@ -155,6 +155,13 @@ JS_FILES = [
     'src/nicelist-user.js',
 
     'src/parser-watchdog.js',
+    # file-download.js — single home for the Blob → <a download> → revoke
+    # ceremony. Exposes `window.FileDownload.{downloadBlob, downloadText,
+    # downloadBytes, downloadJson}`. Must load BEFORE any renderer or
+    # app-* file that emits a download (every `_downloadText` /
+    # `_downloadBytes` / renderer-local Save button funnels through this).
+    # No dependencies — pure DOM + Blob ceremony.
+    'src/file-download.js',
     # hashes.js — shared non-cryptographic fingerprint hashes (imphash
     # helpers, Rich-header hash, Mach-O symhash). Must load BEFORE any
     # native-binary renderer (pe/elf/macho) so they can call

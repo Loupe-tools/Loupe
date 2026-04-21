@@ -289,7 +289,13 @@ Object.assign(App.prototype, {
 
     bar.querySelector('[data-act="export-all"]').addEventListener('click', () => {
       const json = window._NicelistUser.exportAll();
-      this._downloadText(json, 'loupe-nicelists.json', 'application/json');
+      try {
+        this._downloadText(json, 'loupe-nicelists.json', 'application/json');
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[nicelists] download failed:', e);
+        this._toast('Download failed');
+      }
     });
 
     fileInput.addEventListener('change', async () => {
@@ -525,7 +531,13 @@ Object.assign(App.prototype, {
       const json = window._NicelistUser.exportList(rec.id);
       if (!json) return;
       const safeName = (rec.name || 'nicelist').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'nicelist';
-      this._downloadText(json, `loupe-${safeName}.json`, 'application/json');
+      try {
+        this._downloadText(json, `loupe-${safeName}.json`, 'application/json');
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[nicelists] download failed:', e);
+        this._toast('Download failed');
+      }
     });
 
     card.querySelector('[data-act="delete"]').addEventListener('click', () => {
@@ -550,23 +562,9 @@ Object.assign(App.prototype, {
   },
 
   // ── small helpers (local to this tab) ──────────────────────────────────
-  _downloadText(text, filename, mime) {
-    try {
-      const blob = new Blob([text], { type: mime || 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn('[nicelists] download failed:', e);
-      this._toast('Download failed');
-    }
-  },
+  // `_downloadText` is defined on `App.prototype` in app-ui.js and delegates
+  // to `window.FileDownload.downloadText` (see src/file-download.js). Callers
+  // in this file wrap it in try/catch to surface the nicelist-specific toast.
 
   _escapeAttr(s) {
     return String(s == null ? '' : s)
