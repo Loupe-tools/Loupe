@@ -637,6 +637,52 @@ subtly misbehave.
   Lifecycle-hook script bodies are folded into `findings.augmentedBuffer`
   (capped at 2 MB) before YARA scans so hook source contributes rule
   matches without contaminating the Copy / Save path.
+- **GridViewer timeline strip (Wave E).** Every tabular viewer
+  (`CsvRenderer`, `EvtxRenderer`, `XlsxRenderer`, `SqliteRenderer`,
+  JSON-array via `JsonRenderer`) is backed by the shared `GridViewer`
+  primitive in `src/renderers/grid-viewer.js`. The constructor accepts
+  four opt-in timeline keys: `timeColumn: number` to force a specific
+  column (otherwise `GridViewer` auto-sniffs via
+  `_columnLooksTemporal(colIdx)` — ≥ 50 % of non-empty cells must round-
+  trip through `Date.parse()`, ≥ 2 distinct values, and bare numeric
+  identifiers < 10 digits with no date separators are rejected so a
+  primary-key column never masquerades as a timestamp);
+  `timeParser(cell, dataIdx) → ms | NaN` to override the default
+  `_parseTimeCell` (which already handles ISO-8601, RFC-2822, Unix
+  seconds / millis, and Windows FILETIME); `timelineBuckets: number` to
+  change the histogram resolution (default 60); and
+  `onFilterRecompute: () => void` to hand filter composition back to the
+  caller. When `onFilterRecompute` is **unset**, the internal
+  `_applyFilter()` intersects the text filter with `_timeWindow` via
+  `_dataIdxInTimeWindow(dataIdx)` and paints the virtual grid itself.
+  When `onFilterRecompute` is **set** (EVTX is the reference consumer —
+  its Event ID / Level / Channel / Provider multi-select pipeline can't
+  be expressed as a single substring match), `GridViewer` bypasses its
+  own filter and simply calls the callback after any window change; the
+  caller's pipeline must read `viewer._timeWindow` and intersect every
+  candidate `dataIdx` via `viewer._dataIdxInTimeWindow(i)` before
+  appending its own rows. Internal state is `_timeMs[]` (one entry per
+  data row, `NaN` for unparseable cells), `_timeBuckets: Int32Array` of
+  length `timelineBuckets` (density histogram), and `_timeWindow =
+  {min, max}` (current selection, `null` when cleared). `_rebuildTimeline()`
+  is the canonical refresh entry point and is called from the constructor
+  tail, `endParseProgress()` (streaming-parse tail), and `setRows()`
+  (external row replacement). Keyboard: `[` / `]` step the window by its
+  own width (pan), `Esc` cascades drawer → window → nothing so the same
+  key clears progressively without swallowing close-dialog state.
+  Click-to-bucket selects one bucket; drag selects a range; double-click
+  anywhere on the strip clears the window. The column-header popover
+  grows a "Use as timeline" entry when `_columnLooksTemporal(colIdx)`
+  passes — `_useColumnAsTimeline(colIdx)` then stamps `_timeColumn = colIdx`
+  and re-runs `_rebuildTimeline()`. The timeline strip is hidden
+  (`.grid-timeline.hidden`) when no column sniffs as temporal and the
+  caller did not force one — nothing else in the grid changes, so viewers
+  that ship without a timestamp column (e.g. the generic SQLite table
+  browser) look identical to their pre-Wave-E layout. CSS lives in
+  `src/styles/viewers.css` under the `.grid-timeline*` namespace and
+  uses `rgb(var(--accent-rgb, 99 102 241) / …)` for bar + window fills
+  so theme overlays that retune `--accent-rgb` (Solarized, Mocha, Latte,
+  Midnight) pick up the change for free.
 
 
 ---
@@ -656,6 +702,7 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_nicelist_builtin_enabled` | string | `setBuiltinEnabled()` in `src/nicelist-user.js` (toggled from Settings → 🛡 Nicelists) | `"1"` (on — default) or `"0"` (off) | Master switch for the Default Nicelist shipped in `src/nicelist.js`. When `"0"`, `isNicelisted()` short-circuits to `false` so every curated global-infrastructure entry stops demoting rows. Missing / unparseable value is treated as on so first-time users still get the noise reduction. |
 | `loupe_nicelists_user` | string (JSON) | `save()` / mutation helpers in `src/nicelist-user.js` (Settings → 🛡 Nicelists UI) | `{version:1, lists:[{id,name,enabled,createdAt,updatedAt,entries}]}` | User-defined nicelists (MDR customer domains, employee emails, on-network hostnames, …). Capped at 64 lists × 10 000 entries × 1 MB serialised to stay inside the localStorage quota; overflow writes are refused without corrupting the previous blob. Entries are normalised + deduplicated on save; matching uses the same label-boundary semantics as the built-in list. Exported / imported via the toolbar buttons in the Nicelists tab. |
 | `loupe_plaintext_highlight` | string | `PlainTextRenderer._writeHighlightPref()` in `src/renderers/plaintext-renderer.js` (info-bar "Highlight" button in the plaintext / catch-all viewer) | `"on"` (default) or `"off"` | Syntax-highlighting master switch for the plaintext / catch-all renderer. When `"off"`, hljs is never invoked regardless of file size or language. Independent of the automatic per-file gates (`HIGHLIGHT_SIZE_LIMIT`, `LONG_LINE_THRESHOLD`) which always disable highlighting on minified / pathological inputs. |
+| `loupe_grid_drawer_w` | string (integer) | `_saveDrawerWidth()` in `src/renderers/grid-viewer.js` (drag handle on the left edge of the detail drawer) | integer pixel width, clamped to `280`–`900` on read | Width of the right-hand row-details drawer used by every GridViewer-backed viewer. Default `420`. Persisted per-browser so analysts who prefer a wide drawer for deeply-nested EVTX events don't have to re-drag it on every file. |
 
 **Adding a new key**
 

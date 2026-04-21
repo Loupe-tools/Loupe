@@ -48,7 +48,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **Java** | `.jar` `.war` `.ear` · `.class` |
 | **Scripts** | `.wsf` `.wsc` `.wsh` (parsed) · `.vbs` `.ps1` `.bat` `.cmd` `.js` |
 | **Forensics** | `.evtx` · `.sqlite` `.db` (Chrome / Firefox / Edge history auto-detect) |
-| **Data** | `.csv` `.tsv` · `.iqy` (Internet Query) · `.slk` (Symbolic Link) |
+| **Data** | `.csv` `.tsv` · `.json` `.ndjson` `.jsonl` (array-shaped → tabular grid) · `.iqy` (Internet Query) · `.slk` (Symbolic Link) |
 | **Images** | `.jpg` `.jpeg` `.png` `.gif` `.bmp` `.webp` `.ico` `.tif` `.tiff` `.avif` — preview + steganography / polyglot detection |
 | **SVG** | `.svg` — sandboxed preview + source view, deep SVG-specific security analysis |
 | **Catch-all** | *Any file* — line-numbered text view (encoding auto-detect, syntax highlighting toggle, soft-wraps minified single-line files) or hex dump for binary data |
@@ -226,8 +226,14 @@ ZIP listings additionally surface per-entry risk signals classic archive viewers
 | **Archive browser** | Shared collapsible / searchable / sortable tree used by every archive-style renderer (ZIP, JAR / WAR / EAR, MSIX / APPX, CRX / XPI, TAR / `.tar.gz`, ISO / IMG, PKG / MPKG, CAB, RAR, 7z). Tree view with child counts and one-click drill-down; flat sortable table view; instant filter box; per-entry risk badges (executable, double-extension, ZipCrypto lock, tar-symlink target). |
 | **Keyboard shortcuts** | `S` sidebar · `Y` YARA dialog · `N` Nicelists · `,` Settings · `?` / `H` Help · `F` search document · `Ctrl+C` copy raw file (when nothing is selected) · `Ctrl+V` paste file for analysis · `Esc` close dialog / clear search. **Archive browser:** `/` focus filter · `↑ ↓` navigate rows · `← →` collapse / expand folder · `Enter` / `Space` open selected file. |
 | **Smart whole-token select** | Double-click in any monospace viewer selects the entire non-whitespace token — expanding past `/ . : = - _` and across visual line wraps — up to the nearest whitespace boundary. Great for URLs, hashes, base64 blobs, file paths, registry keys, PE imports, x509 fingerprints. |
+| **Tabular grid (CSV / TSV / EVTX / XLSX / SQLite / JSON-array)** | Fixed-row virtual scroller renders 150 000-row files without stutter. Streaming parse paints the first 1 000 rows in ~200 ms and fills the rest in the background with a progress chip. |
+| **Row-details drawer** | Click any row to open a resizable right-hand drawer with per-column key/value view; drawer width persists per-browser. JSON / NDJSON cells render as a collapsible tree (lazy-expanded, depth-capped). |
+| **Column header menu** | Click any column header for Sort asc / desc / clear, Copy column (tab-separated to clipboard), Hide column, and **Top values…** — a mini bar chart of the 50 most frequent values with one-click filter-to-value. |
+| **Malformed-row ribbon** | CSV / TSV parses flag rows with wrong cell counts or unbalanced quotes; the filter bar shows a ⚠ count chip with Next (jump to next malformed row) and Filter (show only malformed rows) buttons. |
+| **Timeline strip** | Density histogram above the filter bar for grids with a sniffed timestamp column; click or drag to filter, `[`/`]` pan, `Esc` clears. |
 | **Loading overlay** | Spinner with status message while parsing large files |
 | **Toast notifications** | Non-intrusive feedback for downloads, clipboard operations, and errors |
+
 | **Click-to-highlight** | Clicking any IOC or YARA match in the sidebar jumps to (and cycles through) matching occurrences in the viewer with yellow / blue `<mark>` highlights |
 | **Forensic-safe email links** | `<a href>` inside EML / MSG messages is rendered as an inert span — the visible anchor text and underlying URL (exposed as a hover tooltip) stay inspectable, but clicking does nothing. You can read and copy a phishing URL with zero risk of accidental navigation. |
 
