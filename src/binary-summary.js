@@ -19,6 +19,10 @@
 //   - Overlay Y/N + first-bytes magic — from `BinaryOverlay.compute()`.
 //   - Packer verdict — canonical section-name hit (UPX0 / .themida / …),
 //     captured during the per-format section parse.
+//   - Per-format identity rows: .NET CLR runtime (PE), GNU build-id (ELF),
+//     Team ID / Bundle ID / SDK-MinOS (Mach-O). Each is a single row,
+//     emitted only when the underlying datum was successfully parsed, so
+//     the card stays short on the (common) case where none apply.
 //
 // This helper renders all of the above as one uniform card so the layout
 // is identical across PE / ELF / Mach-O. It never mutates `findings` —
@@ -37,9 +41,20 @@
 //     importHash,              imphash / telfhash / Mach-O import hash.
 //     richHash,                PE-only (nullable).
 //     symHash,                 Mach-O-only (nullable).
-//     signer,                  { present: bool, label: string } — label
-//                              like 'CN=Foo Corp' or 'Team ID: A1B2C3…'
-//                              or 'Ad-hoc signed'.
+//     signer,                  { present: bool, verified?: bool,
+//                              label: string } — label like
+//                              'CN=Foo Corp' or 'Team ID: A1B2C3…' or
+//                              'Ad-hoc signed'. `verified` is a tri-state
+//                              hint for whether the signature's
+//                              certificate chain has been structurally
+//                              validated. Loupe is offline so the CMS
+//                              root-of-trust is not walked; the flag is
+//                              therefore almost always absent or false.
+//                              When `present: true && !verified` the
+//                              badge reads "signer present" rather than
+//                              "signed" — we surface that a signature
+//                              blob exists without over-claiming that
+//                              it has been trust-validated.
 //     compileTimestamp,        { epoch, displayStr } — PE only. null on
 //                              ELF / Mach-O (neither format carries a
 //                              compile timestamp in its structural header).
@@ -52,6 +67,25 @@
 //     packer,                  { label: string, source: string } or null.
 //                              `source` is a short provenance hint like
 //                              'section .UPX0' or 'strings UPX!'.
+//     teamId,                  Mach-O code-signature Team ID, e.g.
+//                              'A1B2C3D4E5'. Rendered as its own row so
+//                              the 10-char identifier is copy-friendly
+//                              even when the signer label is long.
+//     bundleId,                Mach-O CFBundleIdentifier harvested from
+//                              an embedded Info.plist (usually surfaced
+//                              as `findings.metadata['Bundle ID']` by
+//                              the renderer).
+//     buildId,                 ELF `.note.gnu.build-id` hex digest —
+//                              the durable attribution tell even after
+//                              `strip` has removed debuginfo. Pair with
+//                              debuginfod / `/usr/lib/debug/.build-id/`.
+//     clrRuntime,              PE .NET CLR metadata runtime-version
+//                              string, e.g. 'v4.0.30319' (distinguishes
+//                              .NET Framework 2/4, .NET Core, etc.).
+//     sdkMinOS,                Mach-O `LC_BUILD_VERSION` /
+//                              `LC_VERSION_MIN_*` triple as a single
+//                              compact string like 'macOS 13.0 · SDK
+//                              14.0'.
 //   }) → HTMLElement
 //
 // The MD5 / SHA-1 / SHA-256 placeholders are filled in asynchronously:
@@ -190,6 +224,7 @@ const BinarySummary = (() => {
       bytes, fileSize, format, formatDetail,
       importHash, richHash, symHash,
       signer, compileTimestamp, entryPoint, overlay, packer,
+      teamId, bundleId, buildId, clrRuntime, sdkMinOS,
     } = opts || {};
 
     const card = document.createElement('div');
@@ -219,10 +254,49 @@ const BinarySummary = (() => {
     if (symHash)    body.appendChild(_row('SymHash',     `<code>${_esc(symHash)}</code>`));
 
     // ── Signer ────────────────────────────────────────────────────────────
+    // Tri-state presentation:
+    //   { present:false }                 → "unsigned" (warn)
+    //   { present:true,  verified:true }  → "signed" (ok)
+    //   { present:true,  verified:false } → "signer present" (info)
+    //                                       — blob parsed, chain not
+    //                                       walked (Loupe is offline,
+    //                                       so the CMS root-of-trust
+    //                                       cannot be validated).
+    //   { present:true } with no verified → same as !verified (the safe
+    //                                       default — never claim
+    //                                       "signed" without evidence).
     if (signer) {
-      const sBadge = signer.present ? _badge('signed', 'ok') : _badge('unsigned', 'warn');
-      body.appendChild(_row('Signer', _esc(signer.label || (signer.present ? 'signed' : '—')), sBadge));
+      let badgeText, badgeKind;
+      if (!signer.present) {
+        badgeText = 'unsigned';   badgeKind = 'warn';
+      } else if (signer.verified) {
+        badgeText = 'signed';     badgeKind = 'ok';
+      } else {
+        badgeText = 'signer present'; badgeKind = 'info';
+      }
+      const sBadge = _badge(badgeText, badgeKind);
+      body.appendChild(_row('Signer', _esc(signer.label || (signer.present ? 'signer present' : '—')), sBadge));
     }
+
+    // ── Mach-O Team ID (separate row — copy-friendly) ─────────────────────
+    // The Team ID already appears inside the signer label, but analysts
+    // routinely grep the 10-char identifier on its own (it's the pivot
+    // into Apple Developer registration and MITRE T1553.002 clusters),
+    // so a dedicated `<code>`-formatted row keeps it selectable without
+    // the 'Team ID: ' prefix.
+    if (teamId) {
+      body.appendChild(_row('Team ID', `<code>${_esc(teamId)}</code>`));
+    }
+
+    // ── Mach-O Bundle ID / ELF build-id / PE CLR runtime ──────────────────
+    // One compact identity row per format; each is a durable attribution
+    // tell that survives stripping (build-id lives in a note section,
+    // bundle-id lives in Info.plist, CLR runtime lives in the COR20
+    // header). Only one of these is ever non-null per sample.
+    if (bundleId)   body.appendChild(_row('Bundle ID',   `<code>${_esc(bundleId)}</code>`));
+    if (buildId)    body.appendChild(_row('Build ID',    `<code>${_esc(buildId)}</code>`));
+    if (clrRuntime) body.appendChild(_row('CLR Runtime', `<code>${_esc(clrRuntime)}</code>`));
+    if (sdkMinOS)   body.appendChild(_row('SDK / Min OS', _esc(sdkMinOS)));
 
     // ── Compile timestamp (PE only; ELF/Mach-O skip) ──────────────────────
     if (compileTimestamp && compileTimestamp.displayStr) {
