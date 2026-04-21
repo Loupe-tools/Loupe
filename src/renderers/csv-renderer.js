@@ -732,10 +732,14 @@ class CsvRenderer {
   // Auto-detect delimiter by counting occurrences in the first line
   // ════════════════════════════════════════════════════════════════════════
   _delim(text) {
-    const line = (text.split('\n')[0] || '');
+    // Slice first line via indexOf to avoid splitting the whole buffer.
+    let nl = text.indexOf('\n');
+    if (nl === -1) nl = text.length;
+    const line = text.substring(0, nl);
     const c = { ',': 0, ';': 0, '\t': 0, '|': 0 };
     let inQ = false;
-    for (const ch of line) {
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
       if (ch === '"') {
         inQ = !inQ;
       } else if (!inQ && c[ch] !== undefined) {
@@ -747,45 +751,50 @@ class CsvRenderer {
 
   // ════════════════════════════════════════════════════════════════════════
   // Parse CSV text into rows with offset tracking
+  //
+  // Fast path: lines without any '"' use native String.prototype.split,
+  // which is dramatically faster than the per-character state machine.
+  // Lines that contain '"' fall through to _splitQuoted for correctness.
   // ════════════════════════════════════════════════════════════════════════
   _parse(text, delim) {
     const rows = [];
     const rowOffsets = [];
+    const len = text.length;
     let offset = 0;
-    let lineStart = 0;
 
-    while (offset <= text.length) {
-      let lineEnd = offset;
-      while (lineEnd < text.length && text[lineEnd] !== '\r' && text[lineEnd] !== '\n') {
-        lineEnd++;
+    while (offset < len) {
+      // Locate next LF with native indexOf (native C++ in V8).
+      let lineEnd = text.indexOf('\n', offset);
+      if (lineEnd === -1) lineEnd = len;
+
+      // Handle CRLF by trimming a trailing \r from the content range.
+      let contentEnd = lineEnd;
+      if (contentEnd > offset && text.charCodeAt(contentEnd - 1) === 13) {
+        contentEnd--;
       }
 
-      const line = text.substring(lineStart, lineEnd);
-
-      if (line.trim()) {
-        rows.push(this._split(line, delim));
-        rowOffsets.push({ start: lineStart, end: lineEnd });
+      if (contentEnd > offset) {
+        const line = text.substring(offset, contentEnd);
+        // Fast path: no quotes anywhere in the line → native split.
+        const cells = line.indexOf('"') === -1
+          ? line.split(delim)
+          : this._splitQuoted(line, delim);
+        rows.push(cells);
+        rowOffsets.push({ start: offset, end: contentEnd });
       }
 
-      if (lineEnd < text.length) {
-        if (text[lineEnd] === '\r' && text[lineEnd + 1] === '\n') {
-          offset = lineEnd + 2;
-        } else {
-          offset = lineEnd + 1;
-        }
-        lineStart = offset;
-      } else {
-        break;
-      }
+      offset = lineEnd + 1;
     }
 
     return { rows, rowOffsets };
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // Split a CSV line into cells
+  // Split a CSV line into cells (RFC 4180 quoted handling).
+  // Only used for lines that actually contain '"' — the common
+  // quote-free case is handled in _parse via native String.split.
   // ════════════════════════════════════════════════════════════════════════
-  _split(line, delim) {
+  _splitQuoted(line, delim) {
     const cells = [];
     let cur = '';
     let inQ = false;
