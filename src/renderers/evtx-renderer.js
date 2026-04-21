@@ -1898,7 +1898,13 @@ class EvtxRenderer {
       hideFilterBar: true,
       extraToolbarEls: [stats, csvBar, filterBar],
       timeColumn: 0,
+      // Stack the histogram by Event ID (column 1) on load — matches the
+      // analyst mental model of "how many 4624/4688/4672s fired per time
+      // slice?". User can switch to Level / Provider / any other column
+      // via the column-header "Stack timeline by this column" item.
+      timelineStackColumn: 1,
       onFilterRecompute: () => applyFilters(),
+
       // Mark notable Event IDs with a coloured dot (EVTX-specific styling).
       cellClass: (dataIdx, colIdx /* , rawCell */) => {
         if (colIdx === 1 /* Event ID */ && self._isNotableEventId(limitedEvents[dataIdx].eventId)) {
@@ -1954,6 +1960,12 @@ class EvtxRenderer {
       }
       scr.scrollTop = 0;
       viewer._forceFullRender();
+      // Wave-E: EVTX bypasses GridViewer's `_applyFilter()` (we supply
+      // `onFilterRecompute`), so the bucket-refresh hook embedded there
+      // never fires. Call it directly so histogram counts track the
+      // filtered set — including the "clear all" path that sets
+      // `filteredIndices = null`.
+      viewer._refreshTimelineBuckets();
       const shown = viewer.state.filteredIndices
         ? viewer.state.filteredIndices.length
         : limitedEvents.length;
