@@ -3367,27 +3367,27 @@ class PeRenderer {
       const URL_CAP = 50, UNC_CAP = 20;
       const urlMatches = [...new Set([...allStrings.matchAll(_urlRx)].map(m => m[0]))];
       for (const url of urlMatches.slice(0, URL_CAP)) {
-        findings.interestingStrings.push({
-          type: IOC.URL, url, severity: 'info', _highlightText: url,
+        pushIOC(findings, {
+          type: IOC.URL, value: url, severity: 'info', highlightText: url,
         });
       }
       if (urlMatches.length > URL_CAP) {
-        findings.interestingStrings.push({
+        pushIOC(findings, {
           type: IOC.INFO,
-          url: `URL extraction truncated at ${URL_CAP} — binary contains ${urlMatches.length} unique URLs`,
+          value: `URL extraction truncated at ${URL_CAP} — binary contains ${urlMatches.length} unique URLs`,
           severity: 'info',
         });
       }
       const uncMatches = [...new Set([...allStrings.matchAll(_uncRx)].map(m => m[0]))];
       for (const unc of uncMatches.slice(0, UNC_CAP)) {
-        findings.interestingStrings.push({
-          type: IOC.UNC_PATH, url: unc, severity: 'medium', _highlightText: unc,
+        pushIOC(findings, {
+          type: IOC.UNC_PATH, value: unc, severity: 'medium', highlightText: unc,
         });
       }
       if (uncMatches.length > UNC_CAP) {
-        findings.interestingStrings.push({
+        pushIOC(findings, {
           type: IOC.INFO,
-          url: `UNC path extraction truncated at ${UNC_CAP} — binary contains ${uncMatches.length} unique UNC paths`,
+          value: `UNC path extraction truncated at ${UNC_CAP} — binary contains ${uncMatches.length} unique UNC paths`,
           severity: 'info',
         });
       }

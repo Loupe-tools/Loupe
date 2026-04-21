@@ -1274,10 +1274,12 @@ class PgpRenderer {
           // ── IOC extraction: email addresses ──
           for (const uid of group.userIds) {
             if (uid.email) {
-              findings.interestingStrings.push({
+              pushIOC(findings, {
                 type: IOC.EMAIL,
-                url: uid.email, severity: 'info', note: 'PGP User ID',
-                _highlightText: uid.email,
+                value: uid.email,
+                severity: 'info',
+                note: 'PGP User ID',
+                highlightText: uid.email,
               });
             }
           }
