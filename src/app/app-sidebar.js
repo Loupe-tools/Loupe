@@ -1907,6 +1907,14 @@ Object.assign(App.prototype, {
       }
     };
 
+    // ── Initial filter pass ──────────────────────────────────────────────
+    // Applies the persisted `hideNicelisted` state to the freshly-rendered
+    // table. Without this, reloading the page with "Hide" active would
+    // leave the button labelled "Show" (correctly reflecting state) but
+    // the nicelisted rows would still be visible because `applyFilters`
+    // had never run.
+    applyFilters();
+
     // ── Event listeners ──────────────────────────────────────────────────
     srch.addEventListener('input', applyFilters);
 
