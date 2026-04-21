@@ -818,7 +818,15 @@ class CsvRenderer {
       // createRowElements paint .csv-ioc-row-highlight + <mark> wrappings
       // on every subsequent re-render until clearMs elapses. Returns the
       // Promise from scrollToRow so callers can chain post-scroll work.
-      scrollToRowWithIocHighlight: (dataIdx, term, clearMs = 5000) => {
+      //
+      // `onExpire` (optional) is invoked synchronously when the internal
+      // timer fires naturally AND this state group is still the active
+      // one — it is NOT invoked on programmatic clears (clearIocHighlight)
+      // or when a later setYaraHighlight / scrollToRowWithIocHighlight
+      // supersedes this group. Callers use it to reset their own state
+      // (e.g. sidebar's `ref._currentMatchIndex`) without needing a
+      // parallel timer that could desync.
+      scrollToRowWithIocHighlight: (dataIdx, term, clearMs = 5000, onExpire = null) => {
         _clearIocInternal();
         _clearYaraInternal();
         state.iocHighlight = {
@@ -829,6 +837,9 @@ class CsvRenderer {
               _clearIocInternal();
               state.renderedRange = { start: -1, end: -1 };
               renderVisibleRows();
+              if (typeof onExpire === 'function') {
+                try { onExpire(); } catch (_) { /* callback errors must not break cleanup */ }
+              }
             }
           }, clearMs)
         };
@@ -845,7 +856,10 @@ class CsvRenderer {
       // per-row match map up front so every currently-rendered row gets
       // its marks. Note that this does NOT scroll — caller should follow
       // with scrollToRow(focusDataIdx).then(scrollToYaraFocus-if-needed).
-      setYaraHighlight: (matchesByDataIdx, focusDataIdx, focusMatchIdx, sourceText, clearMs = 5000) => {
+      //
+      // `onExpire` — see scrollToRowWithIocHighlight for semantics. Not
+      // fired on clearYaraHighlight or supersession.
+      setYaraHighlight: (matchesByDataIdx, focusDataIdx, focusMatchIdx, sourceText, clearMs = 5000, onExpire = null) => {
         _clearIocInternal();
         _clearYaraInternal();
         state.yaraHighlight = {
@@ -856,6 +870,9 @@ class CsvRenderer {
               _clearYaraInternal();
               state.renderedRange = { start: -1, end: -1 };
               renderVisibleRows();
+              if (typeof onExpire === 'function') {
+                try { onExpire(); } catch (_) { /* callback errors must not break cleanup */ }
+              }
             }
           }, clearMs)
         };

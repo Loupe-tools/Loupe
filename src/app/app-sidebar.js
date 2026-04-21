@@ -2617,9 +2617,20 @@ Object.assign(App.prototype, {
     // reapplies .csv-yara-row-highlight + <mark> wrapping on every re-render
     // (scrollend, height remeasure, resize, filter, scroll) until the 5s
     // deadline expires. We just seed the state and drive the scroll.
+    //
+    // The previous implementation ran a parallel setTimeout here to reset
+    // `ref._currentMatchIndex` and tracking fields — but a second timer
+    // can desync from the renderer's timer (rapid-click supersession left
+    // the sidebar timer outstanding, and when it fired it nulled
+    // `_yaraHighlightActiveView` while a later highlight was still live).
+    // Delegate to the renderer's `onExpire` callback instead so there is
+    // exactly one timer per logical highlight lifetime.
     if (filters.setYaraHighlight && filters.scrollToRow) {
       this._yaraHighlightActiveView = csvView;
-      filters.setYaraHighlight(matchesByRowIdx, focusRow.dataIndex, focusIdx, sourceText, 5000);
+      filters.setYaraHighlight(matchesByRowIdx, focusRow.dataIndex, focusIdx, sourceText, 5000, () => {
+        if (ref) ref._currentMatchIndex = undefined;
+        this._yaraHighlightActiveView = null;
+      });
       filters.scrollToRow(focusRow.dataIndex, false).then(() => {
         if (!filters.scrollToYaraFocus) return;
         if (forceScroll) { filters.scrollToYaraFocus(); return; }
@@ -2635,12 +2646,6 @@ Object.assign(App.prototype, {
         });
         if (!anyInView) filters.scrollToYaraFocus();
       });
-
-      this._yaraHighlightTimer = setTimeout(() => {
-        if (ref) ref._currentMatchIndex = undefined;
-        this._yaraHighlightActiveView = null;
-        this._yaraHighlightTimer = null;
-      }, 5000);
       return;
     }
 
@@ -2852,14 +2857,18 @@ Object.assign(App.prototype, {
     if (!filters || !searchTerm) return;
 
     // Preferred path: renderer-owned highlight.
+    //
+    // Parallel sidebar timer dropped — the renderer's `onExpire` callback
+    // is invoked when (and only when) the renderer's own timer fires and
+    // this highlight hasn't been superseded. That makes rapid-click
+    // navigation race-free: a later click replaces the renderer's timer,
+    // and the old timer's `onExpire` never runs.
     if (filters.scrollToRowWithIocHighlight) {
       this._iocCsvHighlightActiveView = csvView;
-      filters.scrollToRowWithIocHighlight(dataIdx, searchTerm, 5000);
-      this._iocCsvHighlightTimer = setTimeout(() => {
+      filters.scrollToRowWithIocHighlight(dataIdx, searchTerm, 5000, () => {
         if (ref) ref._currentMatchIndex = undefined;
         this._iocCsvHighlightActiveView = null;
-        this._iocCsvHighlightTimer = null;
-      }, 5000);
+      });
       return;
     }
 
