@@ -198,6 +198,15 @@ class PlainTextRenderer {
     // extraction) don't drift on CRLF files. See `.clinerules` gotcha.
     const decodedText = this._normalizeNewlines(this._decodeAs(bytes, detected.encoding));
 
+    // Pre-compute whether syntax highlighting is *possible at all* for
+    // this file. If it isn't — hljs missing, file too large, or a single
+    // pathologically long line present — we omit the Highlight toggle
+    // entirely rather than leaving a button that does nothing when
+    // clicked. (The same gate is applied again inside `_buildTextPane`;
+    // we duplicate the computation here so the info bar can decide
+    // whether to render the control at all.)
+    const highlightPossible = this._canHighlight(decodedText);
+
     // ── Info bar with toggle + encoding selector ──────────────────────
     const info = document.createElement('div');
     info.className = 'plaintext-info';
@@ -215,18 +224,29 @@ class PlainTextRenderer {
     spacer.style.flex = '1';
     info.appendChild(spacer);
 
-    // Syntax-highlight toggle (persisted)
-    const hlLabel = document.createElement('label');
-    hlLabel.className = 'plaintext-enc-label';
-    hlLabel.textContent = 'Highlight:';
-    info.appendChild(hlLabel);
-
-    const hlBtn = document.createElement('button');
-    hlBtn.className = 'plaintext-toggle-btn';
+    // Syntax-highlight toggle (persisted). Only rendered when
+    // highlighting is actually possible for this file — otherwise the
+    // button would be a no-op.
     let highlightEnabled = PlainTextRenderer._readHighlightPref();
-    hlBtn.textContent = highlightEnabled ? 'On' : 'Off';
-    hlBtn.title = 'Toggle syntax highlighting (persisted)';
-    info.appendChild(hlBtn);
+    let hlLabel = null;
+    let hlBtn = null;
+    if (highlightPossible) {
+      hlLabel = document.createElement('label');
+      hlLabel.className = 'plaintext-enc-label';
+      hlLabel.textContent = 'Highlight:';
+      info.appendChild(hlLabel);
+
+      hlBtn = document.createElement('button');
+      hlBtn.className = 'plaintext-toggle-btn';
+      hlBtn.textContent = highlightEnabled ? 'On' : 'Off';
+      hlBtn.title = 'Toggle syntax highlighting (persisted)';
+      info.appendChild(hlBtn);
+    } else {
+      // Force highlighting off for this render so `_buildTextPane`
+      // doesn't waste time re-checking the same gate.
+      highlightEnabled = false;
+    }
+
 
     // Encoding selector
     const encLabel = document.createElement('label');
@@ -309,11 +329,12 @@ class PlainTextRenderer {
       toggleBtn.textContent = showingText ? '⬡ Hex' : '🔡 Text';
       toggleBtn.title = showingText ? 'Switch to hex dump view' : 'Switch to plain text view';
       wrap.className = showingText ? 'plaintext-view' : 'hex-view';
-      // Show/hide encoding selector + highlight toggle (only relevant for text view)
+      // Show/hide encoding selector + highlight toggle (only relevant for text view).
+      // hlLabel / hlBtn may be null when highlighting is impossible for this file.
       encLabel.style.display = showingText ? '' : 'none';
       encSelect.style.display = showingText ? '' : 'none';
-      hlLabel.style.display = showingText ? '' : 'none';
-      hlBtn.style.display = showingText ? '' : 'none';
+      if (hlLabel) hlLabel.style.display = showingText ? '' : 'none';
+      if (hlBtn) hlBtn.style.display = showingText ? '' : 'none';
       this._updateInfoText(infoText, showingText, bytes, currentEncoding, detectedLang, contentArea._textPane._lineCount);
     });
 
@@ -326,12 +347,18 @@ class PlainTextRenderer {
     });
 
     // ── Highlight toggle handler ─────────────────────────────────────────
-    hlBtn.addEventListener('click', () => {
-      highlightEnabled = !highlightEnabled;
-      PlainTextRenderer._writeHighlightPref(highlightEnabled);
-      hlBtn.textContent = highlightEnabled ? 'On' : 'Off';
-      rebuildTextPane();
-    });
+    // Only wire up the handler when the button was actually rendered —
+    // for files where highlighting is impossible (hljs missing, too
+    // large, or containing a pathologically long line) the button is
+    // omitted from the info bar entirely.
+    if (hlBtn) {
+      hlBtn.addEventListener('click', () => {
+        highlightEnabled = !highlightEnabled;
+        PlainTextRenderer._writeHighlightPref(highlightEnabled);
+        hlBtn.textContent = highlightEnabled ? 'On' : 'Off';
+        rebuildTextPane();
+      });
+    }
 
     return wrap;
   }
@@ -360,6 +387,40 @@ class PlainTextRenderer {
 
     // Pattern detection is handled entirely by YARA (auto-scan on file load)
     return f;
+  }
+
+  // ── Highlight feasibility ───────────────────────────────────────────────
+
+  /**
+   * Would calling hljs on `text` actually produce any highlighting right
+   * now? Mirrors the gate inside `_buildTextPane` but operates on the
+   * text only — used by `render()` to decide whether to render the
+   * Highlight toggle at all. Three things can block highlighting:
+   *   1. hljs isn't loaded in this build.
+   *   2. The total text is over `HIGHLIGHT_SIZE_LIMIT` (hljs slows to a
+   *      crawl on multi-hundred-KB inputs).
+   *   3. A single line is over `LONG_LINE_THRESHOLD` — the hljs span
+   *      tree for one multi-megabyte minified-JS line can freeze or
+   *      OOM the tab regardless of total size.
+   * When any of these holds we hide the button instead of leaving it
+   * present but inert.
+   */
+  _canHighlight(text) {
+    if (typeof hljs === 'undefined') return false;
+    if (text.length >= PlainTextRenderer.HIGHLIGHT_SIZE_LIMIT) return false;
+    // Walk lines until we either exceed the long-line threshold or run
+    // out of text. Early-exit keeps this O(n) with a very small constant
+    // for normal files.
+    let runStart = 0;
+    const limit = PlainTextRenderer.LONG_LINE_THRESHOLD;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 0x0A /* \n */) {
+        if (i - runStart > limit) return false;
+        runStart = i + 1;
+      }
+    }
+    if (text.length - runStart > limit) return false;
+    return true;
   }
 
   // ── Encoding auto-detection ─────────────────────────────────────────────
