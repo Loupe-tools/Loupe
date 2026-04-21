@@ -266,7 +266,14 @@ Object.assign(App.prototype, {
       for (const [k, v] of metaVals) {
         const tr = document.createElement('tr');
         const td1 = document.createElement('td'); td1.textContent = labels[k] || k;
-        const td2 = document.createElement('td'); td2.textContent = v;
+        const td2 = document.createElement('td');
+        // Route non-scalar values (e.g. EML attachments array-of-objects,
+        // PDF pdfJavaScripts) through the shared formatter so they render
+        // legibly instead of collapsing to "[object Object]" via default
+        // string coercion.
+        td2.textContent = (v !== null && typeof v === 'object')
+          ? this._formatMetadataValue(v, 0)
+          : String(v);
         tr.appendChild(td1); tr.appendChild(td2); mt.appendChild(tr);
       }
       body.appendChild(mt);
