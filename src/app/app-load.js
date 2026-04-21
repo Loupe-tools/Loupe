@@ -1290,10 +1290,11 @@ Object.assign(App.prototype, {
     const nav = document.getElementById('breadcrumbs');
     if (!nav) return;
 
-    // No file loaded → hide
+    // No file loaded → hide breadcrumbs + restore base tab title
     if (!this._fileMeta || !this._fileMeta.name) {
       nav.classList.add('hidden');
       nav.innerHTML = '';
+      document.title = 'Loupe';
       return;
     }
 
@@ -1304,6 +1305,14 @@ Object.assign(App.prototype, {
       return { name, depth: i, current: false };
     });
     crumbs.push({ name: this._fileMeta.name, depth: stack.length, current: true });
+
+    // Reflect loaded file (and any archive drill-down path) in the tab
+    // title. Centralised here because _renderBreadcrumbs is invoked on
+    // every state change that alters the displayed file — fresh loads,
+    // metadata-enrichment re-renders, archive drill-down, and
+    // breadcrumb back-navigation via _navJumpTo — so one hook covers
+    // all cases without duplicating state in _loadFile / _clearFile.
+    document.title = 'Loupe — ' + crumbs.map(c => c.name).join(' › ');
 
     nav.classList.remove('hidden');
     nav.innerHTML = '';
