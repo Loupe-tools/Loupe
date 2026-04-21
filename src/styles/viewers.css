@@ -879,11 +879,21 @@ body.dark .msg-subject {
   color: var(--text);
 }
 
+/* Email body canvas — pinned to a white background + dark text in every
+   theme. Loupe is a forensic viewer; email HTML is authored for a white
+   canvas, so inheriting the dark theme's colours produces unreadable
+   dark-on-dark output for any message that sets its own `color:#000`
+   (or relies on the browser default). Keeping the body canvas light in
+   every theme preserves author intent and guarantees contrast. The
+   surrounding `.eml-view` / `.msg-view` chrome still adapts to the
+   active theme — only the body itself is forced light. */
 .msg-body-frame {
   margin: 0 14px 14px;
   padding: 16px;
   border: 1px solid #e8e8e8;
   border-radius: 8px;
+  background: #ffffff;
+  color: #1a1a1a;
   font-size: 13px;
   line-height: 1.6;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -892,8 +902,43 @@ body.dark .msg-subject {
 }
 
 body.dark .msg-body-frame {
-  border-color: var(--hairline-soft);
-  color: var(--text);
+  /* Keep the body canvas light even in dark themes — see note above. */
+  background: #ffffff;
+  color: #1a1a1a;
+  border-color: #e8e8e8;
+}
+
+/* MSG HTML body container (mirrors .msg-body-frame, without pre-wrap). */
+.msg-body-html {
+  margin: 0 14px 14px;
+  padding: 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  word-break: break-word;
+}
+
+body.dark .msg-body-html {
+  background: #ffffff;
+  color: #1a1a1a;
+  border-color: #e8e8e8;
+}
+
+/* Inert-link colour inside the forced-white body canvas — the default
+   `body.dark .eml-link-inert { color:#8ab4f8 }` override is low-contrast
+   on white, so pin the classic hyperlink blue in this context. */
+.msg-body-frame .eml-link-inert,
+.msg-body-html .eml-link-inert {
+  color: #0563C1;
+}
+
+body.dark .msg-body-frame .eml-link-inert,
+body.dark .msg-body-html .eml-link-inert {
+  color: #0563C1;
 }
 
 .msg-attach-list {

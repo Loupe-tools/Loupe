@@ -198,24 +198,42 @@ class MsgRenderer {
   }
 
   _sanitize(html, container) {
-    const OK = new Set(['p', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'span', 'div', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'a', 'font', 'center', 'sub', 'sup', 'abbr', 'cite', 'q', 'mark']);
-    const ATTR = new Set(['href', 'style', 'color', 'size', 'face', 'align', 'colspan', 'rowspan']);
+    // Sanitize HTML: strip scripts, event handlers, dangerous elements.
+    //
+    // NOTE: <a href> is deliberately *not* passed through as a live link.
+    // Loupe is a forensic viewer — an analyst clicking a phishing URL in a
+    // sample they are triaging would be a real-world safety problem. Anchors
+    // are rewritten to inert <span class="eml-link-inert" title="<url>"> so
+    // the visible text and the underlying href stay inspectable but nothing
+    // navigates. Mirrors the policy in eml-renderer.js::_sanitize().
+    const OK = new Set(['p', 'br', 'b', 'strong', 'i', 'em', 'u', 's', 'span', 'div', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'hr', 'font', 'center', 'sub', 'sup', 'abbr', 'cite', 'q', 'mark']);
+    const ATTR = new Set(['style', 'color', 'size', 'face', 'align', 'colspan', 'rowspan']);
     const walk = (node, target) => {
       for (const c of Array.from(node.childNodes)) {
         if (c.nodeType === 3) { target.appendChild(document.createTextNode(c.textContent)); continue; }
         if (c.nodeType !== 1) continue;
         const tag = c.tagName.toLowerCase();
         if (['script', 'style', 'meta', 'link', 'object', 'iframe', 'embed', 'svg', 'math'].includes(tag)) continue;
+
+        // ── Anchor → inert span ─────────────────────────────────────────
+        // Rewrite every <a> as <span class="eml-link-inert"> so analysts
+        // see the link text (and can hover to see the real href via the
+        // title attribute) but a click cannot navigate anywhere.
+        if (tag === 'a') {
+          const span = document.createElement('span');
+          span.className = 'eml-link-inert';
+          const hrefAttr = c.getAttribute('href');
+          if (hrefAttr) span.title = hrefAttr;
+          walk(c, span);
+          target.appendChild(span);
+          continue;
+        }
+
         if (!OK.has(tag)) { walk(c, target); continue; }
         const el = document.createElement(tag);
         for (const a of Array.from(c.attributes)) {
           const n = a.name.toLowerCase(); if (!ATTR.has(n)) continue;
-          if (n === 'href') {
-            const s = sanitizeUrl(a.value);
-            // Block data: URLs in href to prevent XSS
-            if (s && !s.toLowerCase().startsWith('data:')) el.setAttribute(n, s);
-          }
-          else if (n === 'style') {
+          if (n === 'style') {
             // Comprehensive CSS XSS sanitization
             const cleanStyle = a.value
               .replace(/expression\s*\(/gi, '')
