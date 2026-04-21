@@ -1378,6 +1378,31 @@ Object.assign(App.prototype, {
     const body = document.createElement('div');
     body.className = 'sb-details-body';
 
+    // ── IOC extraction truncation note ──────────────────────────────────
+    // `_extractInterestingStrings` (app-load.js) enforces a per-type quota
+    // (PER_TYPE_CAP). When any type was capped, it stashes a drop map on
+    // `findings._iocTruncation` so the user sees "Showing N of M Email"
+    // rather than silently losing IOCs — the original symptom that made
+    // a 1000-row CSV of emails produce zero Email IOCs because 1000 URLs
+    // filled the old global 300-entry cap first. Rendered IOCs-section
+    // only, and only for IOC types (Detections use a separate pipeline
+    // that doesn't go through the quota).
+    const _iocTruncation = this.findings && this.findings._iocTruncation;
+    if (sectionTitle === 'IOCs' && _iocTruncation && _iocTruncation.droppedByType && _iocTruncation.droppedByType.size > 0) {
+      const note = document.createElement('div');
+      note.className = 'ioc-truncation-note';
+      note.style.cssText = 'color:#856404;background:#fff3cd;border:1px solid #ffeeba;padding:6px 8px;margin:8px 0;font-size:11px;border-radius:3px;line-height:1.4;';
+      const parts = [];
+      for (const [type, dropped] of _iocTruncation.droppedByType.entries()) {
+        const total = _iocTruncation.totalSeenByType.get(type) || 0;
+        const shown = total - dropped;
+        parts.push(`${shown.toLocaleString()} of ${total.toLocaleString()} ${type}`);
+      }
+      note.textContent = '⚠ IOC extraction truncated — showing ' + parts.join('; ') + '. Per-type cap reached.';
+      note.title = 'Large files may contain more IOCs of a given type than Loupe retains in the sidebar. The per-type cap keeps the UI responsive and ensures every IOC class has representation. Use YARA rules or exports to scan the full raw source.';
+      body.appendChild(note);
+    }
+
     if (!refs.length) {
       const p = document.createElement('p');
       p.style.cssText = 'color:#888;text-align:center;margin-top:12px;font-size:12px;';
