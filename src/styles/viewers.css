@@ -664,7 +664,10 @@ body.dark .csv-detail-key {
 
 .csv-detail-val {
   color: #333;
-  word-break: break-all;
+  /* wrap long values (URLs, tokens, base64 blobs) cleanly */
+  overflow-wrap: anywhere;
+  word-break: normal;
+  white-space: pre-wrap;
   padding: 2px 0;
 }
 
@@ -3890,7 +3893,10 @@ body.dark .evtx-detail-key {
 
 .evtx-detail-val {
   color: #333;
-  word-break: break-all;
+  /* wrap long values (URLs, tokens, base64 blobs) cleanly */
+  overflow-wrap: anywhere;
+  word-break: normal;
+  white-space: pre-wrap;
   padding: 2px 0;
 }
 
@@ -3945,7 +3951,8 @@ body.dark .evtx-detail-sysinfo {
   font-family: 'Fira Code', 'Consolas', monospace;
   font-size: 11.5px;
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  word-break: normal;
   color: #333;
 }
 
