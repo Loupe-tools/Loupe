@@ -588,6 +588,109 @@ Object.assign(App.prototype, {
       }
     }
 
+    // ── Binary Triage (PE / ELF / Mach-O) ──
+    // Triage-first summary: a single verdict line, tier + risk score,
+    // badge list, and any anomaly ribbon chips. Mirrors the Tier-A band
+    // the main-pane renderer draws so a pasted analysis ticket opens with
+    // the same "is this bad?" gloss the analyst saw on screen.
+    if ((f.peInfo || f.elfInfo || f.machoInfo)
+        && typeof BinaryVerdict !== 'undefined'
+        && this._binaryParsed && this._binaryFormat) {
+      const fmtLabel = this._binaryFormat === 'pe' ? 'PE'
+        : this._binaryFormat === 'elf' ? 'ELF'
+        : this._binaryFormat === 'macho' ? 'Mach-O' : '';
+      const fileSize = (this._fileMeta && this._fileMeta.size)
+        || (this._fileBuffer && this._fileBuffer.byteLength) || 0;
+      let verdict = null;
+      try {
+        verdict = BinaryVerdict.summarize({
+          parsed: this._binaryParsed,
+          findings: f,
+          format: fmtLabel,
+          fileSize,
+        });
+      } catch (_e) { /* non-fatal — clipboard output only */ }
+      if (verdict) {
+        parts.push('\n## Binary Triage');
+        parts.push(`- **Verdict:** ${verdict.headline || '—'}`);
+        parts.push(`- **Tier:** ${verdict.tier || '—'} (risk ${verdict.risk != null ? verdict.risk : '—'}/100)`);
+        if (verdict.signer) parts.push(`- **Signer:** ${verdict.signer}`);
+        if (Array.isArray(verdict.badges) && verdict.badges.length) {
+          const labels = verdict.badges.map(b => b && b.label).filter(Boolean);
+          if (labels.length) parts.push(`- **Badges:** ${labels.join(', ')}`);
+        }
+        const caps = verdict.capabilityCounts;
+        if (caps && caps.total) {
+          const breakdown = [];
+          if (caps.critical) breakdown.push(caps.critical + ' critical');
+          if (caps.high) breakdown.push(caps.high + ' high');
+          if (caps.medium) breakdown.push(caps.medium + ' medium');
+          if (caps.low) breakdown.push(caps.low + ' low');
+          parts.push(`- **Capabilities:** ${caps.total}${breakdown.length ? ' (' + breakdown.join(', ') + ')' : ''}`);
+        }
+        if (typeof BinaryAnomalies !== 'undefined') {
+          let anoms = null;
+          try {
+            anoms = BinaryAnomalies.detect({
+              parsed: this._binaryParsed,
+              findings: f,
+              format: fmtLabel,
+            });
+          } catch (_e) { /* non-fatal */ }
+          if (anoms && Array.isArray(anoms.ribbon) && anoms.ribbon.length) {
+            parts.push('- **Anomalies:**');
+            for (const chip of anoms.ribbon) {
+              if (!chip || !chip.label) continue;
+              const sev = chip.severity && chip.severity !== 'info' ? ` [${chip.severity}]` : '';
+              const mitre = chip.mitre ? ` (${chip.mitre})` : '';
+              parts.push(`  - ${chip.label}${sev}${mitre}`);
+            }
+          }
+        }
+      }
+
+      // ── MITRE ATT&CK Coverage ──
+      // Extract [Tnnnn(.nnn)?] tokens from every capability row
+      // (externalRefs[type='pattern']) and roll them up by tactic. Output
+      // mirrors the sidebar's MITRE section so an analyst pasting into a
+      // ticket gets a clean tactic-grouped technique list.
+      if (typeof MITRE !== 'undefined' && Array.isArray(f.externalRefs) && f.externalRefs.length) {
+        const seen = new Map();
+        const techRe = /\[(T\d{4}(?:\.\d{3})?)\]/g;
+        for (const r of f.externalRefs) {
+          if (!r) continue;
+          const type = (r.type || '').toLowerCase();
+          if (type !== 'pattern') continue;
+          const hay = String(r.value || r.name || '');
+          const sev = (r.severity || 'medium').toLowerCase();
+          let m;
+          techRe.lastIndex = 0;
+          while ((m = techRe.exec(hay)) !== null) {
+            const id = m[1];
+            const prev = seen.get(id);
+            const SEV_RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+            if (!prev || (SEV_RANK[sev] || 0) > (SEV_RANK[prev.severity] || 0)) {
+              seen.set(id, { id, severity: sev, evidence: (r.name || r.value || '') });
+            }
+          }
+        }
+        if (seen.size) {
+          const rollup = MITRE.rollupByTactic(Array.from(seen.values()));
+          if (Array.isArray(rollup) && rollup.length) {
+            parts.push('\n## MITRE ATT&CK Coverage');
+            for (const t of rollup) {
+              parts.push(`\n### ${t.tacticLabel}`);
+              for (const tech of t.techniques) {
+                const sev = tech.severity && tech.severity !== 'info' && tech.severity !== 'medium'
+                  ? ` (${tech.severity})` : '';
+                parts.push(`- **${tech.id}** ${tech.name}${sev}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
 
     // ── PE Binary ──
     if (f.peInfo) this._copyAnalysisPE(f.peInfo, parts, tp);
@@ -2530,6 +2633,11 @@ Object.assign(App.prototype, {
     this.findings = null; this.fileHashes = null;
     this._fileBuffer = null; this._yaraBuffer = null; this._yaraResults = null;
     this._fileMeta = null;
+    // Native-binary triage stash (set by app-load.js pe/elf/macho dispatchers,
+    // consumed by the sidebar's Binary Metadata + MITRE sections). Must be
+    // cleared here so the next load — which may be any format — doesn't
+    // see stale parsed headers or a stale format marker.
+    this._binaryParsed = null; this._binaryFormat = null;
     // Clear navigation stack and hide breadcrumbs
     this._navStack = [];
     if (this._renderBreadcrumbs) this._renderBreadcrumbs();

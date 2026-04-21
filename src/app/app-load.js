@@ -725,12 +725,29 @@ Object.assign(App.prototype, {
     },
 
     // ── Native binaries ─────────────────────────────────────────────────
+    //
+    // Each dispatcher stashes two pieces of renderer state onto `this`
+    // (the App instance) for the sidebar's Binary Metadata + MITRE
+    // ATT&CK sections to consume:
+    //
+    //   • `_binaryParsed` — the renderer's parsed header struct
+    //     (r._parsed), used for pivot fields the findings object doesn't
+    //     carry verbatim (build IDs, signer tri-state, LC summaries, etc.)
+    //   • `_binaryFormat` — 'pe' | 'elf' | 'macho', so the sidebar knows
+    //     which format-specific card schema to render without re-sniffing
+    //     the bytes.
+    //
+    // These are cleared implicitly on the next _loadFile() because the
+    // sidebar renderer checks `_binaryFormat` before reading them; a
+    // non-binary load simply leaves them dangling but unused.
     pe(file, buffer) {
       // .xll — Excel add-in; structurally a DLL. The PE renderer's
       // format-heuristics pass picks up xlAutoOpen / xlAutoClose so the
       // sidebar / Summary / YARA pass all flag the XLL class correctly.
       const r = new PeRenderer();
       this.findings = r.analyzeForSecurity(buffer, file.name);
+      this._binaryParsed = r._parsed || null;
+      this._binaryFormat = 'pe';
       const docEl = r.render(buffer, file.name);
       // Overlay card may emit `open-inner-file` when the user clicks the
       // "Analyse overlay" button — wire the listener so the synthetic File
@@ -741,6 +758,8 @@ Object.assign(App.prototype, {
     elf(file, buffer) {
       const r = new ElfRenderer();
       this.findings = r.analyzeForSecurity(buffer, file.name);
+      this._binaryParsed = r._parsed || null;
+      this._binaryFormat = 'elf';
       const docEl = r.render(buffer, file.name);
       // Overlay card drill-down — see pe() above.
       this._wireInnerFileListener(docEl, file.name);
@@ -749,6 +768,8 @@ Object.assign(App.prototype, {
     macho(file, buffer) {
       const r = new MachoRenderer();
       this.findings = r.analyzeForSecurity(buffer, file.name);
+      this._binaryParsed = r._parsed || null;
+      this._binaryFormat = 'macho';
       const docEl = r.render(buffer, file.name);
       // Overlay / Fat-container-tail drill-down — see pe() above.
       this._wireInnerFileListener(docEl, file.name);

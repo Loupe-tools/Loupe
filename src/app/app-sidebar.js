@@ -88,6 +88,17 @@ Object.assign(App.prototype, {
     this._renderFindingsTableSection(body, detections, fileName, '🚨', 'Detections', '✅ No detections triggered.');
     this._renderFindingsTableSection(body, iocRefs, fileName, '📡', 'IOCs', '✅ No indicators of compromise found.');
 
+    // 3b. Binary triage surfaces — only present when the currently loaded
+    // file routed through one of the three native-binary renderers. Both
+    // sections read from the stash populated by app-load.js dispatchers
+    // (`this._binaryParsed` / `this._binaryFormat`) and are a no-op
+    // otherwise. Keeps the sidebar focused on pivot + MITRE rollup — the
+    // heavy structural detail stays in the main viewer's Tier-C cards.
+    if (this._binaryFormat) {
+      this._renderBinaryMetadataSection(body, fileName);
+      this._renderMitreSection(body, fileName);
+    }
+
     // 4. Macros (only if detected; auto-opens when auto-exec found)
     if (f.hasMacros) {
       this._renderMacrosSection(body, analyzer);
@@ -2997,6 +3008,336 @@ Object.assign(App.prototype, {
       return this._getDeepestFinding(best);
     }
     return (best.decodedBytes || best.rawCandidate) ? best : finding;
+  },
+
+  // ── Binary Metadata section (PE / ELF / Mach-O only) ──────────────────────
+  //
+  // Mirrors the Tier-A verdict band rendered above the Binary Pivot card in
+  // the main viewer, distilled to a copy-friendly sidebar snapshot. This is
+  // deliberately complementary — not a duplicate — of the main-pane card:
+  // we surface the headline verdict one-liner, the risk score, the short
+  // badge row, and the handful of pivot fields analysts most often paste
+  // into a ticket (signer, compile-ts-faked flag, EP anomaly, overlay,
+  // packer, and the format-specific identity row from
+  // `findings.metadata`). The deep structural detail (section tables,
+  // resource walks, dylibs, etc.) stays in the main viewer's Tier-C cards.
+  //
+  // Stash contract: `this._binaryParsed` and `this._binaryFormat` are
+  // populated by `app-load.js::pe() / elf() / macho()` dispatchers after
+  // the renderer returns; `_clearFile()` nulls them both on file close.
+  // If either is missing we quietly bail — the guard in `_renderSidebar`
+  // already skips this path for non-binary formats, but the internal
+  // guard keeps the method safe against a mid-render state flip.
+  //
+  // Docs: see CONTRIBUTING.md → "Binary triage surfaces" for the module
+  // family (`mitre.js`, `binary-verdict.js`, `binary-anomalies.js`,
+  // `binary-triage.js`) and the renderer-contract notes that keep
+  // the stash in sync with each Tier-A band.
+  _renderBinaryMetadataSection(container, fileName) {
+    if (!this._binaryFormat || !this._binaryParsed) return;
+    if (typeof BinaryVerdict === 'undefined') return;
+
+    const f = this.findings || {};
+    const fileSize = (this._fileMeta && this._fileMeta.size) ||
+      (this._fileBuffer && this._fileBuffer.byteLength) || 0;
+
+    let verdict;
+    try {
+      verdict = BinaryVerdict.summarize({
+        parsed: this._binaryParsed,
+        findings: f,
+        format: this._binaryFormat === 'pe' ? 'PE'
+              : this._binaryFormat === 'elf' ? 'ELF'
+              : 'Mach-O',
+        fileSize,
+      });
+    } catch (_) {
+      return;
+    }
+    if (!verdict) return;
+
+    const det = document.createElement('details');
+    det.className = 'sb-details';
+    det.dataset.sbSection = 'binaryMeta';
+    // Open by default on medium+ tiers; collapsed on low / clean samples
+    // so the sidebar stays compact when nothing interesting is flagged.
+    const defaultOpen = verdict.tier === 'critical' ||
+      verdict.tier === 'high' || verdict.tier === 'medium';
+    det.open = this._resolveSectionOpen('binaryMeta', defaultOpen);
+
+    const sum = document.createElement('summary');
+    sum.className = 'sb-details-summary';
+    const fmtLabel = this._binaryFormat === 'pe' ? 'PE'
+      : this._binaryFormat === 'elf' ? 'ELF'
+      : 'Mach-O';
+    sum.textContent = `🧬 Binary Triage — ${fmtLabel} (${verdict.risk})`;
+    det.appendChild(sum);
+
+    const body = document.createElement('div');
+    body.className = 'sb-details-body';
+
+    // ── Verdict one-liner + tier / risk pill ────────────────────────────
+    const tierMap = {
+      critical: { label: 'Critical',    badge: 'critical' },
+      high:     { label: 'High risk',   badge: 'high'     },
+      medium:   { label: 'Medium risk', badge: 'medium'   },
+      low:      { label: 'Low risk',    badge: 'info'     },
+      clean:    { label: 'Clean',       badge: 'info'     },
+    };
+    const tierInfo = tierMap[verdict.tier] || tierMap.clean;
+
+    const tierRow = document.createElement('div');
+    tierRow.className = 'sb-bin-tier-row';
+    tierRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin:4px 0 8px;';
+    const tierBadge = document.createElement('span');
+    tierBadge.className = `badge badge-${tierInfo.badge}`;
+    tierBadge.textContent = tierInfo.label;
+    tierRow.appendChild(tierBadge);
+    const riskNum = document.createElement('span');
+    riskNum.style.cssText = 'font-size:11px;color:#666;';
+    riskNum.textContent = `risk ${verdict.risk}/100`;
+    tierRow.appendChild(riskNum);
+    body.appendChild(tierRow);
+
+    if (verdict.headline) {
+      const head = document.createElement('div');
+      head.className = 'sb-bin-headline';
+      head.style.cssText = 'font-size:11px;line-height:1.45;margin:2px 0 10px;color:#333;';
+      head.textContent = verdict.headline;
+      body.appendChild(head);
+    }
+
+    // Badge row (compact) — reuse verdict.badges from BinaryVerdict.
+    if (Array.isArray(verdict.badges) && verdict.badges.length) {
+      const badgeRow = document.createElement('div');
+      badgeRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin:0 0 10px;';
+      for (const b of verdict.badges) {
+        const sevMap = { bad: 'high', warn: 'medium', ok: 'info', info: 'info' };
+        const cls = 'badge-' + (sevMap[b.kind] || 'info');
+        const span = document.createElement('span');
+        span.className = 'badge ' + cls;
+        span.textContent = b.label || '';
+        badgeRow.appendChild(span);
+      }
+      body.appendChild(badgeRow);
+    }
+
+    // ── Pivot fields table ──────────────────────────────────────────────
+    // Minimal meta-table of the rows an analyst copy-pastes into a
+    // ticket / Slack thread. The full structured card lives in the main
+    // viewer; this is the paste-friendly subset keyed off findings.metadata
+    // (populated consistently across all three binary renderers).
+    const md = f.metadata || {};
+    const rows = [];
+
+    // Signer
+    if (verdict.signer) rows.push(['Signer', verdict.signer]);
+
+    // Format-specific identity row
+    if (this._binaryFormat === 'pe') {
+      if (md['CLR Runtime'])       rows.push(['CLR Runtime',  md['CLR Runtime']]);
+      if (md['Installer'])         rows.push(['Installer',    md['Installer']]);
+    } else if (this._binaryFormat === 'elf') {
+      if (md['Build ID'])          rows.push(['Build ID',     md['Build ID']]);
+      if (md['SONAME'])            rows.push(['SONAME',       md['SONAME']]);
+      if (md['Interpreter'])       rows.push(['Interpreter',  md['Interpreter']]);
+      if (md['Linking'])           rows.push(['Linking',      md['Linking']]);
+    } else if (this._binaryFormat === 'macho') {
+      const csi = (this._binaryParsed.codeSignatureInfo) || {};
+      if (csi.teamId)              rows.push(['Team ID',      csi.teamId]);
+      if (md['Bundle ID'])         rows.push(['Bundle ID',    md['Bundle ID']]);
+      if (md['Platform'])          rows.push(['Platform',     md['Platform']]);
+      if (md['UUID'])              rows.push(['UUID',         md['UUID']]);
+    }
+
+    // Hash pivots (import / rich / sym)
+    if (md['Imphash'])                 rows.push(['Imphash',      md['Imphash']]);
+    if (md['Import Hash (MD5)'])       rows.push(['Import Hash',  md['Import Hash (MD5)']]);
+    if (md['RichHash'])                rows.push(['RichHash',     md['RichHash']]);
+    if (md['SymHash'])                 rows.push(['SymHash',      md['SymHash']]);
+
+    // Compile-timestamp faked flag
+    if (md['Compile Timestamp Faked']) rows.push(['Timestamp',  '⚠ ' + md['Compile Timestamp Faked']]);
+
+    // TLS callbacks
+    if (md['TLS Callbacks'])           rows.push(['TLS Callbacks', md['TLS Callbacks']]);
+
+    // Overlay + packer signals
+    if (md['Overlay Size'])            rows.push(['Overlay',      md['Overlay Size'] + (md['Overlay Type'] ? ' · ' + md['Overlay Type'] : '')]);
+    if (md['Overlay Entropy'])         rows.push(['Overlay H',    md['Overlay Entropy']]);
+    if (md['DLL Side-Load Host'])      rows.push(['Side-Load',    '⚠ export set matches known host-DLL']);
+    if (md['Forwarded Exports'])       rows.push(['Forwarded',    md['Forwarded Exports']]);
+
+    if (rows.length) {
+      body.appendChild(this._sec('Pivot Fields'));
+      const tbl = document.createElement('table'); tbl.className = 'meta-table';
+      for (const [k, v] of rows) {
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td'); td1.textContent = k;
+        const td2 = document.createElement('td');
+        td2.textContent = String(v);
+        // Copy button for identifiers that are paste targets.
+        if (/^(Team ID|Imphash|Import Hash|RichHash|SymHash|Build ID|Bundle ID|UUID|SONAME)$/.test(k)) {
+          const cb = document.createElement('button');
+          cb.className = 'copy-url-btn';
+          cb.textContent = '📋';
+          cb.title = 'Copy';
+          cb.style.marginLeft = '4px';
+          cb.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._copyToClipboard(String(v));
+          });
+          td2.appendChild(cb);
+        }
+        tr.appendChild(td1); tr.appendChild(td2); tbl.appendChild(tr);
+      }
+      body.appendChild(tbl);
+    }
+
+    // ── Anomaly ribbon (compact) ────────────────────────────────────────
+    // Mirrors the main viewer's chip row — mainly useful when the user has
+    // the sidebar open but is scrolled past the Tier-A band. Falls back to
+    // nothing when no anomalies fire.
+    if (typeof BinaryAnomalies !== 'undefined') {
+      try {
+        const a = BinaryAnomalies.detect({
+          parsed: this._binaryParsed,
+          findings: f,
+          format: fmtLabel,
+        });
+        if (a && Array.isArray(a.ribbon) && a.ribbon.length) {
+          body.appendChild(this._sec('Anomalies'));
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;';
+          for (const chip of a.ribbon) {
+            const sp = document.createElement('span');
+            const sevBadge = chip.severity === 'critical' ? 'critical'
+              : chip.severity === 'high' ? 'high'
+              : chip.severity === 'medium' ? 'medium'
+              : 'info';
+            sp.className = 'badge badge-' + sevBadge;
+            sp.textContent = chip.label;
+            if (chip.mitre && typeof MITRE !== 'undefined') {
+              const info = MITRE.lookup(chip.mitre);
+              sp.title = info ? (chip.mitre + ' — ' + info.name) : chip.mitre;
+            }
+            row.appendChild(sp);
+          }
+          body.appendChild(row);
+        }
+      } catch (_) { /* best-effort */ }
+    }
+
+    det.appendChild(body);
+    container.appendChild(det);
+  },
+
+  // ── MITRE ATT&CK Coverage section (PE / ELF / Mach-O only) ────────────────
+  //
+  // Rolls every `[Tnnnn.nnn]` token emitted by a capability / anomaly /
+  // overlay / side-load finding into a tactic-grouped card. Keeps the
+  // sidebar focused on the *coverage* view (what kill-chain stages are
+  // represented in this sample) rather than the evidence strings, which
+  // already live in the Detections section directly above.
+  //
+  // The rollup is driven entirely by `findings.externalRefs[type='pattern']`
+  // — the canonical emission channel used by `Capabilities.detect()`,
+  // entry-point anomaly checks, TLS-callback warnings, overlay flags,
+  // side-load hosts, etc. — so any new emission that tags itself with a
+  // MITRE id will automatically surface here without further wiring.
+  _renderMitreSection(container, fileName) {
+    if (!this._binaryFormat) return;
+    if (typeof MITRE === 'undefined') return;
+
+    const f = this.findings || {};
+    const refs = Array.isArray(f.externalRefs) ? f.externalRefs : [];
+
+    // Walk every IOC.PATTERN row and pull out any `[Tnnnn.nnn]` tokens
+    // embedded in its name/value. Severity is inherited from the ref so
+    // the rollup can colour-code and order accordingly. The same
+    // technique can appear across multiple refs (e.g. Process Injection
+    // hits from CreateRemoteThread and VirtualAllocEx both map to T1055) —
+    // `MITRE.rollupByTactic` dedups within a tactic and keeps the
+    // highest-severity evidence line.
+    const items = [];
+    const RX = /\[(T\d{4}(?:\.\d{3})?)\]/g;
+    for (const r of refs) {
+      if (!r) continue;
+      const type = (r.type || '').toLowerCase();
+      if (type !== 'pattern') continue;
+      const name = r.name || r.value || r.url || '';
+      let m;
+      RX.lastIndex = 0;
+      while ((m = RX.exec(name)) !== null) {
+        items.push({ id: m[1], evidence: name, severity: r.severity || 'medium' });
+      }
+    }
+    if (!items.length) return;
+
+    const rollup = MITRE.rollupByTactic(items);
+    if (!rollup.length) return;
+
+    const det = document.createElement('details');
+    det.className = 'sb-details';
+    det.dataset.sbSection = 'mitreCoverage';
+    // Auto-open when the top tactic has a meaningful cluster (≥ 3
+    // techniques) or any critical-severity technique is present.
+    // Otherwise stay collapsed so the card is available-but-quiet.
+    const top = rollup[0];
+    const hasCritical = rollup.some(t => t.techniques.some(x => x.severity === 'critical'));
+    const defaultOpen = (top && top.techniques.length >= 3) || hasCritical;
+    det.open = this._resolveSectionOpen('mitreCoverage', defaultOpen);
+
+    const totalTechs = rollup.reduce((s, t) => s + t.techniques.length, 0);
+    const sum = document.createElement('summary');
+    sum.className = 'sb-details-summary';
+    sum.textContent = `🎯 MITRE ATT&CK Coverage (${totalTechs})`;
+    det.appendChild(sum);
+
+    const body = document.createElement('div');
+    body.className = 'sb-details-body';
+
+    for (const t of rollup) {
+      body.appendChild(this._sec(`${t.tacticIcon || '•'} ${t.tacticLabel} — ${t.techniques.length}`));
+      const tbl = document.createElement('table');
+      tbl.className = 'meta-table';
+      for (const tech of t.techniques) {
+        const tr = document.createElement('tr');
+
+        const td1 = document.createElement('td');
+        const a = document.createElement('a');
+        a.href = tech.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = tech.id;
+        a.title = 'Open on attack.mitre.org';
+        a.style.cssText = 'color:#1a73e8;text-decoration:none;font-weight:600;';
+        td1.appendChild(a);
+
+        const td2 = document.createElement('td');
+        const nm = document.createElement('span');
+        nm.textContent = tech.name;
+        td2.appendChild(nm);
+        if (tech.severity && tech.severity !== 'info') {
+          const b = document.createElement('span');
+          const sevClass = tech.severity === 'critical' ? 'critical'
+            : tech.severity === 'high' ? 'high'
+            : tech.severity === 'medium' ? 'medium'
+            : 'info';
+          b.className = 'badge badge-' + sevClass;
+          b.textContent = tech.severity;
+          b.style.marginLeft = '6px';
+          td2.appendChild(b);
+        }
+
+        tr.appendChild(td1); tr.appendChild(td2);
+        tbl.appendChild(tr);
+      }
+      body.appendChild(tbl);
+    }
+
+    det.appendChild(body);
+    container.appendChild(det);
   },
 
 });
