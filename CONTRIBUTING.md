@@ -157,23 +157,38 @@ subtly misbehave.
   `app-copy-analysis.js` because it reuses the `THEMES` array from
   `app-ui.js` and overrides the unbudgeted `_copyAnalysis` call path with
   the configured Summary-budget step. `app-timeline.js` loads immediately
-  after `app-core.js` and introduces a second top-level app mode (📈
-  **Timeline**) alongside the default analyser: it owns its own toolbar
-  button (`#btn-timeline`), root container (`#timeline-root`), and
-  per-mode viewport. Mode is tracked via `document.body.dataset.mode`
-  (`"analyser"` / `"timeline"`) so CSS in `core.css` can swap between the
-  sidebar/viewer stack and the timeline stack without re-mounting either.
-  The timeline path is deliberately narrower than the generic viewer —
-  only CSV / TSV / EVTX are accepted, no YARA, no sidebar, no
-  EncodedContentDetector — and it reuses `GridViewer` with
+  after `app-core.js` and owns the **only** viewer path for CSV / TSV /
+  EVTX files — there is no user-visible mode toggle, no `T` keybind, no
+  📈 toolbar button, and no autoswitch threshold. When any CSV / TSV /
+  EVTX is loaded the app adds `has-timeline` to `document.body.classList`
+  so CSS in `core.css` swaps the sidebar/viewer stack for the timeline
+  stack without re-mounting either; `_clearTimelineFile()` removes the
+  class on file close. Routing is driven by three independent probes in
+  `app-load.js::_loadFile()`, each guarded by a one-shot
+  `this._skipTimelineRoute` escape-hatch so a failed parse can fall back
+  without re-entering the router: (1) `_isTimelineExt(file)` — a cheap
+  extension match (`.csv` / `.tsv` / `.evtx`); (2) a magic-byte EVTX
+  sniff for extensionless files whose first 7 bytes spell `ElfFile`; (3)
+  `_sniffTimelineContent(buffer)` — a text-head sniff that looks for
+  delimiter-separated rows in the first few KiB. Any probe that matches
+  calls `_loadFileInTimeline(file, buffer)`. The timeline path is
+  deliberately narrower than the generic viewer — no YARA, no sidebar,
+  no `EncodedContentDetector` — and it reuses `GridViewer` with
   `timeColumn: -1` so the grid never paints its own timeline strip (the
-  outer TimelineView owns the scrubber + stacked-bar chart). Drop dispatch
-  in `app-load.js::_loadFile()` begins with
-  `if (this._timelineTryHandle(file)) return;`, which routes qualifying
-  files to `_loadFileInTimeline()` when the user is already in timeline
-  mode, or auto-switches into timeline mode for large CSV/TSV/EVTX drops
-  when `loupe_timeline_autoswitch` is on. Renderers load before
-  `renderer-registry.js`, which loads before `app-core.js`.
+  outer `TimelineView` owns the scrubber + stacked-bar chart). For EVTX
+  specifically, `TimelineView` also renders two new Timeline sections
+  fed by the renderer's `externalRefs` array: **Detections**
+  (`type: IOC.PATTERN` rows with `severity` + `eventId` + `count`, each
+  clickable to filter the grid to that Event ID) and **Entities** (all
+  other IOC types — `HOSTNAME` / `USERNAME` / `FILENAME` / `PROCESS` /
+  `HASH` / `IP` / `URL` / `UNC_PATH` / `FILE_PATH` / `COMMAND_LINE` /
+  `REGISTRY_KEY` / `DOMAIN` / `EMAIL` — grouped by type with per-value
+  hit counts, `PATTERN` / `INFO` / `YARA` rows filtered out). EVTX events
+  are parsed once: `app-timeline.js` passes the already-parsed event
+  array to `EvtxRenderer.analyzeForSecurity(buffer, fileName,
+  prebuiltEvents)` so detection extraction doesn't re-parse the log.
+  Renderers load before `renderer-registry.js`, which loads before
+  `app-core.js`.
 
 ### CSP & runtime safety
 
@@ -653,7 +668,7 @@ subtly misbehave.
   Lifecycle-hook script bodies are folded into `findings.augmentedBuffer`
   (capped at 2 MB) before YARA scans so hook source contributes rule
   matches without contaminating the Copy / Save path.
-- **GridViewer timeline strip (Wave E).** Every tabular viewer
+- **GridViewer timeline strip.** Every tabular viewer
   (`CsvRenderer`, `EvtxRenderer`, `XlsxRenderer`, `SqliteRenderer`,
   JSON-array via `JsonRenderer`) is backed by the shared `GridViewer`
   primitive in `src/renderers/grid-viewer.js`. The constructor accepts
@@ -694,14 +709,266 @@ subtly misbehave.
   (`.grid-timeline.hidden`) when no column sniffs as temporal and the
   caller did not force one — nothing else in the grid changes, so viewers
   that ship without a timestamp column (e.g. the generic SQLite table
-  browser) look identical to their pre-Wave-E layout. CSS lives in
+  browser) look identical to their pre-timeline layout. CSS lives in
   `src/styles/viewers.css` under the `.grid-timeline*` namespace and
   uses `rgb(var(--accent-rgb, 99 102 241) / …)` for bar + window fills
   so theme overlays that retune `--accent-rgb` (Solarized, Mocha, Latte,
   Midnight) pick up the change for free.
+- **GridViewer column sizing — kind-aware auto-sizer + manual resize.**
+  `_recomputeColumnWidths()` classifies every column into one of eight
+  kinds — `timestamp` / `number` / `id` / `hash` / `enum` / `short` /
+  `text` / `blob` — via `_classifyColumns()` and sizes each from its
+  measured character width (`_measureCharWidth()` probes a hidden
+  `.grid-cell` once per mount so the tunables `CELL_PAD_PX = 22`,
+  `HEADER_EXTRA_PX = 24`, `SHORT_COL_MAX = 240`, `BLOB_BASE_MAX = 420`,
+  `TIGHT_PAD = 8` stay theme-agnostic). Sampling is **stratified** (head
+  + middle + tail, ≤ 300 rows) so EVTX's boot-chatter prefix does not
+  under-size the late-file Event Data blobs. Slack is allocated in two
+  phases: (1) any column tagged `blob` is **greedy** and absorbs 100 %
+  of the leftover viewport width; (2) if no blob exists, remaining space
+  is distributed proportionally across the `text` columns with a 2×
+  soft cap. Fixed-shape kinds (`timestamp` / `number` / `id` / `hash` /
+  `enum`) are pinned to their p100 content width + `TIGHT_PAD` and
+  **never grow into slack** — a 20-char `TimeCreated` column stays
+  narrow even on a 4K monitor. Callers that know their schema up-front
+  skip the sniffer by passing `columnKinds: ['timestamp', 'id', 'enum',
+  'short', 'short', 'short', 'blob']` at construction time (EVTX is the
+  reference consumer). A caller hint wins per-cell — any array entry
+  overrides the auto-detected kind for that column index, so
+  `SqliteRenderer` could hint `['id', …]` for an `INTEGER PRIMARY KEY`
+  without losing auto-detection on the other columns. Manual resize
+  lives on the right edge of each `.grid-header-cell` as a 6-px-wide
+  `.grid-col-resize-handle`; `_wireColumnResize()` drives the drag
+  (live-updating the CSS template var for smooth feedback, committing on
+  `mouseup`) and `_saveUserColumnWidth()` persists per-renderer under
+  `loupe_grid_colW_<gridKey>` where `gridKey` defaults to the container
+  `className` (`evtx-view`, `csv-view`, …) or an explicit `gridKey:
+  'sqlite-<tableName>'` opt. Double-clicking the handle calls
+  `_resetColumnWidth()` which deletes the stored override and re-runs
+  the auto-sizer. User overrides take precedence over kind-based
+  widths — `_applyColumnTemplate()` reads the Map returned by
+  `_loadUserColumnWidths()` before falling back to the computed value.
+- **GridViewer row-details drawer — JSON-aware picker via
+  `src/json-tree.js`.** The right-hand details drawer that opens on row
+  click is built by `_buildDetailPaneElement(cols, row, dataIdx)`. For
+  every cell whose value round-trips through `JsonTree.tryParse()`
+  (quick textual sniff — first non-space char must be `{` or `[` — then
+  a real `JSON.parse`) the drawer replaces the flat string view with an
+  expandable tree rendered by `JsonTree.render({value, onPick})`. The
+  tree auto-expands the root level, and every key span (`.json-tree-key`)
+  accepts a **right-click context menu** that routes the chosen action
+  through the consumer's `onPick(path, value, action)`. Left-click on a
+  key still toggles expand / collapse. `path` is an array of string /
+  number tokens (`['results', 0, 'userId']`) that
+  `JsonTree.pathGet(obj, path)` and `JsonTree.pathLabel(path)` round-trip
+  through. The module is a small shared primitive (`window.JsonTree`)
+  with no GridViewer dependency. Loading order: `src/json-tree.js` is
+  listed in `JS_FILES` **before** `grid-viewer.js` (and before every
+  consumer) so the global is present at render time.
+  - **Context-menu actions (`action` parameter).** The key menu adapts
+    to the node kind: leaves get `extract` / `include` / `exclude`;
+    composites (objects / arrays) get `extract` / `has` / `missing`
+    (existence checks — a subtree has no comparable scalar value of its
+    own, so Include / Exclude is omitted for composites). `extract`
+    materialises the path as a virtual column without filtering;
+    `include` / `exclude` auto-extract *and* chip-filter on the leaf
+    value (`op: 'eq'` / `op: 'ne'`); `has` / `missing` auto-extract
+    and chip-filter on the empty-string sentinel — an unresolved path
+    extracts to `''`, so `ne:''` = "has this path" and `eq:''` =
+    "missing this path".
+  - **`onCellPick` constructor option.** GridViewer accepts an optional
+    `onCellPick: (dataIdx, colIdx, path, leafValue, action) => void`
+    callback. When set, the drawer wires every key-span context menu
+    to `this._onCellPick(dataIdx, colIdx, path, leafValue, action)` —
+    the consumer turns each action into the corresponding virtual
+    column / chip. `TimelineView` passes one in from `_renderGridInto()`
+    and switches on `action`: it always calls
+    `_addJsonExtractedCol(colIdx, path, label)` (which returns the new
+    column index and persists the entry into
+    `loupe_timeline_regex_extracts` with `kind: 'json-leaf'` so the
+    column survives a reload), then for `include` / `exclude` / `has`
+    / `missing` chains `_addOrToggleChip(newColIdx, chipVal, {op})`
+    with the mapped `{chipVal, op}` pair. Callers that do not supply
+    `onCellPick` get an inert tree (no context menu wired), so adding
+    JSON display to a new viewer is a zero-wiring change.
+
+  - **Automatic JSON→CSV leaf flatten.** `TimelineView._autoExtractScan`
+    already proposes URL / hostname extractions via the Auto tab of the
+    ƒx Extract dialog. It now also walks every cell whose text sniffs
+    as JSON, collects the union of leaf paths via
+    `JsonTree.collectLeafPaths(obj)`, and emits one `json-leaf`
+    proposal per path (capped at 60 per source column to keep the
+    dialog bounded). Accepting a proposal routes through the same
+    `_addJsonExtractedCol` path as the drawer picker, so both entry
+    points share the same virtual-column shape.
+- **GridViewer hidden-columns chip + header menu entry.** Columns can
+  be hidden interactively in two ways: (1) the existing "Hide column"
+  item in the column-header ▾ menu, or (2) **Ctrl/Meta + Click** on the
+  header cell itself. Both paths funnel through
+  `_toggleHideColumn(colIdx)`, which adds the index to `this._hiddenCols`
+  (a `Set<number>`) and repaints. Unhiding had no visible surface in the
+  original design; the viewer now exposes two:
+  - A compact `⊘ N hidden` chip (`.grid-hidden-chip`) rendered inside
+    the filter bar whenever `_hiddenCols.size > 0`. Clicking it opens
+    `.grid-hidden-popover` — a simple list of the currently hidden
+    column labels, each with an ✕ button that calls `_unhideColumn(i)`,
+    plus a "Show all" action that calls `_unhideAllColumns()`.
+    `_updateHiddenChipUI()` is the single paint entry point and is
+    called from every mutation site.
+  - A "Show hidden columns… (N)" entry injected by `_openHeaderMenu`
+    at the bottom of the column popover when `_hiddenCols.size > 0`.
+    It simply opens the same popover via `_openHiddenColsPopover()`.
+  Callers that reset their viewer (e.g. `TimelineView._reset()`) must
+  call `grid._unhideAllColumns()` on both the main and suspicious
+  grid instances so a fresh file load doesn't inherit stale hidden
+  state from the previous file. `_unhideAllColumns()` is a safe no-op
+  when the set is already empty. Timeline also wires **Ctrl/Meta +
+  Click on a `.tl-col-card` heading** to the same `_toggleHideColumn`
+  call on both grids so the per-column top-value card and the grid
+  stay in sync.
+- **Timeline-mode filter pipeline — two-phase drag + window-only fast
+  path.** `TimelineView` in `src/app/app-timeline.js` composes a chip /
+  range / text / sus filter over tens of thousands of rows and re-renders
+  a scrubber + stacked-bar chart + virtual grid + per-column cards on
+  every mutation. A naive rebuild on every pointermove from the scrubber
+  or the chart rubber-band destroys interactivity, so the view splits
+  filter state into **two indices** and all window-driven interactions
+  use the cheap path:
+  - `_chipFilteredIdx` — window-agnostic result of running every chip /
+    range / text predicate over `rows[]`. Rebuilt only when a
+    **predicate** changes (chip added / removed, text filter edited,
+    sus bitmap flipped). `_recomputeFilter()` populates it and then
+    calls `_applyWindowOnly()` to derive the window-clipped indices.
+  - `_applyWindowOnly()` — fast re-derivation of `_filteredIdx` +
+    `_susFilteredIdx` from `_chipFilteredIdx` + the current `_window`.
+    O(visible rows), no per-cell predicate loop. Every code path whose
+    only change is the time window (scrubber drag, chart click-drill,
+    chart rubber-band, range-chip remove) calls this instead of
+    `_recomputeFilter()`.
+  - **Two-phase drag.** The scrubber handle drag and the
+    `_installChartDrag` rubber-band share the same pattern: during the
+    live drag (`pointermove`) we call `_applyWindowOnly()` and
+    `_scheduleRender(['scrubber','chart'])` — grid / column-cards / sus
+    are deliberately deferred. On commit (`pointerup`) we issue the
+    full render pass (`['scrubber','chart','chips','grid','columns','sus']`).
+    `this._windowDragging = true` during the drag is the sentinel any
+    renderer can consult if it wants to skip expensive work mid-drag.
+  - **`_installChartDrag(canvas, chartWrap, tooltip, getData)` is the
+    unified pointer handler** for both `.tl-chart-canvas` surfaces
+    (main + sus). Click-vs-drag is disambiguated by
+    `DRAG_THRESHOLD_PX = 4`: below threshold = single-bucket drill
+    (`_onChartClick`); at or above = rubber-band a time-window with a
+    `.tl-chart-selection` overlay `<div>` (absolutely positioned inside
+    `.tl-chart`, snaps to bucket boundaries on commit). Shift-drag
+    unions with the existing window; double-click anywhere on the
+    chart clears the window. The handler mutates `_window`, calls
+    `_applyWindowOnly()`, and uses the two-phase render schedule
+    described above.
+  - **Gotcha — class-name collisions on `.tl-colmenu-*`.** The
+    per-row percentage-fill bar in the column-menu top-values list is
+    `.tl-colmenu-valbar` (`position: absolute; pointer-events: none`).
+    Anything else that lives in the same popover needs its own class
+    — e.g. the All / None action row is `.tl-colmenu-valactions`
+    (flex, interactive). Reusing `-valbar` on an interactive container
+    silently black-holes clicks.
+  - **Suspicious overlay on the main chart — parallel `susBuckets`
+    array.** When the analyst flags rows via right-click → 🚩 Mark
+    suspicious, the flagged section retains its own mini-chart **and**
+    the main histogram is tinted to show which buckets contain
+    suspicious rows. `_computeChartData()` builds an extra
+    `susBuckets` `Int32Array` (same length as the main `buckets`
+    totals) by counting `_susBitmap` hits over `predicateIdx`, but
+    **only when** `role === 'main'` and the predicate index is the
+    full `_filteredIdx` (so the sus mini-chart doesn't double-tint
+    itself). `_renderChartInto()` then paints a single
+    `rgba(220,38,38,0.55)` overlay rect per bucket after the stacked
+    bars and before the cursor. The fill colour is hard-coded rather
+    than sourced from `var(--risk-high)` because canvas 2D contexts
+    cannot resolve CSS custom properties at `ctx.fillStyle` assignment
+    time — if you ever re-theme the sus overlay, update the constant
+    in `_renderChartInto` and the matching `.tl-chart-tooltip-sus`
+    rule in `viewers.css` together.
+  - **Event cursor — absolute-positioned `<div>` overlay, not a canvas
+    stroke.** Clicking any grid row calls `_setCursorDataIdx(dataIdx)`
+    which stores the row's original index on `this._cursorDataIdx`
+    and schedules a cursor-only repaint. `_paintChartCursorFor()` and
+    `_paintScrubberCursor()` position a single absolutely-positioned
+    `.tl-chart-cursor` / `.tl-scrubber-cursor` element inside the
+    chart / scrubber wrapper at the projected x-coordinate. This is
+    deliberately *not* painted on the canvas — the cursor moves
+    frequently (row selection, grid scroll) and a DOM element can be
+    repositioned via `style.left` in O(1) without re-running the full
+    bucket-paint loop. The colour is `var(--risk-high)` so theme
+    overlays retune it for free. `Esc` clears the cursor **after**
+    closing any open dialog / popover (keep that ordering in
+    `_onDocKey` — if you flip it, Esc will start clearing the cursor
+    while a modal is still up). `_reset()` also nulls
+    `_cursorDataIdx` so re-loading a file doesn't leak a stale cursor.
+  - **Auto pivot — `_autoPivotFromColumn(rowsCol, opts)` heuristic.**
+    The row context menu and each column's ▾ menu grow a 🧮 **Auto
+    pivot** entry that jumps the user into a pre-built pivot without
+    forcing them to hand-pick Rows / Columns. The chosen `colsCol` is
+    (in order of preference) an explicit `opts.colsCol`, then the
+    current chart `_stackCol` when it's different from `rowsCol`,
+    then the best-scoring neighbour by `_colStats` — scored by
+    distinct-value count, favouring 5–30 distinct values and
+    penalising columns with near-unique or near-constant cardinality.
+    Numeric / timestamp columns are demoted. The resolved spec is
+    written straight to the `pv-*` `<select>` elements, the pivot
+    section is force-expanded (overriding
+    `loupe_timeline_sections`), `_buildPivot()` runs, and the section
+    is `scrollIntoView`'d with a one-shot `.tl-section-flash` class
+    so the analyst visually tracks where the result landed. Because
+    the function mutates the real pivot selectors, the last-used
+    pivot persists to `loupe_timeline_pivot` just like a hand-built
+    one — no separate persistence surface was added.
+  - **DSL query editor (`TimelineQueryEditor` in `app-timeline.js`).** The
+    textbox above the chip bar is a CSP-safe **overlay editor** — a
+    transparent `<textarea>` painted on top of a `<pre><code>` syntax-
+    highlighted layer — so users get pill-style token rendering, colouring,
+    and caret positioning without `contenteditable` (which would require
+    `unsafe-eval`-adjacent DOM-mutation paths the CSP already blocks). The
+    pipeline is four stand-alone helpers that are pure functions and
+    therefore trivially testable in isolation:
+    1. **`_tlTokenize(str) → Token[]`** — recognises `AND` / `OR` / `NOT`
+       (case-insensitive), parens, colon, operators (`=` / `!=` / `:` /
+       `~` / `>` / `<` / `>=` / `<=`), quoted strings (single / double
+       with `\\` escapes), and bare identifiers / values. Unterminated
+       strings surface a `TokenError` at the unterminated offset.
+    2. **`_tlParseQuery(tokens) → AST`** — recursive-descent parser for
+       the grammar `expr := or (OR or)* ; or := and (AND and)* ; and :=
+       NOT* atom ; atom := '(' expr ')' | pred | any ; pred := IDENT OP
+       VALUE ; any := VALUE`. Node shapes are `{k:'and',children}`,
+       `{k:'or',children}`, `{k:'not',child}`, `{k:'pred',colIdx,op,val,
+       re?,num?}`, `{k:'any',needle}`, `{k:'empty'}`. Column names are
+       resolved against `this.columns` at parse time so typos surface
+       immediately rather than silently never matching.
+    3. **`_tlCompileAst(ast) → (rowIdx) => bool`** — compiles the AST
+       into a closure over the `rows[]` array. Regex predicates route
+       through `new RegExp(pattern, flags)` with a whitelisted flag set
+       `imsuy` (no `g` — global state across calls would break
+       `.test()`); this is CSP-safe because `new RegExp` is a `Function`-
+       free path that the `script-src` directive explicitly permits.
+    4. **`_tlCompileAstExcluding(ast, excludeColIdx)`** — Excel-parity
+       helper used by `_indexIgnoringColumn()` when a column's ▾-menu
+       Values list is being rebuilt. Strips every predicate whose
+       `colIdx === excludeColIdx` before compiling, so the Values list
+       keeps showing every value the user has *un-ticked* (the standard
+       Excel behaviour — hiding them would make re-ticking impossible).
+    Composition with the existing chip plan happens in
+    `_recomputeFilter()`: after the chip plan is applied, the compiled
+    query predicate (`this._queryPred`) is ANDed in the hot loop. The
+    short-circuit guard is `if (filterChips.length === 0 && !queryPred)
+    return;` so a query-only filter (no chips) still runs the row loop.
+    The `.tl-query-mount` node is inserted **before** `.tl-chips` in
+    `_buildDOM()`; the editor instance is constructed in `_wireEvents()`
+    and torn down in `destroy()`. `_reset()` clears the query via
+    `this._queryEditor.setValue('')` + `_applyQueryString('')` so a file
+    reload starts fresh.
 
 
 ---
+
 
 ## Persistence Keys
 
@@ -719,10 +986,20 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_nicelists_user` | string (JSON) | `save()` / mutation helpers in `src/nicelist-user.js` (Settings → 🛡 Nicelists UI) | `{version:1, lists:[{id,name,enabled,createdAt,updatedAt,entries}]}` | User-defined nicelists (MDR customer domains, employee emails, on-network hostnames, …). Capped at 64 lists × 10 000 entries × 1 MB serialised to stay inside the localStorage quota; overflow writes are refused without corrupting the previous blob. Entries are normalised + deduplicated on save; matching uses the same label-boundary semantics as the built-in list. Exported / imported via the toolbar buttons in the Nicelists tab. |
 | `loupe_plaintext_highlight` | string | `PlainTextRenderer._writeHighlightPref()` in `src/renderers/plaintext-renderer.js` (info-bar "Highlight" button in the plaintext / catch-all viewer) | `"on"` (default) or `"off"` | Syntax-highlighting master switch for the plaintext / catch-all renderer. When `"off"`, hljs is never invoked regardless of file size or language. Independent of the automatic per-file gates (`HIGHLIGHT_SIZE_LIMIT`, `LONG_LINE_THRESHOLD`) which always disable highlighting on minified / pathological inputs. |
 | `loupe_grid_drawer_w` | string (integer) | `_saveDrawerWidth()` in `src/renderers/grid-viewer.js` (drag handle on the left edge of the detail drawer) | integer pixel width, clamped to `280`–`900` on read | Width of the right-hand row-details drawer used by every GridViewer-backed viewer. Default `420`. Persisted per-browser so analysts who prefer a wide drawer for deeply-nested EVTX events don't have to re-drag it on every file. |
-| `loupe_mode` | string | `_enterTimelineMode()` / `_exitTimelineMode()` in `src/app/app-timeline.js` | one of `analyser` (default) or `timeline` | Top-level app mode. Mirrored onto `document.body.dataset.mode` so the mode-switching CSS in `core.css` can hide the sidebar+viewer stack in timeline mode (and vice-versa) without re-mounting either. Unknown / missing value falls back to `analyser`. |
-| `loupe_timeline_autoswitch` | string | `_setTimelineAutoswitchEnabled()` in `src/app/app-timeline.js` (Settings ⚙ toggle row) | `"1"` (on — default) or `"0"` (off) | When on, dropping a large CSV / TSV or any EVTX auto-switches into Timeline mode; when off, those files open in the regular analyser. Missing / unparseable value is treated as on so first-time users get the timeline for forensic artefacts without configuration. |
-| `loupe_timeline_grid_h` | string (integer) | drag handle on the `.tl-splitter` between the timeline grid and the per-column cards | integer pixel height, clamped to a sensible min/max on read | Height of the virtual-grid pane inside Timeline mode. Persisted per-browser so analysts who prefer a tall grid (scrolling 10 k rows) or a tall column-cards pane don't have to re-drag it on every file. |
+| `loupe_grid_colW_<gridKey>` | string (JSON object) | `_saveUserColumnWidth()` in `src/renderers/grid-viewer.js` (drag handle on the right edge of each `.grid-header-cell`) | `{ "<colIdx>": pixelWidth, … }` — integer pixel widths, clamped to `MIN_COL_W`–`1600` on read | Per-column manual width overrides that survive the kind-aware auto-sizer in `_recomputeColumnWidths()`. Namespaced per renderer via `gridKey` (e.g. `loupe_grid_colW_evtx`, `loupe_grid_colW_csv-view`) so resizing EVTX's Event Data blob column doesn't also bloat an unrelated CSV column 6. Double-clicking the handle deletes the entry (`_resetColumnWidth()`) to restore auto sizing. |
+| `loupe_timeline_grid_h` | string (integer) | drag handle on the `.tl-splitter` between the timeline grid and the per-column cards | integer pixel height, clamped to a sensible min/max on read | Height of the virtual-grid pane inside the Timeline viewer. Persisted per-browser so analysts who prefer a tall grid (scrolling 10 k rows) or a tall column-cards pane don't have to re-drag it on every file. |
+| `loupe_timeline_sus_grid_h` | string (integer) | drag handle on the `.tl-sus-splitter` between the Suspicious sub-grid and its per-column top-value cards | integer pixel height, clamped on read to 140 – 900 px | Height of the Suspicious sub-grid pane inside the Timeline viewer. Mirrors `loupe_timeline_grid_h` for the main events grid so the same drag-to-resize muscle memory works in the red Suspicious section. |
+| `loupe_timeline_chart_h` | string (integer) | `.tl-chart-resize` grab-bar along the bottom edge of the stacked-bar histogram | integer pixel height, clamped on read to the chart's min/max (120 – 600 px) | Height of the Timeline histogram pane. Default is deliberately compact (220 px) so the events grid + top-values cards are visible on first paint; analysts who want more bar resolution drag it down and the preference sticks across reloads. |
 | `loupe_timeline_bucket` | string | Timeline toolbar bucket picker | one of the supported bucket sizes (`1m` / `5m` / `1h` / `1d` / …) | Chart / scrubber bucket resolution for the stacked-bar histogram. Default is picked automatically from the file's time span on first load if the saved value is missing or invalid. |
+| `loupe_timeline_sections` | JSON object | section-chevron clicks on collapsible `.tl-section` blocks | `{ chart: bool, grid: bool, columns: bool, sus: bool, pivot: bool, … }` — each flag = `true` when collapsed | Collapsed / expanded state of every top-level Timeline section (histogram, events grid, top-values cards, suspicious, pivot). Lets analysts hide sections they don't use (e.g. pivot starts collapsed). Unknown / unparseable value → all expanded. |
+| `loupe_timeline_topvals_size` | string | "Cards: S / M / L" button on the Timeline toolbar | `"S"` / `"M"` (default) / `"L"` | Zoom level for the flex-wrap per-column top-value cards. Drives `--tl-card-min-w` so cards flow to 1-, 2-, 3-up depending on viewport width. |
+| `loupe_timeline_card_widths` | JSON object | right-edge resize handle on each `.tl-col-card` | `{ "<fileKey>": { "<columnName>": { span: N } \| pixelWidth, … } }` — file key = `name|size|lastModified`; legacy integer pixel values are migrated to a span on read | Per-file, per-column manual width overrides for the top-value cards, expressed as an integer `grid-column: span N` so the override cooperates with the `.tl-columns` `auto-fill minmax()` grid. Scoped to a file so resizing a "User" card in one CSV doesn't re-size a same-named column in an unrelated one. |
+| `loupe_timeline_regex_extracts` | JSON object | ƒx Extract dialog → Regex / Auto tabs | `{ "<fileKey>": [{ name, col, pattern, flags, group, kind }, …] }` | Per-file list of extracted virtual columns created via the Regex tab or Auto (URL / hostname) scan. Re-applied automatically next time the same file is loaded so long-form analyses survive a reload. JSON-path extractions are not persisted (they depend on in-memory parsed values). |
+| `loupe_timeline_pivot` | JSON object | Pivot section ▸ Rows / Columns / Aggregate / Build | `{ rows: colIdx, cols: colIdx, aggOp: "count" \| "distinct" \| "sum", aggCol: colIdx }` | Last-used pivot spec. Re-populates the selectors on mount so "Build" reconstructs the same pivot without re-picking columns. Col indices can reference extracted virtual columns; if they no longer exist the selectors silently fall back to `-1`. |
+| `loupe_timeline_query` | string | Timeline DSL query-editor textbox above the chip bar | arbitrary DSL query string (see the Timeline query-language grammar below); empty string = no query | Last-used query in the Timeline viewer's DSL query editor. Re-populated on mount so a saved filter survives a reload; an unparseable value is loaded verbatim but quietly falls back to "no query" until fixed. |
+| `loupe_timeline_query_history` | JSON array | ⌄ history button on the Timeline DSL query editor | array of recent non-empty query strings, most recent first, capped at ~20 entries | Recent query history for the editor's ↑ / ↓ history menu. A committed query is pushed to the front and de-duplicated so the dropdown stays usable over long sessions without ballooning localStorage. |
+| `loupe_timeline_sus_marks` | JSON object | right-click a cell → 🚩 Mark suspicious · `＋ Add Sus` chip-strip button | `{ "<fileKey>": [{ colName, val }, …] }` — file key = `name\|size\|lastModified` | Parallel 🚩 sus-mark list persisted **by column NAME** (not index) so an extracted column that rebuilds under a different index on reload still re-hydrates its marks. Sus marks **tint** matching rows red but do **not** filter them — row filtering is exclusively owned by the DSL query bar. Resolved to a live `colIdx` at filter-time via `_susMarksResolved()`; marks whose column has disappeared stay persisted and re-attach if the column returns. |
+
 
 **Adding a new key**
 
