@@ -10742,6 +10742,13 @@ body.dark .bin-triage-tech-medium .bin-triage-tech-id {
    recolouring.
    ═══════════════════════════════════════════════════════════════════════════ */
 .grid-timeline {
+  /* `position: relative` is load-bearing: the selected-window chip and
+     the ✕ Window clear button are absolutely positioned against this
+     container so showing/hiding them cannot steal horizontal space from
+     the .grid-timeline-track (which was causing the histogram to visibly
+     shrink the instant a user clicked a bucket). The floating legend
+     chip used for stacked mode relies on the same anchor. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -10753,6 +10760,7 @@ body.dark .bin-triage-tech-medium .bin-triage-tech-id {
   flex: 0 0 auto;
 }
 
+
 .grid-timeline.hidden { display: none; }
 
 body.dark .grid-timeline {
@@ -10761,20 +10769,58 @@ body.dark .grid-timeline {
 }
 
 .grid-timeline-label {
-  font-size: 10.5px;
+  /* Two-line stack of YYYY-MM-DD over HH:MM:SS — always shows both date
+     and time at the edges of the scrub regardless of whether the row set
+     spans 20 minutes or 20 years. Stacking (instead of a single 19-char
+     line) keeps the label column narrow enough that the histogram track
+     dominates the strip, even when the drawer is open on a narrow
+     viewport. No ellipsis — the timestamps are the whole point. */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+  font-size: 10px;
   font-family: 'Consolas', 'Menlo', monospace;
   color: #777;
-  min-width: 74px;
+  min-width: 92px;       /* fits "YYYY-MM-DD" (10 chars @ ~8.5px monospace) */
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: 0 0 auto;
 }
 
 body.dark .grid-timeline-label {
   color: var(--text-muted);
 }
 
-.grid-timeline-label-right { text-align: right; }
+.grid-timeline-label-right {
+  align-items: flex-end;
+  text-align: right;
+  /* Fixed-width right-edge corridor. The two absolutely-positioned
+   * overlays that live on the right side of the strip
+   *   • `.grid-timeline-window-label` (variable-width range chip,
+   *     ~200px when populated with two "YYYY-MM-DD HH:MM:SS" stamps)
+   *   • `.grid-timeline-clear` (compact red ✕ icon button, ~24px)
+   * both paint inside this corridor when a window is active. Using a
+   * *fixed* width (rather than a margin-right) keeps the histogram
+   * track's flex:1 width perfectly stable whether or not a window is
+   * selected — the whole reason those two overlays were switched to
+   * `position: absolute` in the first place. Sized to accommodate the
+   * chip + button + their 12px right-offset with a bit of slack. */
+  flex: 0 0 220px;
+}
+
+/* When the window-range chip is visible it already shows the active
+   min → max. Suppress the in-flow edge date to avoid the chip painting
+   on top of it (and visual duplication of the same max timestamp).
+   `visibility: hidden` rather than `display: none` preserves the 220px
+   corridor so toggling the window never reflows the bucket track. */
+.grid-timeline:has(.grid-timeline-window-label:not(.hidden)) .grid-timeline-label-right {
+  visibility: hidden;
+}
+
+
+.grid-timeline-edge-date { font-weight: 500; }
+.grid-timeline-edge-time { opacity: 0.8; }
+
 
 /* Main bucket track — the drag / click target. */
 .grid-timeline-track {
@@ -10827,6 +10873,23 @@ body.dark .grid-timeline-track {
 
 .grid-timeline-window.hidden { display: none; }
 
+/* Red scrub indicator — a thin vertical line drawn on the track that
+   tracks the first row currently visible in the grid body. Painted on
+   top of both the bucket bars and the selection rectangle so the analyst
+   can always see where their scroll position sits on the timeline. */
+.grid-timeline-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: #e5484d;
+  box-shadow: 0 0 2px rgba(229, 72, 77, .6);
+  pointer-events: none;
+  z-index: 3;
+}
+.grid-timeline-cursor.hidden { display: none; }
+
 /* Tooltip shown while hovering / dragging. */
 .grid-timeline-tooltip {
   position: absolute;
@@ -10852,16 +10915,208 @@ body.dark .grid-timeline-tooltip {
   box-shadow: 0 1px 4px rgba(0, 0, 0, .4);
 }
 
-/* Clear-window button — only visible while a window is active. */
-.grid-timeline-clear {
-  font-size: 11px;
-  padding: 2px 8px;
-  line-height: 1.4;
+/* Selected-window range chip — only visible while a window is active.
+   Absolutely positioned so showing/hiding it cannot steal flex width
+   from the bucket track (the original bug: clicking a bucket made the
+   histogram visibly shrink as this chip appeared mid-row). Floats in
+   the top-right corner of the strip, next to the ✕ Window clear
+   button. Matches the edge labels' monospaced font for visual
+   alignment, but painted in the accent colour so it reads as "live
+   selection" at a glance. */
+.grid-timeline-window-label {
+  position: absolute;
+  top: 5px;
+  /* Sits immediately to the left of the compact ✕ icon button
+     (~24px wide at right:12px), leaving a 2px gap. The chip content is
+     variable-width (~200px for a full "YYYY-MM-DD HH:MM:SS → …" range);
+     the right-label's fixed 220px corridor guarantees the chip stays
+     inside the reserved area and never protrudes into the track. */
+  right: 38px;
+  z-index: 4;
+  font-size: 10.5px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  font-weight: 600;
+  color: var(--accent, #1f6feb);
   white-space: nowrap;
-  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--hairline-soft, rgba(127, 127, 127, .3));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent, #1f6feb) 10%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.grid-timeline-window-label.hidden { display: none; }
+
+body.dark .grid-timeline-window-label {
+  color: var(--accent, #4493f8);
+  background: color-mix(in srgb, var(--accent, #4493f8) 18%, transparent);
+}
+
+/* Clear-window button — only visible while a window is active.
+   Absolutely positioned for the same reason as the window-label chip:
+   flex-in-flow placement was causing the histogram track to reflow
+   narrower every time a user clicked a bucket.
+
+   Rendered as a compact red ✕ icon-button (no "Window" label) so the
+   right-edge corridor stays tight and the window-label chip has room
+   to sit next to it without protruding back into the bucket track. */
+.grid-timeline-clear {
+  position: absolute;
+  top: 4px;
+  right: 10px;
+  z-index: 4;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 1px 7px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #e5484d;
+}
+
+.grid-timeline-clear:hover {
+  color: #ff6369;
+  background: rgba(229, 72, 77, 0.12);
+  border-color: rgba(229, 72, 77, 0.5);
+}
+
+body.dark .grid-timeline-clear {
+  color: #ff6369;
+}
+
+body.dark .grid-timeline-clear:hover {
+  color: #ff8a8f;
+  background: rgba(255, 99, 105, 0.16);
+  border-color: rgba(255, 99, 105, 0.55);
 }
 
 .grid-timeline-clear.hidden { display: none; }
+
+/* ───────────────────────────────────────────────────────────────────
+   Stacked timeline bars + floating legend chip
+   Painted only when GridViewer._timeStackColumn is set (enabled by
+   default for EVTX, which stacks by Event ID). Each segment in a
+   stacked bar sets `--grid-stack-slot: 0..STACK_MAX_KEYS-1` inline
+   and the attribute-selector rules below map those slots to a fixed
+   categorical palette so every segment of the same group is painted
+   the same colour across every bucket. The legend chip re-uses the
+   exact same swatch selectors so colour assignment is impossible to
+   drift between bar and legend.
+   ─────────────────────────────────────────────────────────────────── */
+
+/* Stacked-bar slot palette (8 distinct categorical colours, tuned to
+   read well against both the light `rgba(0,0,0,.02)` and dark
+   `rgba(255,255,255,.03)` track backgrounds). The default
+   `.grid-timeline-bar` accent-tinted rule still applies for flat /
+   unstacked mode; the -bar-stack variant below overrides it when a
+   stack column is active. */
+.grid-timeline-bar.grid-timeline-bar-stack,
+.grid-timeline-legend-swatch {
+  background: #8b8b8b;          /* fallback for slots beyond the palette */
+}
+.grid-timeline-bar-stack[style*="--grid-stack-slot: 0"],
+.grid-timeline-legend-item[style*="--grid-stack-slot: 0"] .grid-timeline-legend-swatch {
+  background: #4c78a8;          /* blue */
+}
+.grid-timeline-bar-stack[style*="--grid-stack-slot: 1"],
+.grid-timeline-legend-item[style*="--grid-stack-slot: 1"] .grid-timeline-legend-swatch {
+  background: #f58518;          /* orange */
+}
+.grid-timeline-bar-stack[style*="--grid-stack-slot: 2"],
+.grid-timeline-legend-item[style*="--grid-stack-slot: 2"] .grid-timeline-legend-swatch {
+  background: #54a24b;          /* green */
+}
+.grid-timeline-bar-stack[style*="--grid-stack-slot: 3"],
+.grid-timeline-legend-item[style*="--grid-stack-slot: 3"] .grid-timeline-legend-swatch {
+  background: #e45756;          /* red */
+}
+.grid-timeline-bar-stack[style*="--grid-stack-slot: 4"],
+.grid-timeline-legend-item[style*="--grid-stack-slot: 4"] .grid-timeline-legend-swatch {
+  background: #72b7b2;          /* teal */
+}
+.grid-timeline-bar-stack[style*="--grid-stack-slot: 5"],
+.grid-timeline-legend-item[style*="--grid-stack-slot: 5"] .grid-timeline-legend-swatch {
+  background: #b279a2;          /* mauve */
+}
+.grid-timeline-bar-stack[style*="--grid-stack-slot: 6"],
+.grid-timeline-legend-item[style*="--grid-stack-slot: 6"] .grid-timeline-legend-swatch {
+  background: #ff9da6;          /* pink */
+}
+.grid-timeline-bar-stack[style*="--grid-stack-slot: 7"],
+.grid-timeline-legend-item[style*="--grid-stack-slot: 7"] .grid-timeline-legend-swatch {
+  background: #9d755d;          /* brown ("Other" slot when 8 groups fill) */
+}
+
+/* Hover-saturate stacked bars the same way flat bars boost — keep the
+   palette hue but just add a subtle overlay via box-shadow so the
+   categorical colour assignment stays stable on hover. */
+.grid-timeline-track:hover .grid-timeline-bar-stack {
+  filter: brightness(1.12) saturate(1.05);
+}
+
+/* Floating legend chip — lazily minted by _paintTimelineLegend() and
+   appended into .grid-timeline. Uses the same absolute-overlay trick
+   as the window-label and clear button so showing it cannot reflow
+   the bucket track. Anchored top-left so it sits against the
+   left-edge date label rather than colliding with the window chip. */
+.grid-timeline-legend {
+  position: absolute;
+  top: 5px;
+  left: 112px;                  /* clears the left-edge YYYY-MM-DD/HH:MM:SS label */
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 260px);/* leave space for window chip + clear btn */
+  overflow: hidden;
+  font-size: 10.5px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  color: var(--text-muted, #666);
+  padding: 2px 8px;
+  border: 1px solid var(--hairline-soft, rgba(127, 127, 127, .3));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--bg-secondary, #fff) 72%, transparent);
+  backdrop-filter: blur(2px);
+  white-space: nowrap;
+  pointer-events: none;         /* legend is informational — clicks fall through to the track */
+}
+
+.grid-timeline-legend.hidden { display: none; }
+
+body.dark .grid-timeline-legend {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
+}
+
+.grid-timeline-legend-title {
+  font-weight: 600;
+  color: var(--text, #222);
+  opacity: 0.85;
+}
+body.dark .grid-timeline-legend-title {
+  color: var(--text);
+}
+
+.grid-timeline-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.grid-timeline-legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .08) inset;
+}
+
+.grid-timeline-legend-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+
 
 /* While dragging, force the ew-resize cursor globally and suppress the
    usual text-selection affordance — otherwise a drag that leaves the

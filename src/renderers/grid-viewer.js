@@ -112,15 +112,41 @@ class GridViewer {
     this._timeBucketCount  = Math.max(20, Math.min(400, opts.timelineBuckets || 100));
     this._onFilterRecompute = typeof opts.onFilterRecompute === 'function' ? opts.onFilterRecompute : null;
 
-    // Timeline runtime state — populated by _buildTimelineBuckets().
+    // Wave-E (stacked) — optional opt-in: histogram bars are split by
+    // category when a stack column is set. Default: single-density bars.
+    //   timelineStackColumn : number   — index of the grouping column.
+    // Also toggle-able at runtime via the column-header menu item
+    // "Stack timeline by this column". Top STACK_MAX_KEYS groups get their
+    // own colour; the rest collapse into an "Other" bucket.
+    this._timeStackColumn  = Number.isInteger(opts.timelineStackColumn) ? opts.timelineStackColumn : null;
+    this._timeStackKeys    = null;  // Array<string> — legend order, index = palette slot
+    this._timeStackOtherIdx = -1;   // index in _timeStackKeys reserved for "Other" (-1 = not used)
+    // Stacked-bucket aggregate: Array(B) of Int32Array(keyCount). Swaps in
+    // for _timeBuckets when stacking is active.
+    this._timeStackBuckets = null;
+    this.STACK_MAX_KEYS    = 8;    // top-N + "Other"; keep palette readable
+    this.STACK_MAX_DISTINCT = 500;  // refuse to stack if distinct-value count blows past this
+
+
+    // Timeline runtime state — populated by _rebuildTimeline().
     //   _timeMs[dataIdx] = parsed ms-since-epoch (NaN if unparseable / empty).
-    //   _timeRange       = { min, max } across all parseable cells.
-    //   _timeBuckets     = Int32Array(bucketCount) — count per bucket.
+    //   _timeDataRange   = { min, max } across all parseable cells — the
+    //                      *absolute* span of the dataset, never changes
+    //                      while the row set is stable.
+    //   _timeRange       = { min, max } currently-rendered view span. Equals
+    //                      _timeDataRange when no window is active; equals
+    //                      _timeWindow when the user has drag-selected a
+    //                      sub-range (so the histogram zooms to fill the
+    //                      strip with just that range).
+    //   _timeBuckets     = Int32Array(bucketCount) — count per bucket,
+    //                      computed against _timeRange (i.e. the visible
+    //                      view). Rebuilt by _rebuildBucketsForView().
     //   _timeWindow      = null | { min, max }   — active user selection.
-    this._timeMs      = null;
-    this._timeRange   = null;
-    this._timeBuckets = null;
-    this._timeWindow  = null;
+    this._timeMs        = null;
+    this._timeDataRange = null;
+    this._timeRange     = null;
+    this._timeBuckets   = null;
+    this._timeWindow    = null;
 
 
     // Tunables (intentionally internal — callers don't twiddle these).
@@ -219,10 +245,12 @@ class GridViewer {
       '<div class="grid-timeline-track">' +
       '<div class="grid-timeline-buckets"></div>' +
       '<div class="grid-timeline-window hidden"></div>' +
+      '<div class="grid-timeline-cursor hidden"></div>' +
       '<div class="grid-timeline-tooltip hidden"></div>' +
       '</div>' +
       '<span class="grid-timeline-label grid-timeline-label-right"></span>' +
-      '<button class="tb-btn grid-timeline-clear hidden" title="Clear time window ([Esc])">✕ Window</button>';
+      '<span class="grid-timeline-window-label hidden" aria-live="polite"></span>' +
+      '<button class="tb-btn grid-timeline-clear hidden" title="Clear time window ([Esc])" aria-label="Clear time window">✕</button>';
     root.appendChild(timeline);
 
     // ── Filter bar ──────────────────────────────────────────────────────────
@@ -336,7 +364,9 @@ class GridViewer {
     this._timelineTooltipEl = timeline.querySelector('.grid-timeline-tooltip');
     this._timelineLabelLeft = timeline.querySelector('.grid-timeline-label-left');
     this._timelineLabelRight= timeline.querySelector('.grid-timeline-label-right');
+    this._timelineWindowLbl = timeline.querySelector('.grid-timeline-window-label');
     this._timelineClearBtn  = timeline.querySelector('.grid-timeline-clear');
+    this._timelineCursorEl  = timeline.querySelector('.grid-timeline-cursor');
 
     this._scr          = scr;
     this._header       = header;
@@ -430,12 +460,70 @@ class GridViewer {
   }
 
   _applyColumnTemplate() {
-    const parts = [this.ROWNUM_COL_W + 'px'];
-    let totalW = this.ROWNUM_COL_W;
+    // Visible (non-hidden) column indices and their base widths from
+    // _recomputeColumnWidths() — those widths are clamped to
+    // [MIN_COL_W, MAX_COL_W] and are what the grid would show without any
+    // viewport-fill consideration.
+    const visIdx  = [];
+    const baseWs  = [];
     for (let i = 0; i < this._columnWidths.length; i++) {
       if (this._hiddenCols.has(i)) continue;
-      parts.push(this._columnWidths[i] + 'px');
-      totalW += this._columnWidths[i];
+      visIdx.push(i);
+      baseWs.push(this._columnWidths[i]);
+    }
+
+    // Cheap best-effort fill: if the viewport has unused horizontal space
+    // after the base widths sum up, spread the slack across columns
+    // *proportionally to their base width* so wide (description-like)
+    // columns grow more than narrow (id-like) ones. Per-column soft cap
+    // keeps a single lopsided column from eating all the slack.
+    //
+    // The scroll container only has a real clientWidth once it's attached
+    // to the DOM + laid out, so the constructor's initial call is a no-op
+    // (clientWidth === 0) and the base widths stand. The ResizeObserver
+    // below re-calls _applyColumnTemplate() on the first real layout and
+    // on any subsequent viewport resize.
+    const FILL_CAP = 480;
+    const scrW = (this._scr && this._scr.clientWidth) || 0;
+    const baseSum = baseWs.reduce((a, b) => a + b, 0);
+    const outWs = baseWs.slice();
+    if (scrW > 0 && visIdx.length) {
+      // Reserve the row-number gutter + a tiny safety margin so the last
+      // column never provokes a horizontal scrollbar when the maths rounds up.
+      const avail = scrW - this.ROWNUM_COL_W - 2;
+      let slack = avail - baseSum;
+      if (slack > 0 && baseSum > 0) {
+        // Two passes: first proportional, capping any overflow; then spread
+        // the unused cap-overflow equally over the remaining growable cols.
+        const growable = new Set(outWs.map((_, i) => i));
+        for (let pass = 0; pass < 3 && slack > 1 && growable.size; pass++) {
+          let growBase = 0;
+          growable.forEach(i => { growBase += outWs[i]; });
+          if (growBase <= 0) break;
+          const perUnit = slack / growBase;
+          let spent = 0;
+          const toRemove = [];
+          growable.forEach(i => {
+            const want = outWs[i] + outWs[i] * perUnit;
+            const capped = Math.min(FILL_CAP, want);
+            spent += (capped - outWs[i]);
+            outWs[i] = capped;
+            if (capped >= FILL_CAP) toRemove.push(i);
+          });
+          toRemove.forEach(i => growable.delete(i));
+          slack -= spent;
+        }
+        // Any remaining slack after hitting the cap everywhere: silently
+        // leave it as empty track — better than an unbounded stretch.
+      }
+    }
+
+    const parts = [this.ROWNUM_COL_W + 'px'];
+    let totalW = this.ROWNUM_COL_W;
+    for (let i = 0; i < outWs.length; i++) {
+      const w = Math.round(outWs[i]);
+      parts.push(w + 'px');
+      totalW += w;
     }
     this._root.style.setProperty('--grid-template', parts.join(' '));
     this._root.style.setProperty('--grid-min-width', totalW + 'px');
@@ -458,6 +546,12 @@ class GridViewer {
   _wireEvents() {
     // Scroll — rAF-throttled.
     this._boundHandlers.onScroll = () => {
+      // The red scrub cursor tracks the first visible row as the user
+      // scrolls. It's cheap (div + ms lookup) so we update it on every
+      // scroll tick, not just the rAF-throttled render tick — that way
+      // it tracks fluid finger/trackpad motion even when renderedRange
+      // hasn't changed enough to trigger a repaint.
+      this._updateTimelineCursor();
       if (this._renderRAF || this.state.isProgrammaticScroll) return;
       this._renderRAF = requestAnimationFrame(() => {
         this._renderRAF = null;
@@ -538,8 +632,16 @@ class GridViewer {
     };
     document.addEventListener('mousedown', this._boundHandlers.onDocClick, true);
 
-    // ResizeObserver on scroll container
-    this._resizeObs = new ResizeObserver(() => this._scheduleRender());
+    // ResizeObserver on scroll container. Re-runs the viewport-fill pass
+    // in _applyColumnTemplate() so columns re-stretch when the window /
+    // drawer / sidebar resizes, then schedules a render. The initial
+    // constructor pass runs with clientWidth === 0 (not yet in the DOM),
+    // so the *first* ResizeObserver tick after mount is actually what
+    // makes the grid fill its host — which is exactly what we want.
+    this._resizeObs = new ResizeObserver(() => {
+      this._applyColumnTemplate();
+      this._scheduleRender();
+    });
     this._resizeObs.observe(this._scr);
   }
 
@@ -916,7 +1018,11 @@ class GridViewer {
     }
     this._scr.scrollTop = 0;
     this._forceFullRender();
+    // Wave-E — filter changed, so the histogram counts per bucket change too.
+    // Rebuild + repaint so the timeline shrinks in step with the grid body.
+    this._refreshTimelineBuckets();
   }
+
 
   _dataIdxInTimeWindow(dataIdx) {
     if (!this._timeWindow || !this._timeMs) return true;
@@ -1265,7 +1371,6 @@ class GridViewer {
       pop.appendChild(mkItem('Clear sort', () => this._clearSort()));
     }
     pop.appendChild(this._popoverSeparator());
-    pop.appendChild(mkItem('Top values…', () => this._openTopValuesPopover(colIdx, anchorEl)));
     // Wave-E — opt-in promotion of any column to the timeline source.
     // Hidden for columns that look like bare numeric IDs so it doesn't
     // clutter menus on non-temporal data; still shown whenever at least
@@ -1275,6 +1380,16 @@ class GridViewer {
       pop.appendChild(mkItem(
         active ? '✓ Use as timeline' : 'Use as timeline',
         () => this._useColumnAsTimeline(colIdx)
+      ));
+    }
+    // Wave-E — stack the timeline histogram by this column. Shown whenever
+    // the timeline is active and the column has a reasonable number of
+    // distinct values on the visible row set (≥2, ≤ STACK_MAX_GROUPS).
+    if (this._timeMs && this._columnLooksStackable(colIdx)) {
+      const active = this._timeStackColumn === colIdx;
+      pop.appendChild(mkItem(
+        active ? '✓ Stack timeline by this column' : 'Stack timeline by this column',
+        () => this._useColumnAsTimelineStack(colIdx)
       ));
     }
     pop.appendChild(mkItem('Copy column', () => this._copyColumn(colIdx)));
@@ -1427,6 +1542,33 @@ class GridViewer {
     for (let i = 0; i < n; i++) idxs[i] = i;
 
     const mul = dir === 'desc' ? -1 : 1;
+
+    const getCell = (i) => {
+      const r = this.rows[i];
+      return r ? (r[colIdx] == null ? '' : r[colIdx]) : '';
+    };
+
+    // Temporal probe FIRST — if the column parses as timestamps, sort by
+    // ms-since-epoch. Without this branch the subsequent numeric-sniff
+    // matches ISO strings like "2024-05-20T08:10:01Z" (parseFloat → 2024),
+    // collapses every row to the same value, and leaves the apparent order
+    // unchanged. Re-uses the Wave-E parser so custom _timeParser callers
+    // (EVTX's Excel-serial math, future XLSX) sort identically to the
+    // timeline strip.
+    const temporal = this._columnLooksTemporal(colIdx);
+    if (temporal) {
+      idxs.sort((a, b) => {
+        const av = this._parseTimeCell(getCell(a), a);
+        const bv = this._parseTimeCell(getCell(b), b);
+        const aFin = Number.isFinite(av);
+        const bFin = Number.isFinite(bv);
+        if (!aFin && !bFin) return a - b;
+        if (!aFin) return 1;          // unparseable sorts last
+        if (!bFin) return -1;
+        return (av - bv) * mul || (a - b);
+      });
+    }
+
     // Detect numeric column by sampling — if ≥90% of non-empty cells parse
     // as finite numbers, sort numerically; else lexical (case-insensitive).
     let numCount = 0, nonEmpty = 0;
@@ -1438,14 +1580,11 @@ class GridViewer {
       const f = parseFloat(v);
       if (Number.isFinite(f) && /^-?\s*\d/.test(String(v).trim())) numCount++;
     }
-    const numeric = nonEmpty > 0 && numCount / nonEmpty >= 0.9;
+    const numeric = !temporal && nonEmpty > 0 && numCount / nonEmpty >= 0.9;
 
-    const getCell = (i) => {
-      const r = this.rows[i];
-      return r ? (r[colIdx] == null ? '' : r[colIdx]) : '';
-    };
-
-    if (numeric) {
+    if (temporal) {
+      // already sorted above
+    } else if (numeric) {
       idxs.sort((a, b) => {
         const av = parseFloat(getCell(a));
         const bv = parseFloat(getCell(b));
@@ -1714,21 +1853,19 @@ class GridViewer {
       return;
     }
 
-    this._timeMs    = ms;
-    this._timeRange = { min, max };
-
-    const B = this._timeBucketCount;
-    const buckets = new Int32Array(B);
-    const span = max - min;
-    for (let i = 0; i < n; i++) {
-      const t = ms[i];
-      if (!Number.isFinite(t)) continue;
-      let b = Math.floor(((t - min) / span) * B);
-      if (b >= B) b = B - 1;
-      if (b < 0) b = 0;
-      buckets[b]++;
+    this._timeMs        = ms;
+    this._timeDataRange = { min, max };
+    // Preserve an existing zoom if the user has a window active and it
+    // still lies inside the new data range; otherwise fall back to the
+    // full data range.
+    if (this._timeWindow &&
+        this._timeWindow.min >= min && this._timeWindow.max <= max) {
+      this._timeRange = { min: this._timeWindow.min, max: this._timeWindow.max };
+    } else {
+      this._timeRange = { min, max };
     }
-    this._timeBuckets = buckets;
+
+    this._rebuildBucketsForView();
 
     this._paintTimeline();
     this._timelineEl.classList.remove('hidden');
@@ -1737,47 +1874,413 @@ class GridViewer {
     if (this._timeWindow &&
         (this._timeWindow.max < min || this._timeWindow.min > max)) {
       this._timeWindow = null;
+      this._timeRange = { min, max };
+      this._rebuildBucketsForView();
+      this._paintTimeline();
       this._timelineWindowEl.classList.add('hidden');
       this._timelineClearBtn.classList.add('hidden');
     }
     this._paintTimelineWindow();
+    this._updateTimelineCursor();
   }
+
+  /** Bucket construction against the current `_timeRange` (i.e. the zoomed
+   *  view, which equals `_timeDataRange` when no window is active). Splits
+   *  out so `_setTimeWindow` / `_clearTimeWindow` can rebuild without
+   *  having to reparse every time cell.
+   *
+   *  Honours two state modes:
+   *    1. `state.filteredIndices` (text filter / EID / Level) — if non-null,
+   *       buckets only count rows that pass the filter. Exception: rows
+   *       excluded *solely* by the active `_timeWindow` are included too,
+   *       otherwise the window itself would trivially zero out every bar
+   *       outside the selection and obscure dataset density.
+   *    2. `_timeStackColumn` — when set, each bucket is an Int32Array of
+   *       per-group counts (indexed by the position in `_timeStackKeys`);
+   *       otherwise the legacy flat Int32Array is used. Paint dispatches
+   *       on `_timeStackBuckets ? stacked-path : flat-path`. */
+  _rebuildBucketsForView() {
+    if (!this._timeMs || !this._timeRange) {
+      this._timeBuckets = null;
+      this._timeStackBuckets = null;
+      return;
+    }
+    const { min, max } = this._timeRange;
+    const span = max - min;
+    const B = this._timeBucketCount;
+    if (span <= 0) {
+      this._timeBuckets = new Int32Array(B);
+      this._timeStackBuckets = null;
+      return;
+    }
+
+    // Decide whether stacking is active. If the configured stack column is
+    // out of range or produced no keys, fall back to flat counts.
+    const stackCol = this._timeStackColumn;
+    const stacking = Number.isInteger(stackCol) && stackCol >= 0 && stackCol < this.columns.length;
+    if (stacking) this._ensureStackKeys();
+    const keys = stacking ? this._timeStackKeys : null;
+    const K = keys ? keys.length : 0;
+    const doStack = stacking && K > 0;
+
+    // Pick the iteration source — filtered rows (subject to the timeline-
+    // window exception above) when a filter is active, otherwise everyone.
+    const ms = this._timeMs;
+    const tw = this._timeWindow;
+    const filtered = this.state.filteredIndices;
+    const rowIterator = this._makeBucketRowIterator(filtered, tw);
+
+    const flat = doStack ? null : new Int32Array(B);
+    const stack = doStack ? new Array(B) : null;
+    if (doStack) {
+      for (let i = 0; i < B; i++) stack[i] = new Int32Array(K);
+    }
+
+    let dataIdx;
+    while ((dataIdx = rowIterator()) !== -1) {
+      const t = ms[dataIdx];
+      if (!Number.isFinite(t)) continue;
+      if (t < min || t > max) continue;
+      let b = Math.floor(((t - min) / span) * B);
+      if (b >= B) b = B - 1;
+      if (b < 0) b = 0;
+      if (doStack) {
+        const row = this.rows[dataIdx];
+        const rawVal = row ? row[stackCol] : '';
+        const k = this._stackKeyForValue(rawVal);
+        stack[b][k]++;
+      } else {
+        flat[b]++;
+      }
+    }
+    if (doStack) {
+      this._timeStackBuckets = stack;
+      // Mirror total counts into the flat array so hover-tooltip /
+      // cursor logic that reads `_timeBuckets` still works without a
+      // branching code path.
+      const totals = new Int32Array(B);
+      for (let i = 0; i < B; i++) {
+        const s = stack[i];
+        let sum = 0;
+        for (let k = 0; k < K; k++) sum += s[k];
+        totals[i] = sum;
+      }
+      this._timeBuckets = totals;
+    } else {
+      this._timeBuckets = flat;
+      this._timeStackBuckets = null;
+    }
+  }
+
+  /** Iterator factory — returns a closure that yields successive dataIdx
+   *  values according to the rules in `_rebuildBucketsForView`. Folding
+   *  the two branches (filtered-only vs. filtered-plus-timeline-window-
+   *  excluded) into a single closure keeps the hot bucket loop tight. */
+  _makeBucketRowIterator(filteredIndices, tw) {
+    if (!filteredIndices) {
+      let i = 0;
+      const n = this.rows.length;
+      return () => (i < n ? i++ : -1);
+    }
+    if (!tw) {
+      let v = 0;
+      const arr = filteredIndices;
+      return () => (v < arr.length ? arr[v++] : -1);
+    }
+    // Filtered + a timeline window is active. The filter itself already
+    // dropped rows outside the window; re-include them here so the bars
+    // outside the window still show the *pre-window* density silhouette.
+    // We walk the union: filteredIndices ∪ rows that pass all non-timeline
+    // filters. Since we can't cheaply recover the latter here, approximate
+    // by walking the full row set but only counting rows that either (a)
+    // are in the filtered-indices Set, or (b) are outside the window.
+    const set = new Set(filteredIndices);
+    const ms = this._timeMs;
+    let i = 0;
+    const n = this.rows.length;
+    return () => {
+      while (i < n) {
+        const d = i++;
+        if (set.has(d)) return d;
+        const t = ms[d];
+        if (!Number.isFinite(t)) continue;
+        if (t < tw.min || t > tw.max) return d;
+      }
+      return -1;
+    };
+  }
+
+  /** Rebuild + repaint the histogram without touching the parsed times.
+   *  Cheap — avoids the full reparse that `_rebuildTimeline` does. Called
+   *  whenever a filter change might have changed the per-bucket counts. */
+  _refreshTimelineBuckets() {
+    if (!this._timeMs || !this._timeRange) return;
+    // Rebuild the stack legend against the *visible* row set so the top-N
+    // groups track whatever the user's current filter has narrowed to.
+    if (Number.isInteger(this._timeStackColumn)) {
+      this._timeStackKeys = null;  // force regenerate
+    }
+    this._rebuildBucketsForView();
+    this._paintTimeline();
+  }
+
+  /** Distinct-value test for the "Stack timeline by this column" menu
+   *  item. Returns true when the column has ≥2 distinct non-empty values
+   *  on the visible row set and ≤ STACK_MAX_DISTINCT overall — i.e. a
+   *  manageable categorical dimension. */
+  _columnLooksStackable(colIdx) {
+    if (!Number.isInteger(colIdx) || colIdx < 0 || colIdx >= this.columns.length) return false;
+    const SAMPLE = 1000;
+    const total = this._visibleCount();
+    if (!total) return false;
+    const n = Math.min(total, SAMPLE);
+    const seen = new Set();
+    for (let v = 0; v < n; v++) {
+      const d = this._dataIdxOf(v);
+      if (d == null) continue;
+      const row = this.rows[d];
+      if (!row) continue;
+      const val = row[colIdx];
+      if (val == null || val === '') continue;
+      seen.add(String(val));
+      if (seen.size > this.STACK_MAX_DISTINCT) return false;
+    }
+    return seen.size >= 2;
+  }
+
+  /** Build `_timeStackKeys` — the legend-ordered list of category values
+   *  for the current stack column. Top (STACK_MAX_KEYS - 1) distinct
+   *  values by visible-row-set frequency get their own palette slot; the
+   *  tail collapses into a single "Other" slot. Recomputed on every
+   *  filter change so the legend tracks what the user is looking at. */
+  _ensureStackKeys() {
+    if (this._timeStackKeys) return;
+    const col = this._timeStackColumn;
+    if (!Number.isInteger(col) || col < 0 || col >= this.columns.length) {
+      this._timeStackKeys = [];
+      this._timeStackOtherIdx = -1;
+      return;
+    }
+    const counts = new Map();
+    const filtered = this.state.filteredIndices;
+    const tw = this._timeWindow;
+    const iter = this._makeBucketRowIterator(filtered, tw);
+    let d;
+    while ((d = iter()) !== -1) {
+      const row = this.rows[d];
+      if (!row) continue;
+      let v = row[col];
+      if (v == null) v = '';
+      const key = String(v);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const maxPrimary = this.STACK_MAX_KEYS - 1;  // reserve one slot for "Other"
+    const primary = sorted.slice(0, maxPrimary).map(([k]) => k);
+    if (sorted.length > maxPrimary) {
+      primary.push('Other');
+      this._timeStackOtherIdx = primary.length - 1;
+    } else {
+      this._timeStackOtherIdx = -1;
+    }
+    this._timeStackKeys = primary;
+    // Index for O(1) lookup in the hot bucket loop.
+    this._timeStackKeyIdx = new Map();
+    for (let i = 0; i < primary.length; i++) {
+      if (i === this._timeStackOtherIdx) continue;
+      this._timeStackKeyIdx.set(primary[i], i);
+    }
+  }
+
+  /** Map a raw cell value to its palette-slot index. Falls back to the
+   *  "Other" slot when the value didn't make the top-N legend. Safe to
+   *  call when legend generation yielded zero keys (returns 0 — paint
+   *  code checks key-count before rendering anyway). */
+  _stackKeyForValue(rawVal) {
+    if (!this._timeStackKeyIdx) return 0;
+    const key = rawVal == null ? '' : String(rawVal);
+    const idx = this._timeStackKeyIdx.get(key);
+    if (idx !== undefined) return idx;
+    return this._timeStackOtherIdx >= 0 ? this._timeStackOtherIdx : 0;
+  }
+
 
   _hideTimeline() {
     this._timeMs = null;
+    this._timeDataRange = null;
     this._timeRange = null;
     this._timeBuckets = null;
+    this._timeStackBuckets = null;
+    this._timeStackKeys = null;
+    if (this._timelineCursorEl) this._timelineCursorEl.classList.add('hidden');
     if (this._timelineEl) this._timelineEl.classList.add('hidden');
+    if (this._timelineLegendEl) this._timelineLegendEl.classList.add('hidden');
   }
 
-  /** Render the bucket bars + min/max date labels. */
+  /** Render the bucket bars + min/max date labels. When stacking is
+   *  active (`_timeStackBuckets` populated), each bucket paints multiple
+   *  coloured segments stacked bottom-up in palette-slot order — what
+   *  the user asked for: a Windows-EID-style breakdown of "how many
+   *  4624 vs 4688 vs 4672 occurred in each time slice". Segment colours
+   *  come from `--grid-stack-color-<N>` CSS custom properties so theme
+   *  overlays can re-skin the palette without touching JS. */
   _paintTimeline() {
     if (!this._timeBuckets || !this._timeRange) return;
-    const buckets = this._timeBuckets;
+    const totals = this._timeBuckets;
     let peak = 1;
-    for (let i = 0; i < buckets.length; i++) if (buckets[i] > peak) peak = buckets[i];
-    const B = buckets.length;
+    for (let i = 0; i < totals.length; i++) if (totals[i] > peak) peak = totals[i];
+    const B = totals.length;
+    const stack = this._timeStackBuckets;
+    const keys = this._timeStackKeys;
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < B; i++) {
-      const bar = document.createElement('span');
-      bar.className = 'grid-timeline-bar';
-      const pct = buckets[i] === 0 ? 0 : Math.max(4, Math.round((buckets[i] / peak) * 100));
-      bar.style.left = (i / B * 100) + '%';
-      bar.style.width = (1 / B * 100) + '%';
-      bar.style.height = pct + '%';
-      bar.dataset.bucket = i;
-      bar.dataset.count = buckets[i];
-      frag.appendChild(bar);
+
+    if (stack && keys && keys.length) {
+      // Stacked path — one <span> per non-zero (bucket × group).
+      const K = keys.length;
+      for (let i = 0; i < B; i++) {
+        const total = totals[i];
+        if (total === 0) continue;
+        const barPct = Math.max(4, Math.round((total / peak) * 100));
+        const left = (i / B) * 100;
+        const width = (1 / B) * 100;
+        let runningBottom = 0;
+        const segBuckets = stack[i];
+        for (let k = 0; k < K; k++) {
+          const cnt = segBuckets[k];
+          if (cnt === 0) continue;
+          // Share of this segment within its bucket, scaled to the
+          // bucket's bar height so a 100-row bucket and a 1-row bucket
+          // don't paint equally-tall segments.
+          const segFrac = cnt / total;
+          const segH = segFrac * barPct;
+          const seg = document.createElement('span');
+          seg.className = 'grid-timeline-bar grid-timeline-bar-stack';
+          seg.style.left = left + '%';
+          seg.style.width = width + '%';
+          seg.style.height = segH + '%';
+          seg.style.bottom = runningBottom + '%';
+          // Use a direct background so the palette works even on themes
+          // that don't pre-declare `--grid-stack-color-N`; the CSS rule
+          // layers a custom-property lookup on top for re-skinning.
+          seg.style.setProperty('--grid-stack-slot', String(k));
+          seg.dataset.bucket = i;
+          seg.dataset.stackKey = k;
+          seg.dataset.count = cnt;
+          frag.appendChild(seg);
+          runningBottom += segH;
+        }
+      }
+    } else {
+      // Flat path — legacy one-bar-per-bucket density.
+      for (let i = 0; i < B; i++) {
+        const bar = document.createElement('span');
+        bar.className = 'grid-timeline-bar';
+        const pct = totals[i] === 0 ? 0 : Math.max(4, Math.round((totals[i] / peak) * 100));
+        bar.style.left = (i / B * 100) + '%';
+        bar.style.width = (1 / B * 100) + '%';
+        bar.style.height = pct + '%';
+        bar.dataset.bucket = i;
+        bar.dataset.count = totals[i];
+        frag.appendChild(bar);
+      }
     }
     this._timelineBucketsEl.replaceChildren(frag);
+    this._paintTimelineLegend();
 
-    this._timelineLabelLeft.textContent  = this._fmtTimeLabel(this._timeRange.min);
-    this._timelineLabelRight.textContent = this._fmtTimeLabel(this._timeRange.max);
+    this._timelineLabelLeft.replaceChildren(this._fmtEdgeLabel(this._timeRange.min));
+    this._timelineLabelRight.replaceChildren(this._fmtEdgeLabel(this._timeRange.max));
+    // Full-precision tooltip so analysts can hover for sub-second context
+    // even though the visible label stops at whole seconds.
+    const minIso = new Date(this._timeRange.min).toISOString().replace('T', ' ').slice(0, 19);
+    const maxIso = new Date(this._timeRange.max).toISOString().replace('T', ' ').slice(0, 19);
+    this._timelineLabelLeft.title  = minIso + ' UTC';
+    this._timelineLabelRight.title = maxIso + ' UTC';
+  }
+
+  /** Lazily mint (and update) a small floating legend chip that lists
+   *  the palette → key mapping when stacking is active. Positioned as
+   *  an overlay over the timeline strip (via CSS) so it never steals
+   *  flex width from the bucket track — same trick as the window-range
+   *  chip. Hidden when no stack is active. */
+  _paintTimelineLegend() {
+    // Legend is disabled: the stacked-bar palette is decorative and the
+    // timeline strip is too narrow for a useful legend. Keep the method
+    // (and the .grid-timeline-bar-stack palette CSS) so bars remain
+    // coloured and the call sites stay intact. The body below is left in
+    // place for easy re-enable — it's unreachable by design.
+    if (this._timelineLegendEl) this._timelineLegendEl.classList.add('hidden');
+    return;
+    // eslint-disable-next-line no-unreachable
+    if (!this._timelineEl) return;
+    const stacking = this._timeStackBuckets && this._timeStackKeys && this._timeStackKeys.length;
+    if (!this._timelineLegendEl) {
+      const el = document.createElement('div');
+      el.className = 'grid-timeline-legend hidden';
+      this._timelineEl.appendChild(el);
+      this._timelineLegendEl = el;
+    }
+    const legend = this._timelineLegendEl;
+    if (!stacking) {
+      legend.classList.add('hidden');
+      legend.replaceChildren();
+      return;
+    }
+    const keys = this._timeStackKeys;
+    const colName = this.columns[this._timeStackColumn] || `Column ${this._timeStackColumn + 1}`;
+    const frag = document.createDocumentFragment();
+    const titleEl = document.createElement('span');
+    titleEl.className = 'grid-timeline-legend-title';
+    titleEl.textContent = `${colName}:`;
+    frag.appendChild(titleEl);
+    for (let k = 0; k < keys.length; k++) {
+      const item = document.createElement('span');
+      item.className = 'grid-timeline-legend-item';
+      item.style.setProperty('--grid-stack-slot', String(k));
+      const sw = document.createElement('span');
+      sw.className = 'grid-timeline-legend-swatch';
+      item.appendChild(sw);
+      const lbl = document.createElement('span');
+      lbl.className = 'grid-timeline-legend-label';
+      const txt = String(keys[k] || '');
+      lbl.textContent = txt.length > 24 ? txt.slice(0, 24) + '…' : (txt || '(empty)');
+      lbl.title = txt || '(empty)';
+      item.appendChild(lbl);
+      frag.appendChild(item);
+    }
+    legend.replaceChildren(frag);
+    legend.classList.remove('hidden');
+  }
+
+
+  /** Edge-label format — ALWAYS shows both date and time (YYYY-MM-DD over
+   *  HH:MM:SS) regardless of span, so multi-day / multi-year timelines
+   *  can never hide the date on the edge ticks and intraday timelines
+   *  can never hide the date either. Returns a DocumentFragment with
+   *  two child spans so CSS can stack them. Kept separate from
+   *  _fmtTimeLabel so the hover tooltip + selected-window chip keep
+   *  their compact span-adaptive form where strip real estate matters. */
+  _fmtEdgeLabel(ms) {
+    const frag = document.createDocumentFragment();
+    if (!Number.isFinite(ms)) return frag;
+    const iso = new Date(ms).toISOString();           // YYYY-MM-DDTHH:MM:SS.sssZ
+    const d = document.createElement('span');
+    d.className = 'grid-timeline-edge-date';
+    d.textContent = iso.slice(0, 10);                 // YYYY-MM-DD
+    const t = document.createElement('span');
+    t.className = 'grid-timeline-edge-time';
+    t.textContent = iso.slice(11, 19);                // HH:MM:SS
+    frag.appendChild(d);
+    frag.appendChild(t);
+    return frag;
   }
 
   /** Compact date format — drops the year when the full range fits in
-   *  the same year, drops seconds when the span is longer than ~2 hours. */
+   *  the same year, drops seconds when the span is longer than ~2 hours.
+   *  Used by the hover tooltip and the selected-window chip, where the
+   *  two halves of a range share one narrow strip and stacking isn't
+   *  an option. */
   _fmtTimeLabel(ms) {
+
     if (!Number.isFinite(ms)) return '';
     const d = new Date(ms);
     if (!this._timeRange) return d.toISOString().replace('T', ' ').slice(0, 19);
@@ -1797,6 +2300,10 @@ class GridViewer {
     if (!this._timeWindow) {
       this._timelineWindowEl.classList.add('hidden');
       this._timelineClearBtn.classList.add('hidden');
+      if (this._timelineWindowLbl) {
+        this._timelineWindowLbl.classList.add('hidden');
+        this._timelineWindowLbl.textContent = '';
+      }
       return;
     }
     const { min, max } = this._timeRange;
@@ -1807,8 +2314,14 @@ class GridViewer {
     this._timelineWindowEl.style.width = Math.max(0.5, r - l) + '%';
     this._timelineWindowEl.classList.remove('hidden');
     this._timelineClearBtn.classList.remove('hidden');
-    this._timelineClearBtn.title =
-      `${this._fmtTimeLabel(this._timeWindow.min)} → ${this._fmtTimeLabel(this._timeWindow.max)} ([ ] to step, Esc to clear)`;
+    const rangeStr =
+      `${this._fmtTimeLabel(this._timeWindow.min)} → ${this._fmtTimeLabel(this._timeWindow.max)}`;
+    this._timelineClearBtn.title = `${rangeStr} ([ ] to step, Esc to clear)`;
+    if (this._timelineWindowLbl) {
+      this._timelineWindowLbl.textContent = rangeStr;
+      this._timelineWindowLbl.title = `Selected window · ${rangeStr} · [ ] to step`;
+      this._timelineWindowLbl.classList.remove('hidden');
+    }
   }
 
   /** Wire mousedown on the bucket track for drag-select + click-bucket,
@@ -1880,8 +2393,13 @@ class GridViewer {
           const bEnd   = this._timeRange.min + ((b + 1) / B) * span;
           this._setTimeWindow(bStart, bEnd);
         } else {
-          // Commit the drag-selected window.
-          this._applyTimelineFilter();
+          // Commit the drag-selected window through _setTimeWindow so the
+          // histogram zooms to the selection (and the temporary selection
+          // rectangle painted by the preview is replaced by the zoomed
+          // view where the strip *is* the window).
+          const w = this._timeWindow;
+          if (w) this._setTimeWindow(w.min, w.max);
+          else this._applyTimelineFilter();
         }
       };
       window.addEventListener('mousemove', onMove);
@@ -1890,43 +2408,135 @@ class GridViewer {
     });
   }
 
+  /** Commit a time window. Zooms the histogram strip to exactly the
+   *  selected [min,max] so bucket resolution scales with the selection
+   *  (what used to be one bar is now many), and the selection rectangle
+   *  is hidden — when the view *is* the window the rectangle would span
+   *  the full strip and add noise. Re-buckets against the new view
+   *  range, repaints bars + edge labels, then triggers the filter
+   *  recompute so the grid body narrows to the same range. */
   _setTimeWindow(min, max) {
     if (!Number.isFinite(min) || !Number.isFinite(max)) return;
     if (min > max) { const t = min; min = max; max = t; }
+    // Clamp to the absolute data range so a zoomed-in step can't drift
+    // into empty space outside the dataset.
+    if (this._timeDataRange) {
+      if (min < this._timeDataRange.min) min = this._timeDataRange.min;
+      if (max > this._timeDataRange.max) max = this._timeDataRange.max;
+    }
     this._timeWindow = { min, max };
+    this._timeRange  = { min, max };
+    this._rebuildBucketsForView();
+    this._paintTimeline();
     this._paintTimelineWindow();
     this._applyTimelineFilter();
+    this._updateTimelineCursor();
   }
 
+  /** ✕ Window / Esc — clear the selection AND restore the histogram to
+   *  the full dataset range, so the user is back at the same view they
+   *  started from. */
   _clearTimeWindow() {
-    if (!this._timeWindow) return;
+    if (!this._timeWindow && (!this._timeDataRange ||
+        (this._timeRange && this._timeRange.min === this._timeDataRange.min &&
+                            this._timeRange.max === this._timeDataRange.max))) {
+      return;
+    }
     this._timeWindow = null;
+    if (this._timeDataRange) {
+      this._timeRange = { min: this._timeDataRange.min, max: this._timeDataRange.max };
+      this._rebuildBucketsForView();
+      this._paintTimeline();
+    }
     this._paintTimelineWindow();
     this._applyTimelineFilter();
+    this._updateTimelineCursor();
   }
 
-  /** [ / ] step the window by its own width earlier / later. */
+  /** [ / ] step the window by its own width earlier / later. Clamps
+   *  against `_timeDataRange` (not `_timeRange`) because when the view
+   *  is zoomed those two are equal — stepping against `_timeRange` would
+   *  pin the window to its current position. */
   _stepTimeWindow(dir) {
-    if (!this._timeWindow || !this._timeRange) return;
+    if (!this._timeWindow) return;
+    const bounds = this._timeDataRange || this._timeRange;
+    if (!bounds) return;
     const w = this._timeWindow.max - this._timeWindow.min;
     if (w <= 0) return;
     let nmin = this._timeWindow.min + dir * w;
     let nmax = this._timeWindow.max + dir * w;
-    // Clamp to range.
-    if (nmin < this._timeRange.min) {
-      const shift = this._timeRange.min - nmin;
+    // Clamp to the absolute data range.
+    if (nmin < bounds.min) {
+      const shift = bounds.min - nmin;
       nmin += shift; nmax += shift;
     }
-    if (nmax > this._timeRange.max) {
-      const shift = nmax - this._timeRange.max;
+    if (nmax > bounds.max) {
+      const shift = nmax - bounds.max;
       nmin -= shift; nmax -= shift;
     }
     this._setTimeWindow(nmin, nmax);
   }
 
+  /** Red scrub indicator — paints a thin vertical line on the timeline
+   *  strip at the time of the first row currently visible in the grid
+   *  body, so the analyst can see *where* in the timeline they've
+   *  scrolled to without reading a date column. Hidden when:
+   *    • there is no timeline (no parseable time column),
+   *    • the first visible row has no parseable time,
+   *    • the first visible row's time falls outside the current zoomed
+   *      `_timeRange` (e.g. after a drag-select zoom where the row set
+   *      was filtered but the user hasn't yet scrolled).
+   *
+   *  Cheap: one `scrollTop / ROW_HEIGHT` division + one array lookup.
+   *  Safe to call from the scroll rAF — no layout thrash. */
+  _updateTimelineCursor() {
+    const el = this._timelineCursorEl;
+    if (!el) return;
+    if (!this._timeMs || !this._timeRange || !this._scr) {
+      el.classList.add('hidden');
+      return;
+    }
+    const visible = this._visibleCount();
+    if (!visible) { el.classList.add('hidden'); return; }
+
+    const scrollTop = this._scr.scrollTop || 0;
+    const vIdx = Math.max(0, Math.min(visible - 1,
+      Math.floor(scrollTop / this.ROW_HEIGHT)));
+    const dIdx = this._dataIdxOf(vIdx);
+    if (dIdx == null) { el.classList.add('hidden'); return; }
+    const t = this._timeMs[dIdx];
+    if (!Number.isFinite(t)) { el.classList.add('hidden'); return; }
+
+    const { min, max } = this._timeRange;
+    if (t < min || t > max) { el.classList.add('hidden'); return; }
+    const span = max - min;
+    const pct = span > 0 ? ((t - min) / span) * 100 : 0;
+    el.style.left = pct + '%';
+    el.classList.remove('hidden');
+  }
+
+  /** Promotion from the column-header menu — opt the user into stacking
+   *  the timeline histogram by `colIdx`. Toggle semantics: selecting the
+   *  currently-active stack column disables stacking and returns the
+   *  histogram to flat density. */
+  _useColumnAsTimelineStack(colIdx) {
+    if (this._timeStackColumn === colIdx) {
+      this._timeStackColumn = null;
+      this._timeStackKeys = null;
+      this._timeStackBuckets = null;
+    } else {
+      this._timeStackColumn = colIdx;
+      this._timeStackKeys = null;      // force regenerate against visible rows
+      this._timeStackBuckets = null;
+    }
+    this._rebuildBucketsForView();
+    this._paintTimeline();
+  }
+
   /** Promotion from the column-header menu — opt the user into a different
    *  column as the timeline source (or disable it if already active). */
   _useColumnAsTimeline(colIdx) {
+
     if (this._timeColumn === colIdx && this._timeMs) {
       // Toggle off.
       this._timeColumnIsAuto = true;
