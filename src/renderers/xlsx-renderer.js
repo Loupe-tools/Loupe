@@ -57,7 +57,12 @@ class XlsxRenderer {
           x.pane.style.display = 'none';
         });
         tab.classList.add('active');
-        pane.style.display = 'block';
+        // `flex` (not `block`) so the new .sheet-content flex-column
+        // layout in viewers.css engages — lets the embedded GridViewer
+        // fill the fixed-height `.sheet-content-area` slot. See the
+        // block-comment above `.sheet-content-area` for the full flex-
+        // chain rationale.
+        pane.style.display = 'flex';
         if (!p.done) {
           self._renderSheet(wb.Sheets[name], pane, name);
           p.done = true;

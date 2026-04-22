@@ -90,6 +90,13 @@ class GridViewer {
     this._rowTitleFn      = typeof opts.rowTitle === 'function' ? opts.rowTitle : null;
     this._cellTextFn      = typeof opts.cellText === 'function' ? opts.cellText : null;
     this._cellClassFn     = typeof opts.cellClass === 'function' ? opts.cellClass : null;
+    // Wave-E (Timeline) — optional per-row class callback. Returns a
+    // space-separated class string (or empty/null) that is added to the
+    // row's `.grid-row` div at build time. Used by Timeline mode to tint
+    // "suspicious" rows without re-rendering the whole grid. Pure decoration
+    // — it does not affect filtering or layout.
+    this._rowClassFn      = typeof opts.rowClass === 'function' ? opts.rowClass : null;
+
     // Wave-E — Timeline layout (final). Opt-in per-caller:
     //   timeColumn       : number|null     — index of the timestamp column.
     //                                          null / omitted → auto-sniff:
@@ -111,6 +118,32 @@ class GridViewer {
     this._timeParser       = typeof opts.timeParser === 'function' ? opts.timeParser : null;
     this._timeBucketCount  = Math.max(20, Math.min(400, opts.timelineBuckets || 100));
     this._onFilterRecompute = typeof opts.onFilterRecompute === 'function' ? opts.onFilterRecompute : null;
+
+    // Timeline Mode hand-off — when the grid is embedded inside Timeline
+    // Mode (src/app/app-timeline.js), the outer view owns its own histogram
+    // and stack-column <select>s. These opt-in callbacks let the column-
+    // header menu items "Use as timeline" / "Stack timeline by this column"
+    // update the *outer* Timeline view instead of promoting the grid's
+    // own internal `.grid-timeline` strip. Returning a truthy value (or
+    // just being present) is treated as "handled": the grid does not run
+    // its own built-in timeline promotion path for that click.
+    this._onUseAsTimeline   = typeof opts.onUseAsTimeline === 'function' ? opts.onUseAsTimeline : null;
+    this._onStackTimelineBy = typeof opts.onStackTimelineBy === 'function' ? opts.onStackTimelineBy : null;
+
+    // Drawer-body JSON-tree picker hook — when a cell in the drawer
+    // renders as a collapsible JSON tree, right-clicking a scalar leaf
+    // key opens a small menu (Extract column / Include value / Exclude
+    // value) that invokes this callback:
+    //
+    //   onCellPick(dataIdx, colIdx, pathArray, nodeValue, action)
+    //
+    // `action` ∈ 'extract' | 'include' | 'exclude'. Composite (object /
+    // array) keys intentionally have no context menu. Timeline Mode
+    // passes this so picking an item creates a virtual column extracting
+    // that path from every row (and, for include/exclude, adds a
+    // matching filter chip). When omitted the tree still renders; the
+    // key-context menu is simply absent.
+    this._onCellPick = typeof opts.onCellPick === 'function' ? opts.onCellPick : null;
 
     // Wave-E (stacked) — optional opt-in: histogram bars are split by
     // category when a stack column is set. Default: single-density bars.
@@ -154,10 +187,38 @@ class GridViewer {
     this.HEADER_H     = 32;
     this.BUFFER_ROWS  = 12;
     this.MIN_COL_W    = 60;
-    this.MAX_COL_W    = 320;
+    this.MAX_COL_W    = 320;     // default soft-cap for 'text' kind
+    this.SHORT_COL_MAX = 240;    // 'short' kind soft-cap
+    this.BLOB_BASE_MAX = 420;    // 'blob' kind base clamp (grows beyond via slack)
+    this.CELL_PAD_PX  = 22;      // body cell horizontal padding+border
+    this.HEADER_EXTRA_PX = 24;   // extra px needed in header for chevron + sort indicator
     this.ROWNUM_COL_W = 64;
     this.DRAWER_MIN_W = 280;
     this.DRAWER_MAX_W = 900;
+
+    // Column-kind + manual-resize wiring (see _recomputeColumnWidths /
+    // _classifyColumns). Callers that know their schema up-front (EVTX,
+    // SQLite with PRAGMA hints) can pass `columnKinds: [...]` to skip the
+    // sniffer; anything else auto-detects on the first populated recompute.
+    //   Kinds: 'timestamp' | 'number' | 'id' | 'enum' | 'hash' |
+    //          'short'     | 'text'   | 'blob'
+    // Fixed-shape kinds (timestamp/number/id/enum/hash) are sized to their
+    // p100 content and do NOT grow into viewport slack. 'blob' is greedy
+    // and absorbs 100% of leftover slack so JSON/Message-style columns can
+    // fill the viewport instead of being pinned at the old 480 px cap.
+    this._columnKindsHint = Array.isArray(opts.columnKinds) ? opts.columnKinds.slice() : null;
+    this._columnKinds     = [];
+    this._columnWidthMeta = [];
+    this._chW             = 7.2;   // px-per-char fallback; replaced on mount
+    this._chWMeasured     = false;
+
+    // Per-renderer-kind storage namespace for user-resized column widths.
+    // Caller may pass `gridKey` explicitly; otherwise fall back to className
+    // (e.g. 'evtx-view', 'csv-view') so EVTX-resized widths survive
+    // re-opens but don't pollute other renderers.
+    this._gridKey = String(opts.gridKey || opts.className || 'grid')
+                       .replace(/[^a-zA-Z0-9_-]/g, '_');
+    this._userColWidths = this._loadUserColumnWidths();   // Map<colIdx, px>
 
     // Mutable state — all reads go through here; all writes schedule a render.
     this.state = {
@@ -284,6 +345,21 @@ class GridViewer {
       '<button class="tb-btn grid-malformed-filter" title="Show only malformed rows">Filter</button>';
     filterBar.appendChild(malformedChip);
 
+    // Hidden-columns chip — only visible when _hiddenCols is non-empty.
+    // Click the chip itself to open a popover listing every hidden column
+    // (click a row to unhide just that one); click the "Show all" button
+    // to unhide every hidden column at once. Mirrors the malformed-row
+    // ribbon visually so the two status chips compose naturally.
+    const hiddenChip = document.createElement('span');
+    hiddenChip.className = 'grid-hidden-chip';
+    hiddenChip.style.display = 'none';
+    hiddenChip.innerHTML =
+      '<button class="tb-btn grid-hidden-label" title="Show hidden columns…">' +
+        '👁 <span class="grid-hidden-count">0</span> hidden' +
+      '</button>' +
+      '<button class="tb-btn grid-hidden-show" title="Unhide every hidden column">Show all</button>';
+    filterBar.appendChild(hiddenChip);
+
     if (this._hideFilterBar) filterBar.style.display = 'none';
     root.appendChild(filterBar);
 
@@ -353,6 +429,10 @@ class GridViewer {
     this._malformedLabel  = malformedChip.querySelector('.grid-malformed-count');
     this._malformedNextBtn   = malformedChip.querySelector('.grid-malformed-next');
     this._malformedFilterBtn = malformedChip.querySelector('.grid-malformed-filter');
+    this._hiddenChip         = hiddenChip;
+    this._hiddenCountLabel   = hiddenChip.querySelector('.grid-hidden-count');
+    this._hiddenChipLabelBtn = hiddenChip.querySelector('.grid-hidden-label');
+    this._hiddenShowAllBtn   = hiddenChip.querySelector('.grid-hidden-show');
     this._main         = main;
     this._emptyEl      = null;
 
@@ -430,91 +510,392 @@ class GridViewer {
       chev.setAttribute('aria-hidden', 'true');
       cell.appendChild(chev);
 
-      cell.title = name + ' — click for column menu';
+      cell.title = name + ' — click for column menu · Ctrl+Click to hide';
       cell.addEventListener('click', (e) => {
         e.stopPropagation();
+        // Ctrl/Cmd+Click on a header → quick-hide. Same as picking
+        // "Hide column" from the ▾ menu, but without opening the menu.
+        // Mirrored on the Timeline `tl-col-card` header so the shortcut
+        // is consistent across the two places columns live.
+        if (e.ctrlKey || e.metaKey) {
+          this._toggleHideColumn(i);
+          return;
+        }
         this._openHeaderMenu(i, cell);
       });
+      // Drag-to-resize handle on the right edge of the cell. Double-click
+      // the handle to reset this column to its auto-calculated width.
+      // Swallows click/mousedown so it can't reopen the header menu.
+      this._wireColumnResize(cell, i);
       this._header.appendChild(cell);
     }
   }
 
 
-  _recomputeColumnWidths() {
-    if (!this.columns.length) { this._columnWidths = []; return; }
-    const sample = this.rows.slice(0, 100);
-    const widths = [];
-    for (let col = 0; col < this.columns.length; col++) {
-      const lens = [];
-      lens.push((this.columns[col] || '').length);
-      for (let r = 0; r < sample.length; r++) {
-        const cell = sample[r][col] || '';
-        lens.push(cell.length);
-      }
-      lens.sort((a, b) => a - b);
-      const p85 = lens[Math.floor(lens.length * 0.85)] || lens[lens.length - 1] || 10;
-      const w = Math.min(this.MAX_COL_W, Math.max(this.MIN_COL_W, Math.ceil(p85 * 7.2)));
-      widths.push(w);
+  // ══════════════════════════════════════════════════════════════════════════
+  //  COLUMN WIDTH ALGORITHM (kind-aware)
+  //
+  //  Old algorithm gave every column a clamp(p85*charW, 60, 320) base then
+  //  split viewport slack *proportional to base width*. That inflated
+  //  fixed-shape columns (Timestamp / Event ID / Level) at the expense of
+  //  the one column that actually holds long-form content (e.g. Event Data
+  //  JSON), which got pinned at the 480 px fill-cap.
+  //
+  //  The new algorithm classifies every column up-front into a "kind",
+  //  then sizes each kind against its own rules:
+  //
+  //    timestamp / number / id / hash / enum → tight-fit to max content
+  //      length (no viewport growth)
+  //    short                                 → p95 base, modest soft cap
+  //    text                                  → p85 base, old 320 cap
+  //    blob                                  → p85 base, but tagged
+  //      *greedy* and takes 100% of leftover slack after every other
+  //      column is satisfied
+  //
+  //  Callers that know their schema (EVTX) skip the sniffer by passing
+  //  `columnKinds: [...]` at construction time. Everyone else gets
+  //  auto-detection on first populated width recompute.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** Measure the grid body's actual cell font once, so width math doesn't
+   *  rely on a `7.2 px/char` guess that silently breaks when a theme swaps
+   *  the monospace font. Cached on `this._chW`. Safe to call before the
+   *  grid is attached to the document (falls back to the default guess). */
+  _measureCharWidth() {
+    if (this._chWMeasured) return this._chW;
+    // We need a cell-shaped element *inside the grid* so the probe inherits
+    // font-family/size/weight from the viewer-specific CSS (core.css + any
+    // theme overlay). Fall back to a plain off-screen span if the root
+    // hasn't mounted yet.
+    const probe = document.createElement('div');
+    probe.className = 'grid-cell';
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.whiteSpace = 'pre';
+    probe.style.padding = '0';
+    probe.style.border = '0';
+    probe.textContent = '0'.repeat(80);   // 80 zeros → stable sample
+    const host = (this._sizer && this._sizer.isConnected) ? this._sizer
+               : (this._root  && this._root.isConnected)  ? this._root
+               : document.body;
+    host.appendChild(probe);
+    const w = probe.getBoundingClientRect().width / 80;
+    probe.remove();
+    if (Number.isFinite(w) && w > 0) {
+      this._chW = w;
+      this._chWMeasured = true;
     }
+    return this._chW;
+  }
+
+  /** Classify each column into one of:
+   *    'timestamp' | 'number' | 'id' | 'hash' | 'enum' | 'short' | 'text' | 'blob'
+   *
+   *  Stratified sampling (head + middle + tail) so EVTX's boot-chatter-
+   *  heavy prefix doesn't mis-type Event Data as 'short' just because the
+   *  first 100 records happen to have tiny payloads.
+   *
+   *  Caller-supplied `columnKinds` wins per-cell: any index whose entry is
+   *  a known kind string is accepted verbatim and the sniffer skipped. */
+  _classifyColumns() {
+    const hint = this._columnKindsHint;
+    const cols = this.columns.length;
+    const kinds = new Array(cols);
+    const lens = new Array(cols);       // Array<sorted number[]>
+    const distinct = new Array(cols);   // Array<Set<string>> — up to 50 each
+    for (let c = 0; c < cols; c++) {
+      lens[c] = [];
+      distinct[c] = new Set();
+    }
+
+    // Stratified sample: head + middle + tail, up to ~300 rows total.
+    const n = this.rows.length;
+    const sampleIdxs = [];
+    if (n > 0) {
+      const HEAD = Math.min(100, n);
+      for (let i = 0; i < HEAD; i++) sampleIdxs.push(i);
+      if (n > 200) {
+        const midStart = Math.floor(n / 2) - 50;
+        for (let i = 0; i < 100 && (midStart + i) < n; i++) {
+          sampleIdxs.push(midStart + i);
+        }
+        for (let i = Math.max(0, n - 100); i < n; i++) sampleIdxs.push(i);
+      }
+    }
+
+    // Per-column tallies: numeric count, pure-hex32/40/64 count, timestamp
+    // count, max length, non-empty count. Regex kept narrow on purpose —
+    // auto-detection is only meant to catch the obvious cases.
+    const stats = new Array(cols);
+    for (let c = 0; c < cols; c++) {
+      stats[c] = { nonEmpty: 0, numeric: 0, ts: 0, hex32: 0, hex40: 0, hex64: 0, maxLen: 0, startsJsonish: 0 };
+    }
+    const TS_RE = /^(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)$/;
+    const NUM_RE = /^-?\d+(?:\.\d+)?$/;
+    const HEX_RE = /^[0-9a-fA-F]+$/;
+
+    for (const r of sampleIdxs) {
+      const row = this.rows[r];
+      if (!row) continue;
+      for (let c = 0; c < cols; c++) {
+        let cell = row[c];
+        if (cell == null) cell = '';
+        const s = String(cell);
+        const trimmed = s.trim();
+        const L = s.length;
+        if (L > stats[c].maxLen) stats[c].maxLen = L;
+        lens[c].push(L);
+        if (!trimmed) continue;
+        stats[c].nonEmpty++;
+        if (distinct[c].size < 50) distinct[c].add(trimmed);
+        if (NUM_RE.test(trimmed)) stats[c].numeric++;
+        if (TS_RE.test(trimmed)) stats[c].ts++;
+        if (HEX_RE.test(trimmed)) {
+          const hl = trimmed.length;
+          if (hl === 32) stats[c].hex32++;
+          else if (hl === 40) stats[c].hex40++;
+          else if (hl === 64) stats[c].hex64++;
+        }
+        if (trimmed[0] === '{' || trimmed[0] === '[') stats[c].startsJsonish++;
+      }
+    }
+
+    for (let c = 0; c < cols; c++) {
+      // Caller-supplied hint wins.
+      if (hint && typeof hint[c] === 'string') {
+        kinds[c] = hint[c];
+        continue;
+      }
+      const st = stats[c];
+      if (st.nonEmpty === 0) { kinds[c] = 'short'; continue; }
+
+      // Hash — ≥90% fixed-length hex at a known length → column is hashes.
+      if (st.hex32 / st.nonEmpty >= 0.9 || st.hex40 / st.nonEmpty >= 0.9 || st.hex64 / st.nonEmpty >= 0.9) {
+        kinds[c] = 'hash';
+        continue;
+      }
+      // Timestamp — most non-empty cells parse as an ISO-ish date.
+      if (st.ts / st.nonEmpty >= 0.85) { kinds[c] = 'timestamp'; continue; }
+      // Numeric / ID — mostly bare numbers, short columns.
+      if (st.numeric / st.nonEmpty >= 0.9 && st.maxLen <= 12) {
+        kinds[c] = 'id';
+        continue;
+      }
+      if (st.numeric / st.nonEmpty >= 0.9) { kinds[c] = 'number'; continue; }
+
+      // Blob — JSON-ish opener OR very wide cells.
+      if (st.startsJsonish / st.nonEmpty >= 0.5 || st.maxLen > 160) {
+        kinds[c] = 'blob';
+        continue;
+      }
+      // Enum — few distinct values, all reasonably short.
+      if (distinct[c].size > 0 && distinct[c].size <= 12 && st.maxLen <= 24) {
+        kinds[c] = 'enum';
+        continue;
+      }
+      // Short-text (hostname, username, short path).
+      if (st.maxLen <= 48) { kinds[c] = 'short'; continue; }
+
+      kinds[c] = 'text';
+    }
+
+    this._columnKinds = kinds;
+    this._columnLengths = lens;
+    return kinds;
+  }
+
+  /** Compute each column's "base" width — the width it would get in
+   *  isolation, with no viewport-fill growth. Honours per-kind sizing
+   *  rules and always guarantees enough space for the header label so
+   *  nothing gets truncated out of the gate. User-resized widths (from
+   *  the drag-resize handle) override the algorithm for that column. */
+  _recomputeColumnWidths() {
+    if (!this.columns.length) {
+      this._columnWidths = [];
+      this._columnWidthMeta = [];
+      return;
+    }
+    this._classifyColumns();
+    const chW = this._measureCharWidth();
+    const kinds = this._columnKinds;
+    const lens  = this._columnLengths;
+    const cols = this.columns.length;
+    const widths = new Array(cols);
+    const meta   = new Array(cols);
+
+    for (let c = 0; c < cols; c++) {
+      const kind = kinds[c] || 'text';
+      // Header floor — nothing in the body should force the header label
+      // to truncate. chevron + sort indicator eat ~24 px of header width.
+      const hdrLen = (this.columns[c] || '').length;
+      const headerPx = Math.ceil(hdrLen * chW) + this.HEADER_EXTRA_PX + this.CELL_PAD_PX;
+
+      const arr = lens[c] ? lens[c].slice().sort((a, b) => a - b) : [0];
+      const p = (pct) => {
+        if (!arr.length) return 0;
+        const i = Math.min(arr.length - 1, Math.max(0, Math.floor(arr.length * pct)));
+        return arr[i];
+      };
+      const p85 = p(0.85);
+      const p95 = p(0.95);
+      const p100 = arr[arr.length - 1] || 0;
+
+      let base;
+      let greedy = false;
+      // Small amount of extra breathing room for fixed-shape columns so
+      // the last char doesn't sit flush against the next cell's border.
+      const TIGHT_PAD = 8;
+
+      switch (kind) {
+        case 'timestamp':
+          base = Math.ceil(p100 * chW) + this.CELL_PAD_PX + TIGHT_PAD;
+          break;
+        case 'number':
+        case 'id':
+          base = Math.ceil(p100 * chW) + this.CELL_PAD_PX + TIGHT_PAD;
+          break;
+        case 'hash':
+          base = Math.ceil(p100 * chW) + this.CELL_PAD_PX + TIGHT_PAD;
+          break;
+        case 'enum':
+          base = Math.ceil(p100 * chW) + this.CELL_PAD_PX + TIGHT_PAD;
+          break;
+        case 'short':
+          base = Math.min(this.SHORT_COL_MAX, Math.ceil(p95 * chW) + this.CELL_PAD_PX);
+          break;
+        case 'blob':
+          base = Math.min(this.BLOB_BASE_MAX, Math.ceil(p85 * chW) + this.CELL_PAD_PX);
+          greedy = true;
+          break;
+        case 'text':
+        default:
+          base = Math.min(this.MAX_COL_W, Math.ceil(p85 * chW) + this.CELL_PAD_PX);
+          break;
+      }
+      // Clamp & floor.
+      base = Math.max(this.MIN_COL_W, base);
+      base = Math.max(base, headerPx);          // header never truncates
+
+      // User-resized column? Respect it regardless of kind, but record the
+      // algorithm's opinion in meta so a future "Reset" action can restore.
+      const user = this._userColWidths.get(c);
+      widths[c] = (user && Number.isFinite(user)) ? user : base;
+
+      meta[c] = {
+        kind,
+        greedy,
+        headerPx,
+        base,
+        userOverride: !!(user && Number.isFinite(user))
+      };
+    }
+
     this._columnWidths = widths;
+    this._columnWidthMeta = meta;
   }
 
   _applyColumnTemplate() {
-    // Visible (non-hidden) column indices and their base widths from
-    // _recomputeColumnWidths() — those widths are clamped to
-    // [MIN_COL_W, MAX_COL_W] and are what the grid would show without any
-    // viewport-fill consideration.
+    // Build the list of visible (non-hidden) columns with their kind,
+    // base width, and greedy flag.
     const visIdx  = [];
     const baseWs  = [];
+    const meta    = [];
     for (let i = 0; i < this._columnWidths.length; i++) {
       if (this._hiddenCols.has(i)) continue;
       visIdx.push(i);
       baseWs.push(this._columnWidths[i]);
+      meta.push(this._columnWidthMeta[i] || { kind: 'text', greedy: false });
     }
 
-    // Cheap best-effort fill: if the viewport has unused horizontal space
-    // after the base widths sum up, spread the slack across columns
-    // *proportionally to their base width* so wide (description-like)
-    // columns grow more than narrow (id-like) ones. Per-column soft cap
-    // keeps a single lopsided column from eating all the slack.
-    //
-    // The scroll container only has a real clientWidth once it's attached
-    // to the DOM + laid out, so the constructor's initial call is a no-op
-    // (clientWidth === 0) and the base widths stand. The ResizeObserver
-    // below re-calls _applyColumnTemplate() on the first real layout and
-    // on any subsequent viewport resize.
-    const FILL_CAP = 480;
     const scrW = (this._scr && this._scr.clientWidth) || 0;
-    const baseSum = baseWs.reduce((a, b) => a + b, 0);
     const outWs = baseWs.slice();
+
+    // Two-phase slack allocation:
+    //   Phase 1 — leave fixed-shape columns (timestamp/number/id/enum/
+    //             hash/short/user-overridden) alone. Greedy blobs absorb
+    //             ALL leftover slack, split equally between them when
+    //             multiple blobs exist.
+    //   Phase 2 — if no greedy column exists (typical CSV with short
+    //             text only), fall back to the legacy proportional-fill
+    //             behaviour so small tables still fill the viewport
+    //             instead of leaving a right-edge gutter.
     if (scrW > 0 && visIdx.length) {
-      // Reserve the row-number gutter + a tiny safety margin so the last
-      // column never provokes a horizontal scrollbar when the maths rounds up.
+      // Reserve the row-number gutter + a 2 px safety margin so the last
+      // column never provokes a horizontal scrollbar after rounding.
       const avail = scrW - this.ROWNUM_COL_W - 2;
+      const baseSum = outWs.reduce((a, b) => a + b, 0);
       let slack = avail - baseSum;
-      if (slack > 0 && baseSum > 0) {
-        // Two passes: first proportional, capping any overflow; then spread
-        // the unused cap-overflow equally over the remaining growable cols.
-        const growable = new Set(outWs.map((_, i) => i));
-        for (let pass = 0; pass < 3 && slack > 1 && growable.size; pass++) {
-          let growBase = 0;
-          growable.forEach(i => { growBase += outWs[i]; });
-          if (growBase <= 0) break;
-          const perUnit = slack / growBase;
-          let spent = 0;
-          const toRemove = [];
-          growable.forEach(i => {
-            const want = outWs[i] + outWs[i] * perUnit;
-            const capped = Math.min(FILL_CAP, want);
-            spent += (capped - outWs[i]);
-            outWs[i] = capped;
-            if (capped >= FILL_CAP) toRemove.push(i);
-          });
-          toRemove.forEach(i => growable.delete(i));
-          slack -= spent;
+
+      // Identify greedy columns (blob kind, not user-overridden).
+      const greedyIdxs = [];
+      for (let i = 0; i < meta.length; i++) {
+        if (meta[i].greedy && !meta[i].userOverride) greedyIdxs.push(i);
+      }
+
+      if (slack > 0) {
+        if (greedyIdxs.length > 0) {
+          // PHASE 1 — dump everything into greedy columns, split equally.
+          const share = slack / greedyIdxs.length;
+          for (const i of greedyIdxs) outWs[i] += share;
+        } else {
+          // PHASE 2 — no blobs. Grow non-fixed kinds proportionally, with
+          // a per-column 2× soft cap (twice its own base) to stop a
+          // single long-text column from swelling into a non-interactive
+          // wall of whitespace.
+          const growable = [];
+          for (let i = 0; i < meta.length; i++) {
+            const k = meta[i].kind;
+            // Fixed-shape kinds + user overrides never grow.
+            if (meta[i].userOverride) continue;
+            if (k === 'timestamp' || k === 'number' || k === 'id' ||
+                k === 'hash' || k === 'enum') continue;
+            growable.push(i);
+          }
+          if (growable.length === 0) {
+            // Everything is fixed — leave the trailing slack as empty track.
+          } else {
+            let growBase = 0;
+            for (const i of growable) growBase += outWs[i];
+            const caps = growable.map(i => outWs[i] * 2);
+            for (let pass = 0; pass < 3 && slack > 1; pass++) {
+              let spent = 0;
+              for (let gi = 0; gi < growable.length; gi++) {
+                const i = growable[gi];
+                if (outWs[i] >= caps[gi]) continue;
+                const share = outWs[i] / growBase;
+                const want = slack * share;
+                const capped = Math.min(want, caps[gi] - outWs[i]);
+                outWs[i] += capped;
+                spent += capped;
+              }
+              slack -= spent;
+              // Recompute growBase over still-growable columns.
+              growBase = 0;
+              for (let gi = 0; gi < growable.length; gi++) {
+                const i = growable[gi];
+                if (outWs[i] < caps[gi]) growBase += outWs[i];
+              }
+              if (growBase <= 0) break;
+            }
+          }
         }
-        // Any remaining slack after hitting the cap everywhere: silently
-        // leave it as empty track — better than an unbounded stretch.
+      } else if (slack < 0) {
+        // Viewport is narrower than the sum of base widths. Shrink greedy
+        // columns first (they're discretionary); if none, proportionally
+        // shrink non-fixed columns down to MIN_COL_W.
+        let deficit = -slack;
+        if (greedyIdxs.length > 0) {
+          // Shrink greedy columns evenly, but not below MIN_COL_W.
+          const per = deficit / greedyIdxs.length;
+          for (const i of greedyIdxs) {
+            const nw = Math.max(this.MIN_COL_W, outWs[i] - per);
+            deficit -= (outWs[i] - nw);
+            outWs[i] = nw;
+          }
+        }
+        // Further deficit handled silently — browser shows a horizontal
+        // scrollbar, which is the right UX when the viewport really is
+        // too narrow.
       }
     }
 
@@ -527,6 +908,101 @@ class GridViewer {
     }
     this._root.style.setProperty('--grid-template', parts.join(' '));
     this._root.style.setProperty('--grid-min-width', totalW + 'px');
+
+    // Record the rendered widths so manual-resize drag handles can read
+    // their starting pixel value cheaply without re-reading the CSS var.
+    this._visibleColIdxs      = visIdx;
+    this._renderedColWidths   = outWs.slice();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  MANUAL COLUMN RESIZE — persisted per-grid-kind under `loupe_`
+  //  prefix (see .clinerules — user-persisted preferences are required
+  //  to use this namespace).
+  // ══════════════════════════════════════════════════════════════════════════
+
+  _colWidthStorageKey() {
+    return `loupe_grid_colW_${this._gridKey}`;
+  }
+
+  _loadUserColumnWidths() {
+    const m = new Map();
+    try {
+      const raw = localStorage.getItem(this._colWidthStorageKey());
+      if (!raw) return m;
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === 'object') {
+        for (const k of Object.keys(obj)) {
+          const i = parseInt(k, 10);
+          const v = parseInt(obj[k], 10);
+          if (Number.isFinite(i) && Number.isFinite(v)) {
+            m.set(i, Math.max(this.MIN_COL_W, Math.min(1600, v)));
+          }
+        }
+      }
+    } catch (_) { /* corrupted storage — ignore */ }
+    return m;
+  }
+
+  _saveUserColumnWidth(colIdx, widthPx) {
+    try {
+      const obj = {};
+      for (const [k, v] of this._userColWidths) obj[k] = v;
+      if (widthPx == null) delete obj[colIdx];
+      else obj[colIdx] = widthPx;
+      localStorage.setItem(this._colWidthStorageKey(), JSON.stringify(obj));
+    } catch (_) { /* storage full / disabled — persistence is best-effort */ }
+  }
+
+  /** Reset one column back to its auto-calculated width. Called from the
+   *  column-header menu. */
+  _resetColumnWidth(colIdx) {
+    this._userColWidths.delete(colIdx);
+    this._saveUserColumnWidth(colIdx, null);
+    this._recomputeColumnWidths();
+    this._applyColumnTemplate();
+  }
+
+  /** Wire a drag handle onto one header cell. Called from
+   *  `_buildHeaderCells()` for every visible column. Live-drag updates
+   *  the CSS var directly for smooth feedback; commits on mouseup. */
+  _wireColumnResize(cell, colIdx) {
+    const handle = document.createElement('div');
+    handle.className = 'grid-col-resize-handle';
+    handle.title = 'Drag to resize · double-click to auto-fit';
+    handle.addEventListener('click', (e) => { e.stopPropagation(); });
+    handle.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      this._resetColumnWidth(colIdx);
+    });
+    handle.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = cell.getBoundingClientRect().width || this.MIN_COL_W;
+      let curW = startW;
+      document.body.classList.add('grid-resizing');
+      const onMove = (ev) => {
+        const dx = ev.clientX - startX;
+        curW = Math.max(this.MIN_COL_W, Math.min(1600, Math.round(startW + dx)));
+        this._userColWidths.set(colIdx, curW);
+        this._columnWidths[colIdx] = curW;
+        if (this._columnWidthMeta[colIdx]) {
+          this._columnWidthMeta[colIdx].userOverride = true;
+        }
+        this._applyColumnTemplate();
+      };
+      const onUp = () => {
+        document.body.classList.remove('grid-resizing');
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        this._saveUserColumnWidth(colIdx, curW);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+    cell.appendChild(handle);
   }
 
 
@@ -623,14 +1099,43 @@ class GridViewer {
     this._malformedNextBtn.addEventListener('click', () => this._jumpToNextMalformed());
     this._malformedFilterBtn.addEventListener('click', () => this._toggleMalformedFilter());
 
+    // Hidden-columns chip — the left label opens a popover listing every
+    // hidden column; the right "Show all" button unhides them in one shot.
+    this._hiddenChipLabelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._openHiddenColsPopover(this._hiddenChipLabelBtn);
+    });
+    this._hiddenShowAllBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._unhideAllColumns();
+    });
+
     // Global click to dismiss any open header / top-values popover.
+    //
+    // The `.grid-header-cell` exemption only applies to non-right-click
+    // gestures — it exists so a left-click re-opening the same header
+    // menu doesn't flicker via "close-then-reopen". For right-clicks we
+    // always close, because Timeline Mode (src/app/app-timeline.js) opens
+    // its own Excel-style filter popover on `contextmenu` over header
+    // cells, and leaving this sort menu on screen alongside it produces
+    // two overlapping popovers.
     this._boundHandlers.onDocClick = (e) => {
       if (!this._openPopover) return;
       if (this._openPopover.contains(e.target)) return;
-      if (e.target.closest && e.target.closest('.grid-header-cell')) return;
+      if (e.button !== 2 && e.target.closest && e.target.closest('.grid-header-cell')) return;
       this._closePopover();
     };
     document.addEventListener('mousedown', this._boundHandlers.onDocClick, true);
+
+    // Dismiss the popover on any scroll — capture-phase so scrolls inside
+    // our own `.grid-scroll` container (and any ancestor scroller) trigger
+    // it too. Matches the behaviour of Timeline Mode's popovers and the
+    // json-tree key menu, so header / top-values menus never dangle over
+    // content that has moved underneath them.
+    this._boundHandlers.onDocScroll = () => {
+      if (this._openPopover) this._closePopover();
+    };
+    window.addEventListener('scroll', this._boundHandlers.onDocScroll, true);
 
     // ResizeObserver on scroll container. Re-runs the viewport-fill pass
     // in _applyColumnTemplate() so columns re-stretch when the window /
@@ -786,10 +1291,16 @@ class GridViewer {
         ? this._cellTextFn(dataIdx, c, rawCell)
         : rawCell;
       const asStr = String(displayCell == null ? '' : displayCell);
-      // Truncate for display; full value shown in drawer.
-      const truncated = asStr.length > 160 ? asStr.substring(0, 160) + '…' : asStr;
+      // Hard DOM-safety cap — even a resizable column can't render a 100 KB
+      // JSON blob as a single text node without wrecking layout. Cap at
+      // 4000 chars; CSS `text-overflow: ellipsis` on `.grid-cell` still
+      // handles the visible clipping at the column edge. Raising this
+      // from the legacy 160 was the fix for the "Events column ellipses
+      // long before the cell edge" bug — 160 fired well before CSS
+      // ever got a chance to truncate at the real viewport width.
+      const truncated = asStr.length > 4000 ? asStr.substring(0, 4000) + '…' : asStr;
       td.textContent = truncated;
-      if (asStr.length > 40) td.title = asStr;
+      if (asStr.length > 40) td.title = asStr.length > 4000 ? asStr.substring(0, 4000) + '…' : asStr;
       if (asStr && !isNaN(parseFloat(asStr)) && /^-?\d/.test(asStr.trim())) {
         td.classList.add('grid-cell-num');
       }
@@ -808,6 +1319,13 @@ class GridViewer {
     if (this._malformedRows && this._malformedRows.has(dataIdx)) {
       tr.classList.add('grid-row-malformed');
     }
+    if (this._rowClassFn) {
+      try {
+        const extra = this._rowClassFn(dataIdx);
+        if (extra) tr.classList.add(...String(extra).split(/\s+/).filter(Boolean));
+      } catch { /* decorative only */ }
+    }
+
 
     const h = this.state.highlight;
     if (h && !this._highlightExpired(h)) {
@@ -902,7 +1420,7 @@ class GridViewer {
         try { console.error('grid-viewer detailBuilder threw', e); } catch (_) { /* ignore */ }
       }
     }
-    if (!pane) pane = this._buildDetailPaneElement(this.columns, row);
+    if (!pane) pane = this._buildDetailPaneElement(this.columns, row, dataIdx);
 
     // Apply any live highlight decorations (IOC / YARA) to the fresh pane.
     const h = this.state.highlight;
@@ -916,13 +1434,18 @@ class GridViewer {
     this._drawerBody.replaceChildren(pane);
   }
 
-  _buildDetailPaneElement(cols, row) {
+  _buildDetailPaneElement(cols, row, dataIdx) {
     const pane = document.createElement('div');
     pane.className = 'csv-detail-pane grid-detail-pane';
     const grid = document.createElement('div');
     grid.className = 'csv-detail-grid';
     let hasContent = false;
+    // Shared JSON tree renderer — present at runtime because `src/json-tree.js`
+    // loads before `grid-viewer.js` in the build order. Guard the access so a
+    // future accidental reorder doesn't explode the drawer.
+    const TreeHelper = (typeof window !== 'undefined' && window.JsonTree) || null;
     for (let i = 0; i < cols.length; i++) {
+      if (this._hiddenCols.has(i)) continue;
       const key = cols[i] || `Column ${i + 1}`;
       const val = row[i] || '';
       if (!val || !String(val).trim()) continue;
@@ -934,9 +1457,62 @@ class GridViewer {
       grid.appendChild(kEl);
       const vEl = document.createElement('div');
       vEl.className = 'csv-detail-val';
-      vEl.textContent = val;
+
+      // JSON-aware drawer body — when a cell parses as a JSON object or
+      // array, render it as a collapsible tree instead of plain text.
+      // Right-clicking a scalar leaf key in the tree opens a menu
+      // (Extract column / Include value / Exclude value) that fires
+      // `onCellPick(dataIdx, colIdx, path, nodeValue, action)`. Composite
+      // (object / array) keys have no context menu. Timeline Mode uses
+      // this to extract the path as a new virtual column — and, for
+      // include/exclude, to add a matching filter chip on the newly
+      // created column. When the parent view didn't supply a pick
+      // callback the tree still renders (expand/collapse still works);
+      // the key-context menu is simply absent.
+      let parsed;
+      try { parsed = TreeHelper ? TreeHelper.tryParse(val) : undefined; }
+      catch (_) { parsed = undefined; }
+      if (parsed !== undefined && TreeHelper) {
+        vEl.classList.add('csv-detail-val-json');
+        const onPick = this._onCellPick
+          ? (path, nodeValue, action) => {
+              try { this._onCellPick(dataIdx, i, path, nodeValue, action); }
+              catch (e) { try { console.error('onCellPick threw', e); } catch (_) { /* ignore */ } }
+            }
+          : null;
+        const tree = TreeHelper.render(parsed, {
+          onPick,
+          autoOpenDepth: 1,
+          maxChildren: 200
+        });
+        vEl.appendChild(tree);
+      } else {
+        vEl.textContent = val;
+        // Plain-text drawer field — right-click the key OR value to
+        // Include / Exclude that value on the source column. Mirrors the
+        // JSON-leaf context menu above (Extract is omitted — the source
+        // column already exists). Sends an *empty* path array to
+        // `onCellPick` as the "this is a direct column filter, not a
+        // JSON-extract" sentinel; Timeline Mode's `onCellPick` handler
+        // dispatches on `path.length === 0` and pushes a chip directly
+        // against `colIdx` without creating a virtual extracted column.
+        if (this._onCellPick) {
+          const colIdx = i;
+          const leafValue = val;
+          const openMenu = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            this._openDrawerCellMenu(ev, dataIdx, colIdx, leafValue);
+          };
+          kEl.classList.add('grid-detail-key-pickable');
+          kEl.title = key + ' — right-click to filter';
+          kEl.addEventListener('contextmenu', openMenu);
+          vEl.addEventListener('contextmenu', openMenu);
+        }
+      }
       grid.appendChild(vEl);
     }
+
     if (!hasContent) {
       const empty = document.createElement('p');
       empty.className = 'grid-detail-empty';
@@ -1184,6 +1760,11 @@ class GridViewer {
     this.state.parseComplete = true;
     this._progress.classList.add('hidden');
     this._updateInfoBar();
+    // Row set is finalised now — re-run the column-kind sniffer on the
+    // real data (the constructor's initial call saw an empty row set for
+    // streaming parsers and produced default 'short' widths).
+    this._recomputeColumnWidths();
+    this._applyColumnTemplate();
     this._rebuildTimeline();
   }
 
@@ -1192,8 +1773,40 @@ class GridViewer {
     this.rowSearchText = rowSearchText || this.rowSearchText;
     this.rowOffsets = rowOffsets || this.rowOffsets;
     this._maybeRemoveEmptyPlaceholder();
-    // If our filter is active it may now include new rows — recompute.
-    if (this.state.filteredIndices != null && this._filterInput.value) {
+    // Re-run column-kind sniffer now that we have real rows to sample.
+    this._recomputeColumnWidths();
+    this._applyColumnTemplate();
+
+    // The previous rows array is gone — any cached permutation
+    // (`_sortOrder`) or derived filter index (`state.filteredIndices`)
+    // references the OLD dataset and would index past the new rows
+    // length. Without this invalidation the Timeline's column-chip
+    // filter path (which calls setRows with a smaller filtered slice)
+    // would leave a stale `_sortOrder` pointing at higher indices than
+    // the new rows array, and the grid would render empty even though
+    // rows matched. Save any active sort spec so we can re-apply it on
+    // the fresh rows instead of dropping it.
+    const prevSort = this._sortSpec;
+    this.state.filteredIndices = null;
+    this._sortSpec = null;
+    this._sortOrder = null;
+
+    if (prevSort) {
+      // Re-sort on the fresh rows — _sortByColumn also re-applies the
+      // live filter-input query when it intersects with filteredIndices,
+      // so this single call correctly handles sort+filter combos.
+      this._sortByColumn(prevSort.colIdx, prevSort.dir);
+      if (this._filterInput.value && this._filterInput.value.trim()) {
+        // _sortByColumn intersects with the *existing* filteredIndices
+        // (which we just nulled), so re-run _applyFilter and then the
+        // sort permutation gets re-intersected in the same pass via
+        // _applyFilter → _forceFullRender path. Simpler: call
+        // _applyFilter which rebuilds filteredIndices from the query,
+        // then re-sort on top.
+        this._applyFilter();
+        this._sortByColumn(prevSort.colIdx, prevSort.dir);
+      }
+    } else if (this._filterInput.value && this._filterInput.value.trim()) {
       this._applyFilter();
     } else {
       this._forceFullRender();
@@ -1279,8 +1892,8 @@ class GridViewer {
         if (this._visibleCount() > 0) this._scrollToRow(this._dataIdxOf(0));
       },
       forceRender:      () => this._forceFullRender(),
-      buildDetailPane:  (td, row) => {
-        const pane = this._buildDetailPaneElement(this.columns, row);
+      buildDetailPane:  (td, row, dataIdx) => {
+        const pane = this._buildDetailPaneElement(this.columns, row, dataIdx);
         td.appendChild(pane);
       },
       state:            this.state,
@@ -1402,6 +2015,16 @@ class GridViewer {
     pop.appendChild(mkItem('Copy column', () => this._copyColumn(colIdx)));
     pop.appendChild(this._popoverSeparator());
     pop.appendChild(mkItem('Hide column', () => this._toggleHideColumn(colIdx), { danger: true }));
+    // Escape hatch — if any column is currently hidden, surface the same
+    // popover that the "👁 N hidden" chip opens. Duplicates the chip's
+    // entry-point so users who hide several columns in a row via the
+    // header menu don't have to chase the chip to get them back.
+    if (this._hiddenCols.size > 0) {
+      pop.appendChild(mkItem(
+        `Show hidden columns… (${this._hiddenCols.size})`,
+        () => this._openHiddenColsPopover(anchorEl)
+      ));
+    }
 
 
     this._positionPopover(pop, anchorEl);
@@ -1443,6 +2066,55 @@ class GridViewer {
     try { this._openPopover.remove(); } catch (_) { /* ignore */ }
     this._openPopover = null;
   }
+
+  /**
+   * Right-click context menu for plain-text drawer fields. Mirrors the
+   * JSON-leaf menu that `src/json-tree.js` opens for tree keys — except
+   * "Extract column" is omitted (the source column already exists) and
+   * the `onCellPick` callback is invoked with an empty `path` array as
+   * a sentinel meaning "this is a direct column filter, not a
+   * JSON-extract request". Positioned at the cursor and dismissed on
+   * outside click / Esc / scroll / resize.
+   */
+  _openDrawerCellMenu(ev, dataIdx, colIdx, leafValue) {
+    this._closePopover();
+    if (!this._onCellPick) return;
+
+    const pop = document.createElement('div');
+    pop.className = 'grid-popover grid-header-menu';
+    pop.setAttribute('role', 'menu');
+    pop.style.position = 'fixed';
+
+    const mkItem = (label, action) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'grid-popover-item';
+      b.textContent = label;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._closePopover();
+        try { this._onCellPick(dataIdx, colIdx, [], leafValue, action); }
+        catch (err) { try { console.error('onCellPick threw', err); } catch (_) { /* ignore */ } }
+      });
+      pop.appendChild(b);
+    };
+    mkItem('✓ Include value', 'include');
+    mkItem('✕ Exclude value', 'exclude');
+
+    // Position at the cursor, then nudge into the viewport after measuring
+    // — same contract as `JsonTree._openKeyMenu`.
+    document.body.appendChild(pop);
+    pop.style.left = (ev.clientX || 0) + 'px';
+    pop.style.top  = (ev.clientY || 0) + 'px';
+    const rect = pop.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    if (rect.right  > vw) pop.style.left = Math.max(0, vw - rect.width  - 4) + 'px';
+    if (rect.bottom > vh) pop.style.top  = Math.max(0, vh - rect.height - 4) + 'px';
+
+    this._openPopover = pop;
+  }
+
 
   /**
    * Top-values popover — tallies frequency of each value in `colIdx`
@@ -1657,6 +2329,102 @@ class GridViewer {
     this._buildHeaderCells();
     this._applyColumnTemplate();
     this._forceFullRender();
+    this._updateHiddenChipUI();
+    // If the drawer is open the pane shows every column as a key/value
+    // row — refresh it so hidden columns disappear from the drawer too.
+    if (this.state.drawer.open) this._renderDrawerBody(this.state.drawer.dataIdx);
+  }
+
+  /** Unhide a single previously-hidden column. No-op if it wasn't hidden. */
+  _unhideColumn(colIdx) {
+    if (!this._hiddenCols.has(colIdx)) return;
+    this._hiddenCols.delete(colIdx);
+    this._buildHeaderCells();
+    this._applyColumnTemplate();
+    this._forceFullRender();
+    this._updateHiddenChipUI();
+    if (this.state.drawer.open) this._renderDrawerBody(this.state.drawer.dataIdx);
+  }
+
+  /** Unhide every hidden column — wired to the "Show all" chip button
+   *  and also called from Timeline Mode's Reset so users can recover
+   *  from a column-hiding spree without reloading the file. */
+  _unhideAllColumns() {
+    if (!this._hiddenCols.size) return;
+    this._hiddenCols.clear();
+    this._buildHeaderCells();
+    this._applyColumnTemplate();
+    this._forceFullRender();
+    this._updateHiddenChipUI();
+    if (this.state.drawer.open) this._renderDrawerBody(this.state.drawer.dataIdx);
+  }
+
+  /** Sync the "👁 N hidden" chip with `_hiddenCols.size`. Safe to call
+   *  before the chip DOM has been mounted (no-op). */
+  _updateHiddenChipUI() {
+    if (!this._hiddenChip) return;
+    const n = this._hiddenCols.size;
+    if (!n) {
+      this._hiddenChip.style.display = 'none';
+      return;
+    }
+    this._hiddenChip.style.display = '';
+    if (this._hiddenCountLabel) this._hiddenCountLabel.textContent = n.toLocaleString();
+  }
+
+  /** Popover listing every hidden column, one button per column. Clicking
+   *  a row unhides just that column. Positioned by the shared popover
+   *  helper so it auto-flips when it'd overflow the viewport. */
+  _openHiddenColsPopover(anchorEl) {
+    this._closePopover();
+    const pop = document.createElement('div');
+    pop.className = 'grid-popover grid-hidden-popover';
+
+    const header = document.createElement('div');
+    header.className = 'grid-hidden-popover-header';
+    header.textContent = `Hidden columns · ${this._hiddenCols.size}`;
+    pop.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'grid-hidden-popover-list';
+    const sorted = [...this._hiddenCols].sort((a, b) => a - b);
+    for (const ci of sorted) {
+      const name = this.columns[ci] || `Column ${ci + 1}`;
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'grid-popover-item grid-hidden-popover-item';
+      item.title = 'Click to unhide this column';
+      item.textContent = '👁 ' + name;
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._unhideColumn(ci);
+        this._closePopover();
+        // Re-open so users can unhide several in a row without chasing
+        // the chip again; close if they've now unhidden everything.
+        if (this._hiddenCols.size) {
+          this._openHiddenColsPopover(this._hiddenChipLabelBtn);
+        }
+      });
+      list.appendChild(item);
+    }
+    pop.appendChild(list);
+
+    if (this._hiddenCols.size > 1) {
+      pop.appendChild(this._popoverSeparator());
+      const allBtn = document.createElement('button');
+      allBtn.type = 'button';
+      allBtn.className = 'grid-popover-item grid-hidden-popover-all';
+      allBtn.textContent = 'Show all columns';
+      allBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._unhideAllColumns();
+        this._closePopover();
+      });
+      pop.appendChild(allBtn);
+    }
+
+    this._positionPopover(pop, anchorEl);
+    this._openPopover = pop;
   }
 
   _copyColumn(colIdx) {
@@ -2564,8 +3332,21 @@ class GridViewer {
   /** Promotion from the column-header menu — opt the user into stacking
    *  the timeline histogram by `colIdx`. Toggle semantics: selecting the
    *  currently-active stack column disables stacking and returns the
-   *  histogram to flat density. */
+   *  histogram to flat density.
+   *
+   *  When hosted inside Timeline Mode (outer view owns its own histogram
+   *  + stack <select>), the `onStackTimelineBy` callback wins and we do
+   *  NOT run the built-in internal-strip promotion path — a truthy return
+   *  is treated as "handled". */
   _useColumnAsTimelineStack(colIdx) {
+    if (this._onStackTimelineBy) {
+      try {
+        const handled = this._onStackTimelineBy(colIdx, this.columns[colIdx]);
+        if (handled !== false) return;
+      } catch (e) {
+        try { console.error('grid-viewer onStackTimelineBy threw', e); } catch (_) { /* ignore */ }
+      }
+    }
     if (this._timeStackColumn === colIdx) {
       this._timeStackColumn = null;
       this._timeStackKeys = null;
@@ -2580,8 +3361,23 @@ class GridViewer {
   }
 
   /** Promotion from the column-header menu — opt the user into a different
-   *  column as the timeline source (or disable it if already active). */
+   *  column as the timeline source (or disable it if already active).
+   *
+   *  When hosted inside Timeline Mode (outer view owns its own histogram
+   *  strip and time-column `<select>`), the `onUseAsTimeline` callback
+   *  wins: a truthy return is treated as "handled" and the grid does
+   *  NOT promote its own internal `.grid-timeline` strip — otherwise the
+   *  column would light up both the outer Timeline histogram AND a
+   *  duplicate in-grid strip. */
   _useColumnAsTimeline(colIdx) {
+    if (this._onUseAsTimeline) {
+      try {
+        const handled = this._onUseAsTimeline(colIdx, this.columns[colIdx]);
+        if (handled !== false) return;
+      } catch (e) {
+        try { console.error('grid-viewer onUseAsTimeline threw', e); } catch (_) { /* ignore */ }
+      }
+    }
 
     if (this._timeColumn === colIdx && this._timeMs) {
       // Toggle off.
@@ -2629,6 +3425,9 @@ class GridViewer {
     if (this._resizeObs) { try { this._resizeObs.disconnect(); } catch (_) { /* ignore */ } }
     if (this._boundHandlers.onDocClick) {
       try { document.removeEventListener('mousedown', this._boundHandlers.onDocClick, true); } catch (_) { /* ignore */ }
+    }
+    if (this._boundHandlers.onDocScroll) {
+      try { window.removeEventListener('scroll', this._boundHandlers.onDocScroll, true); } catch (_) { /* ignore */ }
     }
     this._sizer.replaceChildren();
     this._drawerBody.replaceChildren();
