@@ -856,6 +856,10 @@ class GridViewer {
     this._drawer.style.flexBasis = this.state.drawer.width + 'px';
     this._renderDrawerBody(dataIdx);
     this._refreshHighlightDecorations();
+    // Re-anchor the timeline scrub cursor onto the opened event so it
+    // tracks the user's focused row instead of continuing to drift with
+    // scroll position.
+    this._updateTimelineCursor();
   }
 
   _closeDrawer() {
@@ -865,6 +869,9 @@ class GridViewer {
     this._drawerHandle.style.display = 'none';
     this._drawerBody.replaceChildren();
     this._refreshHighlightDecorations();
+    // Drawer-anchor gone — fall back to the scroll-position anchor for
+    // the timeline cursor.
+    this._updateTimelineCursor();
   }
 
   _renderDrawerBody(dataIdx) {
@@ -2478,17 +2485,25 @@ class GridViewer {
   }
 
   /** Red scrub indicator — paints a thin vertical line on the timeline
-   *  strip at the time of the first row currently visible in the grid
-   *  body, so the analyst can see *where* in the timeline they've
-   *  scrolled to without reading a date column. Hidden when:
-   *    • there is no timeline (no parseable time column),
-   *    • the first visible row has no parseable time,
-   *    • the first visible row's time falls outside the current zoomed
-   *      `_timeRange` (e.g. after a drag-select zoom where the row set
-   *      was filtered but the user hasn't yet scrolled).
+   *  strip at the time of the row the analyst is currently focused on,
+   *  so they can see *where* in the timeline they're sitting without
+   *  reading a date column.
    *
-   *  Cheap: one `scrollTop / ROW_HEIGHT` division + one array lookup.
-   *  Safe to call from the scroll rAF — no layout thrash. */
+   *  Anchor priority (highest first):
+   *    1. The row currently opened in the detail drawer — this is the
+   *       "currently opened event" and is a stable fixed reference,
+   *       so the cursor does not wander as the user scrolls around it.
+   *    2. The row nearest the vertical middle of the viewport — far
+   *       less twitchy than anchoring to the top edge (which flips
+   *       every ~28 px of scroll and when the top row happens to have
+   *       an out-of-order timestamp relative to its neighbours the
+   *       cursor visibly teleports).
+   *    3. If the middle row has no parseable / in-range time, scan a
+   *       small +/- window around it to find one, rather than hiding
+   *       the cursor (prevents flicker through empty-time gaps).
+   *
+   *  Cheap — one scroll-top read + a handful of array lookups. Safe
+   *  to call from the scroll handler; CSS supplies the smoothing. */
   _updateTimelineCursor() {
     const el = this._timelineCursorEl;
     if (!el) return;
@@ -2499,18 +2514,49 @@ class GridViewer {
     const visible = this._visibleCount();
     if (!visible) { el.classList.add('hidden'); return; }
 
-    const scrollTop = this._scr.scrollTop || 0;
-    const vIdx = Math.max(0, Math.min(visible - 1,
-      Math.floor(scrollTop / this.ROW_HEIGHT)));
-    const dIdx = this._dataIdxOf(vIdx);
-    if (dIdx == null) { el.classList.add('hidden'); return; }
-    const t = this._timeMs[dIdx];
-    if (!Number.isFinite(t)) { el.classList.add('hidden'); return; }
-
     const { min, max } = this._timeRange;
-    if (t < min || t > max) { el.classList.add('hidden'); return; }
+    const ms = this._timeMs;
+
+    // 1. Drawer-anchored: if a row is open, pin the cursor to its time.
+    if (this.state.drawer.open && this.state.drawer.dataIdx >= 0) {
+      const t = ms[this.state.drawer.dataIdx];
+      if (Number.isFinite(t) && t >= min && t <= max) {
+        const span = max - min;
+        const pct = span > 0 ? ((t - min) / span) * 100 : 0;
+        el.style.left = pct + '%';
+        el.classList.remove('hidden');
+        return;
+      }
+      // Drawer row has no valid time → fall through to scroll anchor.
+    }
+
+    // 2. Scroll-anchored: middle of the viewport, not the top edge.
+    const scrollTop = this._scr.scrollTop || 0;
+    const viewportH = this._scr.clientHeight || 0;
+    const midPx = scrollTop + (viewportH / 2);
+    const midV = Math.max(0, Math.min(visible - 1,
+      Math.floor(midPx / this.ROW_HEIGHT)));
+
+    // 3. Short bidirectional scan to tolerate rows with missing or
+    //    out-of-range timestamps — scrolling through a few such rows
+    //    should not hide the cursor or snap it to zero.
+    const WINDOW = 8;
+    const lo = Math.max(0, midV - WINDOW);
+    const hi = Math.min(visible - 1, midV + WINDOW);
+    let bestT = NaN;
+    let bestD = Infinity;
+    for (let v = lo; v <= hi; v++) {
+      const dIdx = this._dataIdxOf(v);
+      if (dIdx == null) continue;
+      const t = ms[dIdx];
+      if (!Number.isFinite(t) || t < min || t > max) continue;
+      const d = Math.abs(v - midV);
+      if (d < bestD) { bestD = d; bestT = t; }
+    }
+    if (!Number.isFinite(bestT)) { el.classList.add('hidden'); return; }
+
     const span = max - min;
-    const pct = span > 0 ? ((t - min) / span) * 100 : 0;
+    const pct = span > 0 ? ((bestT - min) / span) * 100 : 0;
     el.style.left = pct + '%';
     el.classList.remove('hidden');
   }

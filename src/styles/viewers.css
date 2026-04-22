@@ -10874,9 +10874,18 @@ body.dark .grid-timeline-track {
 .grid-timeline-window.hidden { display: none; }
 
 /* Red scrub indicator — a thin vertical line drawn on the track that
-   tracks the first row currently visible in the grid body. Painted on
-   top of both the bucket bars and the selection rectangle so the analyst
-   can always see where their scroll position sits on the timeline. */
+   tracks the row the analyst is currently focused on. Anchored to the
+   opened drawer row when one is open (a stable reference), otherwise
+   to the row at the vertical middle of the viewport. Painted on top
+   of both the bucket bars and the selection rectangle so the analyst
+   can always see where their scroll position sits on the timeline.
+
+   The `left` transition smooths per-row stepping during scroll so the
+   cursor glides across the strip instead of twitching one row at a
+   time. 140 ms is short enough that click-to-open-event still feels
+   direct. `will-change: left` hints the compositor to promote the
+   cursor to its own layer so the transition is GPU-accelerated and
+   never provokes a layout of the timeline strip. */
 .grid-timeline-cursor {
   position: absolute;
   top: 0;
@@ -10887,6 +10896,8 @@ body.dark .grid-timeline-track {
   box-shadow: 0 0 2px rgba(229, 72, 77, .6);
   pointer-events: none;
   z-index: 3;
+  transition: left 140ms ease-out;
+  will-change: left;
 }
 .grid-timeline-cursor.hidden { display: none; }
 
