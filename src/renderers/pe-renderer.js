@@ -2052,7 +2052,7 @@ class PeRenderer {
         wrap.appendChild(this._renderSection(
           '📥 Imports (' + pe.imports.length + ' DLLs, ' + totalFuncs + ' functions)',
           this._renderImports(pe),
-          totalFuncs,
+          0,
           { cardId: 'imports' }
         ));
       }
@@ -2062,7 +2062,7 @@ class PeRenderer {
         wrap.appendChild(this._renderSection(
           '📤 Exports (' + pe.exports.names.length + ')',
           this._renderExports(pe),
-          pe.exports.names.length,
+          0,
           { cardId: 'exports' }
         ));
       }

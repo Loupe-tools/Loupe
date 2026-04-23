@@ -1264,7 +1264,7 @@ class ElfRenderer {
         wrap.appendChild(this._renderSection(
           '📥 Imported Symbols (' + importSyms.length + ')',
           this._renderSymbols(importSyms, true),
-          importSyms.length,
+          0,
           { cardId: 'symbols' }
         ));
       }
@@ -1273,7 +1273,7 @@ class ElfRenderer {
         wrap.appendChild(this._renderSection(
           '📤 Exported Symbols (' + exportSyms.length + ')',
           this._renderSymbols(exportSyms, false),
-          exportSyms.length,
+          0,
           { cardId: 'symbols' }
         ));
       }

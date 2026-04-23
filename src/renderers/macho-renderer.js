@@ -1418,7 +1418,7 @@ class MachoRenderer {
         wrap.appendChild(this._renderSection(
           '📥 Imported Symbols (' + imports.length + ')',
           this._renderSymbols(imports, true),
-          imports.length,
+          0,
           { cardId: 'symbols' }
         ));
       }
@@ -1427,7 +1427,7 @@ class MachoRenderer {
         wrap.appendChild(this._renderSection(
           '📤 Exported Symbols (' + exports.length + ')',
           this._renderSymbols(exports, false),
-          exports.length,
+          0,
           { cardId: 'symbols' }
         ));
       }
