@@ -7014,21 +7014,14 @@ Object.assign(App.prototype, {
       // back to the regular analyser pipeline. Callers (`_loadFile`) handle
       // this by only calling us after `_shouldRouteToTimeline` confirms it.
       let view = null;
-      try {
-        if (ext === 'evtx') {
-          view = TimelineView.fromEvtx(file, buffer);
-        } else if (ext === 'csv' || ext === 'tsv') {
-          view = TimelineView.fromCsv(file, buffer, ext === 'tsv' ? '\t' : null);
-        } else if (ext === 'sqlite' || ext === 'db') {
-          view = TimelineView.fromSqlite(file, buffer);
-        } else {
-          throw new Error('Unsupported Timeline format: .' + ext);
-        }
-      } catch (factoryErr) {
-        // Factory blew up even with its own try/catch coverage — last-ditch
-        // escape hatch: surface a dismissible error card so the analyst
-        // isn't stuck looking at the regular drop-zone without feedback.
-        throw factoryErr;
+      if (ext === 'evtx') {
+        view = TimelineView.fromEvtx(file, buffer);
+      } else if (ext === 'csv' || ext === 'tsv') {
+        view = TimelineView.fromCsv(file, buffer, ext === 'tsv' ? '\t' : null);
+      } else if (ext === 'sqlite' || ext === 'db') {
+        view = TimelineView.fromSqlite(file, buffer);
+      } else {
+        throw new Error('Unsupported Timeline format: .' + ext);
       }
 
       // If the factory returned zero rows AND no pre-parsed events (EVTX

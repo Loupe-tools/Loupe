@@ -45,7 +45,6 @@ const _CAPABILITIES = [
     mitre: 'T1055.012',
     description: 'Create a suspended process, unmap its image, replace with payload, and resume — classic hollowing.',
     imports: ['createprocess', 'ntunmapviewofsection', 'setthreadcontext', 'resumethread'],
-    matchAll: false, // require 3 of 4
     quorum: 3,
   },
   {
@@ -182,8 +181,6 @@ const _CAPABILITIES = [
     strings: ['sam', 'security', 'system', 'regsavekey'],
     stringsAny: false,
     stringsQuorum: 3,
-    // strict ASCII path match to avoid common words — see _stringMatch
-    stringsPath: true,
   },
   {
     id: 'creds-dpapi',

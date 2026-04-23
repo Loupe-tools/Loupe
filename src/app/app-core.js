@@ -207,56 +207,6 @@ class App {
     });
   }
 
-  // ── Paste from clipboard ────────────────────────────────────────────────
-  async _pasteFromClipboard() {
-    try {
-      // Try the Clipboard API (requires HTTPS or localhost, user permission)
-      if (navigator.clipboard && navigator.clipboard.read) {
-        const items = await navigator.clipboard.read();
-        for (const item of items) {
-          // Check for files/images first
-          for (const type of item.types) {
-            if (type.startsWith('image/')) {
-              const blob = await item.getType(type);
-              const ext = type.split('/')[1] === 'jpeg' ? 'jpg' : type.split('/')[1];
-              const file = new File([blob], `clipboard.${ext}`, { type });
-              this._loadFile(file);
-              return;
-            }
-          }
-          // Check for text — prefer plain text over HTML so that pasting
-          // from apps like Slack gives the actual text, not rich formatting.
-          if (item.types.includes('text/plain')) {
-            const blob = await item.getType('text/plain');
-            const text = await blob.text();
-            const file = new File([text], 'clipboard.txt', { type: 'text/plain' });
-            this._loadFile(file);
-            return;
-          }
-          if (item.types.includes('text/html')) {
-            const blob = await item.getType('text/html');
-            const text = await blob.text();
-            const file = new File([text], 'clipboard.html', { type: 'text/html' });
-            this._loadFile(file);
-            return;
-          }
-        }
-        this._toast('Clipboard is empty or contains unsupported content', 'error');
-      } else {
-        // Fallback: readText only
-        const text = await navigator.clipboard.readText();
-        if (text && text.trim()) {
-          const file = new File([text], 'clipboard.txt', { type: 'text/plain' });
-          this._loadFile(file);
-        } else {
-          this._toast('Clipboard is empty', 'error');
-        }
-      }
-    } catch (e) {
-      this._toast('Clipboard access denied — try Ctrl+V instead', 'error');
-    }
-  }
-
   _handlePasteEvent(e) {
     const dt = e.clipboardData;
     if (!dt) return;

@@ -231,8 +231,6 @@ function extractIpAddresses(text, cap) {
   return _dedupCap(filtered, cap);
 }
 
-function extractHashes(text, cap) { return _dedupCap((String(text || '').match(_HASH_RE) || []), cap); }
-
 /**
  * Private/abuse-friendly public suffixes frequently used for phishing,
  * DDNS, and tunnelling C2 (Cloudflare Tunnel, ngrok, localhost.run, etc.).
@@ -302,17 +300,6 @@ function _parseUrlHost(url) {
       isAbuseSuffix: !!ps && _ABUSE_SUFFIXES.has(ps),
     };
   } catch (_) { return null; }
-}
-
-/**
- * Extract the registrable domain from a URL using tldts (if the vendor lib
- * has been loaded). Returns `null` if tldts is unavailable or the URL
- * doesn't parse to a public-suffix-valid domain. Used by `pushIOC` to
- * auto-emit an `IOC.DOMAIN` sibling for every `IOC.URL`.
- */
-function _domainFromUrl(url) {
-  const h = _parseUrlHost(url);
-  return h && h.domain && !h.isIp ? h.domain : null;
 }
 
 /**

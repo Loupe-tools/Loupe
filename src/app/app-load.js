@@ -29,19 +29,6 @@ function _md5(bytes) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// SafeLink URL unwrapping — delegates to EncodedContentDetector.unwrapSafeLink
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Unwrap Proofpoint URLDefense and Microsoft SafeLinks URLs.
- * @param {string} url  The potentially wrapped URL.
- * @returns {object|null}  { originalUrl, emails: [], provider } or null if not a SafeLink.
- */
-function _unwrapSafeLink(url) {
-  return EncodedContentDetector.unwrapSafeLink(url);
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 // Defanged URL/IP/email refanging — converts security-defanged IOCs to normal
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -142,10 +129,9 @@ Object.assign(App.prototype, {
     if (sbBodyEl) { sbBodyEl.scrollTop = 0; sbBodyEl.scrollLeft = 0; }
 
     // Show the breadcrumb trail immediately so the user sees the filename
-    // while the (potentially slow) parse runs. We set a minimal _fileMeta
-    // up front; the richer metadata (entropy, magic, size-with-page-count)
-    // is filled in once parsing completes and the sidebar re-renders.
-    this._fileMeta = Object.assign({}, this._fileMeta || {}, { name: file.name, size: file.size });
+    // while the (potentially slow) parse runs. The full _fileMeta (entropy,
+    // magic, size-with-page-count) is filled in once parsing completes.
+    this._fileMeta = { name: file.name, size: file.size };
     this._renderBreadcrumbs();
     const ext = file.name.split('.').pop().toLowerCase();
 
@@ -1618,7 +1604,7 @@ Object.assign(App.prototype, {
       const url = (rawUrl || '').trim().replace(/[.,;:!?)\]>]+$/, '').replace(/([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{0,3}$/, '$1');
       if (!url || url.length < 6) return;
 
-      const unwrapped = _unwrapSafeLink(url);
+      const unwrapped = EncodedContentDetector.unwrapSafeLink(url);
       if (unwrapped) {
         // Add the wrapper URL as info-level (with its own source location)
         add(IOC.URL, url, 'info', `${unwrapped.provider} wrapper`, {
@@ -1804,7 +1790,7 @@ Object.assign(App.prototype, {
       for (const m of (mod.source || '').matchAll(/https?:\/\/[^\s"']{6,}/g)) {
         const v = m[0].replace(/[.,;:!?)\]>]+$/, '');
         if (!seen.has(v)) {
-          const unwrapped = _unwrapSafeLink(v);
+          const unwrapped = EncodedContentDetector.unwrapSafeLink(v);
           if (unwrapped) {
             add(IOC.URL, v, 'medium', `${unwrapped.provider} wrapper (VBA)`);
             add(IOC.URL, unwrapped.originalUrl, 'critical', `Extracted from ${unwrapped.provider} (VBA)`, {
