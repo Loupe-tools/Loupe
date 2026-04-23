@@ -1299,7 +1299,18 @@ class GridViewer {
       const truncated = asStr.length > 4000 ? asStr.substring(0, 4000) + '…' : asStr;
       td.textContent = truncated;
       if (asStr.length > 40) td.title = asStr.length > 4000 ? asStr.substring(0, 4000) + '…' : asStr;
-      if (asStr && !isNaN(parseFloat(asStr)) && /^-?\d/.test(asStr.trim())) {
+      // Use the column-level classification (number/id) to decide numeric
+      // styling instead of per-cell sniffing.  This prevents mixed-content
+      // columns (e.g. browser-history Title "47643_babana_02.jpg …") from
+      // flipping individual cells to green / right-aligned just because the
+      // string happens to start with a digit.  Callers that force numeric
+      // styling via cellClass callbacks (SQLite Visit Count, etc.) are
+      // unaffected — that path runs separately below.
+      const colKind = this._columnKinds && this._columnKinds[c];
+      if (colKind === 'number' || colKind === 'id') {
+        td.classList.add('grid-cell-num');
+      } else if (!colKind && asStr && !isNaN(parseFloat(asStr)) && /^-?\d/.test(asStr.trim())) {
+        // Defensive fallback: column classification hasn't run yet.
         td.classList.add('grid-cell-num');
       }
       if (this._cellClassFn) {
