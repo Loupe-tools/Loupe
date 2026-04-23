@@ -6708,6 +6708,11 @@ Object.assign(App.prototype, {
     const firstCh = trimmed.charAt(0);
     if (firstCh === '{' || firstCh === '[' || firstCh === '<') return null;
     if (trimmed.startsWith('#!') || trimmed.startsWith('<?')) return null;
+    // C-family line comments (`//`) are a strong signal of source code
+    // (JS, JXA, C, C#, Java, etc.) — not tabular data.  Without this
+    // guard, semicolon-terminated languages consistently produce a 2-col
+    // split on `;` that passes the 80 % confidence gate below.
+    if (trimmed.startsWith('//')) return null;
     // Reject binary-ish heads (NUL in the first kB).
     if (text.indexOf('\u0000') !== -1) return null;
     // Reject tabular-but-not-CSV formats that happen to use `;` or tabs
