@@ -725,6 +725,25 @@ Object.assign(App.prototype, {
   },
 
 
+  // ── Go Build Info (shared by PE / ELF) ────────────────────────────────
+  _copyAnalysisGoBuildInfo(parsed, parts, tp) {
+    if (!parsed.isGoBinary) return;
+    parts.push('\n### Go Build Info');
+    const g = parsed.goBuildInfo || {};
+    if (g.version) parts.push(`- **Go Version:** ${tp(g.version)}`);
+    if (g.path) parts.push(`- **Main Package:** \`${tp(g.path)}\``);
+    if (g.vcs) parts.push(`- **VCS:** ${tp(g.vcs)}`);
+    if (g.revision) parts.push(`- **Revision:** \`${tp(g.revision)}\``);
+    if (g.buildTime) parts.push(`- **Build Time:** ${tp(g.buildTime)}`);
+    if (g.settings && Object.keys(g.settings).length) {
+      const extra = Object.entries(g.settings)
+        .filter(([k]) => k !== 'vcs' && k !== 'vcs.revision' && k !== 'vcs.time')
+        .slice(0, 10);
+      for (const [k, v] of extra) parts.push(`- **${tp(k)}:** ${tp(String(v))}`);
+    }
+    if (!g.version && !g.path) parts.push('- Go binary detected via section name (.gopclntab / .go.buildinfo); build info header was not parseable.');
+  },
+
   // ── PE deep data ──────────────────────────────────────────────────────
   _copyAnalysisPE(pe, parts, tp) {
     parts.push('\n## PE Binary Details');
@@ -929,22 +948,7 @@ Object.assign(App.prototype, {
       if (pe.installerVersion) parts.push(`- **Version:** ${tp(pe.installerVersion)}`);
       parts.push('- Payload archive is embedded as a PE overlay; Loupe does **not** unpack it — run the installer in an isolated sandbox and triage the extracted setup script separately.');
     }
-    if (pe.isGoBinary) {
-      parts.push('\n### Go Build Info');
-      const g = pe.goBuildInfo || {};
-      if (g.version) parts.push(`- **Go Version:** ${tp(g.version)}`);
-      if (g.path) parts.push(`- **Main Package:** \`${tp(g.path)}\``);
-      if (g.vcs) parts.push(`- **VCS:** ${tp(g.vcs)}`);
-      if (g.revision) parts.push(`- **Revision:** \`${tp(g.revision)}\``);
-      if (g.buildTime) parts.push(`- **Build Time:** ${tp(g.buildTime)}`);
-      if (g.settings && Object.keys(g.settings).length) {
-        const extra = Object.entries(g.settings)
-          .filter(([k]) => k !== 'vcs' && k !== 'vcs.revision' && k !== 'vcs.time')
-          .slice(0, 10);
-        for (const [k, v] of extra) parts.push(`- **${tp(k)}:** ${tp(String(v))}`);
-      }
-      if (!g.version && !g.path) parts.push('- Go binary detected via section name (.gopclntab / .go.buildinfo); build info header was not parseable.');
-    }
+    this._copyAnalysisGoBuildInfo(pe, parts, tp);
   },
 
 
@@ -1070,28 +1074,8 @@ Object.assign(App.prototype, {
     // budget).
     if (elf.stringCount != null) parts.push(`\n**Strings extracted:** ${elf.stringCount}`);
 
-    // ── Go build info ──
-    //   Mirrors the PE heuristic block. The `isGoBinary` flag is also
-    //   surfaced via findings.metadata['Format']='Go Binary' so it
-    //   already shows up in the generic metadata section, but the full
-    //   build-info table (VCS revision, module path, settings…) only
-    //   makes sense under its own heading.
-    if (elf.isGoBinary) {
-      parts.push('\n### Go Build Info');
-      const g = elf.goBuildInfo || {};
-      if (g.version) parts.push(`- **Go Version:** ${tp(g.version)}`);
-      if (g.path) parts.push(`- **Main Package:** \`${tp(g.path)}\``);
-      if (g.vcs) parts.push(`- **VCS:** ${tp(g.vcs)}`);
-      if (g.revision) parts.push(`- **Revision:** \`${tp(g.revision)}\``);
-      if (g.buildTime) parts.push(`- **Build Time:** ${tp(g.buildTime)}`);
-      if (g.settings && Object.keys(g.settings).length) {
-        const extra = Object.entries(g.settings)
-          .filter(([k]) => k !== 'vcs' && k !== 'vcs.revision' && k !== 'vcs.time')
-          .slice(0, 10);
-        for (const [k, v] of extra) parts.push(`- **${tp(k)}:** ${tp(String(v))}`);
-      }
-      if (!g.version && !g.path) parts.push('- Go binary detected via section name (.gopclntab / .go.buildinfo); build info header was not parseable.');
-    }
+    // ── Go build info (shared helper) ──
+    this._copyAnalysisGoBuildInfo(elf, parts, tp);
   },
 
 
