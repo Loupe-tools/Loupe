@@ -143,7 +143,7 @@ class HtmlRenderer {
 
     const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const lines = normalizedText.split('\n');
-    const maxLines = 100000;
+    const maxLines = RENDER_LIMITS.MAX_TEXT_LINES;
     const lineCount = Math.min(lines.length, maxLines);
 
     // Apply XML syntax highlighting if available (limit to 100KB for performance)

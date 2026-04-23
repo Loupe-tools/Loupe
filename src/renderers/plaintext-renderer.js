@@ -157,7 +157,7 @@ class PlainTextRenderer {
   // Display-only chunk size for soft-wrap (characters).
   static SOFT_WRAP_CHUNK = 2000;
   // Hard cap on total lines rendered to the DOM.
-  static MAX_LINES = 50000;
+  static MAX_LINES = RENDER_LIMITS.MAX_TEXT_LINES;
   // localStorage key for the syntax-highlight on/off toggle.
   static HIGHLIGHT_PREF_KEY = 'loupe_plaintext_highlight';
 

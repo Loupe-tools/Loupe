@@ -21,7 +21,7 @@ class ZipRenderer {
   static MACAPP_RE = /(?:^|\/)([A-Za-z0-9][A-Za-z0-9 _\-.]{0,63}\.app)\//;
 
   // IOC cap for .app bundle FILE_PATH emission — mirrors DMG renderer.
-  static APP_IOC_CAP = 30;
+  static APP_IOC_CAP = 60;
 
   // Double-extension patterns attackers use (e.g. invoice.pdf.exe)
   static DECOY_EXTS = new Set([
@@ -1143,7 +1143,7 @@ class ZipRenderer {
       const now = Date.now();
       const YEAR_MS = 365 * 24 * 3600 * 1000;
       const staleBefore = new Date('1990-01-01').getTime();
-      const MAX_PER_BUCKET = 20;
+      const MAX_PER_BUCKET = 40;
       const bombHits = [];
       const commentHits = [];
       const permHits = [];

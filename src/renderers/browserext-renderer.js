@@ -508,7 +508,7 @@ class BrowserExtRenderer {
       const table = document.createElement('table');
       table.className = 'plaintext-table';
       const lines = normalizedManifest.split('\n');
-      const maxLines = 5000;
+      const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
       const count = Math.min(lines.length, maxLines);
 
       // Optional hljs syntax highlighting — JSON for manifest.json, XML for

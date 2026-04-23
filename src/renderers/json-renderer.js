@@ -218,7 +218,7 @@ class JsonRenderer {
   }
 
   _classify(arr) {
-    const sample = arr.length > 100 ? arr.slice(0, 100) : arr;
+    const sample = arr.length > 200 ? arr.slice(0, 200) : arr;
     let objs = 0, arrs = 0, scls = 0;
     for (const v of sample) {
       if (v === null || typeof v !== 'object') scls++;

@@ -153,7 +153,7 @@ class ClickOnceRenderer {
     const table = document.createElement('table');
     table.className = 'plaintext-table';
     const lines = normalizedText.split('\n');
-    const maxLines = 5000;
+    const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
     const count = Math.min(lines.length, maxLines);
 
     // Optional hljs XML syntax highlighting — matches svg/hta/html renderers.

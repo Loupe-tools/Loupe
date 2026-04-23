@@ -211,7 +211,7 @@ class OneNoteRenderer {
       // QR-decode cap for embedded image blobs. OneNote phishing samples
       // often tile a QR under the fake "Double-click to open" button to
       // smuggle the true payload URL past text scanners.
-      const QR_EMBED_CAP = 16;
+      const QR_EMBED_CAP = 32;
       let qrEmbedScanned = 0;
       let qrIndex = 0;
       const qrPromises = [];
@@ -280,7 +280,7 @@ class OneNoteRenderer {
     // "Extracted Text Strings" block for click-to-focus navigation.
     const strings = this._extractStrings(bytes);
     const fullText = strings.join('\n');
-    const URL_CAP = 100;
+    const URL_CAP = 200;
     let urlCount = 0;
     let urlTruncated = false;
     for (const m of fullText.matchAll(/https?:\/\/[^\s"'<>]{6,}/g)) {
@@ -583,7 +583,7 @@ class OneNoteRenderer {
     }
     if (current.length >= 12 && !seen.has(current)) strings.push(current);
 
-    return strings.slice(0, 500); // Cap at 500
+    return strings.slice(0, 1000); // Cap at 1000
   }
 
   _fmtBytes(n) {

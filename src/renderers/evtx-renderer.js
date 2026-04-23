@@ -239,7 +239,7 @@ class EvtxRenderer {
     const chunkSize = 65536; // Each chunk is 64KB
 
     const events = [];
-    const maxEvents = 50000; // Safety limit
+    const maxEvents = RENDER_LIMITS.MAX_EVTX_EVENTS; // Safety limit
 
     for (let ci = 0; ci < chunkCount && events.length < maxEvents; ci++) {
       const chunkOff = headerSize + ci * chunkSize;
@@ -1465,7 +1465,7 @@ class EvtxRenderer {
     // events, and a naïve dedup set still produces tens of thousands of
     // rows, which blows out the Summary pane. Once the cap is hit, emit a
     // single IOC.INFO so the analyst sees the truncation.
-    const IOC_CAP = 500;
+    const IOC_CAP = 1000;
     let truncated = false;
     const add = (type, val, sev) => {
       val = (val || '').trim();
@@ -1753,7 +1753,7 @@ class EvtxRenderer {
   // fields the sidebar reads; both are honoured.
 
   _buildView(events, fileName) {
-    const MAX_EVENTS = 50000;            // Maximum events to process
+    const MAX_EVENTS = RENDER_LIMITS.MAX_EVTX_EVENTS; // Maximum events to process
 
     // Limit events
     const totalEvents = events.length;

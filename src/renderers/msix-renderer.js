@@ -255,7 +255,7 @@ class MsixRenderer {
       const table = document.createElement('table');
       table.className = 'plaintext-table';
       const lines = normalizedManifest.split('\n');
-      const maxLines = 5000;
+      const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
       const count = Math.min(lines.length, maxLines);
       let highlightedLines = null;
       if (typeof hljs !== 'undefined' && normalizedManifest.length <= 200000) {
@@ -330,7 +330,7 @@ class MsixRenderer {
     const table = document.createElement('table');
     table.className = 'plaintext-table';
     const lines = normalizedText.split('\n');
-    const maxLines = 5000;
+    const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
     const count = Math.min(lines.length, maxLines);
     let highlightedLines = null;
     if (typeof hljs !== 'undefined' && normalizedText.length <= 200000) {
@@ -609,7 +609,7 @@ class MsixRenderer {
     const h = document.createElement('h3'); h.textContent = `Bundled Packages (${pkgs.length})`;
     sec.appendChild(h);
     const ul = document.createElement('ul'); ul.className = 'clickonce-dep-list';
-    for (const p of pkgs.slice(0, 100)) {
+    for (const p of pkgs.slice(0, 200)) {
       const li = document.createElement('li');
       const size = p.size ? `  — ${this._fmtBytes(p.size)}` : '';
       li.textContent = `[${p.type || 'application'}] ${p.fileName || '(no filename)'}${p.architecture ? '  ' + p.architecture : ''}${p.resourceId ? '  resource:' + p.resourceId : ''}${size}`;

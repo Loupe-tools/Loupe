@@ -103,7 +103,7 @@ class WsfRenderer {
 
     const scr = document.createElement('div'); scr.className = 'plaintext-scroll';
     const table = document.createElement('table'); table.className = 'plaintext-table';
-    const maxLines = 10000;
+    const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
     const count = Math.min(lines.length, maxLines);
     // .wsf / .wsc are XML containers; .wsh is an INI-style settings file.
     const sourceLang = ext === 'wsh' ? 'ini' : 'xml';

@@ -1156,10 +1156,10 @@ class PeRenderer {
     if (resOff + 16 > bytes.length) return summary;
 
     // Defensive caps — even a hostile resource table shouldn't blow the
-    // parser budget. 64 types × 256 leaves aligns with parser-watchdog's
+    // parser budget. 128 types × 512 leaves aligns with parser-watchdog's
     // spirit of bounded, best-effort work.
-    const MAX_TYPES = 64;
-    const MAX_LEAVES = 256;
+    const MAX_TYPES = 128;
+    const MAX_LEAVES = 512;
     const MAX_LEAF_SIZE = 50 * 1024 * 1024; // 50 MB
 
     // Read a UTF-16LE string stored as `{u16 length; u16 chars[length]}`
@@ -1902,7 +1902,7 @@ class PeRenderer {
         const table = document.createElement('table');
         table.className = 'plaintext-table';
         const lines = pe.autoHotkeyScript.split(/\r?\n/);
-        const maxLines = 5000;
+        const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
         const cnt = Math.min(lines.length, maxLines);
         for (let i = 0; i < cnt; i++) {
           const tr = document.createElement('tr');

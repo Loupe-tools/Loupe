@@ -790,7 +790,7 @@ class ElfRenderer {
 
     const entSize = this._is64 ? 24 : 16;
     const count = symSec.entsize > 0 ? Math.floor(symSec.size / symSec.entsize) : Math.floor(symSec.size / entSize);
-    const maxSyms = Math.min(count, 10000); // Safety cap
+    const maxSyms = Math.min(count, 20000); // Safety cap
 
     for (let i = 0; i < maxSyms; i++) {
       const off = symSec.offset + i * entSize;
@@ -941,7 +941,7 @@ class ElfRenderer {
   _extractStrings(bytes, elf) {
     const strings = [];
     const seen = new Set();
-    const maxStrings = 10000;
+    const maxStrings = 20000;
     const minLen = 4;
 
     // Extract from loadable sections that are likely to contain readable content
@@ -1381,8 +1381,8 @@ class ElfRenderer {
     const strings = [];
     const seen = new Set();
     const minLen = 4;
-    const maxStrings = 10000;
-    const maxScan = Math.min(bytes.length, 8 * 1024 * 1024);
+    const maxStrings = 20000;
+    const maxScan = Math.min(bytes.length, 16 * 1024 * 1024);
     let current = '';
     for (let i = 0; i < maxScan && strings.length < maxStrings; i++) {
       const c = bytes[i];
@@ -2178,7 +2178,7 @@ class ElfRenderer {
       const allStrings = elf.strings.join('\n');
       const _urlRx = /https?:\/\/[^\s"'<>()\[\]{}\u0000-\u001F]{6,}/g;
       const _uncRx = /\\\\[\w.\-]{2,}(?:\\[\w.\-]+)+/g;
-      const URL_CAP = 50, UNC_CAP = 20;
+      const URL_CAP = 100, UNC_CAP = 40;
       const urlMatches = [...new Set([...allStrings.matchAll(_urlRx)].map(m => m[0]))];
       for (const url of urlMatches.slice(0, URL_CAP)) {
         pushIOC(findings, {
@@ -2268,7 +2268,7 @@ class ElfRenderer {
       // one individually so they become clickable IOCs in the sidebar.
       // Same for RPATH/RUNPATH which are real filesystem pivots.
       if (elf.neededLibs && elf.neededLibs.length > 0) {
-        const LIB_CAP = 40;
+        const LIB_CAP = 80;
         const libs = elf.neededLibs.slice(0, LIB_CAP);
         for (const name of libs) {
           if (!name) continue;

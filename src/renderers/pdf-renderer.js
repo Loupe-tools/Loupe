@@ -452,7 +452,7 @@ class PdfRenderer {
       // "quishing" hides the real phishing URL inside a rendered QR that
       // never touches the text layer or any /URI string, so a per-page
       // raster scan is the only reliable way to surface it.
-      const QR_PAGE_CAP = 10;
+      const QR_PAGE_CAP = 20;
       let qrPagesScanned = 0;
       for (let p = 1; p <= pdf.numPages; p++) {
         try {

@@ -279,7 +279,7 @@ class IqySlkRenderer {
 
     const table = document.createElement('table');
     table.className = 'plaintext-table';
-    const maxLines = 5000;
+    const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
     const count = Math.min(lines.length, maxLines);
     // IQY is a key=value / URL text format — `ini` is the closest hljs
     // grammar and gives useful colouring for the URL and any parameters.

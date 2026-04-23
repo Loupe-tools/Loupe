@@ -354,7 +354,7 @@ class XlsxRenderer {
         }
       } catch (_) { }
 
-      const FORMULA_CAP = 50;
+      const FORMULA_CAP = 100;
       const shownFormulas = formulaHits.slice(0, FORMULA_CAP);
       for (const h of shownFormulas) {
         pushIOC(f, {
@@ -376,7 +376,7 @@ class XlsxRenderer {
           bucket: 'externalRefs',
         });
       }
-      const URL_CAP = 100;
+      const URL_CAP = 200;
       const seenUrl = new Set();
       let urlCount = 0;
       for (const u of urlHits) {

@@ -269,7 +269,7 @@ class MsgRenderer {
         // The cap applies to WRAPPERS only — a SafeLink / URLDefense
         // wrapper always emits its decoded inner URL alongside, so the
         // analyst never sees a wrapper without its real destination.
-        const BODY_URL_CAP = 10;
+        const BODY_URL_CAP = 100;
         const allBodyUrls = msg.bodyHtml.match(/https?:\/\/[^\s"'<>()]+/gi) || [];
         const seenUrls = new Set();
         const seenEmails = new Set();

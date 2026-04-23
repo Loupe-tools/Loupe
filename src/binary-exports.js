@@ -223,7 +223,7 @@ const BinaryExports = (() => {
     }
     out.forwarderCount = suspiciousForwarders.length;
 
-    const FWD_CAP = 30;
+    const FWD_CAP = 60;
     for (const fwd of suspiciousForwarders.slice(0, FWD_CAP)) {
       pushIOC(findings, {
         type: IOC.PATTERN,

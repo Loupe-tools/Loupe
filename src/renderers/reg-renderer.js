@@ -97,7 +97,7 @@ class RegRenderer {
 
     const scr = document.createElement('div'); scr.className = 'plaintext-scroll';
     const table = document.createElement('table'); table.className = 'plaintext-table';
-    const maxLines = 50000;
+    const maxLines = RENDER_LIMITS.MAX_TEXT_LINES;
     const count = Math.min(lines.length, maxLines);
     let highlightedLines = null;
     if (typeof hljs !== 'undefined' && text.length <= 200000) {

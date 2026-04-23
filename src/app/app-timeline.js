@@ -75,7 +75,7 @@ const TIMELINE_KEYS = Object.freeze({
 });
 
 // Hard row cap.
-const TIMELINE_MAX_ROWS = 200_000;
+const TIMELINE_MAX_ROWS = RENDER_LIMITS.MAX_TIMELINE_ROWS;
 
 // File extensions that always open in the Timeline view.
 const TIMELINE_EXTS = new Set(['csv', 'tsv', 'evtx']);
@@ -4419,47 +4419,70 @@ class TimelineView {
     return out;
   }
 
-  // Find the best column for pivoting on a clicked entity. Prefers a
-  // column whose name hints at the IOC type (e.g. "User" → USERNAME,
-  // "Computer" → HOSTNAME); falls back to a `contains` chip against the
-  // Event Data column (EVTX) or any text-heavy column.
+  // Build a query chip (or set of chips) for a clicked entity.
+  //
+  // For USERNAME / HOSTNAME / IP we emit bareword "any-column contains"
+  // clauses rather than guess a column. Rationale: EVTX auto-extract
+  // scatters the logical entity across many possible columns depending
+  // on the source event (e.g. a user can land in `Event Data.SubjectUserName`,
+  // `TargetUserName`, `SamAccountName`, `AccountName`; a host in `Computer`,
+  // `WorkstationName`, `ComputerName`, `SubjectDomainName`). Any fixed
+  // column-hint map mis-matches for some rows and silently returns zero
+  // results. A bareword AND-search matches iff each token appears
+  // somewhere on the row — the correct semantic regardless of which
+  // column carries it.
+  //
+  // USERNAME entities are synthesised as `DOMAIN\user` by
+  // `_extractEvtxIOCs` (see `src/renderers/evtx-renderer.js:1690`); we
+  // split on the first backslash so both halves participate in the AND.
+  //
+  // All other IOC types still fall through to a contains chip on the
+  // Event Data column (EVTX) or the last column — unchanged.
   _pivotOnEntity(iocType, value) {
+    const raw = String(value);
+
+    if (iocType === IOC.USERNAME || iocType === IOC.HOSTNAME || iocType === IOC.IP) {
+      let parts;
+      if (iocType === IOC.USERNAME && raw.indexOf('\\') !== -1) {
+        const bs = raw.indexOf('\\');
+        parts = [raw.slice(0, bs), raw.slice(bs + 1)];
+      } else {
+        parts = [raw];
+      }
+      const needles = parts.map(s => s.trim()).filter(Boolean);
+      if (needles.length > 0) this._pivotAnyContainsToggle(needles);
+      return;
+    }
+
+    // Default — contains-chip on Event Data (EVTX) or last column.
     const cols = this.columns;
     const lowered = cols.map(c => String(c || '').toLowerCase());
-    const hints = {
-      [IOC.USERNAME]: ['user', 'account', 'subjectusername', 'targetusername'],
-      [IOC.HOSTNAME]: ['computer', 'hostname', 'host', 'workstation'],
-      [IOC.IP]: ['ip', 'ipaddress', 'sourceip', 'destip', 'src', 'dst'],
-    };
-    const hs = hints[iocType];
-    if (hs) {
-      for (const h of hs) {
-        const ix = lowered.indexOf(h);
-        if (ix >= 0) { this._addOrToggleChip(ix, value, { op: 'eq' }); return; }
-      }
-      // Partial match fallback.
-      for (const h of hs) {
-        const ix = lowered.findIndex(n => n.includes(h));
-        if (ix >= 0) { this._addOrToggleChip(ix, value, { op: 'eq' }); return; }
-      }
-    }
-    // Default — contains-chip on Event Data (EVTX) or last column.
     let ix = lowered.indexOf('event data');
     if (ix < 0) ix = cols.length - 1;
     if (ix < 0) return;
-    // USERNAME entities are built as "DOMAIN\user" by `_extractEvtxIOCs`
-    // for display context (distinguishes same-named accounts across
-    // domains). That compound string never appears in any EVTX row —
-    // the renderer serialises domain and user as SEPARATE Event Data
-    // key=value tokens (`SubjectUserName=user | SubjectDomainName=DOMAIN`),
-    // so a literal contains-match on "DOMAIN\user" silently returns
-    // zero rows. Strip the domain prefix so the contains search uses
-    // the bare username, which DOES appear verbatim in Event Data.
-    let needle = String(value);
-    if (iocType === IOC.USERNAME && needle.indexOf('\\') !== -1) {
-      needle = needle.slice(needle.lastIndexOf('\\') + 1);
+    this._addContainsChipsReplace(ix, raw);
+  }
+
+  // Atomic toggle of a set of `{ k: 'any', needle: N }` top-level
+  // clauses. If every needle is already present the whole set is
+  // removed; otherwise the missing needles are appended. One commit,
+  // one recompute — a second click on the same entity undoes the
+  // pivot in one step regardless of how many tokens it produced.
+  _pivotAnyContainsToggle(needles) {
+    const clauses = this._queryTopLevelClauses(this._queryCurrentAst());
+    const findIdx = (n) => clauses.findIndex(c => c.k === 'any' && String(c.needle) === n);
+    const findings = needles.map(n => ({ n, idx: findIdx(n) }));
+    const allPresent = findings.every(f => f.idx >= 0);
+    if (allPresent) {
+      // Splice high-to-low so earlier removals don't shift later indices.
+      const toRemove = findings.map(f => f.idx).sort((a, b) => b - a);
+      for (const i of toRemove) clauses.splice(i, 1);
+    } else {
+      for (const f of findings) {
+        if (f.idx < 0) clauses.push({ k: 'any', needle: f.n });
+      }
     }
-    this._addContainsChipsReplace(ix, needle);
+    this._queryCommitClauses(clauses);
   }
 
   _paintColumnCards(host, stats, role) {

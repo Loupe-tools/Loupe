@@ -240,7 +240,7 @@ class DmgRenderer {
     // Cap emission to keep the sidebar usable — emit a visible IOC.INFO
     // truncation marker when we hit the ceiling so the analyst isn't
     // misled into thinking the list is complete.
-    const APP_IOC_CAP = 50;
+    const APP_IOC_CAP = 100;
     if (strings.apps.length) {
       f.externalRefs.push({
         type: IOC.PATTERN,
@@ -516,8 +516,8 @@ class DmgRenderer {
     }
 
     return {
-      apps: Array.from(apps).slice(0, 200),
-      urls: Array.from(urls).slice(0, 200),
+      apps: Array.from(apps).slice(0, 400),
+      urls: Array.from(urls).slice(0, 400),
       hasApplicationsSymlink,
     };
   }

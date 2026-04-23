@@ -385,7 +385,7 @@ class EmlRenderer {
       // the real payload URL — the URL never appears as text in the
       // message body, so without this pass it slips past every text-only
       // URL extractor above.
-      const QR_ATT_CAP = 8;
+      const QR_ATT_CAP = 16;
       let qrAttScanned = 0;
       let qrAttIndex = 0;
       const qrPromises = [];

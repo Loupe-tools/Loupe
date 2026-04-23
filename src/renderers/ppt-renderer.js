@@ -290,6 +290,6 @@ class PptBinaryRenderer {
       }
     }
     if (current.length >= 4) strings.push(current);
-    return strings.slice(0, 20); // Cap
+    return strings.slice(0, 500); // Cap
   }
 }

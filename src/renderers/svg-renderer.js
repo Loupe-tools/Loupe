@@ -317,7 +317,7 @@ class SvgRenderer {
 
     // QR-decode cap for embedded image data: URIs (SVG phishing hides the
     // real payload URL in an <image href="data:image/png;base64,..."> QR).
-    const QR_IMAGE_CAP = 8;
+    const QR_IMAGE_CAP = 16;
     let qrImagesScanned = 0;
     const qrPromises = [];
 

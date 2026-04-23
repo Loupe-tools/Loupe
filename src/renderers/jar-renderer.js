@@ -682,7 +682,7 @@ class JarRenderer {
         key: 'strings',
         label: '🔤 Strings',
         count: interestingStrings.length,
-        html: this._buildStringConstantsHTML(interestingStrings.slice(0, 500), stringAnalysis)
+        html: this._buildStringConstantsHTML(interestingStrings.slice(0, 1000), stringAnalysis)
       });
     }
     if (configEntries.length > 0 || resourceEntries.length > 0) {
@@ -946,7 +946,7 @@ class JarRenderer {
       html += '</tbody></table>';
     }
     if (resourceEntries.length > 0) {
-      const displayEntries = resourceEntries.slice(0, 200);
+      const displayEntries = resourceEntries.slice(0, 400);
       html += `<h4 style="margin:12px 0 6px">Other Resources (${resourceEntries.length})</h4><table class="jar-table"><thead><tr><th>Path</th><th>Size</th><th></th></tr></thead><tbody>`;
       for (const e of displayEntries) {
         html += `<tr><td>${this._esc(e.path)}</td><td>${this._fmtBytes(e.size)}</td><td><button class="jar-open-btn" data-jar-open="${this._esc(e.path)}">Open</button></td></tr>`;

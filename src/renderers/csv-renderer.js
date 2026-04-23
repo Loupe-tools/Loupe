@@ -27,7 +27,7 @@ class CsvRenderer {
     this.CHUNK_BYTES_SYNC    = 2 * 1024 * 1024;   // ≤ 2 MB — parse synchronously
     this.CHUNK_ROWS_FIRST    = 1000;              // first painted chunk size
     this.CHUNK_ROWS_STREAM   = 5000;              // subsequent streamed chunks
-    this.MAX_ROWS            = 150000;            // hard cap on rendered rows
+    this.MAX_ROWS            = RENDER_LIMITS.MAX_CSV_ROWS; // hard cap on rendered rows
   }
 
   /**

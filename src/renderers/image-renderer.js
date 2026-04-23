@@ -587,7 +587,7 @@ class ImageRenderer {
         // the full file, so we only surface outright URL pivots here.
         if (strVal.length > 64) {
           try {
-            const urls = extractUrls(strVal, 10);
+            const urls = extractUrls(strVal, 20);
             for (const u of urls) {
               pushIOC(f, {
                 type: IOC.URL,

@@ -235,7 +235,7 @@ class NpmRenderer {
 
     const rawText = parsed.manifestText || '';
     const lines = rawText.split('\n');
-    const maxLines = 5000;
+    const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
     const count = Math.min(lines.length, maxLines);
 
     let highlightedLines = null;

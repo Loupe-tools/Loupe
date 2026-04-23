@@ -661,7 +661,7 @@ class PlistRenderer {
       scr.className = 'plaintext-scroll';
       const table = document.createElement('table');
       table.className = 'plaintext-table';
-      const maxLines = 10000;
+      const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
       let highlightedLines = null;
       if (typeof hljs !== 'undefined' && xmlSource.length <= 200000) {
         try {

@@ -2507,7 +2507,7 @@ class MachoRenderer {
       const allStrings = mo.strings.join('\n');
       const _urlRx = /https?:\/\/[^\s"'<>()\[\]{}\u0000-\u001F]{6,}/g;
       const _uncRx = /\\\\[\w.\-]{2,}(?:\\[\w.\-]+)+/g;
-      const URL_CAP = 50, UNC_CAP = 20;
+      const URL_CAP = 100, UNC_CAP = 40;
       const urlMatches = [...new Set([...allStrings.matchAll(_urlRx)].map(m => m[0]))];
       for (const url of urlMatches.slice(0, URL_CAP)) {
         pushIOC(findings, {
@@ -2583,7 +2583,7 @@ class MachoRenderer {
       // `mirrorMetadataIOCs` can't see these because the metadata row only
       // stores a count ("Dynamic Libraries" = "5"); emit directly instead.
       if (mo.dylibs && mo.dylibs.length) {
-        const DYLIB_CAP = 40;
+        const DYLIB_CAP = 80;
         for (const dl of mo.dylibs.slice(0, DYLIB_CAP)) {
           const name = (typeof dl === 'string') ? dl : (dl && dl.name ? dl.name : null);
           if (!name) continue;

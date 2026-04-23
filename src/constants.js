@@ -13,6 +13,20 @@ const PARSER_LIMITS = Object.freeze({
   TIMEOUT_MS:       60_000,               // Parser timeout (60 s)
 });
 
+// ── Render / data-truncation limits ───────────────────────────────────────────
+// PARSER_LIMITS above is the *safety* envelope (abort-if-breached); the caps
+// below govern how much **parsed data** the UI actually renders. They are
+// deliberately separate so they can be raised without weakening the parser
+// safety story. Renderers that cap their output should reference one of these
+// constants rather than inventing their own magic number.
+const RENDER_LIMITS = Object.freeze({
+  MAX_TEXT_LINES:       100_000,   // Primary text viewers (plaintext/html/hta/inf/reg/rtf)
+  MAX_TEXT_LINES_SMALL:  10_000,   // Config/manifest viewers (browserext/clickonce/url/iqy/msix/npm/wsf/plist-fallback/pe-strings)
+  MAX_CSV_ROWS:         500_000,   // CSV/TSV grid
+  MAX_TIMELINE_ROWS:    500_000,   // Timeline dashboard
+  MAX_EVTX_EVENTS:      500_000,   // EVTX parser + viewer
+});
+
 // ── XML namespace constants ───────────────────────────────────────────────────
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';

@@ -93,7 +93,7 @@ class UrlShortcutRenderer {
     const table = document.createElement('table');
     table.className = 'plaintext-table';
     const lines = normalizedText.split('\n');
-    const maxLines = 5000;
+    const maxLines = RENDER_LIMITS.MAX_TEXT_LINES_SMALL;
     const count = Math.min(lines.length, maxLines);
 
     // hljs highlighting — 'ini' for .url (INI-style), 'xml' for .webloc / .website

@@ -33,7 +33,7 @@ class SqliteRenderer {
         const urlIdx = db.historyColumns ? db.historyColumns.findIndex(c => /^url$/i.test(c)) : -1;
         if (urlIdx >= 0) {
           const seen = new Set();
-          const URL_CAP = 200;
+          const URL_CAP = 500;
           let emitted = 0;
           for (const row of db.historyRows) {
             const url = row[urlIdx];

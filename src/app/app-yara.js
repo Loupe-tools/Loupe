@@ -1061,7 +1061,7 @@ Object.assign(App.prototype, {
     const buildSuggs = (raw) => {
       const q = raw.trim().toLowerCase();
       const out = [];
-      const MAX_PER_KIND = 6;
+      const MAX_PER_KIND = 12;
 
       // File suggestions (filename-derived @category buckets).
       const fileHits = [];
