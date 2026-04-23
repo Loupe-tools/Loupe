@@ -51,3 +51,6 @@ eslint-out.txt
 
 # Logs
 logs_*
+
+# Stuff
+serve.sh
