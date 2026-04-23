@@ -62,7 +62,6 @@
 
 const TIMELINE_KEYS = Object.freeze({
   GRID_H: 'loupe_timeline_grid_h',
-  SUS_GRID_H: 'loupe_timeline_sus_grid_h',
   CHART_H: 'loupe_timeline_chart_h',
   BUCKET: 'loupe_timeline_bucket',
   SECTIONS: 'loupe_timeline_sections',
@@ -106,9 +105,6 @@ const TIMELINE_STACK_MAX = 8;
 const TIMELINE_COL_TOP_N = 500;
 const TIMELINE_GRID_DEFAULT_H = 320;
 const TIMELINE_GRID_MIN_H = 160;
-const TIMELINE_SUS_GRID_DEFAULT_H = 260;
-const TIMELINE_SUS_GRID_MIN_H = 140;
-const TIMELINE_SUS_GRID_MAX_H = 900;
 const TIMELINE_CHART_DEFAULT_H = 220;
 const TIMELINE_CHART_MIN_H = 120;
 const TIMELINE_CHART_MAX_H = 600;
@@ -1842,17 +1838,14 @@ class TimelineView {
     // pointer-up via `_commitWindowDrag()`.
     this._windowDragging = false;
 
-    // Column stats — main + sus-only, invalidated on any filter / sus change.
+    // Column stats — invalidated on any filter change.
     this._colStats = null;
-    this._susColStats = null;
 
-    // Grid — main + sus.
+    // Grid
     this._grid = null;
-    this._susGrid = null;
 
     // Splitter
     this._gridH = TimelineView._loadGridH();
-    this._susGridH = TimelineView._loadSusGridH();
     this._chartH = TimelineView._loadChartH();
 
     // Collapsible section state (persisted).
@@ -1882,7 +1875,7 @@ class TimelineView {
     this._buildDOM();
     this._wireEvents();
     this._recomputeFilter();
-    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns', 'sus', 'detections', 'entities', 'pivot', 'sections']);
+    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns', 'detections', 'entities', 'pivot', 'sections']);
   }
 
   root() { return this._root; }
@@ -1892,9 +1885,6 @@ class TimelineView {
     this._destroyed = true;
     if (this._grid && typeof this._grid.destroy === 'function') {
       try { this._grid.destroy(); } catch (_) { /* noop */ }
-    }
-    if (this._susGrid && typeof this._susGrid.destroy === 'function') {
-      try { this._susGrid.destroy(); } catch (_) { /* noop */ }
     }
     if (this._resizeObs) { try { this._resizeObs.disconnect(); } catch (_) { /* noop */ } }
     if (this._queryEditor && typeof this._queryEditor.destroy === 'function') {
@@ -1912,7 +1902,6 @@ class TimelineView {
     if (this._onDocScroll) window.removeEventListener('scroll', this._onDocScroll, true);
     this._onDocClick = this._onDocKey = this._onDocScroll = null;
     this._grid = null;
-    this._susGrid = null;
     this._resizeObs = null;
     this._els = {};
     if (this._root && this._root.parentNode) this._root.parentNode.removeChild(this._root);
@@ -1985,16 +1974,6 @@ class TimelineView {
   }
   static _saveGridH(h) {
     try { localStorage.setItem(TIMELINE_KEYS.GRID_H, String(h)); } catch (_) { /* noop */ }
-  }
-  static _loadSusGridH() {
-    try {
-      const v = parseInt(localStorage.getItem(TIMELINE_KEYS.SUS_GRID_H), 10);
-      if (Number.isFinite(v) && v >= TIMELINE_SUS_GRID_MIN_H && v <= TIMELINE_SUS_GRID_MAX_H) return v;
-    } catch (_) { /* noop */ }
-    return TIMELINE_SUS_GRID_DEFAULT_H;
-  }
-  static _saveSusGridH(h) {
-    try { localStorage.setItem(TIMELINE_KEYS.SUS_GRID_H, String(h)); } catch (_) { /* noop */ }
   }
   static _loadChartH() {
     try {
@@ -2223,7 +2202,7 @@ class TimelineView {
       }
     }
     this._recomputeFilter();
-    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns', 'sus']);
+    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns']);
     // Status line on the editor — only update if the editor is mounted.
     if (this._queryEditor) {
       if (this._queryError) {
@@ -2367,7 +2346,6 @@ class TimelineView {
     }
 
     this._colStats = null;
-    this._susColStats = null;
   }
 
   _computeColumnStats(idx) {
@@ -2547,12 +2525,11 @@ class TimelineView {
     const root = document.createElement('div');
     root.className = 'timeline-view';
     root.style.setProperty('--tl-grid-h', this._gridH + 'px');
-    root.style.setProperty('--tl-sus-grid-h', this._susGridH + 'px');
     root.style.setProperty('--tl-chart-h', this._chartH + 'px');
     root.style.setProperty('--tl-card-min-w', (TIMELINE_CARD_SIZES[this._cardSize] || TIMELINE_CARD_SIZES.M) + 'px');
 
     // Scrollable host — the page scrolls vertically so all sections
-    // (chart, grid, top-lists, sus, pivot) can be seen by scrolling.
+    // (chart, grid, top-lists, pivot) can be seen by scrolling.
     const host = document.createElement('div');
     host.className = 'tl-host';
     root.appendChild(host);
@@ -2674,35 +2651,6 @@ class TimelineView {
       ],
     });
 
-    // Sus section — starts hidden; auto-shown when a sus chip exists.
-    const susSec = this._buildSection('sus', '🚩 Suspicious', () => {
-      const wrap = document.createElement('div');
-      wrap.className = 'tl-sus';
-      // The `.tl-sus-splitter` divider mirrors the main-events splitter
-      // (dragged to resize `--tl-sus-grid-h`, persisted to
-      // `loupe_timeline_sus_grid_h`). Structured as: sus chart → grid →
-      // splitter → top-values cards, so the drag handle sits right under
-      // the grid the analyst is resizing.
-      wrap.innerHTML = `
-        <div class="tl-chart tl-sus-chart">
-          <canvas class="tl-chart-canvas"></canvas>
-          <div class="tl-chart-legend"></div>
-          <div class="tl-chart-tooltip" hidden></div>
-          <div class="tl-chart-empty hidden">No suspicious rows in the current filter.</div>
-        </div>
-        <div class="tl-grid tl-sus-grid"></div>
-        <div class="tl-splitter tl-sus-splitter" role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
-        <div class="tl-columns tl-sus-columns"></div>
-      `;
-      return wrap;
-    }, {
-      extraClass: 'tl-sec-sus',
-      actions: [
-        { label: '⬇ CSV', act: 'sus-csv', title: 'Download suspicious rows as CSV' },
-      ],
-    });
-    susSec.wrapper.classList.add('hidden');
-
     // Detections section — EVTX Sigma-style rule hits, hidden when empty.
     const detectionsSec = this._buildSection('detections', '🎯 Detections', () => {
       const el = document.createElement('div');
@@ -2732,8 +2680,8 @@ class TimelineView {
     entitiesSec.wrapper.classList.add('hidden');
 
     // Section order:
-    //   CSV / TSV  → Top values → Suspicious → Detections → Entities
-    //   EVTX       → Detections → Entities   → Top values → Suspicious
+    //   CSV / TSV  → Top values → Detections → Entities
+    //   EVTX       → Detections → Entities   → Top values
     // EVTX is detected by the presence of the `_evtxFindings` side-channel
     // attached in `TimelineView.fromEvtx`. The Detections + Entities sections
     // are always built but stay hidden on CSV / TSV (their render methods
@@ -2743,10 +2691,8 @@ class TimelineView {
       host.appendChild(detectionsSec.wrapper);
       host.appendChild(entitiesSec.wrapper);
       host.appendChild(colsSec.wrapper);
-      host.appendChild(susSec.wrapper);
     } else {
       host.appendChild(colsSec.wrapper);
-      host.appendChild(susSec.wrapper);
       host.appendChild(detectionsSec.wrapper);
       host.appendChild(entitiesSec.wrapper);
     }
@@ -2796,11 +2742,6 @@ class TimelineView {
       chips, gridSection: gridSec, gridWrap: gridSec.body,
       splitter,
       columnsSection: colsSec, cols: colsSec.body,
-      susSection: susSec, susWrap: susSec.body,
-      susChart: susSec.body.querySelector('.tl-sus-chart'),
-      susGridWrap: susSec.body.querySelector('.tl-sus-grid'),
-      susSplitter: susSec.body.querySelector('.tl-sus-splitter'),
-      susColumns: susSec.body.querySelector('.tl-sus-columns'),
       detectionsSection: detectionsSec, detectionsBody: detectionsSec.body,
       entitiesSection: entitiesSec, entitiesBody: entitiesSec.body,
       pivotSection: pivotSec, pivotBody: pivotSec.body,
@@ -2891,7 +2832,7 @@ class TimelineView {
     this._sections[id] = wrap.classList.contains('collapsed');
     TimelineView._saveSections(this._sections);
     // Chart + grid canvases/virtuals may need a repaint on expand.
-    this._scheduleRender(['chart', 'grid', 'sus']);
+    this._scheduleRender(['chart', 'grid']);
   }
 
   _cardSizeLabelSync() {
@@ -2992,17 +2933,17 @@ class TimelineView {
       this._dataRange = this._computeDataRange();
       this._window = null;
       this._recomputeFilter();
-      this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips', 'sus']);
+      this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips']);
     });
     els.stackColSelect.addEventListener('change', () => {
       const v = parseInt(els.stackColSelect.value, 10);
       this._stackCol = v >= 0 ? v : null;
-      this._scheduleRender(['chart', 'sus']);
+      this._scheduleRender(['chart']);
     });
     els.bucketSelect.addEventListener('change', () => {
       this._bucketId = els.bucketSelect.value;
       TimelineView._saveBucketPref(this._bucketId);
-      this._scheduleRender(['chart', 'sus']);
+      this._scheduleRender(['chart']);
     });
     els.resetBtn.addEventListener('click', () => this._reset());
     els.extractBtn.addEventListener('click', () => this._openExtractionDialog(null));
@@ -3033,15 +2974,9 @@ class TimelineView {
     // drag = rubber-band a time-window selection. See `_installChartDrag`.
     this._installChartDrag(els.chartCanvas, els.chart, els.chartTooltip, () => this._lastChartData);
 
-    // Sus chart events (canvas inside susWrap) — same drag/click semantics.
-    const susCanvas = els.susChart.querySelector('.tl-chart-canvas');
-    const susTooltip = els.susChart.querySelector('.tl-chart-tooltip');
-    this._installChartDrag(susCanvas, els.susChart, susTooltip, () => this._lastSusChartData);
-
     // Scrubber / splitter / chart resize
     this._installScrubberDrag();
     this._installSplitterDrag();
-    this._installSusSplitterDrag();
     this._installChartResizeDrag();
 
     // Section action buttons (export).
@@ -3065,10 +3000,9 @@ class TimelineView {
 
     // ResizeObserver — scrubber/chart layout + grid height recomputes.
     this._resizeObs = new ResizeObserver(() => {
-      this._scheduleRender(['chart', 'sus']);
+      this._scheduleRender(['chart']);
     });
     this._resizeObs.observe(els.chart);
-    this._resizeObs.observe(els.susChart);
 
     // Close any popover on ESC or outside click.
     this._onDocClick = (e) => {
@@ -3100,7 +3034,7 @@ class TimelineView {
   // analyst-authored filter / view state on this view: time window,
   // hidden columns, typed query, 🚩 Suspicious marks, stack column,
   // pivot spec, and every extracted (ƒx / regex / JSON-leaf) column.
-  // Pure layout preferences (`_gridH`, `_susGridH`, `_chartH`,
+  // Pure layout preferences (`_gridH`, `_chartH`,
   // `_sections`, `_cardSize`, `_bucketId`) and global cross-file state
   // (query history) are intentionally preserved — those are
   // workstation settings, not per-file filter state.
@@ -3180,27 +3114,17 @@ class TimelineView {
     if (this._grid && typeof this._grid._unhideAllColumns === 'function') {
       try { this._grid._unhideAllColumns(); } catch (_) { /* noop */ }
     }
-    if (this._susGrid && typeof this._susGrid._unhideAllColumns === 'function') {
-      try { this._susGrid._unhideAllColumns(); } catch (_) { /* noop */ }
-    }
 
     // Invalidate every derived / cached render product so the next
     // scheduleRender starts from scratch.
     this._colStats = null;
-    this._susColStats = null;
     this._lastChartData = null;
-    this._lastSusChartData = null;
-
     // Column count may have changed (extracted columns dropped) — kill
-    // the grids so they rebuild with the correct column set. Mirrors
+    // the grid so it rebuilds with the correct column set. Mirrors
     // `_rebuildExtractedStateAndRender`.
     if (this._grid) {
       try { this._grid.destroy(); } catch (_) { /* noop */ }
       this._grid = null;
-    }
-    if (this._susGrid) {
-      try { this._susGrid.destroy(); } catch (_) { /* noop */ }
-      this._susGrid = null;
     }
 
     // Re-populate toolbar + pivot dropdowns so extracted-column options
@@ -3210,7 +3134,7 @@ class TimelineView {
     this._populatePivotSelects();
 
     this._recomputeFilter();
-    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns', 'sus', 'detections', 'entities', 'pivot']);
+    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns', 'detections', 'entities', 'pivot']);
   }
 
 
@@ -3221,7 +3145,7 @@ class TimelineView {
     this._cardSize = order[(i + 1) % order.length];
     TimelineView._saveCardSize(this._cardSize);
     this._cardSizeLabelSync();
-    this._scheduleRender(['columns', 'sus']);
+    this._scheduleRender(['columns']);
   }
 
   // ── Render scheduler ─────────────────────────────────────────────────────
@@ -3237,15 +3161,11 @@ class TimelineView {
       if ((set.has('grid') || set.has('columns')) && !this._colStats) {
         this._colStats = this._computeColumnStats(this._filteredIdx || new Uint32Array(0));
       }
-      if (set.has('sus') && this._susAny && !this._susColStats) {
-        this._susColStats = this._computeColumnStats(this._susFilteredIdx || new Uint32Array(0));
-      }
       if (set.has('scrubber')) this._renderScrubber();
       if (set.has('chart')) this._renderChart();
       if (set.has('chips')) this._renderChips();
       if (set.has('grid')) this._renderGrid();
       if (set.has('columns')) this._renderColumns();
-      if (set.has('sus')) this._renderSus();
       if (set.has('detections')) this._renderDetections();
       if (set.has('entities')) this._renderEntities();
       if (set.has('pivot')) {/* lazy; built on demand via Build button */ }
@@ -3356,7 +3276,7 @@ class TimelineView {
         window.removeEventListener('pointerup', onUp);
         this._windowDragging = false;
         // Commit: run the full render pass once, including grid/columns/sus.
-        this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns', 'sus']);
+        this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns']);
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
@@ -3668,15 +3588,6 @@ class TimelineView {
         rangeMs: this._lastChartData.rangeMs,
       });
     }
-    // Sus mini-chart
-    if (this._susAny && this._els && this._els.susChart && this._lastSusChartData && this._lastSusChartData.layout) {
-      const susCanvas = this._els.susChart.querySelector('.tl-chart-canvas');
-      this._paintChartCursorFor(susCanvas, {
-        ...this._lastSusChartData.layout,
-        viewLo: this._lastSusChartData.viewLo,
-        rangeMs: this._lastSusChartData.rangeMs,
-      });
-    }
     this._paintScrubberCursor();
   }
 
@@ -3694,7 +3605,7 @@ class TimelineView {
     const bucketHi = bucketLo + bucketMs;
     this._window = { min: bucketLo, max: bucketHi };
     this._applyWindowOnly();
-    this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns', 'sus']);
+    this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns']);
   }
 
   // ── Chart rubber-band selection ──────────────────────────────────────────
@@ -3726,7 +3637,7 @@ class TimelineView {
       if (this._window) {
         this._window = null;
         this._applyWindowOnly();
-        this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns', 'sus']);
+        this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns']);
       }
     });
 
@@ -3838,7 +3749,7 @@ class TimelineView {
         this._window = { min: lo, max: hi };
         this._applyWindowOnly();
         // Commit: full render pass now that the selection is final.
-        this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns', 'sus']);
+        this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns']);
       };
       canvas.addEventListener('pointermove', onMove);
       canvas.addEventListener('pointerup', onUp);
@@ -3954,7 +3865,7 @@ class TimelineView {
         // Window-only change → fast path (no filter re-run).
         this._window = null;
         this._applyWindowOnly();
-        this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns', 'sus']);
+        this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns']);
       });
       el.appendChild(chip);
     }
@@ -3985,7 +3896,7 @@ class TimelineView {
         this._susMarks.splice(persistIdx, 1);
         TimelineView._saveSusMarksFor(this._fileKey, this._susMarks);
         this._recomputeFilter();
-        this._scheduleRender(['chart', 'chips', 'grid', 'columns', 'sus']);
+        this._scheduleRender(['chart', 'chips', 'grid', 'columns']);
       });
       el.appendChild(chip);
     }
@@ -4052,7 +3963,7 @@ class TimelineView {
         else this._susMarks.push({ any: true, colName: null, val: valStr });
         TimelineView._saveSusMarksFor(this._fileKey, this._susMarks);
         this._recomputeFilter();
-        this._scheduleRender(['chart', 'chips', 'grid', 'columns', 'sus']);
+        this._scheduleRender(['chart', 'chips', 'grid', 'columns']);
         this._closePopover();
         return;
       }
@@ -4092,7 +4003,11 @@ class TimelineView {
       return (sus && sus[orig]) ? 'tl-row-sus' : '';
     };
 
-    const existing = (role === 'main' ? this._grid : this._susGrid);
+    // role is always 'main' now (the 🚩 Suspicious section is gone); the
+    // parameter is kept on the method signature because `_tlRole` is still
+    // stamped on the GridViewer instance further down — other callers
+    // (scroll → cursor resolver) read it.
+    const existing = (role === 'main' ? this._grid : null);
     if (!existing) {
       const viewer = new GridViewer({
         columns: this.columns,
@@ -4269,7 +4184,7 @@ class TimelineView {
         e.preventDefault();
         this._openRowContextMenu(e, colIdx, val, { origRow });
       });
-      if (role === 'main') this._grid = viewer; else this._susGrid = viewer;
+      if (role === 'main') this._grid = viewer;
     } else {
       // Preserve columns in case new extracted columns were added.
       existing.columns = this.columns;
@@ -4293,50 +4208,6 @@ class TimelineView {
   // ── Column top-values cards ──────────────────────────────────────────────
   _renderColumns() {
     this._paintColumnCards(this._els.cols, this._colStats, 'main');
-  }
-
-  _renderSus() {
-    const sec = this._els.susSection;
-    if (!this._susAny) {
-      // All sus chips removed — fully clear the sub-chart / sub-grid /
-      // sub-columns so the next time a sus chip is added we don't briefly
-      // flash stale rows / cards from the previous run before the new
-      // render lands. Keep `sec.wrapper.classList.add('hidden')` at the
-      // end so the actual visibility toggle is a single line. The
-      // matching CSS rule `.timeline-view .tl-section.hidden { display:
-      // none }` takes the wrapper out of layout flow entirely.
-      this._susColStats = null;
-      this._lastSusChartData = null;
-      if (this._susGrid) {
-        try { this._susGrid.destroy(); } catch (_) { /* noop */ }
-        this._susGrid = null;
-      }
-      if (this._els.susGridWrap) this._els.susGridWrap.innerHTML = '';
-      if (this._els.susColumns) this._els.susColumns.innerHTML = '';
-      if (this._els.susChart) {
-        const cv = this._els.susChart.querySelector('.tl-chart-canvas');
-        if (cv) {
-          const ctx = cv.getContext('2d');
-          if (ctx) ctx.clearRect(0, 0, cv.width, cv.height);
-        }
-        const lg = this._els.susChart.querySelector('.tl-chart-legend');
-        if (lg) lg.innerHTML = '';
-        const em = this._els.susChart.querySelector('.tl-chart-empty');
-        if (em) em.classList.add('hidden');
-      }
-      sec.wrapper.classList.add('hidden');
-      return;
-    }
-    sec.wrapper.classList.remove('hidden');
-    // Sub-chart
-    const susCanvas = this._els.susChart.querySelector('.tl-chart-canvas');
-    const susLegend = this._els.susChart.querySelector('.tl-chart-legend');
-    const susEmpty = this._els.susChart.querySelector('.tl-chart-empty');
-    this._lastSusChartData = this._renderChartInto(susCanvas, susLegend, susEmpty, this._susFilteredIdx, 'sus');
-    // Sub-grid
-    this._renderGridInto(this._els.susGridWrap, this._susFilteredIdx || new Uint32Array(0), 'sus');
-    // Sub-columns
-    this._paintColumnCards(this._els.susColumns, this._susColStats, 'sus');
   }
 
   // ── Detections (EVTX-only) ───────────────────────────────────────────────
@@ -4798,9 +4669,6 @@ class TimelineView {
         if (this._grid && typeof this._grid._toggleHideColumn === 'function') {
           try { this._grid._toggleHideColumn(c); } catch (_) { /* noop */ }
         }
-        if (this._susGrid && typeof this._susGrid._toggleHideColumn === 'function') {
-          try { this._susGrid._toggleHideColumn(c); } catch (_) { /* noop */ }
-        }
         if (this._app && typeof this._app._toast === 'function') {
           this._app._toast(`Hid column "${colName}" (use the chip in the grid's filter bar to unhide)`, 'info');
         }
@@ -5068,7 +4936,7 @@ class TimelineView {
       else this._susMarks.push({ colName, val: valStr });
       TimelineView._saveSusMarksFor(this._fileKey, this._susMarks);
       this._recomputeFilter();
-      this._scheduleRender(['chart', 'chips', 'grid', 'columns', 'sus']);
+      this._scheduleRender(['chart', 'chips', 'grid', 'columns']);
       return;
     }
     if (op === 'eq') {
@@ -5127,7 +4995,7 @@ class TimelineView {
         window.removeEventListener('pointerup', onUp);
         TimelineView._saveChartH(this._chartH);
         // Canvas size changed → redraw.
-        this._scheduleRender(['chart', 'sus']);
+        this._scheduleRender(['chart']);
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
@@ -5160,14 +5028,6 @@ class TimelineView {
     });
   }
 
-  // ── Suspicious-events splitter ───────────────────────────────────────────
-  // Same drag-to-resize pattern as the main events splitter but targets
-  // the Suspicious section's sub-grid. Persists to
-  // `loupe_timeline_sus_grid_h` on pointer-up. The splitter DOM node
-  // lives inside `.tl-sus` between the sub-grid and the sub-columns
-  // cards; it only visually matters while the Suspicious section is
-  // un-hidden (`_renderSus` adds/removes the `.hidden` class on the
-  // whole `tl-sec-sus` wrapper).
   // ── GridViewer → outer Timeline select bridges ──────────────────────────
   // Passed as `onUseAsTimeline` / `onStackTimelineBy` into the main-role
   // embedded GridViewer. Returning truthy tells the grid that we handled
@@ -5182,41 +5042,15 @@ class TimelineView {
     this._dataRange = this._computeDataRange();
     this._window = null;
     this._recomputeFilter();
-    this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips', 'sus']);
+    this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips']);
     return true;
   }
   _setStackColFromGrid(colIdx) {
     if (!Number.isInteger(colIdx) || colIdx < 0 || colIdx >= this.columns.length) return true;
     this._stackCol = colIdx;
     if (this._els.stackColSelect) this._els.stackColSelect.value = String(colIdx);
-    this._scheduleRender(['chart', 'sus']);
+    this._scheduleRender(['chart']);
     return true;
-  }
-
-  _installSusSplitterDrag() {
-    const root = this._root;
-    const splitter = this._els.susSplitter;
-    if (!splitter) return;
-    splitter.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      document.body.classList.add('tl-splitter-dragging');
-      const startY = e.clientY;
-      const startH = this._susGridH;
-      const onMove = (ev) => {
-        const dy = ev.clientY - startY;
-        const h = Math.max(TIMELINE_SUS_GRID_MIN_H, Math.min(TIMELINE_SUS_GRID_MAX_H, startH + dy));
-        this._susGridH = h;
-        root.style.setProperty('--tl-sus-grid-h', h + 'px');
-      };
-      const onUp = () => {
-        document.body.classList.remove('tl-splitter-dragging');
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-        TimelineView._saveSusGridH(this._susGridH);
-      };
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-    });
   }
 
   // ── Right-click row context menu ─────────────────────────────────────────
@@ -5429,13 +5263,13 @@ class TimelineView {
       this._dataRange = this._computeDataRange();
       this._window = null;
       this._recomputeFilter();
-      this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips', 'sus']);
+      this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips']);
       this._closePopover();
     });
     menu.querySelector('[data-act="stackcol"]').addEventListener('click', () => {
       this._stackCol = colIdx;
       this._els.stackColSelect.value = String(colIdx);
-      this._scheduleRender(['chart', 'sus']);
+      this._scheduleRender(['chart']);
       this._closePopover();
     });
     menu.querySelector('[data-act="extract"]').addEventListener('click', () => {
@@ -5668,8 +5502,18 @@ class TimelineView {
           // `UserAccountControl=\n%%2080\n%%2082`) or contain XML payloads,
           // so we use `[\s\S]*?` and a lookahead that stops at the next
           // real " | SomeKey=" boundary or end-of-string.
+          //
+          // The boundary uses LITERAL ` | ` (single-space / pipe / single-
+          // space), matching exactly what `EvtxRenderer` emits via
+          // `parts.join(' | ')`. Historically this was `\s\|\s`, which is
+          // looser and risks false boundaries on multi-line values that
+          // contain a stray `\n|\n` sequence. `trim: true` asks the eval
+          // path to strip leading/trailing whitespace and per-line tab
+          // indentation so multi-line values (`PrivilegeList`,
+          // `UserAccountControl`) don't render as `\n\t\t\tSeTcbPrivilege…`
+          // in the grid / topvals / pivot.
           const esc = String(p.fieldName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const pattern = `(?:^|\\s\\|\\s)${esc}=([\\s\\S]*?)(?=\\s\\|\\s[A-Za-z_][\\w.-]*=|$)`;
+          const pattern = `(?:^| \\| )${esc}=([\\s\\S]*?)(?= \\| [A-Za-z_][\\w.-]*=|$)`;
           this._addRegexExtractNoRender({
             name: p.proposedName,
             col: p.sourceCol,
@@ -5677,6 +5521,7 @@ class TimelineView {
             flags: '',
             group: 1,
             kind: 'auto',
+            trim: true,
           });
         }
       }
@@ -5959,7 +5804,13 @@ class TimelineView {
         const kvDominant = kvRows >= Math.max(3, samples.length * 0.5);
         if (kvDominant && fieldStats.size) {
           const KV_FIELD_CAP = 80;
-          const minCount = Math.max(3, Math.floor(samples.length * 0.3));
+          // Low floor (2 % of sampled rows, absolute min 3) so sparse but
+          // meaningful EVTX fields still surface — e.g. `UserAccountControl`,
+          // `PuaCount`, `MemberSid`, `TargetLogonGuid` only appear in a few
+          // event types out of a mixed Security log but are exactly what an
+          // analyst wants to filter on. The existing KV_FIELD_CAP=80 and the
+          // absolute 3-occurrence floor still filter out true noise.
+          const minCount = Math.max(3, Math.floor(samples.length * 0.02));
           const ranked = Array.from(fieldStats.entries())
             .filter(([, rec]) => rec.count >= minCount)
             .sort((a, b) => b[1].count - a[1].count)
@@ -6113,6 +5964,14 @@ class TimelineView {
       flags: spec.flags || '',
       group: gp,
     }) >= 0) return;
+    // `trim` post-processes the captured string: strip leading/trailing
+    // whitespace + drop per-line tab-indentation. Multi-line EVTX values
+    // (`PrivilegeList=A\n\t\t\tB\n\t\t\tC`, `UserAccountControl=\n\t\t%%2080
+    // \n\t\t%%2082`) then render cleanly in the grid / topvals / pivot
+    // instead of being decorated with EvtxRenderer's tab continuation.
+    // Only enabled for the Auto-tab KV branch via `spec.trim`; manually
+    // authored Regex-tab extractors keep their raw capture bytes.
+    const doTrim = !!spec.trim;
     const values = new Array(this.rows.length);
     for (let i = 0; i < this.rows.length; i++) {
       const v = this._cellAt(i, col);
@@ -6122,12 +5981,17 @@ class TimelineView {
       const m = re.exec(v);
       if (!m) { values[i] = ''; continue; }
       const captured = (gp < m.length) ? (m[gp] == null ? '' : m[gp]) : m[0];
-      values[i] = String(captured);
+      let out = String(captured);
+      if (doTrim && out) {
+        out = out.replace(/^\s+|\s+$/g, '').replace(/[ \t]*\n[ \t]*/g, '\n');
+      }
+      values[i] = out;
     }
     this._extractedCols.push({
       name: this._uniqueColName(spec.name || 'regex'),
       kind: spec.kind || 'regex',
       sourceCol: col, pattern: spec.pattern, flags: spec.flags || '', group: gp,
+      trim: doTrim,
       values,
     });
     // Persist regex extractors.
@@ -6245,10 +6109,9 @@ class TimelineView {
     this._recomputeFilter();
     this._populateToolbarSelects();
     this._populatePivotSelects();
-    // Destroy existing grids — columns count changed.
+    // Destroy existing grid — column count changed.
     if (this._grid) { try { this._grid.destroy(); } catch (_) { } this._grid = null; }
-    if (this._susGrid) { try { this._susGrid.destroy(); } catch (_) { } this._susGrid = null; }
-    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns', 'sus']);
+    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns']);
   }
 
   _persistRegexExtracts() {
@@ -6257,6 +6120,9 @@ class TimelineView {
       .map(e => ({
         name: e.name, col: e.sourceCol, pattern: e.pattern, flags: e.flags,
         group: e.group, kind: e.kind,
+        // `trim` is only meaningful for Auto-tab KV extractors — persist it
+        // when set so multi-line EVTX values stay normalised across reloads.
+        ...(e.trim ? { trim: true } : {}),
       }))
       .filter(e => e.pattern);
     TimelineView._saveRegexExtractsFor(this._fileKey, list);
@@ -6497,7 +6363,6 @@ class TimelineView {
       case 'chart-csv': this._exportChartCsv(this._lastChartData, this._forensicFilename('buckets', 'csv')); break;
       case 'grid-csv': this._exportGridCsv(this._filteredIdx, this._forensicFilename('rows', 'csv')); break;
       case 'columns-csv': this._exportColumnsCsv(this._colStats, this._forensicFilename('top-values', 'csv')); break;
-      case 'sus-csv': this._exportGridCsv(this._susFilteredIdx, this._forensicFilename('suspicious', 'csv')); break;
       case 'pivot-csv': this._exportPivotCsv(this._forensicFilename('pivot', 'csv')); break;
     }
   }

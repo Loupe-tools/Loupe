@@ -12640,7 +12640,7 @@ body.tl-col-resizing * {
    section carries this class. It deliberately does NOT declare
    `display` / `flex-direction` — those are owned by the specific
    body class (.tl-scrubber = flex row, .tl-columns = grid,
-   .tl-chart / .tl-grid / .tl-sus = flex column). This rule only
+   .tl-chart / .tl-grid = flex column). This rule only
    guarantees flex children can shrink below their content size. */
 .timeline-view .tl-section-body {
   min-height: 0;
@@ -12650,65 +12650,18 @@ body.tl-col-resizing * {
   display: none;
 }
 
-/* When `_renderSus()` empties the Suspicious section (i.e. no sus chips
-   remain) it stamps `.hidden` on the `.tl-section` wrapper. Without this
-   rule the wrapper itself stays in layout flow — an empty red-tinted bar
-   — even though its `.tl-section-body` is blank. Taking it out of flow
-   entirely is the right visual signal that there is currently nothing
-   suspicious to look at. */
+/* `.hidden` is stamped on the Detections / Entities section wrappers
+   when they have nothing to show (EVTX without any matching rules /
+   entities, or any CSV / TSV file). Without this rule the wrapper
+   itself stays in layout flow — an empty titled bar — even though its
+   `.tl-section-body` is blank. Taking it out of flow entirely is the
+   right visual signal that the section is currently not applicable. */
 .timeline-view .tl-section.hidden {
   display: none;
 }
 
-/* The Suspicious section wraps the whole block in a red-tinted edge so
-   analysts can spot it at a glance even when collapsed. */
-.timeline-view .tl-sec-sus {
-  border-left: 3px solid rgb(var(--risk-high-rgb) / .55);
-  background: rgb(var(--risk-high-rgb) / .03);
-}
-
-.timeline-view .tl-sec-sus > .tl-section-head {
-  background: rgb(var(--risk-high-rgb) / .08);
-  color: var(--risk-high);
-}
-
-.timeline-view .tl-sec-sus .tl-section-title {
-  color: var(--risk-high);
-}
-
-/* The sus-section's body holds a mini-histogram + grid + top-value
-   cards. Keep it visually distinct from the main sections — the red
-   tint already signals "evidence", but we stop short of stacking more
-   borders on every child. */
-.timeline-view .tl-sus {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* Suspicious sub-grid height is user-resizable via the `.tl-sus-splitter`
-   drag bar (stored in `loupe_timeline_sus_grid_h`). Mirrors the main
-   events grid's `--tl-grid-h` pattern. The `display: flex; flex-direction:
-   column` + `min-height: 0` combo is required so the inner `GridViewer`
-   virtual-scroll pane can shrink inside this fixed-height container. */
-.timeline-view .tl-sus-grid {
-  height: var(--tl-sus-grid-h, 260px);
-  min-height: 140px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.timeline-view .tl-sus-columns {
-  min-height: 180px;
-}
-
-.timeline-view .tl-sus-chart {
-  border-bottom: 1px solid var(--hairline);
-}
-
-/* Red-tinted grid rows (both main & sus tables) — rowClass('tl-row-sus')
-   is applied per-row by GridViewer via the new rowClass hook. */
+/* Red-tinted grid rows — rowClass('tl-row-sus') is applied per-row by
+   GridViewer via the rowClass hook when the row matches any 🚩 sus mark. */
 .grid-row.tl-row-sus,
 .csv-table tr.tl-row-sus {
   background: rgb(var(--risk-high-rgb) / .10) !important;
