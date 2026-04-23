@@ -88,6 +88,14 @@ class GridViewer {
     this._rowTitleFn      = typeof opts.rowTitle === 'function' ? opts.rowTitle : null;
     this._cellTextFn      = typeof opts.cellText === 'function' ? opts.cellText : null;
     this._cellClassFn     = typeof opts.cellClass === 'function' ? opts.cellClass : null;
+    // Optional per-drawer-cell class callback. Invoked while building the
+    // default key/value drawer pane — returns a space-separated class string
+    // (or empty/null) that is added to BOTH the `.csv-detail-key` and
+    // `.csv-detail-val` elements for that column. Used by Timeline mode to
+    // tint drawer rows that correspond to a 🚩 Sus mark. Does not apply when
+    // a custom `detailBuilder` is supplied.
+    this._detailCellClassFn = typeof opts.detailCellClass === 'function' ? opts.detailCellClass : null;
+
     // Optional per-row class callback. Returns a space-separated class string
     // (or empty/null) that is added to the row's `.grid-row` div at build
     // time. Used by Timeline mode to tint "suspicious" rows without
@@ -1081,6 +1089,51 @@ class GridViewer {
         e.stopPropagation();
         e.preventDefault();
       }
+      // Arrow up / down — step the drawer through consecutive visible
+      // rows. Respects the active sort + filter by walking via
+      // virtual-row index (`_virtualIdxOf` / `_dataIdxOf`), so a sorted
+      // EVTX view or a DSL-filtered Timeline grid both advance through
+      // whatever the user is actually looking at. If no row is open,
+      // the first key-press opens the drawer on the first visible row
+      // (Down) or last visible row (Up). Scrolls the target into view
+      // via `_scrollToRow` so the drawer follows without the analyst
+      // losing their place.
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        // Don't steal arrow keys from interactive controls embedded
+        // in the drawer (e.g. the query-editor textarea, select
+        // elements, JSON-tree toggles).
+        const tag = e.target && e.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (e.target && e.target.isContentEditable) return;
+        const visible = this._visibleCount();
+        if (!visible) return;
+        let vIdx;
+        if (this.state.drawer.open && this.state.drawer.dataIdx >= 0) {
+          const curV = this._virtualIdxOf(this.state.drawer.dataIdx);
+          if (curV < 0) {
+            // Drawer-open row is no longer visible under the current
+            // filter — fall back to the first visible row on Down,
+            // last on Up, so the user can still drive from here.
+            vIdx = e.key === 'ArrowDown' ? 0 : visible - 1;
+          } else {
+            vIdx = e.key === 'ArrowDown' ? curV + 1 : curV - 1;
+          }
+        } else {
+          vIdx = e.key === 'ArrowDown' ? 0 : visible - 1;
+        }
+        if (vIdx < 0 || vIdx >= visible) {
+          // Off either end — swallow the key but don't move (prevents
+          // the browser from scrolling the outer page instead).
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        const dataIdx = this._dataIdxOf(vIdx);
+        if (dataIdx == null) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this._scrollToRow(dataIdx, /* highlightFlash */ false);
+      }
     };
     this._scr.addEventListener('keydown', this._boundHandlers.onKey);
     this._drawer.addEventListener('keydown', this._boundHandlers.onKey);
@@ -1267,7 +1320,14 @@ class GridViewer {
   _buildRow(dataIdx, virtualIdx) {
     const row = this.rows[dataIdx];
     const tr = document.createElement('div');
-    tr.className = 'grid-row';
+    // Zebra striping is stamped from `dataIdx` parity (stable per source
+    // row) rather than via CSS `:nth-child`, which would re-shuffle on
+    // every scroll tick because only the visible window of rows is
+    // materialised in the virtualised DOM — the same data row would
+    // flip between even/odd as it moved through the buffer. Keying on
+    // dataIdx pins each row to a single banded colour for the lifetime
+    // of the dataset regardless of scroll position.
+    tr.className = 'grid-row ' + ((dataIdx & 1) ? 'grid-row-odd' : 'grid-row-even');
     tr.dataset.idx = dataIdx;
     tr.dataset.vidx = virtualIdx;
     tr.style.top = (virtualIdx * this.ROW_HEIGHT) + 'px';
@@ -1284,6 +1344,12 @@ class GridViewer {
       if (this._hiddenCols.has(c)) continue;
       const td = document.createElement('div');
       td.className = 'grid-cell';
+      // Stamp the real column index on the cell so consumers (e.g. the
+      // Timeline's right-click handler) can resolve clicked column →
+      // original column index without positional math. Doing the math
+      // against `cell.parentNode.children` breaks the moment any column
+      // is hidden, because `_hiddenCols` entries are skipped above.
+      td.dataset.col = c;
       const rawCell = row ? (row[c] != null ? row[c] : '') : '';
       const displayCell = this._cellTextFn
         ? this._cellTextFn(dataIdx, c, rawCell)
@@ -1466,6 +1532,22 @@ class GridViewer {
       grid.appendChild(kEl);
       const vEl = document.createElement('div');
       vEl.className = 'csv-detail-val';
+      // Optional per-cell decoration (e.g. Timeline Mode's 🚩 Sus mark
+      // tint). Applied to BOTH the key and value elements so the whole
+      // drawer row reads as flagged.
+      if (this._detailCellClassFn) {
+        try {
+          const extra = this._detailCellClassFn(dataIdx, i, val);
+          if (extra) {
+            const parts = String(extra).split(/\s+/).filter(Boolean);
+            if (parts.length) {
+              kEl.classList.add(...parts);
+              vEl.classList.add(...parts);
+            }
+          }
+        } catch { /* decorative only */ }
+      }
+
 
       // JSON-aware drawer body — when a cell parses as a JSON object or
       // array, render it as a collapsible tree instead of plain text.
@@ -2033,10 +2115,19 @@ class GridViewer {
     // entry-point so users who hide several columns in a row via the
     // header menu don't have to chase the chip to get them back.
     if (this._hiddenCols.size > 0) {
-      pop.appendChild(mkItem(
-        `Show hidden columns… (${this._hiddenCols.size})`,
-        () => this._openHiddenColsPopover(anchorEl)
-      ));
+      // Built manually instead of via mkItem because mkItem's
+      // `finally { _closePopover() }` would immediately destroy
+      // the hidden-columns popover that _openHiddenColsPopover
+      // just opened.
+      const showHiddenBtn = document.createElement('button');
+      showHiddenBtn.type = 'button';
+      showHiddenBtn.className = 'grid-popover-item';
+      showHiddenBtn.textContent = `Show hidden columns… (${this._hiddenCols.size})`;
+      showHiddenBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._openHiddenColsPopover(anchorEl);
+      });
+      pop.appendChild(showHiddenBtn);
     }
 
 
