@@ -2,11 +2,10 @@
 // ════════════════════════════════════════════════════════════════════════════
 // xlsx-renderer.js — Renders .xlsx / .xlsm / .xls / .ods via SheetJS.
 //
-// Wave-B: each sheet is rendered through the shared GridViewer (virtual
-// scroll, right-side drawer, IOC/YARA highlight, filter). Merged-cell
-// rendering is collapsed (the top-left of every merge carries the value;
-// continuation cells become blank) — presentation of merges is a
-// secondary concern for analyst workflows.
+// Each sheet is rendered through the shared GridViewer (virtual scroll,
+// right-side drawer, IOC/YARA highlight, filter). Merged-cell rendering is
+// collapsed (the top-left of every merge carries the value; continuation
+// cells become blank).
 //
 // Depends on: vba-utils.js, XLSX (vendor / SheetJS), JSZip (vendor)
 // ════════════════════════════════════════════════════════════════════════════
@@ -219,7 +218,7 @@ class XlsxRenderer {
     return container;
   }
 
-  // ── Security analysis — unchanged from pre-Wave-B ──────────────────────
+  // ── Security analysis ──────────────────────────────────────────────────
   async analyzeForSecurity(buffer, fileName) {
     const ext = (fileName || '').split('.').pop().toLowerCase();
     const f = { risk: 'low', hasMacros: false, macroSize: 0, autoExec: [], modules: [], externalRefs: [], metadata: {} };

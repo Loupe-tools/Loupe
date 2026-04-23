@@ -107,7 +107,7 @@
       _openAll(open, ['dotnet']);
     }
 
-    // Embedded resource payloads surfaced by the Phase-5 walk.
+    // Embedded resource payloads surfaced by the PE resource-section walk.
     if (Number(md['Embedded Resource Payloads'] || 0) > 0) {
       ribbon.push(_chip(md['Embedded Resource Payloads'] + ' embedded resource payload' + (md['Embedded Resource Payloads'] === 1 ? '' : 's'), 'high', 'pe-resources', 'T1027.009'));
       _openAll(open, ['resources']);

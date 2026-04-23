@@ -258,13 +258,12 @@ body.dark .sheet-tab:hover:not(.active) {
 }
 
 .sheet-content-area {
-  /* Host slot for the per-sheet panes. The GridViewer used by
-     XlsxRenderer/Wave-B wants a concrete height to measure against —
-     `flex: 1` + `min-height: 0` alone collapses to zero inside the
-     `.xlsx-view` column-flex because our outer chrome doesn't force a
-     block-size, so we pin an explicit viewport-relative height here.
-     Overflow moves from this container into the GridViewer's own
-     `.grid-scroll`, so we no longer want this level to scroll. */
+  /* Host slot for the per-sheet panes. GridViewer wants a concrete height
+     to measure against — `flex: 1` + `min-height: 0` alone collapses to
+     zero inside the `.xlsx-view` column-flex because our outer chrome
+     doesn't force a block-size, so we pin an explicit viewport-relative
+     height here. Overflow moves into the GridViewer's own `.grid-scroll`,
+     so we no longer want this level to scroll. */
   flex: 1 1 auto;
   min-height: 0;
   height: 70vh;
@@ -757,9 +756,9 @@ body.dark .csv-detail-val:empty::after {
 
 
 /* ══════════════════════════════════════════════════════
-   GRID VIEWER (shared virtual-scroll grid — Wave A)
+   GRID VIEWER (shared virtual-scroll grid)
 
-   Powers the CSV renderer today; EVTX / XLSX / SQLite / JSON in Wave B.
+   Powers CSV, EVTX, XLSX, SQLite, and JSON renderers.
    See src/renderers/grid-viewer.js for the architectural invariants
    (fixed row height, absolute-positioned rows, right-side drawer,
    single highlight state machine).
@@ -787,9 +786,9 @@ body.dark .csv-detail-val:empty::after {
 }
 
 
-/* Info bar reuses .csv-info styling for visual parity with the old
-   renderer; the `.grid-info` class just lets Wave-B renderers that
-   don't also carry `.csv-view` inherit the same look. */
+/* Info bar reuses .csv-info styling for visual parity; the `.grid-info`
+   class lets renderers that don't also carry `.csv-view` inherit the
+   same look. */
 .grid-info {
   padding: 8px 16px;
   font-size: 12px;
@@ -1164,8 +1163,8 @@ body.dark .grid-drawer-close { color: var(--text-muted); }
 
 .grid-detail-pane {
   /* .csv-detail-pane already styles padding/grid; grid-detail-pane exists
-     so future Wave-B renderers that don't co-brand as `.csv-view` still
-     inherit the same layout even if they opt out of the CSV alias. */
+     so renderers that don't co-brand as `.csv-view` still inherit the same
+     layout. */
 }
 
 .grid-detail-empty {
@@ -4091,14 +4090,14 @@ body.dark .sqlite-table-header {
 }
 
 /* ══════════════════════════════════════════════════════
-   SQLite (Wave-B) — GridViewer host layout
+   SQLite — GridViewer host layout
    ══════════════════════════════════════════════════════
-   Wave-B routes every SQLite table through the shared GridViewer. The
-   outer `.sqlite-view` is a vertical stack (info bar → tab bar → grid
-   host). The active GridViewer's root carries both `.sqlite-grid` and
-   `.csv-view` so existing sidebar + theme rules keyed on `.csv-view`
-   continue to apply; the `.sqlite-grid-host` slot is just a flex child
-   that grows to fill the remaining height. */
+   Every SQLite table routes through the shared GridViewer. The outer
+   `.sqlite-view` is a vertical stack (info bar → tab bar → grid host).
+   The active GridViewer's root carries both `.sqlite-grid` and `.csv-view`
+   so existing sidebar + theme rules keyed on `.csv-view` continue to
+   apply; the `.sqlite-grid-host` slot is just a flex child that grows to
+   fill the remaining height. */
 .sqlite-view {
   display: flex;
   flex-direction: column;
@@ -4136,8 +4135,8 @@ body.dark .sqlite-table-header {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
-   Wave-C — clickable column headers, dropdown menu, top-values popover,
-   malformed-row ribbon, JSON tree in drawer, red row state.
+   Grid extras — clickable column headers, dropdown menu, top-values
+   popover, malformed-row ribbon, JSON tree in drawer, red row state.
    ─────────────────────────────────────────────────────────────────────────── */
 
 /* Clickable header cells — show a hover affordance + chevron */
@@ -9357,7 +9356,7 @@ body.dark .plist-bool-true    { color: var(--banner-ok-text); }
 body.dark .plist-bool-false   { color: var(--banner-danger-text); }
 body.dark .plist-value-suspicious { color: var(--risk-high); background: rgba(255, 107, 107, .12); }
 
-/* --- HTA / IQY / URL raw source panes (Phases 11-13) ------------------- */
+/* --- HTA / IQY / URL raw source panes ----------------------------------- */
 .hta-source-pane,
 .iqy-source,
 .url-source {
@@ -10908,7 +10907,7 @@ body.dark .bin-triage-tech-medium .bin-triage-tech-id {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Wave-E — Timeline strip
+   Timeline strip
    ────────────────────────────────────────────────────────────────────────────
    Density histogram shown above the filter bar for any GridViewer with a
    sniffed (or caller-supplied) timestamp column. The track is a single

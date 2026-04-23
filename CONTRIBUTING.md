@@ -144,15 +144,13 @@ subtly misbehave.
 - **The `JS_FILES` order in `scripts/build.py` is load-bearing.** The
   `Object.assign(App.prototype, …)` pattern means later files override
   earlier ones' methods. `app-copy-analysis.js` holds the 28 per-format
-  `_copyAnalysisXxx` markdown builders (extracted from `app-ui.js` to keep
-  that file below ~2 K lines) and must load **after** `app-ui.js` (it
-  consumes `_formatMetadataValue` / `_sCaps` defined there).
+  `_copyAnalysisXxx` markdown builders and must load **after** `app-ui.js`
+  (it consumes `_formatMetadataValue` / `_sCaps` defined there).
   `app-sidebar-focus.js` holds the click-to-focus / highlighting engine
   (`_navigateToFinding`, `_findIOCMatches`, `_highlightMatchesInline`, the
-  TreeWalker fallback, plus the Binary Metadata + MITRE sections that hang
-  off the same navigation plumbing) — extracted from `app-sidebar.js` for
-  the same reason and must load **after** it so the rendering half's click
-  handlers find the focus engine on `App.prototype`.
+  TreeWalker fallback, plus the Binary Metadata + MITRE sections) and must
+  load **after** `app-sidebar.js` so the rendering half's click handlers
+  find the focus engine on `App.prototype`.
   `app-settings.js` must load **after** both `app-ui.js` and
   `app-copy-analysis.js` because it reuses the `THEMES` array from
   `app-ui.js` and overrides the unbudgeted `_copyAnalysis` call path with
@@ -1001,7 +999,7 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_timeline_grid_h` | string (integer) | drag handle on the `.tl-splitter` between the timeline grid and the per-column cards | integer pixel height, clamped to a sensible min/max on read | Height of the virtual-grid pane inside the Timeline viewer. Persisted per-browser so analysts who prefer a tall grid (scrolling 10 k rows) or a tall column-cards pane don't have to re-drag it on every file. |
 | `loupe_timeline_chart_h` | string (integer) | `.tl-chart-resize` grab-bar along the bottom edge of the stacked-bar histogram | integer pixel height, clamped on read to the chart's min/max (120 – 600 px) | Height of the Timeline histogram pane. Default is deliberately compact (220 px) so the events grid + top-values cards are visible on first paint; analysts who want more bar resolution drag it down and the preference sticks across reloads. |
 | `loupe_timeline_bucket` | string | Timeline toolbar bucket picker | one of the supported bucket sizes (`1m` / `5m` / `1h` / `1d` / …) | Chart / scrubber bucket resolution for the stacked-bar histogram. Default is picked automatically from the file's time span on first load if the saved value is missing or invalid. |
-| `loupe_timeline_sections` | JSON object | section-chevron clicks on collapsible `.tl-section` blocks | `{ chart: bool, grid: bool, columns: bool, pivot: bool, … }` — each flag = `true` when collapsed | Collapsed / expanded state of every top-level Timeline section (histogram, events grid, top-values cards, detections, entities, pivot). Lets analysts hide sections they don't use (e.g. pivot starts collapsed). Unknown / unparseable value → all expanded. A legacy `sus: true` key from older builds is tolerated but ignored — the Suspicious section has been removed. |
+| `loupe_timeline_sections` | JSON object | section-chevron clicks on collapsible `.tl-section` blocks | `{ chart: bool, grid: bool, columns: bool, pivot: bool, … }` — each flag = `true` when collapsed | Collapsed / expanded state of every top-level Timeline section (histogram, events grid, top-values cards, detections, entities, pivot). Lets analysts hide sections they don't use (e.g. pivot starts collapsed). Unknown / unparseable value → all expanded. |
 | `loupe_timeline_topvals_size` | string | "Cards: S / M / L" button on the Timeline toolbar | `"S"` / `"M"` (default) / `"L"` | Zoom level for the flex-wrap per-column top-value cards. Drives `--tl-card-min-w` so cards flow to 1-, 2-, 3-up depending on viewport width. |
 | `loupe_timeline_card_widths` | JSON object | right-edge resize handle on each `.tl-col-card` | `{ "<fileKey>": { "<columnName>": { span: N } \| pixelWidth, … } }` — file key = `name|size|lastModified`; legacy integer pixel values are migrated to a span on read | Per-file, per-column manual width overrides for the top-value cards, expressed as an integer `grid-column: span N` so the override cooperates with the `.tl-columns` `auto-fill minmax()` grid. Scoped to a file so resizing a "User" card in one CSV doesn't re-size a same-named column in an unrelated one. |
 | `loupe_timeline_regex_extracts` | JSON object | ƒx Extract dialog → Regex / Auto tabs | `{ "<fileKey>": [{ name, col, pattern, flags, group, kind }, …] }` | Per-file list of extracted virtual columns created via the Regex tab or Auto (URL / hostname) scan. Re-applied automatically next time the same file is loaded so long-form analyses survive a reload. JSON-path extractions are not persisted (they depend on in-memory parsed values). |
@@ -1137,10 +1135,7 @@ Every IOC the renderer emits — whether onto `findings.externalRefs` or `findin
 7. **Generic text extraction is capped per-type, not globally.**
    `_extractInterestingStrings` in `src/app/app-load.js` walks `_rawText`
    (or `textContent`) after renderer-specific IOCs are seeded, and
-   enforces a `PER_TYPE_CAP` (currently 200) on each `IOC.*` type. This
-   replaced an older global 300-entry cap that silently dropped all but
-   the first IOC class in high-volume files (e.g. a 1000-row CSV with
-   both a URL and an Email column lost every Email to 1000 URLs). Drops
+   enforces a `PER_TYPE_CAP` (currently 200) on each `IOC.*` type. Drops
    are surfaced via `findings._iocTruncation` → sidebar warning banner.
    Renderer-seeded IOCs (`findings.interestingStrings` populated by
    `analyzeForSecurity`) are **not** subject to this cap — renderers are

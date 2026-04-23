@@ -224,12 +224,10 @@ Object.assign(App.prototype, {
     }
 
     // ── SQLite view ────────────────────────────────────────────────────────
-    // Wave-B: the SQLite renderer now embeds a GridViewer whose root is
-    // tagged `.csv-view`, so the CSV branch above handles navigation. The
-    // old `_sqliteRows` / `_sqliteScrollContainer` DOM-table shim is gone.
-    // If the CSV branch fell through (no match in the active tab), there
-    // is nothing more we can do here — cross-tab IOC search is a Wave D
-    // (Data Explorer) feature.
+    // The SQLite renderer embeds a GridViewer whose root is tagged
+    // `.csv-view`, so the CSV branch above handles navigation. If the CSV
+    // branch fell through (no match in the active tab), there is nothing
+    // more we can do here — cross-tab IOC search is not yet supported.
 
     // ── IOC highlighting with click-cycle semantics ─────────────────────────
     //

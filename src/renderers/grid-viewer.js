@@ -1,12 +1,11 @@
 'use strict';
 // ════════════════════════════════════════════════════════════════════════════
-// grid-viewer.js — bulletproof shared virtual-scroll grid
+// grid-viewer.js — shared virtual-scroll grid
 //
-// Wave-A architectural rewrite of the former csv-renderer.js / evtx-renderer.js
-// virtual-scroll plumbing. Single primitive consumed by CSV (now), and EVTX /
-// XLSX / SQLite / JSON-array (in later waves).
+// Single primitive consumed by CSV, EVTX, XLSX, SQLite, and JSON-array
+// renderers.
 //
-// Design invariants (what kills the race-condition class):
+// Design invariants:
 //
 //   1. FIXED ROW HEIGHT. Every body row is exactly `ROW_HEIGHT` px. Total
 //      scrollable height = `rowCount * ROW_HEIGHT` — O(1). No dynamic
@@ -74,10 +73,9 @@ class GridViewer {
     this._infoText      = opts.infoText || '';
     this._truncNote     = opts.truncationNote || '';
     this._emptyMessage  = opts.emptyMessage || 'Empty file.';
-    // Wave-B hooks (optional) — let format-specific renderers (EVTX, XLSX,
-    // SQLite, JSON) reuse the virtual-scroll + drawer + highlight core
-    // without having to re-implement it, while still owning their own
-    // toolbar and drawer-body layout:
+    // Optional hooks — let format-specific renderers (EVTX, XLSX, SQLite,
+    // JSON) reuse the virtual-scroll + drawer + highlight core while still
+    // owning their own toolbar and drawer-body layout:
     //   detailBuilder : (dataIdx, row, cols) => HTMLElement   // drawer body
     //   hideFilterBar : bool   // suppress the built-in search input
     //   extraToolbarEls : HTMLElement[]   // prepended above the filter bar
@@ -90,14 +88,14 @@ class GridViewer {
     this._rowTitleFn      = typeof opts.rowTitle === 'function' ? opts.rowTitle : null;
     this._cellTextFn      = typeof opts.cellText === 'function' ? opts.cellText : null;
     this._cellClassFn     = typeof opts.cellClass === 'function' ? opts.cellClass : null;
-    // Wave-E (Timeline) — optional per-row class callback. Returns a
-    // space-separated class string (or empty/null) that is added to the
-    // row's `.grid-row` div at build time. Used by Timeline mode to tint
-    // "suspicious" rows without re-rendering the whole grid. Pure decoration
-    // — it does not affect filtering or layout.
+    // Optional per-row class callback. Returns a space-separated class string
+    // (or empty/null) that is added to the row's `.grid-row` div at build
+    // time. Used by Timeline mode to tint "suspicious" rows without
+    // re-rendering the whole grid. Pure decoration — does not affect
+    // filtering or layout.
     this._rowClassFn      = typeof opts.rowClass === 'function' ? opts.rowClass : null;
 
-    // Wave-E — Timeline layout (final). Opt-in per-caller:
+    // Timeline layout. Opt-in per-caller:
     //   timeColumn       : number|null     — index of the timestamp column.
     //                                          null / omitted → auto-sniff:
     //                                          first column whose sampled
@@ -145,8 +143,8 @@ class GridViewer {
     // key-context menu is simply absent.
     this._onCellPick = typeof opts.onCellPick === 'function' ? opts.onCellPick : null;
 
-    // Wave-E (stacked) — optional opt-in: histogram bars are split by
-    // category when a stack column is set. Default: single-density bars.
+    // Optional stacking: histogram bars are split by category when a stack
+    // column is set. Default: single-density bars.
     //   timelineStackColumn : number   — index of the grouping column.
     // Also toggle-able at runtime via the column-header menu item
     // "Stack timeline by this column". Top STACK_MAX_KEYS groups get their
@@ -240,7 +238,7 @@ class GridViewer {
       parseProgress: { rows: 0, total: 0 }
     };
 
-    // Wave-C state — column-level features, defang, malformed ribbon.
+    // Column-level features, defang, malformed ribbon.
     this._sortOrder       = null;   // null | Int32Array — permutation of dataIdx under current sort
     this._sortSpec        = null;   // null | { colIdx, dir: 'asc'|'desc' }
     this._hiddenCols      = new Set();
@@ -294,7 +292,7 @@ class GridViewer {
       if (el) root.appendChild(el);
     }
 
-    // ── Timeline strip (Wave-E) — hidden by default; populated after the
+    // ── Timeline strip — hidden by default; populated after the
     //    row set is finalised (a) at construction time if rows were passed
     //    in, or (b) on setRows() / endParseProgress() for streaming parsers.
     //    Contains: a bucket area for the density histogram + drag-select,
@@ -810,15 +808,15 @@ class GridViewer {
     const scrW = (this._scr && this._scr.clientWidth) || 0;
     const outWs = baseWs.slice();
 
-    // Two-phase slack allocation:
-    //   Phase 1 — leave fixed-shape columns (timestamp/number/id/enum/
-    //             hash/short/user-overridden) alone. Greedy blobs absorb
-    //             ALL leftover slack, split equally between them when
-    //             multiple blobs exist.
-    //   Phase 2 — if no greedy column exists (typical CSV with short
-    //             text only), fall back to the legacy proportional-fill
-    //             behaviour so small tables still fill the viewport
-    //             instead of leaving a right-edge gutter.
+    // Two-pass slack allocation:
+    //   Pass 1 — leave fixed-shape columns (timestamp/number/id/enum/
+    //            hash/short/user-overridden) alone. Greedy blobs absorb
+    //            ALL leftover slack, split equally between them when
+    //            multiple blobs exist.
+    //   Pass 2 — if no greedy column exists (typical CSV with short
+    //            text only), fall back to proportional-fill so small
+    //            tables still fill the viewport instead of leaving a
+    //            right-edge gutter.
     if (scrW > 0 && visIdx.length) {
       // Reserve the row-number gutter + a 2 px safety margin so the last
       // column never provokes a horizontal scrollbar after rounding.
@@ -1605,7 +1603,7 @@ class GridViewer {
     }
     this._scr.scrollTop = 0;
     this._forceFullRender();
-    // Wave-E — filter changed, so the histogram counts per bucket change too.
+    // Filter changed — histogram counts per bucket change too.
     // Rebuild + repaint so the timeline shrinks in step with the grid body.
     this._refreshTimelineBuckets();
   }
@@ -1995,7 +1993,7 @@ class GridViewer {
       pop.appendChild(mkItem('Clear sort', () => this._clearSort()));
     }
     pop.appendChild(this._popoverSeparator());
-    // Wave-E — opt-in promotion of any column to the timeline source.
+    // Opt-in promotion of any column to the timeline source.
     // Hidden for columns that look like bare numeric IDs so it doesn't
     // clutter menus on non-temporal data; still shown whenever at least
     // ~50% of sampled cells parse as a real timestamp.
@@ -2006,7 +2004,7 @@ class GridViewer {
         () => this._useColumnAsTimeline(colIdx)
       ));
     }
-    // Wave-E — stack the timeline histogram by this column. Shown whenever
+    // Stack the timeline histogram by this column. Shown whenever
     // the timeline is active and the column has a reasonable number of
     // distinct values on the visible row set (≥2, ≤ STACK_MAX_GROUPS).
     if (this._timeMs && this._columnLooksStackable(colIdx)) {
@@ -2235,9 +2233,8 @@ class GridViewer {
     // ms-since-epoch. Without this branch the subsequent numeric-sniff
     // matches ISO strings like "2024-05-20T08:10:01Z" (parseFloat → 2024),
     // collapses every row to the same value, and leaves the apparent order
-    // unchanged. Re-uses the Wave-E parser so custom _timeParser callers
-    // (EVTX's Excel-serial math, future XLSX) sort identically to the
-    // timeline strip.
+    // unchanged. Reuses the timeline parser so custom _timeParser callers
+    // (EVTX's Excel-serial math, XLSX) sort identically to the timeline strip.
     const temporal = this._columnLooksTemporal(colIdx);
     if (temporal) {
       idxs.sort((a, b) => {

@@ -24,30 +24,30 @@
 // loader gracefully falls back to the regular analyser pipeline for that
 // file instead of leaving the analyst stranded on an error card.
 //
-// Feature waves layered on top of the baseline above:
-//   1. Sus chips + right-click menu → red-tinted rows everywhere.
-//   2. Separate **Suspicious** section (own chart, grid, top-lists) that
-//      auto-appears when ≥ 1 sus chip exists.
-//   3. Per-column ▾ menu (contains filter, distinct-value checkbox list,
-//      only-this / exclude-this, stack-by / timestamp, extract ƒx).
-//   4. Flexible wrap layout for top-value cards + per-card width resize +
-//      S / M / L zoom.
-//   5. Taller stacked histogram (~340 px) + hover tooltip.
-//   6. Legend click / double-click / shift-click quick filters.
-//   7. JSON cell tree popup → click a node → extracted virtual column.
-//   8. Unified Extraction popup: Auto (URL / hostname leaves & plain-text
-//      URL columns) + Regex (custom pattern + capture group + presets).
-//   9. Collapsible sections + per-section exports (chart → PNG / CSV,
-//      grid → CSV, top-values card → CSV, pivot → CSV).
-//  10. Ad-hoc pivot table: Rows × Columns × Aggregate (count /
-//      count-distinct / sum-numeric).
-//  11. Detections (EVTX): Sigma-style event-id patterns + counts, click
-//      a row to filter the grid by that Event ID.
-//  12. Entities (EVTX only): extracted hostnames, users, hashes,
-//      processes, IPs, URLs, nicelist-demoted; click to filter.
-//      Skipped for CSV / TSV — a row-scan regex sweep over millions of
-//      cells was destroying render performance and the analyser already
-//      surfaces the same IOCs via the sidebar.
+// Additional capabilities:
+//   - Sus chips + right-click menu → red-tinted rows everywhere.
+//   - Separate **Suspicious** section (own chart, grid, top-lists) that
+//     auto-appears when ≥ 1 sus chip exists.
+//   - Per-column ▾ menu (contains filter, distinct-value checkbox list,
+//     only-this / exclude-this, stack-by / timestamp, extract ƒx).
+//   - Flexible wrap layout for top-value cards + per-card width resize +
+//     S / M / L zoom.
+//   - Taller stacked histogram (~340 px) + hover tooltip.
+//   - Legend click / double-click / shift-click quick filters.
+//   - JSON cell tree popup → click a node → extracted virtual column.
+//   - Unified Extraction popup: Auto (URL / hostname leaves & plain-text
+//     URL columns) + Regex (custom pattern + capture group + presets).
+//   - Collapsible sections + per-section exports (chart → PNG / CSV,
+//     grid → CSV, top-values card → CSV, pivot → CSV).
+//   - Ad-hoc pivot table: Rows × Columns × Aggregate (count /
+//     count-distinct / sum-numeric).
+//   - Detections (EVTX): Sigma-style event-id patterns + counts, click
+//     a row to filter the grid by that Event ID.
+//   - Entities (EVTX only): extracted hostnames, users, hashes,
+//     processes, IPs, URLs, nicelist-demoted; click to filter.
+//     Skipped for CSV / TSV — a row-scan regex sweep over millions of
+//     cells was destroying render performance and the analyser already
+//     surfaces the same IOCs via the sidebar.
 //
 // Persistence keys (all under `loupe_` prefix):
 //   - loupe_timeline_grid_h            integer px — default 320

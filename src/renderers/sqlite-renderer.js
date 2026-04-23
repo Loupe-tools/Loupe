@@ -480,19 +480,17 @@ class SqliteRenderer {
 
   // ── View builder ────────────────────────────────────────────────────────
   //
-  // Wave-B rewrite: every tabular surface is now a GridViewer. The old
-  // DOM-table + linear `rowEls[{tr, searchText}]` structure is gone. For
-  // back-compat with the sidebar IOC click-to-focus engine
-  // (src/app/app-sidebar-focus.js), the active GridViewer's root is tagged
-  // `csv-view` so the existing `_csvFilters.scrollToRow(...)` branch handles
-  // navigation; no sqlite-specific sidebar path is needed.
+  // Every tabular surface is a GridViewer. For back-compat with the sidebar
+  // IOC click-to-focus engine (src/app/app-sidebar-focus.js), the active
+  // GridViewer's root is tagged `csv-view` so the existing
+  // `_csvFilters.scrollToRow(...)` branch handles navigation; no
+  // sqlite-specific sidebar path is needed.
   //
   // Multi-table generic view: tabs swap the active GridViewer in a single
   // host slot. Only the active tab's root carries `.csv-view`, so
   // `pc.querySelector('.csv-view')` in the sidebar deterministically
   // resolves to the currently-visible table. Cross-tab IOC navigation is a
-  // known limitation — the analyst switches tabs manually. Wave D's Data
-  // Explorer will address cross-table search.
+  // known limitation — the analyst switches tabs manually.
 
   _buildView(db, fileName) {
     const wrap = document.createElement('div');
@@ -564,10 +562,9 @@ class SqliteRenderer {
     // display columns array).
     const visitCountIdx = cols.findIndex(c => /visit count/i.test(c));
 
-    // Wave-E: Opt the browser-history grid into the timeline strip by
-    // naming the "Last Visit" / "Visit(ed) Date" / "Timestamp" column as
-    // the grid's temporal axis. Falls back to GridViewer's auto-sniff
-    // (which also passes for this column) when no match is found.
+    // Opt the browser-history grid into the timeline strip by naming the
+    // "Last Visit" / "Visit(ed) Date" / "Timestamp" column as the grid's
+    // temporal axis. Falls back to GridViewer's auto-sniff when no match.
     const lastVisitIdx = cols.findIndex(c => /last visit|visit(ed)? ?date|timestamp/i.test(c));
 
     const viewer = new GridViewer({

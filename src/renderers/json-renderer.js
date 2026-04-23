@@ -2,9 +2,9 @@
 // ════════════════════════════════════════════════════════════════════════════
 // json-renderer.js — thin JSON renderer on top of GridViewer.
 //
-// Wave-B port: when a `.json` / `.ndjson` file parses to a **tabular-shaped**
-// array (array-of-objects, array-of-arrays, or array-of-scalars) we render
-// it through the shared GridViewer so analysts get virtual scroll, the
+// When a `.json` / `.ndjson` file parses to a **tabular-shaped** array
+// (array-of-objects, array-of-arrays, or array-of-scalars) we render it
+// through the shared GridViewer so analysts get virtual scroll, the
 // right-side drawer, filter, and IOC / YARA navigation for free — just
 // like CSV / EVTX / XLSX / SQLite.
 //
@@ -394,11 +394,10 @@ class JsonRenderer {
 
   // ── Detail pane — interactive collapsible JSON tree. ──────────────────
   //
-  // Wave C: replaces the old `<pre>`-dump. Objects and arrays render as
-  // expandable nodes with ▸ / ▾ toggles; primitives render inline. All
-  // value-side text still lives inside a `.csv-detail-val` wrapper so the
-  // existing IOC / YARA drawer-highlight pipeline (which walks
-  // `.csv-detail-val` descendants) keeps working without modification.
+  // Objects and arrays render as expandable nodes with ▸ / ▾ toggles;
+  // primitives render inline. All value-side text still lives inside a
+  // `.csv-detail-val` wrapper so the IOC / YARA drawer-highlight pipeline
+  // (which walks `.csv-detail-val` descendants) keeps working.
   //
   // Tunables:
   //   DEPTH_AUTO_OPEN    = 2   — depth up to which nodes auto-expand

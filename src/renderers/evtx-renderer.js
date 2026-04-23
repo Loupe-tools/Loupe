@@ -1735,14 +1735,12 @@ class EvtxRenderer {
     }
   }
 
-  // ── View builder (Wave-B: built on top of GridViewer) ───────────────────
+  // ── View builder ─────────────────────────────────────────────────────────
   //
-  // Previously this was ~740 lines of bespoke dynamic-height virtual-scroll
-  // machinery duplicated from csv-renderer. The whole stack is now shared
-  // with CSV / XLSX / SQLite / JSON via `GridViewer` (see
-  // src/renderers/grid-viewer.js). Everything below is purely "how EVTX
-  // wants its toolbar, cells, and drawer body to look" — the scroll,
-  // filter, highlight, drawer, and IOC/YARA plumbing is inherited.
+  // EVTX shares the virtual-scroll core with CSV / XLSX / SQLite / JSON via
+  // `GridViewer` (see src/renderers/grid-viewer.js). Everything below is
+  // "how EVTX wants its toolbar, cells, and drawer body to look" — the
+  // scroll, filter, highlight, drawer, and IOC/YARA plumbing is inherited.
   //
   // The existing sidebar click-to-focus engine in
   // `src/app/app-sidebar-focus.js` reads `wrap._evtxFilters = { searchInput,
@@ -1886,11 +1884,11 @@ class EvtxRenderer {
       : '';
 
     // Timestamp lives in column 0 (see the `columns` array above). Passing
-    // `timeColumn: 0` opts this grid into the Wave-E timeline strip and
-    // skips the auto-sniff heuristic. `onFilterRecompute` tells the grid
-    // to re-run EVTX's external filter (search / EID / Level) whenever the
-    // user moves the timeline window — see `applyFilters` below, which
-    // intersects `viewer._timeWindow` via `viewer._dataIdxInTimeWindow()`.
+    // `timeColumn: 0` opts this grid into the timeline strip and skips the
+    // auto-sniff heuristic. `onFilterRecompute` tells the grid to re-run
+    // EVTX's external filter (search / EID / Level) whenever the user moves
+    // the timeline window — see `applyFilters` below, which intersects
+    // `viewer._timeWindow` via `viewer._dataIdxInTimeWindow()`.
     const viewer = new GridViewer({
       columns,
       // Explicit column-kind hints so the width algorithm knows which
@@ -1947,8 +1945,8 @@ class EvtxRenderer {
     // ── Wire the three EVTX-specific filter inputs onto the shared
     //    GridViewer filtered-index store. Sidebar + `_evtxFilters`
     //    back-compat surface both drive off `viewer.state.filteredIndices`.
-    // Wave-E: EVTX owns the filter pipeline, so the timeline window must
-    // be intersected here — GridViewer's own `_applyFilter()` is bypassed
+    // EVTX owns the filter pipeline, so the timeline window must be
+    // intersected here — GridViewer's own `_applyFilter()` is bypassed
     // when `onFilterRecompute` is supplied. When neither the inputs nor
     // the timeline window are active, keep `filteredIndices = null` so
     // the grid's "no filter" fast path can skip the per-row check.
@@ -1973,11 +1971,10 @@ class EvtxRenderer {
       }
       scr.scrollTop = 0;
       viewer._forceFullRender();
-      // Wave-E: EVTX bypasses GridViewer's `_applyFilter()` (we supply
-      // `onFilterRecompute`), so the bucket-refresh hook embedded there
-      // never fires. Call it directly so histogram counts track the
-      // filtered set — including the "clear all" path that sets
-      // `filteredIndices = null`.
+      // EVTX bypasses GridViewer's `_applyFilter()` (we supply
+      // `onFilterRecompute`), so the bucket-refresh hook there never fires.
+      // Call it directly so histogram counts track the filtered set —
+      // including the "clear all" path that sets `filteredIndices = null`.
       viewer._refreshTimelineBuckets();
       const shown = viewer.state.filteredIndices
         ? viewer.state.filteredIndices.length

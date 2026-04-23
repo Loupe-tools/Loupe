@@ -2,24 +2,20 @@
 // ════════════════════════════════════════════════════════════════════════════
 // csv-renderer.js — thin CSV/TSV renderer on top of GridViewer.
 //
-// Wave-A rewrite: all virtual-scrolling, highlight state, drawer, filter,
-// IOC/YARA navigation and lifecycle now live in GridViewer (see
-// src/renderers/grid-viewer.js). This file's only remaining jobs are:
+// Virtual-scrolling, highlight state, drawer, filter, IOC/YARA navigation and
+// lifecycle all live in GridViewer (see src/renderers/grid-viewer.js). This
+// file's remaining jobs are:
 //
 //   1. Delimiter auto-detection (`,  ;  \t  |`) with quote-awareness.
 //   2. Parsing CSV/TSV text into rows + byte offsets. For large files
 //      (>2 MB) the parse runs in cooperative chunks so the main thread
 //      stays responsive: GridViewer paints the first ~1 k rows within
 //      200 ms and the rest streams in via `appendRows()`.
-//   3. Formula-injection security analysis (CWE-1236) — preserved
-//      verbatim from the old renderer.
+//   3. Formula-injection security analysis (CWE-1236).
 //
-// The class is still named `CsvRenderer` and exposes the same surface
-// (`render(text, fileName) → HTMLElement`, `analyzeForSecurity(text)`) so
-// `src/app/app-load.js` keeps working without change. The returned root
-// element still carries `._rawText` + `._csvFilters` so the sidebar
-// click-to-focus engine in `app-sidebar-focus.js` keeps working without
-// change either — that back-compat surface is installed by GridViewer.
+// Exposes `render(text, fileName) → HTMLElement` and `analyzeForSecurity(text)`.
+// The returned root element carries `._rawText` + `._csvFilters` so the sidebar
+// click-to-focus engine in `app-sidebar-focus.js` works.
 // ════════════════════════════════════════════════════════════════════════════
 class CsvRenderer {
   constructor() {
@@ -159,8 +155,7 @@ class CsvRenderer {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  Auto-detect delimiter by counting unquoted occurrences in the first
-  //  line. Unchanged from the pre-Wave-A renderer.
+  //  Auto-detect delimiter by counting unquoted occurrences in the first line.
   // ═══════════════════════════════════════════════════════════════════════
   _delim(text) {
     let nl = text.indexOf('\n');
@@ -323,8 +318,6 @@ class CsvRenderer {
   //  `powershell`), MSEXCEL/MSExcel DDE channels, or an external
   //  HYPERLINK/WEBSERVICE pointing outside the workbook — we escalate to
   //  critical, because the cell is actively weaponised, not just suspicious.
-  //
-  //  Preserved verbatim from the pre-Wave-A renderer.
   // ═══════════════════════════════════════════════════════════════════════
   analyzeForSecurity(text) {
     const f = { risk: 'low', hasMacros: false, macroSize: 0, macroHash: '', autoExec: [], modules: [], externalRefs: [], metadata: {} };
