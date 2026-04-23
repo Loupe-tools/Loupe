@@ -916,7 +916,16 @@ Object.assign(App.prototype, {
     this._themeId = theme.id;
 
     try { localStorage.setItem(_THEME_PREF_KEY, theme.id); } catch (_) { /* storage blocked */ }
+
+    // Retint the landing-surface background canvas to match. The module
+    // rebuilds its engine on every call (never reuses across themes) so
+    // there's zero state bleed between e.g. mocha hearts and solarized
+    // phyllotaxis. Guarded because `BgCanvas` may not be loaded yet on
+    // the very first _setTheme() call during _initTheme() — that's fine,
+    // BgCanvas.init() bootstraps from the theme class on <body> itself.
+    try { if (window.BgCanvas) window.BgCanvas.setTheme(theme.id); } catch (_) { /* background is cosmetic */ }
   },
+
 
   // Apply the persisted theme on startup. Call this in App.init().
   //

@@ -320,6 +320,15 @@ JS_FILES = [
     # name, and BEFORE app-core.js so `App._loadFile` can call
     # `RendererRegistry.detect()` / `RendererRegistry.makeContext()`.
     'src/renderer-registry.js',
+    # app-bg.js — subtle per-theme animated landing-surface background
+    # (plasma drift on light/dark, floating hearts on mocha, floating
+    # kittens on latte, golden-ratio phyllotaxis spiral on solarized,
+    # nothing at all on midnight / prefers-reduced-motion). Exposes
+    # `window.BgCanvas = { init, setTheme }`. Must load BEFORE
+    # app-core.js (which calls `BgCanvas.init()` inside `App.init()`)
+    # and BEFORE app-ui.js (which calls `BgCanvas.setTheme(id)` from
+    # `_setTheme()` after applying the body class).
+    'src/app/app-bg.js',
     'src/app/app-core.js',
 
     # app-timeline.js — dedicated perf-focused CSV/TSV/EVTX timeline mode.
