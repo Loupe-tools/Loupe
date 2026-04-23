@@ -154,7 +154,12 @@ subtly misbehave.
   `app-settings.js` must load **after** both `app-ui.js` and
   `app-copy-analysis.js` because it reuses the `THEMES` array from
   `app-ui.js` and overrides the unbudgeted `_copyAnalysis` call path with
-  the configured Summary-budget step. `app-timeline.js` loads immediately
+  the configured Summary-budget step. `app-bg.js` must load **before**
+  `app-core.js` and `app-ui.js` because it exposes the global
+  `window.BgCanvas` singleton that `App.init()` and `_setTheme()` both
+  invoke — the two call sites are guarded (`if (window.BgCanvas) …`) so
+  the cosmetic background is optional, but the load order keeps that
+  guard a no-op in production. `app-timeline.js` loads immediately
   after `app-core.js` and owns the **only** viewer path for CSV / TSV /
   EVTX files — there is no user-visible mode toggle, no `T` keybind, no
   📈 toolbar button, and no autoswitch threshold. When any CSV / TSV /
@@ -1000,14 +1005,30 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_timeline_chart_h` | string (integer) | `.tl-chart-resize` grab-bar along the bottom edge of the stacked-bar histogram | integer pixel height, clamped on read to the chart's min/max (120 – 600 px) | Height of the Timeline histogram pane. Default is deliberately compact (220 px) so the events grid + top-values cards are visible on first paint; analysts who want more bar resolution drag it down and the preference sticks across reloads. |
 | `loupe_timeline_bucket` | string | Timeline toolbar bucket picker | one of the supported bucket sizes (`1m` / `5m` / `1h` / `1d` / …) | Chart / scrubber bucket resolution for the stacked-bar histogram. Default is picked automatically from the file's time span on first load if the saved value is missing or invalid. |
 | `loupe_timeline_sections` | JSON object | section-chevron clicks on collapsible `.tl-section` blocks | `{ chart: bool, grid: bool, columns: bool, pivot: bool, … }` — each flag = `true` when collapsed | Collapsed / expanded state of every top-level Timeline section (histogram, events grid, top-values cards, detections, entities, pivot). Lets analysts hide sections they don't use (e.g. pivot starts collapsed). Unknown / unparseable value → all expanded. |
-| `loupe_timeline_topvals_size` | string | "Cards: S / M / L" button on the Timeline toolbar | `"S"` / `"M"` (default) / `"L"` | Zoom level for the flex-wrap per-column top-value cards. Drives `--tl-card-min-w` so cards flow to 1-, 2-, 3-up depending on viewport width. |
 | `loupe_timeline_card_widths` | JSON object | left / right edge resize handles on each `.tl-col-card` and `.tl-entity-group` | `{ "<fileKey>": { "<key>": { span: N } \| pixelWidth, … } }` — file key = `name|size|lastModified`; `<key>` is a column name for top-value cards or `entity:<IOC_TYPE>` for entity cards; `span` is a `grid-column: span N` integer; legacy integer pixel values are migrated to a span on read | Per-file manual width overrides for the top-value and entity cards, expressed as an integer `grid-column: span N` so the override cooperates with the `.tl-columns` / `.tl-entities-wrap` CSS Grid `auto-fill minmax()` layout. Scoped to a file so resizing a "User" card in one CSV doesn't re-size a same-named column in an unrelated one. |
+| `loupe_timeline_card_order` | JSON object | drag-to-reorder top-value card headers | `{ "<fileKey>": ["colName1", "colName2", …] }` | Per-file column-name ordering for the 🏆 Top values cards. Columns not present in the saved array are appended at the end. Deleted when empty. |
 | `loupe_timeline_regex_extracts` | JSON object | ƒx Extract dialog → Regex / Auto tabs | `{ "<fileKey>": [{ name, col, pattern, flags, group, kind }, …] }` | Per-file list of extracted virtual columns created via the Regex tab or Auto (URL / hostname) scan. Re-applied automatically next time the same file is loaded so long-form analyses survive a reload. JSON-path extractions are not persisted (they depend on in-memory parsed values). |
 | `loupe_timeline_pivot` | JSON object | Pivot section ▸ Rows / Columns / Aggregate / Build | `{ rows: colIdx, cols: colIdx, aggOp: "count" \| "distinct" \| "sum", aggCol: colIdx }` | Last-used pivot spec. Re-populates the selectors on mount so "Build" reconstructs the same pivot without re-picking columns. Col indices can reference extracted virtual columns; if they no longer exist the selectors silently fall back to `-1`. |
 | `loupe_timeline_query` | string | Timeline DSL query-editor textbox above the chip bar | arbitrary DSL query string (see the Timeline query-language grammar below); empty string = no query | Last-used query in the Timeline viewer's DSL query editor. Re-populated on mount so a saved filter survives a reload; an unparseable value is loaded verbatim but quietly falls back to "no query" until fixed. |
 | `loupe_timeline_query_history` | JSON array | ⌄ history button on the Timeline DSL query editor | array of recent non-empty query strings, most recent first, capped at ~20 entries | Recent query history for the editor's ↑ / ↓ history menu. A committed query is pushed to the front and de-duplicated so the dropdown stays usable over long sessions without ballooning localStorage. |
 | `loupe_timeline_sus_marks` | JSON object | right-click a cell → 🚩 Mark suspicious · `＋ Add Sus` chip-strip button | `{ "<fileKey>": [{ colName, val }, …] }` — file key = `name\|size\|lastModified` | Parallel 🚩 sus-mark list persisted **by column NAME** (not index) so an extracted column that rebuilds under a different index on reload still re-hydrates its marks. Sus marks **tint** matching rows red but do **not** filter them — row filtering is exclusively owned by the DSL query bar. Resolved to a live `colIdx` at filter-time via `_susMarksResolved()`; marks whose column has disappeared stay persisted and re-attach if the column returns. |
+| `loupe_hosted_dismissed` | string | `_checkHostedMode()` in `src/app/app-core.js` | `"1"` when dismissed, absent otherwise | Controls the floating hosted-mode privacy bar shown when Loupe is served via HTTP/HTTPS instead of `file://`. Once the user clicks ✕, the bar never reappears. |
 
+**Timeline ↺ Reset wipes every Timeline preference.** The Reset button in
+the Timeline toolbar (`TimelineView._reset()` in `src/app/app-timeline.js`)
+deliberately clears **every** `loupe_timeline_*` key above — not only the
+one matching the current file — plus `loupe_grid_drawer_w` and every
+`loupe_grid_colW_tl-grid-inner_*` override written by the embedded
+GridViewer. Scrubber window, bucket, histogram / grid heights, section
+collapse state, pivot spec, regex extracts, card widths / order, query
+text + history, and sus marks all return to first-run defaults in one
+click. In-memory `_gridH` / `_chartH` / `_bucketId` / `_sections` /
+`_cardWidths` / `_cardOrder` / `_queryEditor._history` are also reset,
+the corresponding `--tl-grid-h` / `--tl-chart-h` CSS custom properties
+on `_root` are cleared, and the GridViewer's `_userColWidths` Map is
+emptied so the kind-aware auto-sizer repaints from scratch. Any new
+`loupe_timeline_*` key added to the table above is covered by the same
+prefix sweep and needs no additional wiring in `_reset()`.
 
 **Adding a new key**
 
@@ -1251,9 +1272,27 @@ renderer-chrome surface. Spot-check:
 4. **Update the FOUC bootstrap** — add the new id to the `THEME_IDS`
    array in the inline `<script>` in `scripts/build.py`. If the theme is
    dark, also add its id to the `DARK_THEMES` map.
-5. **Rebuild and test** — `python scripts/build.py`, then open
+5. **(Optional) pick a backdrop engine** — `src/app/app-bg.js` paints a
+   subtle per-theme animated backdrop on the landing drop-zone. Map your
+   new id in the top-of-file `THEME_ENGINES` constant to one of the
+   built-in engines — `moire` (two slowly-rotating families of thin
+   parallel lines producing a drifting interference pattern, the Light
+   baseline), `truchet` (quarter-circle Truchet tile grid with occasional
+   eased per-tile flips, the Dark baseline), `cuteHearts` (floating
+   hearts, Mocha), `cuteKitties` (floating kitten silhouettes, Latte),
+   `penrose` (aperiodic P3 rhombic tiling built by recursive subdivision,
+   with slow global rotation and per-tile alpha breathing, the Solarized
+   baseline) — or to `null` to render nothing at all (Midnight's OLED-
+   black stays OLED-black). Any id not listed in `THEME_ENGINES` falls
+   through to the `moire` baseline at runtime.
+   If you also add a new engine, extend the `PALETTES` map with a
+   hard-coded RGB tuple per theme so the animation never reads
+   computed-style vars mid-frame. The backdrop is always suppressed by
+   `prefers-reduced-motion` and whenever `#drop-zone` carries
+   `.has-document` — no wiring required per theme.
+6. **Rebuild and test** — `python scripts/build.py`, then open
    `docs/index.html` and click through every tile in ⚙ Settings → Theme.
-6. **Regenerate the code map** — `python scripts/generate_codemap.py`.
+7. **Regenerate the code map** — `python scripts/generate_codemap.py`.
 
 **Docs to update:** `FEATURES.md` if the theme is added to the picker
 row; `README.md` only if it is promoted to the compact theme list.
