@@ -88,7 +88,21 @@ class GridViewer {
     this._rowTitleFn      = typeof opts.rowTitle === 'function' ? opts.rowTitle : null;
     this._cellTextFn      = typeof opts.cellText === 'function' ? opts.cellText : null;
     this._cellClassFn     = typeof opts.cellClass === 'function' ? opts.cellClass : null;
+    // Optional per-cell title-attribute callback. When it returns a non-null
+    // string, the value replaces the default tooltip on the `<td>` (which
+    // normally only kicks in for cells whose text is longer than 40 chars).
+    // Timeline Mode uses this to attach a multi-line Event-ID → human name +
+    // MITRE ATT&CK tooltip to the EVTX "Event ID" column.
+    this._cellTitleFn     = typeof opts.cellTitle === 'function' ? opts.cellTitle : null;
+    // Optional per-drawer-row augment hook. Called AFTER the default drawer
+    // key/value row has been populated, with the key + value DOM elements so
+    // callers can append decorative pills (e.g. an Event-ID summary + MITRE
+    // pill) and/or stamp a tooltip. Receives
+    //   detailAugment(dataIdx, colIdx, value, { keyEl, valEl, colName })
+    // Never called when a custom `detailBuilder` is supplied.
+    this._detailAugmentFn = typeof opts.detailAugment === 'function' ? opts.detailAugment : null;
     // Optional per-drawer-cell class callback. Invoked while building the
+
     // default key/value drawer pane — returns a space-separated class string
     // (or empty/null) that is added to BOTH the `.csv-detail-key` and
     // `.csv-detail-val` elements for that column. Used by Timeline mode to
@@ -208,7 +222,15 @@ class GridViewer {
     this.HEADER_EXTRA_PX = 24;   // extra px needed in header for chevron + sort indicator
     this.ROWNUM_COL_W = 64;
     this.DRAWER_MIN_W = 280;
-    this.DRAWER_MAX_W = 900;
+    // Upper bound for the drawer width. Computed dynamically from the
+    // current viewport so the analyst can swell the drawer out to
+    // essentially the whole window on wide screens, while always leaving
+    // at least `DRAWER_MIN_GRID_W` px for the grid body itself so the
+    // grid can never become un-closable / un-usable. Recomputed on
+    // every drag tick + on load-from-storage so a resized window picks
+    // up the new cap automatically.
+    this.DRAWER_MIN_GRID_W = 320;
+
 
     // Column-kind + manual-resize wiring (see _recomputeColumnWidths /
     // _classifyColumns). Callers that know their schema up-front (EVTX,
@@ -416,6 +438,12 @@ class GridViewer {
     drawer.innerHTML = `
       <div class="grid-drawer-topbar">
         <span class="grid-drawer-title">Row details</span>
+        <div class="grid-drawer-search-wrap">
+          <input type="search" class="grid-drawer-search" placeholder="Search in row…" aria-label="Search detail pane" spellcheck="false" autocomplete="off" />
+          <span class="grid-drawer-search-count" aria-live="polite"></span>
+          <button class="grid-drawer-search-prev" title="Previous match (Shift+Enter)" aria-label="Previous match" tabindex="-1">▲</button>
+          <button class="grid-drawer-search-next" title="Next match (Enter)" aria-label="Next match" tabindex="-1">▼</button>
+        </div>
         <button class="grid-drawer-close" title="Close (Esc)" aria-label="Close detail pane">✕</button>
       </div>
       <div class="grid-drawer-body"></div>
@@ -1163,6 +1191,9 @@ class GridViewer {
     // Drawer handle drag to resize
     this._wireDrawerResize();
 
+    // Drawer in-pane search (smooth-scrolls + highlights).
+    this._wireDrawerSearch();
+
     // Malformed-row ribbon — Next and Filter buttons.
     this._malformedNextBtn.addEventListener('click', () => this._jumpToNextMalformed());
     this._malformedFilterBtn.addEventListener('click', () => this._toggleMalformedFilter());
@@ -1216,12 +1247,23 @@ class GridViewer {
   }
 
 
+  _drawerMaxW() {
+    // Upper bound recomputed per-call so a viewport resize takes effect on
+    // the very next drag tick. `window.innerWidth` is the cheapest proxy —
+    // the grid host may be narrower (e.g. inside Timeline Mode's layout)
+    // but the flex container caps the rendered width anyway, and erring
+    // on the permissive side lets the user drag the drawer as wide as
+    // they want while still leaving `DRAWER_MIN_GRID_W` px for the grid.
+    const vw = (window && window.innerWidth) || 1200;
+    return Math.max(900, vw - this.DRAWER_MIN_GRID_W);
+  }
+
   _wireDrawerResize() {
     let startX = 0, startW = 0, dragging = false;
     const onMove = (e) => {
       if (!dragging) return;
       const dx = startX - e.clientX;
-      const newW = Math.max(this.DRAWER_MIN_W, Math.min(this.DRAWER_MAX_W, startW + dx));
+      const newW = Math.max(this.DRAWER_MIN_W, Math.min(this._drawerMaxW(), startW + dx));
       this.state.drawer.width = newW;
       this._drawer.style.flexBasis = newW + 'px';
     };
@@ -1247,13 +1289,202 @@ class GridViewer {
   _loadDrawerWidth() {
     try {
       const v = parseInt(localStorage.getItem('loupe_grid_drawer_w'), 10);
-      if (Number.isFinite(v)) return Math.max(280, Math.min(900, v));
+      if (Number.isFinite(v)) return Math.max(this.DRAWER_MIN_W, Math.min(this._drawerMaxW(), v));
     } catch (_) { /* ignore */ }
     return 420;
   }
   _saveDrawerWidth(w) {
     try { localStorage.setItem('loupe_grid_drawer_w', String(w)); } catch (_) { /* ignore */ }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  DRAWER IN-PANE SEARCH
+  //
+  //  Lightweight local find for the detail drawer — the full row can be
+  //  huge (EVTX rendered-message, JSON trees hundreds of lines deep) and
+  //  the grid's row filter is no help once you're *inside* one row's
+  //  detail. The search walks the drawer-body's text nodes, wraps every
+  //  hit in a `<mark class="grid-drawer-hit">` span, and smooth-scrolls
+  //  the current hit into view. Enter / Shift+Enter step through hits;
+  //  Esc clears the term; Ctrl/Cmd+F focuses the input when any element
+  //  inside the drawer has focus.
+  // ═══════════════════════════════════════════════════════════════════════════
+  _wireDrawerSearch() {
+    const input = this._drawer.querySelector('.grid-drawer-search');
+    if (!input) return;
+    this._drawerSearchInput = input;
+    this._drawerSearchCount = this._drawer.querySelector('.grid-drawer-search-count');
+    const nextBtn = this._drawer.querySelector('.grid-drawer-search-next');
+    const prevBtn = this._drawer.querySelector('.grid-drawer-search-prev');
+    this._drawerSearchTerm = '';
+    this._drawerSearchHits = [];
+    this._drawerSearchIdx  = -1;
+
+    let debounceT = null;
+    const scheduleApply = () => {
+      if (debounceT) clearTimeout(debounceT);
+      debounceT = setTimeout(() => {
+        debounceT = null;
+        this._applyDrawerSearch(input.value);
+      }, 80);
+    };
+
+    input.addEventListener('input', scheduleApply);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (debounceT) { clearTimeout(debounceT); debounceT = null; this._applyDrawerSearch(input.value); }
+        this._stepDrawerSearch(e.shiftKey ? -1 : +1);
+      } else if (e.key === 'Escape') {
+        if (input.value) {
+          input.value = '';
+          this._applyDrawerSearch('');
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    });
+    if (nextBtn) nextBtn.addEventListener('click', (e) => { e.preventDefault(); this._stepDrawerSearch(+1); });
+    if (prevBtn) prevBtn.addEventListener('click', (e) => { e.preventDefault(); this._stepDrawerSearch(-1); });
+
+    // Ctrl/Cmd+F while focus is anywhere inside the drawer → focus the
+    // search input. Capture phase so it beats the browser's own find
+    // dialog when the drawer has focus.
+    this._drawer.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        e.stopPropagation();
+        input.focus();
+        input.select();
+      }
+    });
+  }
+
+  /** Apply the current search term to the drawer body. Clears any
+   *  previous hit spans, then walks text nodes under `.grid-drawer-body`
+   *  and wraps each case-insensitive substring match. Collapses hits
+   *  longer than 400 per call as a sanity cap so a 1-char term in a
+   *  30 KB rendered-message field doesn't DOM-bomb the tab. */
+  _applyDrawerSearch(rawTerm) {
+    const term = (rawTerm || '').trim();
+    this._drawerSearchTerm = term;
+    this._clearDrawerSearchHits();
+    if (!term) {
+      this._drawerSearchHits = [];
+      this._drawerSearchIdx = -1;
+      this._updateDrawerSearchCount();
+      return;
+    }
+    const hits = [];
+    const MAX_HITS = 400;
+    const needle = term.toLowerCase();
+    const nLen = needle.length;
+    const body = this._drawerBody;
+    if (!body) return;
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        // Skip text inside our own hit spans (would double-wrap on
+        // repeat apply) and inside hidden subtrees.
+        if (!n.nodeValue || !n.nodeValue.length) return NodeFilter.FILTER_REJECT;
+        const p = n.parentNode;
+        if (p && p.classList && p.classList.contains('grid-drawer-hit')) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const pending = [];
+    let node;
+    while ((node = walker.nextNode())) pending.push(node);
+
+    for (const textNode of pending) {
+      if (hits.length >= MAX_HITS) break;
+      const text = textNode.nodeValue;
+      const lc = text.toLowerCase();
+      let i = lc.indexOf(needle);
+      if (i === -1) continue;
+      const frag = document.createDocumentFragment();
+      let pos = 0;
+      while (i !== -1 && hits.length < MAX_HITS) {
+        if (i > pos) frag.appendChild(document.createTextNode(text.slice(pos, i)));
+        const mk = document.createElement('span');
+        mk.className = 'grid-drawer-hit';
+        mk.textContent = text.slice(i, i + nLen);
+        frag.appendChild(mk);
+        hits.push(mk);
+        pos = i + nLen;
+        i = lc.indexOf(needle, pos);
+      }
+      if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
+      textNode.parentNode.replaceChild(frag, textNode);
+    }
+
+    this._drawerSearchHits = hits;
+    this._drawerSearchIdx = hits.length ? 0 : -1;
+    this._focusDrawerSearchHit(false);
+    this._updateDrawerSearchCount();
+  }
+
+  _stepDrawerSearch(dir) {
+    const hits = this._drawerSearchHits;
+    if (!hits || !hits.length) return;
+    let idx = this._drawerSearchIdx + dir;
+    if (idx < 0) idx = hits.length - 1;
+    if (idx >= hits.length) idx = 0;
+    this._drawerSearchIdx = idx;
+    this._focusDrawerSearchHit(true);
+    this._updateDrawerSearchCount();
+  }
+
+  _focusDrawerSearchHit(smooth) {
+    const hits = this._drawerSearchHits;
+    if (!hits || !hits.length) return;
+    for (const h of hits) h.classList.remove('grid-drawer-hit-current');
+    const cur = hits[this._drawerSearchIdx];
+    if (!cur) return;
+    cur.classList.add('grid-drawer-hit-current');
+    try {
+      cur.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center', inline: 'nearest' });
+    } catch (_) {
+      cur.scrollIntoView();
+    }
+  }
+
+  _clearDrawerSearchHits() {
+    const body = this._drawerBody;
+    if (!body) return;
+    const marks = body.querySelectorAll('.grid-drawer-hit');
+    for (const m of marks) {
+      const parent = m.parentNode;
+      if (!parent) continue;
+      parent.replaceChild(document.createTextNode(m.textContent), m);
+      parent.normalize();
+    }
+  }
+
+  _updateDrawerSearchCount() {
+    const el = this._drawerSearchCount;
+    if (!el) return;
+    const n = this._drawerSearchHits ? this._drawerSearchHits.length : 0;
+    if (!this._drawerSearchTerm) { el.textContent = ''; return; }
+    if (!n) { el.textContent = 'No matches'; return; }
+    el.textContent = `${this._drawerSearchIdx + 1} / ${n.toLocaleString()}`;
+  }
+
+  /** Re-apply the current drawer-search term after the drawer body has
+   *  been rebuilt (row change, filter rerun, highlight refresh). Called
+   *  from `_renderDrawerBody` so a user search survives navigating
+   *  between rows with Arrow Up/Down. */
+  _reapplyDrawerSearch() {
+    if (this._drawerSearchTerm) {
+      // Deferred by a microtask so any highlight wrapping installed by
+      // `_wrapIocInPane` / `_wrapYaraInPane` is already in place.
+      Promise.resolve().then(() => this._applyDrawerSearch(this._drawerSearchTerm));
+    } else {
+      this._drawerSearchHits = [];
+      this._drawerSearchIdx = -1;
+      this._updateDrawerSearchCount();
+    }
+  }
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  RENDER CORE (the whole point of the rewrite)
@@ -1381,6 +1612,15 @@ class GridViewer {
       const truncated = asStr.length > 4000 ? asStr.substring(0, 4000) + '…' : asStr;
       td.textContent = truncated;
       if (asStr.length > 40) td.title = asStr.length > 4000 ? asStr.substring(0, 4000) + '…' : asStr;
+      // Optional format-specific tooltip override. Timeline Mode's EVTX
+      // view uses this to stamp the "Event ID → human summary + MITRE
+      // ATT&CK" multi-line tooltip onto the Event ID column.
+      if (this._cellTitleFn) {
+        try {
+          const t = this._cellTitleFn(dataIdx, c, rawCell);
+          if (t != null) td.title = String(t);
+        } catch (_) { /* decorative only */ }
+      }
       // Use the column-level classification (number/id) to decide numeric
       // styling instead of per-cell sniffing.  This prevents mixed-content
       // columns (e.g. browser-history Title "47643_babana_02.jpg …") from
@@ -1622,6 +1862,14 @@ class GridViewer {
         }
       }
       grid.appendChild(vEl);
+      // Optional format-specific drawer-row augment. Runs AFTER the
+      // default key/value row is populated, so callers can append pill
+      // badges or tweak tooltips without re-implementing the whole pane.
+      if (this._detailAugmentFn) {
+        try {
+          this._detailAugmentFn(dataIdx, i, val, { keyEl: kEl, valEl: vEl, colName: key });
+        } catch (_) { /* decorative only */ }
+      }
     }
 
     if (!hasContent) {
@@ -3240,13 +3488,29 @@ class GridViewer {
     return d.toISOString().slice(0, 10);
   }
 
-  _paintTimelineWindow() {
+  _fmtTimeDuration(ms) {
+    if (!Number.isFinite(ms) || ms <= 0) return '';
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}s`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    const mr = m % 60;
+    if (h < 24) return mr ? `${h}h ${mr}m` : `${h}h`;
+    const d = Math.floor(h / 24);
+    const hr = h % 24;
+    return hr ? `${d}d ${hr}h` : `${d}d`;
+  }
+
+  _paintTimelineWindow(opts) {
+    const preview = !!(opts && opts.preview);
     if (!this._timelineWindowEl || !this._timeRange) return;
     if (!this._timeWindow) {
       this._timelineWindowEl.classList.add('hidden');
       this._timelineClearBtn.classList.add('hidden');
       if (this._timelineWindowLbl) {
         this._timelineWindowLbl.classList.add('hidden');
+        this._timelineWindowLbl.classList.remove('grid-timeline-window-label--preview');
         this._timelineWindowLbl.textContent = '';
       }
       return;
@@ -3259,13 +3523,18 @@ class GridViewer {
     this._timelineWindowEl.style.width = Math.max(0.5, r - l) + '%';
     this._timelineWindowEl.classList.remove('hidden');
     this._timelineClearBtn.classList.remove('hidden');
+    const dur = this._fmtTimeDuration(this._timeWindow.max - this._timeWindow.min);
     const rangeStr =
       `${this._fmtTimeLabel(this._timeWindow.min)} → ${this._fmtTimeLabel(this._timeWindow.max)}`;
+    const labelStr = dur ? `${rangeStr} · ${dur}` : rangeStr;
     this._timelineClearBtn.title = `${rangeStr} ([ ] to step, Esc to clear)`;
     if (this._timelineWindowLbl) {
-      this._timelineWindowLbl.textContent = rangeStr;
-      this._timelineWindowLbl.title = `Selected window · ${rangeStr} · [ ] to step`;
+      this._timelineWindowLbl.textContent = labelStr;
+      this._timelineWindowLbl.title = preview
+        ? `Previewing window · ${labelStr} · release to apply`
+        : `Selected window · ${labelStr} · [ ] to step`;
       this._timelineWindowLbl.classList.remove('hidden');
+      this._timelineWindowLbl.classList.toggle('grid-timeline-window-label--preview', preview);
     }
   }
 
@@ -3322,7 +3591,7 @@ class GridViewer {
           const hi = Math.max(startP, lastP);
           // Preview the window as we drag.
           this._timeWindow = { min: msFromPct(lo), max: msFromPct(hi) };
-          this._paintTimelineWindow();
+          this._paintTimelineWindow({ preview: true });
         }
       };
       const onUp = () => {
