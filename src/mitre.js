@@ -43,6 +43,7 @@
     'T1559':     { name: 'Inter-Process Communication',           tactic: 'execution' },
     'T1559.001': { name: 'Component Object Model',                tactic: 'execution', parent: 'T1559' },
     'T1569.002': { name: 'Service Execution',                     tactic: 'execution', parent: 'T1569' },
+    'T1047':     { name: 'Windows Management Instrumentation',    tactic: 'execution' },
 
     // ── Persistence ───────────────────────────────────────────────────
     'T1053':     { name: 'Scheduled Task/Job',                    tactic: 'persistence' },
@@ -58,12 +59,20 @@
     'T1547':     { name: 'Boot or Logon Autostart Execution',     tactic: 'persistence' },
     'T1547.001': { name: 'Registry Run Keys / Startup Folder',    tactic: 'persistence', parent: 'T1547' },
     'T1547.006': { name: 'Kernel Modules and Extensions',         tactic: 'persistence', parent: 'T1547' },
+    'T1546.003': { name: 'WMI Event Subscription',                tactic: 'persistence', parent: 'T1546' },
+    'T1098':     { name: 'Account Manipulation',                  tactic: 'persistence' },
+    'T1098.007': { name: 'Additional Local or Domain Groups',     tactic: 'persistence', parent: 'T1098' },
+    'T1136':     { name: 'Create Account',                        tactic: 'persistence' },
+    'T1136.001': { name: 'Local Account',                         tactic: 'persistence', parent: 'T1136' },
 
     // ── Privilege Escalation ──────────────────────────────────────────
     'T1134':     { name: 'Access Token Manipulation',             tactic: 'privilege-escalation' },
     'T1134.001': { name: 'Token Impersonation/Theft',             tactic: 'privilege-escalation', parent: 'T1134' },
     'T1548':     { name: 'Abuse Elevation Control Mechanism',     tactic: 'privilege-escalation' },
     'T1548.002': { name: 'Bypass UAC',                            tactic: 'privilege-escalation', parent: 'T1548' },
+    'T1078':     { name: 'Valid Accounts',                        tactic: 'privilege-escalation,defense-evasion' },
+    'T1078.002': { name: 'Domain Accounts',                       tactic: 'privilege-escalation', parent: 'T1078' },
+    'T1078.003': { name: 'Local Accounts',                        tactic: 'privilege-escalation', parent: 'T1078' },
 
     // ── Defense Evasion ───────────────────────────────────────────────
     'T1027':     { name: 'Obfuscated Files or Information',       tactic: 'defense-evasion' },
@@ -79,7 +88,9 @@
     'T1055.008': { name: 'ptrace System Calls',                   tactic: 'defense-evasion', parent: 'T1055' },
     'T1055.012': { name: 'Process Hollowing',                     tactic: 'defense-evasion', parent: 'T1055' },
     'T1070':     { name: 'Indicator Removal',                     tactic: 'defense-evasion' },
+    'T1070.001': { name: 'Clear Windows Event Logs',              tactic: 'defense-evasion', parent: 'T1070' },
     'T1070.004': { name: 'File Deletion',                         tactic: 'defense-evasion', parent: 'T1070' },
+    'T1070.006': { name: 'Timestomp',                             tactic: 'defense-evasion', parent: 'T1070' },
     'T1112':     { name: 'Modify Registry',                       tactic: 'defense-evasion' },
     'T1140':     { name: 'Deobfuscate/Decode Files',              tactic: 'defense-evasion' },
     'T1218':     { name: 'System Binary Proxy Execution',         tactic: 'defense-evasion' },
@@ -91,8 +102,12 @@
     'T1553.002': { name: 'Code Signing',                          tactic: 'defense-evasion', parent: 'T1553' },
     'T1562':     { name: 'Impair Defenses',                       tactic: 'defense-evasion' },
     'T1562.001': { name: 'Disable or Modify Tools',               tactic: 'defense-evasion', parent: 'T1562' },
+    'T1562.002': { name: 'Disable Windows Event Logging',         tactic: 'defense-evasion', parent: 'T1562' },
+    'T1562.004': { name: 'Disable or Modify System Firewall',     tactic: 'defense-evasion', parent: 'T1562' },
     'T1562.006': { name: 'Indicator Blocking (ETW Patching)',     tactic: 'defense-evasion', parent: 'T1562' },
     'T1564':     { name: 'Hide Artifacts',                        tactic: 'defense-evasion' },
+    'T1564.004': { name: 'NTFS File Attributes / ADS',            tactic: 'defense-evasion', parent: 'T1564' },
+    'T1550':     { name: 'Use Alternate Authentication Material', tactic: 'defense-evasion' },
     'T1574':     { name: 'Hijack Execution Flow',                 tactic: 'defense-evasion,privilege-escalation' },
     'T1574.001': { name: 'DLL Search Order Hijacking',            tactic: 'defense-evasion', parent: 'T1574' },
     'T1574.002': { name: 'DLL Side-Loading',                      tactic: 'defense-evasion', parent: 'T1574' },
@@ -101,6 +116,7 @@
     'T1622':     { name: 'Debugger Evasion',                      tactic: 'defense-evasion' },
 
     // ── Credential Access ─────────────────────────────────────────────
+    'T1110':     { name: 'Brute Force',                           tactic: 'credential-access' },
     'T1003':     { name: 'OS Credential Dumping',                 tactic: 'credential-access' },
     'T1003.001': { name: 'LSASS Memory',                          tactic: 'credential-access', parent: 'T1003' },
     'T1003.002': { name: 'Security Account Manager (SAM)',        tactic: 'credential-access', parent: 'T1003' },
@@ -110,7 +126,10 @@
     'T1555':     { name: 'Credentials from Password Stores',      tactic: 'credential-access' },
     'T1555.001': { name: 'Keychain',                              tactic: 'credential-access', parent: 'T1555' },
     'T1555.003': { name: 'Credentials from Web Browsers',         tactic: 'credential-access', parent: 'T1555' },
+    'T1555.004': { name: 'Windows Credential Manager',            tactic: 'credential-access', parent: 'T1555' },
     'T1558':     { name: 'Steal or Forge Kerberos Tickets',       tactic: 'credential-access' },
+    'T1558.003': { name: 'Kerberoasting',                         tactic: 'credential-access', parent: 'T1558' },
+    'T1558.004': { name: 'AS-REP Roasting',                       tactic: 'credential-access', parent: 'T1558' },
 
     // ── Discovery ─────────────────────────────────────────────────────
     'T1057':     { name: 'Process Discovery',                     tactic: 'discovery' },
@@ -118,6 +137,9 @@
     'T1083':     { name: 'File and Directory Discovery',          tactic: 'discovery' },
     'T1518':     { name: 'Software Discovery',                    tactic: 'discovery' },
     'T1518.001': { name: 'Security Software Discovery',           tactic: 'discovery', parent: 'T1518' },
+    'T1087':     { name: 'Account Discovery',                     tactic: 'discovery' },
+    'T1087.001': { name: 'Local Account Discovery',               tactic: 'discovery', parent: 'T1087' },
+    'T1135':     { name: 'Network Share Discovery',               tactic: 'discovery' },
 
     // ── Collection ────────────────────────────────────────────────────
     'T1113':     { name: 'Screen Capture',                        tactic: 'collection' },
@@ -128,6 +150,7 @@
     // ── Command and Control ───────────────────────────────────────────
     'T1071':     { name: 'Application Layer Protocol',            tactic: 'command-and-control' },
     'T1071.001': { name: 'Web Protocols',                         tactic: 'command-and-control', parent: 'T1071' },
+    'T1071.004': { name: 'DNS',                                   tactic: 'command-and-control', parent: 'T1071' },
     'T1090':     { name: 'Proxy',                                 tactic: 'command-and-control' },
     'T1095':     { name: 'Non-Application Layer Protocol',        tactic: 'command-and-control' },
     'T1105':     { name: 'Ingress Tool Transfer',                 tactic: 'command-and-control' },
