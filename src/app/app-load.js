@@ -84,8 +84,8 @@ Object.assign(App.prototype, {
     // `_loadFile` with the flag set so the file degrades into the
     // analyser's hex/strings view instead of dead-ending.
     if (!this._skipTimelineRoute
-        && this._timelineTryHandle
-        && this._timelineTryHandle(file)) return;
+      && this._timelineTryHandle
+      && this._timelineTryHandle(file)) return;
 
     // ── Timeline → Non-Timeline teardown ──────────────────────────────
     // If a Timeline view is currently mounted but the new file isn't a
@@ -116,7 +116,7 @@ Object.assign(App.prototype, {
     // expect a longer load. Only show when this is a fresh load (not a
     // Timeline zero-row fallback, which already toasted).
     if (!prefetchedBuffer
-        && file.size >= RENDER_LIMITS.HUGE_FILE_WARN) {
+      && file.size >= RENDER_LIMITS.HUGE_FILE_WARN) {
       const mb = (file.size / (1024 * 1024)).toFixed(0);
       this._toast(
         `Large file (${mb} MB) — loading may take a moment.`, 'info');
@@ -155,8 +155,8 @@ Object.assign(App.prototype, {
       // / extensionless logs that the fast-path `_timelineTryHandle`
       // couldn't spot from the filename alone.
       if (!this._skipTimelineRoute
-          && this._sniffTimelineContent
-          && !this._isTimelineExt(file)) {
+        && this._sniffTimelineContent
+        && !this._isTimelineExt(file)) {
         const sniffed = this._sniffTimelineContent(buffer);
         if (sniffed) {
           this._setLoading(false);
@@ -440,11 +440,11 @@ Object.assign(App.prototype, {
       return { hex: h(6), label: 'Email Message (RFC 5322)' };
     // EVTX: "ElfFile\0"
     if (bytes[0] === 0x45 && bytes[1] === 0x6C && bytes[2] === 0x66 && bytes[3] === 0x46 &&
-        bytes[4] === 0x69 && bytes[5] === 0x6C && bytes[6] === 0x65 && bytes[7] === 0x00)
+      bytes[4] === 0x69 && bytes[5] === 0x6C && bytes[6] === 0x65 && bytes[7] === 0x00)
       return { hex: h(8), label: 'Windows Event Log (EVTX)' };
     // SQLite: "SQLite format 3\000"
     if (bytes[0] === 0x53 && bytes[1] === 0x51 && bytes[2] === 0x4C && bytes[3] === 0x69 &&
-        bytes[4] === 0x74 && bytes[5] === 0x65 && bytes[6] === 0x20)
+      bytes[4] === 0x74 && bytes[5] === 0x65 && bytes[6] === 0x20)
       return { hex: h(6), label: 'SQLite Database' };
     if (bytes.length > 32768 + 5) {
       const iso = String.fromCharCode(bytes[32769], bytes[32770], bytes[32771], bytes[32772], bytes[32773]);
@@ -455,7 +455,7 @@ Object.assign(App.prototype, {
       return { hex: h(4), label: 'OneNote Document' };
     // Binary plist: "bplist"
     if (bytes.length >= 8 && bytes[0] === 0x62 && bytes[1] === 0x70 && bytes[2] === 0x6C &&
-        bytes[3] === 0x69 && bytes[4] === 0x73 && bytes[5] === 0x74)
+      bytes[3] === 0x69 && bytes[4] === 0x73 && bytes[5] === 0x74)
       return { hex: h(8), label: 'Binary Property List (bplist)' };
     // OpenPGP ASCII armor (text-based: -----BEGIN PGP ...)
     if (head.startsWith('-----BEGIN PGP'))
@@ -467,7 +467,7 @@ Object.assign(App.prototype, {
     // Public-Subkey (0xB9 / 0xCE), Secret-Subkey (0x9D / 0xC7) — followed by a version
     // byte in {3,4,5,6}. Check tight byte patterns to avoid false positives.
     if (bytes.length >= 3 &&
-        [0x99, 0x95, 0xB9, 0x9D, 0xC6, 0xC5, 0xCE, 0xC7].includes(bytes[0])) {
+      [0x99, 0x95, 0xB9, 0x9D, 0xC6, 0xC5, 0xCE, 0xC7].includes(bytes[0])) {
       // For old-format packets (0x9X / 0xBX) the version byte is at offset 3 (after 2-byte length);
       // for new-format (0xCX) it follows the length byte(s). We accept either if we see a plausible version in the first 8 bytes.
       const scan = bytes.subarray(0, Math.min(8, bytes.length));
@@ -530,8 +530,8 @@ Object.assign(App.prototype, {
       this.findings = await r.analyzeForSecurity(buffer, file.name);
       return { docEl: r.render(buffer, file.name) };
     },
-    async xls(file, buffer)  { return this._rendererDispatch.xlsx.call(this, file, buffer); },
-    async ods(file, buffer)  { return this._rendererDispatch.xlsx.call(this, file, buffer); },
+    async xls(file, buffer) { return this._rendererDispatch.xlsx.call(this, file, buffer); },
+    async ods(file, buffer) { return this._rendererDispatch.xlsx.call(this, file, buffer); },
 
     async pptx(file, buffer) {
       const r = new PptxRenderer();
@@ -1439,7 +1439,7 @@ Object.assign(App.prototype, {
     // metadata-enrichment re-renders, archive drill-down, and
     // breadcrumb back-navigation via _navJumpTo — so one hook covers
     // all cases without duplicating state in _loadFile / _clearFile.
-    document.title = 'Loupe — ' + crumbs.map(c => c.name).join(' › ');
+    document.title = crumbs.map(c => c.name).join(' › ') + ' — Loupe';
 
     nav.classList.remove('hidden');
     nav.innerHTML = '';

@@ -59,12 +59,12 @@
   // for belt-and-suspenders. Anything not listed here falls through to the
   // `penroseLight` baseline at call-time.
   const THEME_ENGINES = {
-    light:     'penroseLight',
-    dark:      'networkDark',
-    mocha:     'cuteKitties',
-    latte:     'cuteHearts',
+    light: 'penroseLight',
+    dark: 'networkDark',
+    mocha: 'cuteKitties',
+    latte: 'cuteHearts',
     solarized: 'penrose',
-    midnight:  null,
+    midnight: null,
   };
 
   // Hard-coded RGB tuples per theme. Kept here (not read from computed CSS
@@ -76,7 +76,7 @@
     // paper-white body, resolving into a tiling only on deliberate inspection.
     light: {
       penroseThick: [26, 115, 232],   // Google-blue — carried over from the old moiré
-      penroseThin:  [142, 120, 180],   // Warm lavender — second species contrast
+      penroseThin: [142, 120, 180],   // Warm lavender — second species contrast
     },
     // Network palette for the dark baseline — cool white nodes, accent
     // cyan connection lines. Lower alpha than Solarized because dark
@@ -86,13 +86,13 @@
       lineColor: [120, 200, 255],   // Accent cyan — connections
     },
     mocha: { cute: [[203, 166, 247], [245, 194, 231], [180, 190, 254], [249, 226, 175]] },
-    latte: { cute: [[136, 57, 239], [234, 118, 203], [114, 135, 253], [223, 142, 29]]  },
+    latte: { cute: [[136, 57, 239], [234, 118, 203], [114, 135, 253], [223, 142, 29]] },
     // Penrose P3 rhomb fills / strokes — thick (fat) rhombs in Solarized
     // yellow, thin (skinny) rhombs in Solarized cyan, so the aperiodic
     // tiling is legible as two interleaved tile species.
     solarized: {
       penroseThick: [181, 137, 0],   // Solarized yellow — fat rhombs
-      penroseThin:  [42, 161, 152],  // Solarized cyan   — skinny rhombs
+      penroseThin: [42, 161, 152],  // Solarized cyan   — skinny rhombs
     },
   };
 
@@ -106,7 +106,7 @@
   let _w = 0, _h = 0;
   // Mouse: target is raw event position, _mouseX/Y is lerped for silky feel.
   let _mouseTX = 0, _mouseTY = 0;
-  let _mouseX = 0,  _mouseY = 0;
+  let _mouseX = 0, _mouseY = 0;
   let _hasMouse = false;
   let _state = null;
 
@@ -146,9 +146,9 @@
     _dpr = Math.min(window.devicePixelRatio || 1, dprCap);
     _w = window.innerWidth;
     _h = window.innerHeight;
-    _canvas.width  = Math.round(_w * _dpr);
+    _canvas.width = Math.round(_w * _dpr);
     _canvas.height = Math.round(_h * _dpr);
-    _canvas.style.width  = _w + 'px';
+    _canvas.style.width = _w + 'px';
     _canvas.style.height = _h + 'px';
     _ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
     if (_state && _state.onResize) _state.onResize(_w, _h);
@@ -259,7 +259,7 @@
       const C = [R * Math.cos(a2), R * Math.sin(a2)];
       // Flip every other triangle so shared edges line up correctly.
       if (i % 2 === 0) tris.push([0, [0, 0], B, C]);
-      else             tris.push([0, [0, 0], C, B]);
+      else tris.push([0, [0, 0], C, B]);
     }
     for (let l = 0; l < levels; l++) tris = _subdividePenrose(tris);
 
@@ -338,7 +338,7 @@
   // feel that suits the light theme's paper-white body.
   function _initPenroseLight() {
     const pal = PALETTES.light;
-    const baseAlpha  = 0.045;
+    const baseAlpha = 0.045;
     const strokeAlpha = 0.065;
     // Breathing floor at 0.40 — wider swing than Solarized's 0.55 so the
     // breathing motion is perceptible against the bright background.  The
@@ -400,9 +400,9 @@
     for (const n of nodes) {
       n.x += n.vx * dt;
       n.y += n.vy * dt;
-      if (n.x < 0)  n.x += w;
+      if (n.x < 0) n.x += w;
       else if (n.x > w) n.x -= w;
-      if (n.y < 0)  n.y += h;
+      if (n.y < 0) n.y += h;
       else if (n.y > h) n.y -= h;
     }
 
@@ -444,17 +444,17 @@
   // no cursor interaction. Throttled to ~24 fps like the Penrose engines.
   function _initNetworkDark() {
     const pal = PALETTES.dark;
-    const NODE_COUNT = 45;
+    const NODE_COUNT = 100;
     const SPEED_MIN = 6;
     const SPEED_MAX = 14;
     const cfg = {
-      nodeColor:  pal.nodeColor,
-      lineColor:  pal.lineColor,
+      nodeColor: pal.nodeColor,
+      lineColor: pal.lineColor,
       nodeRadius: 1.8,
-      nodeAlpha:  0.08,
-      lineAlpha:  0.045,
-      lineWidth:  0.6,
-      maxDist:    160,
+      nodeAlpha: 0.1,
+      lineAlpha: 0.06,
+      lineWidth: 0.6,
+      maxDist: 180,
     };
 
     let nodes = [];
@@ -483,7 +483,7 @@
   function _initPenrose() {
     const pal = PALETTES.solarized;
     const isDark = document.body.classList.contains('dark');
-    const baseAlpha  = isDark ? 0.032 : 0.028;
+    const baseAlpha = isDark ? 0.032 : 0.028;
     const strokeAlpha = isDark ? 0.050 : 0.044;
     const breathFloor = 0.55;
     const DISC_SCALE = 0.62;
@@ -622,7 +622,7 @@
     // Ears (two triangles)
     ctx.beginPath();
     ctx.moveTo(-11, -4); ctx.lineTo(-6, -16); ctx.lineTo(-2, -8); ctx.closePath();
-    ctx.moveTo(11, -4);  ctx.lineTo(6, -16);  ctx.lineTo(2, -8);  ctx.closePath();
+    ctx.moveTo(11, -4); ctx.lineTo(6, -16); ctx.lineTo(2, -8); ctx.closePath();
     ctx.fill();
     // Knock out eyes + whiskers for a silhouette with just enough detail.
     ctx.globalCompositeOperation = 'destination-out';
@@ -635,8 +635,8 @@
     ctx.beginPath();
     ctx.moveTo(-12, 5); ctx.lineTo(-4, 5);
     ctx.moveTo(-12, 8); ctx.lineTo(-4, 7);
-    ctx.moveTo(12, 5);  ctx.lineTo(4, 5);
-    ctx.moveTo(12, 8);  ctx.lineTo(4, 7);
+    ctx.moveTo(12, 5); ctx.lineTo(4, 5);
+    ctx.moveTo(12, 8); ctx.lineTo(4, 7);
     ctx.stroke();
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
@@ -680,11 +680,11 @@
     const engineId = THEME_ENGINES.hasOwnProperty(themeId) ? THEME_ENGINES[themeId] : 'penroseLight';
     if (!engineId) return; // e.g. midnight — canvas stays cleared
 
-    if (engineId === 'penroseLight')       _state = _initPenroseLight();
-    else if (engineId === 'networkDark')   _state = _initNetworkDark();
-    else if (engineId === 'penrose')       _state = _initPenrose();
-    else if (engineId === 'cuteHearts')    _state = _initCute('hearts');
-    else if (engineId === 'cuteKitties')   _state = _initCute('kitties');
+    if (engineId === 'penroseLight') _state = _initPenroseLight();
+    else if (engineId === 'networkDark') _state = _initNetworkDark();
+    else if (engineId === 'penrose') _state = _initPenrose();
+    else if (engineId === 'cuteHearts') _state = _initCute('hearts');
+    else if (engineId === 'cuteKitties') _state = _initCute('kitties');
     if (_state) {
       // Seed the smoothed cursor at the centre so the first frame doesn't
       // lurch from (0,0) to the real pointer position.
