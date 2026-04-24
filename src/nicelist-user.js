@@ -151,7 +151,7 @@
   function _saveRaw(blob) {
     const s = JSON.stringify(blob);
     if (s.length > MAX_BLOB_BYTES) {
-      // eslint-disable-next-line no-console
+       
       console.warn('[nicelist-user] refusing to save: blob exceeds 1 MB cap (' + s.length + ' bytes)');
       return false;
     }
@@ -159,7 +159,7 @@
       localStorage.setItem(STORAGE_KEY, s);
       return true;
     } catch (e) {
-      // eslint-disable-next-line no-console
+       
       console.warn('[nicelist-user] save failed:', e && e.message);
       return false;
     }

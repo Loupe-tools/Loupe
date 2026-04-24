@@ -534,8 +534,7 @@ class SevenZRenderer {
         if (cur.length) names.push(this._utf16le(cur));
         for (let i = 0; i < cap && i < names.length; i++) files[i].path = names[i].replace(/\\/g, '/');
       } else if (id === PROP.kMTime) {
-        const external = sub.readByte();
-        const allDefined = external === 0 ? sub.readByte() : 1;
+        sub.readByte(); // external byte — consumed and discarded; re-parsed below
         // Actually the layout is: allDefined (1 byte) THEN external. Let me re-check.
         // Per 7z docs: kMTime sub-record starts with a Times property:
         //   BYTE AllAreDefined

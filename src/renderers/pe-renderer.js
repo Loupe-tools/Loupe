@@ -3293,7 +3293,6 @@ class PeRenderer {
       let riskScore = 0;
 
       // ── File type context ──────────────────────────────────────────
-      const ext = ((fileName || '').split('.').pop() || '').toLowerCase();
       findings.metadata = {
         'Type': pe.coff.isDLL ? 'DLL' : pe.coff.isSystem ? 'Driver' : 'Executable',
         'Architecture': pe.optional.magicStr,
@@ -3454,7 +3453,6 @@ class PeRenderer {
 
       // ── T3.9: Suspicious delay-loaded imports ─────────────────────
       if (pe.delayImports && pe.delayImports.length > 0) {
-        const totalDelayFuncs = pe.delayImports.reduce((s, d) => s + d.functions.length, 0);
         findings.metadata['Delay-Loaded DLLs'] = String(pe.delayImports.length);
         for (const imp of pe.delayImports) {
           for (const fn of imp.functions) {

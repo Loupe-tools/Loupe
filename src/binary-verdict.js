@@ -30,9 +30,6 @@
 (function () {
   'use strict';
 
-  // ── Severity ranking used by capability rollups. Matches mitre.js. ───────
-  const SEV_RANK = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-
   function _countCapabilitiesBySeverity(findings) {
     const out = { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: 0 };
     if (!findings || !Array.isArray(findings.externalRefs)) return out;

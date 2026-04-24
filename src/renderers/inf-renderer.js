@@ -380,7 +380,6 @@ class InfSctRenderer {
     }
 
     // Pattern-level checks
-    const lt = text.toLowerCase();
     if (/runpresetupcommands/i.test(text)) {
       result.warnings.push({ label: 'Command execution: RunPreSetupCommands section present', sev: 'critical' });
     }
@@ -416,7 +415,6 @@ class InfSctRenderer {
   _isSuspiciousInfDirective(key, value, section) {
     const lk = key.toLowerCase();
     const lv = value.toLowerCase();
-    const ls = section.toLowerCase();
 
     // Dangerous directive keys
     const dangerousKeys = [
@@ -511,7 +509,6 @@ class InfSctRenderer {
     }
 
     // Pattern warnings
-    const lt = text.toLowerCase();
     if (/regsvr32/i.test(text)) {
       result.warnings.push({ label: 'Squiblydoo: References regsvr32 (COM registration abuse)', sev: 'critical' });
     }

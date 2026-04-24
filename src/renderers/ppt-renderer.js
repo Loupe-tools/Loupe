@@ -97,7 +97,6 @@ class PptBinaryRenderer {
       }
 
       // Parse VBA if we can find the project
-      const vbaProjBin = cfb.streams.get('_vba_project_cur/vba') || cfb.streams.get('_vba_project_cur');
       if (f.hasMacros) {
         // Try to get raw VBA binary for download
         const rawEntries = [];

@@ -990,7 +990,7 @@ Object.assign(App.prototype, {
       }
     };
     // Expose for external callers that tweak activeChips (delBtn handler).
-    var _renderChipsRef = renderChips;  // eslint-disable-line no-unused-vars
+    var _renderChipsRef = renderChips;   
 
     // ── Suggestion dropdown ─────────────────────────────────────────
     // Built fresh on every input event. Keyboard nav mirrors most IDE

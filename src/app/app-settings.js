@@ -294,7 +294,7 @@ Object.assign(App.prototype, {
       try {
         this._downloadText(json, 'loupe-nicelists.json', 'application/json');
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.warn('[nicelists] download failed:', e);
         this._toast('Download failed');
       }
@@ -354,7 +354,7 @@ Object.assign(App.prototype, {
         this._toast(`Imported ${createdLists} list${plural}${totalEntries ? ` · ${totalEntries} entries` : ''}`);
       }
       if (errors.length) {
-        // eslint-disable-next-line no-console
+         
         console.warn('[nicelists] import errors:', errors);
         if (!createdLists) this._toast(`Import failed: ${errors[0]}`);
       }
@@ -536,7 +536,7 @@ Object.assign(App.prototype, {
       try {
         this._downloadText(json, `loupe-${safeName}.json`, 'application/json');
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.warn('[nicelists] download failed:', e);
         this._toast('Download failed');
       }

@@ -564,9 +564,6 @@ class EncodedContentDetector {
     // Classify the decoded content
     const classification = this._classify(decoded);
 
-    // Check entropy of decoded content
-    const decodedEntropy = this._shannonEntropyBytes(decoded);
-
     // Build decode chain
     const chain = [candidate.type];
 

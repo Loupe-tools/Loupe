@@ -50,13 +50,11 @@ class ImageRenderer {
     const isTiff = (ext === 'tif' || ext === 'tiff' || isTiffMagic) && typeof UTIF !== 'undefined';
 
     let canvasRendered = false;
-    let tiffIfds = null;
     if (isTiff) {
       try {
         const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
         const ifds = UTIF.decode(ab);
         if (ifds && ifds.length) {
-          tiffIfds = ifds;
           UTIF.decodeImage(ab, ifds[0]);
           const rgba = UTIF.toRGBA8(ifds[0]);
           const w = ifds[0].width, h = ifds[0].height;
@@ -209,7 +207,6 @@ class ImageRenderer {
         const chunkLen = (bytes[off] << 24) | (bytes[off + 1] << 16) | (bytes[off + 2] << 8) | bytes[off + 3];
         if (chunkLen < 0 || chunkLen > 0x7FFFFFFF || off + 12 + chunkLen > bytes.length) break;
         const typeBytes = [bytes[off + 4], bytes[off + 5], bytes[off + 6], bytes[off + 7]];
-        const typeName = String.fromCharCode(...typeBytes);
         const dataStart = off + 8;
         const dataEnd = dataStart + chunkLen;
 

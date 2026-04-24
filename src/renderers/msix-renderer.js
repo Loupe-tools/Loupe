@@ -1090,10 +1090,6 @@ class MsixRenderer {
       const els = parent.getElementsByTagNameNS('*', local);
       return els.length ? els[0] : null;
     };
-    const all = (parent, local) => {
-      if (!parent) return [];
-      return Array.from(parent.getElementsByTagNameNS('*', local));
-    };
     const attr = (el, name) => (el && el.getAttribute(name)) || null;
 
     parsed.uri = attr(root, 'Uri');

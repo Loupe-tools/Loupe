@@ -312,19 +312,10 @@ class EvtxRenderer {
 
     // State tracking for element path
     const elemStack = [];
-    let currentAttrName = '';
     let inSystem = false, inEventData = false, inUserData = false;
     let lastDataName = '';
 
     const ctx = { pos: off };
-
-    const readToken = () => {
-      if (ctx.pos >= end) return null;
-      const token = bytes[ctx.pos++];
-      return token;
-    };
-
-    const peekByte = () => ctx.pos < end ? bytes[ctx.pos] : -1;
 
     // Read a BinXml string: uint16 length + utf16le chars + NUL (2 bytes)
     const readBinXmlString = () => {
@@ -334,24 +325,6 @@ class EvtxRenderer {
       const str = this._readUtf16(bytes, ctx.pos, len);
       ctx.pos += len * 2 + 2; // +2 for NUL terminator
       return str;
-    };
-
-    // Read a string from chunk string table reference
-    const readStringRef = () => {
-      if (ctx.pos + 4 > end) return '';
-      const strOff = dv.getUint32(ctx.pos, true); ctx.pos += 4;
-      if (stringTable[strOff]) return stringTable[strOff];
-      // Try reading directly from chunk
-      const absOff = chunkOff + strOff;
-      if (absOff + 8 < bytes.length) {
-        try {
-          const len = dv.getUint16(absOff + 6, true);
-          if (len > 0 && len < 500 && absOff + 8 + len * 2 <= bytes.length) {
-            return this._readUtf16(bytes, absOff + 8, len);
-          }
-        } catch (_) { }
-      }
-      return '';
     };
 
     // Read a name from BinXml: offset(4) to name entry
@@ -602,8 +575,7 @@ class EvtxRenderer {
 
         if (token === 0x06) { // Attribute
           ctx.pos++; // token
-          const attrName = readName();
-          currentAttrName = attrName;
+          readName();
           continue;
         }
 
@@ -1579,9 +1551,6 @@ class EvtxRenderer {
 
     // Hash regex: matches SHA256, SHA1, MD5, IMPHASH patterns from Sysmon Hashes field
     const hashRe = /\b(?:SHA256|SHA1|MD5|IMPHASH|SHA384|SHA512)=([A-Fa-f0-9]{32,128})\b/g;
-    // Standalone hex hash (40 = SHA1, 32 = MD5, 64 = SHA256)
-    const standaloneHashRe = /\b([A-Fa-f0-9]{64}|[A-Fa-f0-9]{40}|[A-Fa-f0-9]{32})\b/;
-
     // Helper: check if a username is noise
     const isBoringUser = (u) => {
       const lower = u.toLowerCase();

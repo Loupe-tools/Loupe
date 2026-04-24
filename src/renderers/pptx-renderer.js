@@ -131,7 +131,7 @@ class PptxRenderer {
         }
         pd.appendChild(sp); has = true;
       }
-      for (const br of Array.from(p.getElementsByTagNameNS(this.DML, 'br'))) pd.appendChild(document.createElement('br'));
+      for (const _br of Array.from(p.getElementsByTagNameNS(this.DML, 'br'))) pd.appendChild(document.createElement('br'));
       container.appendChild(has ? pd : document.createElement('br'));
     }
   }

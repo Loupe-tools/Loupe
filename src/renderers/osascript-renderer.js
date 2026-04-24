@@ -303,8 +303,6 @@ class OsascriptRenderer {
         let i = 0;
         const n = source.length;
 
-        const peek2 = (pos) => source.charCodeAt(pos) | (source.charCodeAt(pos + 1) << 16);
-
         while (i < n) {
             const ch = source[i];
             const cc = source.charCodeAt(i);

@@ -425,8 +425,6 @@ class RegRenderer {
   _isSuspiciousValue(name, data, keyPath) {
     const ld = (data || '').toLowerCase();
     const ln = (name || '').toLowerCase();
-    const lk = (keyPath || '').toLowerCase();
-
     // Known dangerous value names
     const dangerousNames = [
       'debugger', 'appinit_dlls', 'loadappinit_dlls', 'userinit',

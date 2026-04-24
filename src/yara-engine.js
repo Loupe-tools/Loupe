@@ -257,13 +257,11 @@ class YaraEngine {
     const results = [];
     for (const rule of rules) {
       const stringMatches = {};
-      let anyMatch = false;
-
       // Evaluate each string definition
       for (const strDef of rule.strings) {
         const matchList = YaraEngine._findString(text, bytes, strDef);
         stringMatches[strDef.id] = matchList;
-        if (matchList.length > 0) anyMatch = true;
+
       }
 
       // Evaluate condition

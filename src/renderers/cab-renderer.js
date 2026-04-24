@@ -68,7 +68,6 @@ class CabRenderer {
     this._parsed = parsed;
 
     // Summary chip
-    const dirs = 0; // CAB has no folder entries; all entries are flat files
     const files = parsed.files.length;
     const totalSize = parsed.files.reduce((s, e) => s + (e.size || 0), 0);
     const summ = document.createElement('div');

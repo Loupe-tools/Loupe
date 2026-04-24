@@ -233,11 +233,6 @@ class OdpRenderer {
     const div = document.createElement('div');
     div.style.cssText = `position:absolute;left:${pos.x}px;top:${pos.y}px;width:${pos.w}px;height:${pos.h}px;overflow:hidden;box-sizing:border-box;`;
 
-    // Background fill
-    const graphicProps = node.getElementsByTagNameNS(this.DRAW, 'fill-color');
-    // Simple: check style for fill
-    const styleName = node.getAttribute('draw:style-name') || '';
-
     // Render text content inside shape
     this._renderTextContent(node, div, scale);
 
@@ -253,10 +248,8 @@ class OdpRenderer {
       if (p.parentNode !== node && p.parentNode.localName !== 'text-box' && p.parentNode !== node) {
         // Check ancestry
         let ancestor = p.parentNode;
-        let isDirectChild = false;
         while (ancestor && ancestor !== node) {
           if (ancestor.localName === 'table') break;
-          if (ancestor === node) { isDirectChild = true; break; }
           ancestor = ancestor.parentNode;
         }
         if (ancestor && ancestor.localName === 'table') continue;
@@ -264,9 +257,6 @@ class OdpRenderer {
 
       const pd = document.createElement('p');
       pd.style.cssText = 'margin:0;padding:0 2px;line-height:1.2;';
-
-      // Alignment
-      const pPr = p.getAttribute('text:style-name') || '';
 
       let has = false;
       for (const child of Array.from(p.childNodes)) {

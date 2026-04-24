@@ -298,7 +298,6 @@ class HtmlRenderer {
 
     // ── 2a. ClickFix / fake-captcha detection (T3.2) ────────────────────
     {
-      const lower = text.toLowerCase();
       const hasClipboard = /navigator\.clipboard\.writetext|document\.execcommand\s*\(\s*['"]copy|clipboarddata/i.test(text);
       const hasPayload = /powershell|mshta|cmd\s*\/c|cmd\.exe|regsvr32|certutil|bitsadmin|wscript|cscript/i.test(text);
       const hasInstruction = /press\s+win\s*\+\s*r|win\+r|ctrl\s*\+\s*v|paste|verify\s+you\s+are\s+human|captcha|i\s*'?\s*m\s+not\s+a\s+robot|click\s+to\s+verify/i.test(text);
@@ -331,7 +330,7 @@ class HtmlRenderer {
         risk = 'high';
       }
       // Also flag <img src="data:text/html,..."> (non-image MIME in img tag)
-      for (const m of text.matchAll(/<img\b[^>]+src\s*=\s*["']?\s*data:text\/html/gi)) {
+      for (const _m of text.matchAll(/<img\b[^>]+src\s*=\s*["']?\s*data:text\/html/gi)) {
         refs.push({
           type: IOC.PATTERN,
           url: 'Data-URI <img> with text/html MIME — HTML smuggling technique',

@@ -657,7 +657,7 @@ class ZipRenderer {
         // Yielding to the event loop between real verifications keeps
         // the UI responsive if someone ever grows the password list
         // into genuinely expensive territory.
-        // eslint-disable-next-line no-await-in-loop
+         
         const verified = await this._verifyPassword(bytes, dataOff, testEntry, password);
         if (!verified) continue;
 
