@@ -636,7 +636,7 @@ class JsonRenderer {
     const dataUri = text.match(/"data:[a-z0-9.+/-]+;base64,[A-Za-z0-9+/=]{64,}"/i);
     if (dataUri) {
       f.externalRefs.push({
-        type: (typeof IOC !== 'undefined' && IOC.PATTERN) || 'pattern',
+        type: IOC.PATTERN,
         url: 'Base64-encoded data URI embedded in JSON value — common payload-smuggling shape',
         severity: 'medium',
       });
@@ -646,7 +646,7 @@ class JsonRenderer {
     // JSON Web Token shape in values: `eyJ<base64>.<base64>.<base64>`.
     if (/"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"/.test(text)) {
       f.externalRefs.push({
-        type: (typeof IOC !== 'undefined' && IOC.PATTERN) || 'pattern',
+        type: IOC.PATTERN,
         url: 'JSON Web Token (JWT) embedded in value — inspect for leaked secrets',
         severity: 'low',
       });

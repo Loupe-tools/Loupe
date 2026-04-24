@@ -1,7 +1,25 @@
 // ════════════════════════════════════════════════════════════════════════════
 // App — sidebar rendering (single scrollable pane with collapsible sections)
 // ════════════════════════════════════════════════════════════════════════════
+
+// Shared severity ranking — used by both the deobfuscation and IOC/refs sections.
+const _SIDEBAR_SEV_ORDER = { critical: 0, high: 1, medium: 2, info: 3 };
+
 Object.assign(App.prototype, {
+
+  // Shared helper: create a synthetic file from decoded bytes, push the
+  // current file onto the nav stack (with return-focus metadata), and load
+  // the new file. Deduplicated from the five "Decode & Analyse" / "Load for
+  // analysis" / "Load embedded ZIP" / "Decompress & Analyse" / "All the way"
+  // button handlers.
+  _drillDownToSynthetic(bytes, synName, mime, fileName, findingOffset) {
+    const blob = new Blob([bytes], { type: mime || 'application/octet-stream' });
+    const syntheticFile = new File([blob], synName, { type: mime || 'application/octet-stream' });
+    this._pushNavState(fileName);
+    const _top = this._navStack && this._navStack[this._navStack.length - 1];
+    if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: findingOffset };
+    this._loadFile(syntheticFile);
+  },
 
   // Truncate a string shown inside a match toast to keep the notification
   // compact. IOCs extracted from decoded blobs can be kilobytes long.
@@ -539,7 +557,6 @@ Object.assign(App.prototype, {
     const cardElements = [];
 
     // ── Severity filter bar (clickable) ───────────────────────────────────
-    const sevOrder = { critical: 0, high: 1, medium: 2, info: 3 };
     const sevBar = document.createElement('div'); sevBar.className = 'sev-bar';
 
     for (const sev of ['critical', 'high', 'medium', 'info']) {
@@ -569,7 +586,7 @@ Object.assign(App.prototype, {
     if (sevBar.children.length) body.appendChild(sevBar);
 
     // Render each finding as a card
-    const sorted = [...encodedFindings].sort((a, b) => (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9));
+    const sorted = [...encodedFindings].sort((a, b) => (_SIDEBAR_SEV_ORDER[a.severity] ?? 9) - (_SIDEBAR_SEV_ORDER[b.severity] ?? 9));
     for (const finding of sorted) {
       const card = document.createElement('div');
       card.className = `enc-finding-card enc-sev-${finding.severity}`;
@@ -776,7 +793,8 @@ Object.assign(App.prototype, {
       const _hasIOCs = finding.iocs && finding.iocs.length > 0;
       const _hasDeepPath = finding.innerFindings && finding.innerFindings.length;
       if (_hasDeepPath || _hasIOCs) {
-        const deepest = _hasDeepPath ? this._getDeepestFinding(finding) : null;
+        // Reuse `_deepest` computed earlier (line ~607) instead of re-traversing.
+        const deepest = _hasDeepPath ? _deepest : null;
         const distinctDeep = deepest && deepest !== finding;
 
         // Build separator label. Prefer a chain-aware label when we have a
@@ -1139,12 +1157,7 @@ Object.assign(App.prototype, {
             if (finding.decodedBytes) {
               const ext = finding.ext || '.bin';
               const synName = `decoded_${finding.encoding.toLowerCase().replace(/[^a-z0-9]/g, '_')}_offset${finding.offset}${ext}`;
-              const blob = new Blob([finding.decodedBytes], { type: 'application/octet-stream' });
-              const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
-              this._pushNavState(fileName);
-              const _top = this._navStack && this._navStack[this._navStack.length - 1];
-              if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
-              this._loadFile(syntheticFile);
+              this._drillDownToSynthetic(finding.decodedBytes, synName, 'application/octet-stream', fileName, finding.offset);
             } else {
               this._toast('Decoded but no bytes produced', 'error');
               decodeLoadBtn.disabled = false;
@@ -1167,12 +1180,7 @@ Object.assign(App.prototype, {
         loadBtn.addEventListener('click', () => {
           const ext = finding.ext || '.bin';
           const synName = `decoded_${finding.encoding.toLowerCase().replace(/[^a-z0-9]/g, '_')}_offset${finding.offset}${ext}`;
-          const blob = new Blob([finding.decodedBytes], { type: 'application/octet-stream' });
-          const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
-          this._pushNavState(fileName);
-          const _top = this._navStack && this._navStack[this._navStack.length - 1];
-          if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
-          this._loadFile(syntheticFile);
+          this._drillDownToSynthetic(finding.decodedBytes, synName, 'application/octet-stream', fileName, finding.offset);
         });
         actions.appendChild(loadBtn);
 
@@ -1187,12 +1195,7 @@ Object.assign(App.prototype, {
         loadZipBtn.addEventListener('click', () => {
           const rawBytes = new Uint8Array(this._fileBuffer);
           const zipBytes = rawBytes.subarray(finding.embeddedZipOffset);
-          const blob = new Blob([zipBytes], { type: 'application/zip' });
-          const syntheticFile = new File([blob], `embedded_zip_offset${finding.offset}.zip`, { type: 'application/zip' });
-          this._pushNavState(fileName);
-          const _top = this._navStack && this._navStack[this._navStack.length - 1];
-          if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
-          this._loadFile(syntheticFile);
+          this._drillDownToSynthetic(zipBytes, `embedded_zip_offset${finding.offset}.zip`, 'application/zip', fileName, finding.offset);
         });
         actions.appendChild(loadZipBtn);
 
@@ -1214,12 +1217,7 @@ Object.assign(App.prototype, {
             if (finding.decodedBytes) {
               const ext = finding.ext || '.bin';
               const synName = `decompressed_${finding.encoding.toLowerCase().replace(/[^a-z0-9]/g, '_')}_offset${finding.offset}${ext}`;
-              const blob = new Blob([finding.decodedBytes], { type: 'application/octet-stream' });
-              const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
-              this._pushNavState(fileName);
-              const _top = this._navStack && this._navStack[this._navStack.length - 1];
-              if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
-              this._loadFile(syntheticFile);
+              this._drillDownToSynthetic(finding.decodedBytes, synName, 'application/octet-stream', fileName, finding.offset);
 
             } else {
               this._toast('Decompression failed — data may be corrupt or truncated', 'error');
@@ -1261,12 +1259,7 @@ Object.assign(App.prototype, {
                 const ext = deepest.ext || '.bin';
                 const chainLabel = deepest.chain ? deepest.chain.join('_').replace(/[^a-z0-9_]/gi, '') : 'deep';
                 const synName = `deep_decoded_${chainLabel}_offset${finding.offset}${ext}`;
-                const blob = new Blob([deepest.decodedBytes], { type: 'application/octet-stream' });
-                const syntheticFile = new File([blob], synName, { type: 'application/octet-stream' });
-                this._pushNavState(fileName);
-                const _top = this._navStack && this._navStack[this._navStack.length - 1];
-                if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: finding.offset };
-                this._loadFile(syntheticFile);
+                this._drillDownToSynthetic(deepest.decodedBytes, synName, 'application/octet-stream', fileName, finding.offset);
 
               } else {
                 this._toast('Deep decode produced no bytes', 'error');
@@ -1458,12 +1451,11 @@ Object.assign(App.prototype, {
     // Sort by: nicelisted (false first) → severity (critical → info).
     // Nicelisted rows land at the end regardless of severity so an info-
     // tier benign CDN URL never sits above a medium-tier genuine IOC.
-    const sevOrder = { critical: 0, high: 1, medium: 2, info: 3 };
     refs.sort((a, b) => {
       const an = a._nicelisted ? 1 : 0;
       const bn = b._nicelisted ? 1 : 0;
       if (an !== bn) return an - bn;
-      return (sevOrder[a.severity] ?? 9) - (sevOrder[b.severity] ?? 9);
+      return (_SIDEBAR_SEV_ORDER[a.severity] ?? 9) - (_SIDEBAR_SEV_ORDER[b.severity] ?? 9);
     });
 
     // ── Filter state ─────────────────────────────────────────────────────

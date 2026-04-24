@@ -26,10 +26,11 @@
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // Defer revoke so the browser has time to kick off the download. 0 ms is
-    // sufficient in every engine we target; a longer delay would just risk
-    // leaking the blob URL if the tab is closed before it fires.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    // Defer revoke so the browser has time to kick off the download. The
+    // spec doesn't guarantee the download has started by the time `click()`
+    // returns; 60 s gives even very large blobs on slow machines time to
+    // begin transfer while still eventually reclaiming the blob URL.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   function downloadText(text, filename, mime) {
