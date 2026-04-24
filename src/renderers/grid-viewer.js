@@ -151,6 +151,14 @@ class GridViewer {
     // key-context menu is simply absent.
     this._onCellPick = typeof opts.onCellPick === 'function' ? opts.onCellPick : null;
 
+    // Header-cell left-click override — when provided, left-clicking a
+    // column header calls this callback instead of opening GridViewer's
+    // own sort/hide/copy menu. Timeline Mode passes this so left-click
+    // opens the Excel-style filter popover (same as the Top-Lists ▾
+    // button) while right-click opens the sort/hide menu.
+    //   onHeaderClick(colIdx, anchorEl)
+    this._onHeaderClick = typeof opts.onHeaderClick === 'function' ? opts.onHeaderClick : null;
+
     // Optional stacking: histogram bars are split by category when a stack
     // column is set. Default: single-density bars.
     //   timelineStackColumn : number   — index of the grouping column.
@@ -516,7 +524,9 @@ class GridViewer {
       chev.setAttribute('aria-hidden', 'true');
       cell.appendChild(chev);
 
-      cell.title = name + ' — click for column menu · Ctrl+Click to hide';
+      cell.title = this._onHeaderClick
+        ? name + ' — click for filter · right-click for sort/hide · Ctrl+Click to hide'
+        : name + ' — click for column menu · Ctrl+Click to hide';
       cell.addEventListener('click', (e) => {
         e.stopPropagation();
         // Ctrl/Cmd+Click on a header → quick-hide. Same as picking
@@ -527,7 +537,15 @@ class GridViewer {
           this._toggleHideColumn(i);
           return;
         }
-        this._openHeaderMenu(i, cell);
+        if (this._onHeaderClick) {
+          // Close GridViewer's own popover (e.g. a sort/hide menu from
+          // a prior right-click) before handing off to the external
+          // handler, so two popovers can't overlap.
+          this._closePopover();
+          this._onHeaderClick(i, cell);
+        } else {
+          this._openHeaderMenu(i, cell);
+        }
       });
       // Drag-to-resize handle on the right edge of the cell. Double-click
       // the handle to reset this column to its auto-calculated width.
@@ -1162,18 +1180,15 @@ class GridViewer {
     });
 
     // Global click to dismiss any open header / top-values popover.
-    //
-    // The `.grid-header-cell` exemption only applies to non-right-click
-    // gestures — it exists so a left-click re-opening the same header
-    // menu doesn't flicker via "close-then-reopen". For right-clicks we
-    // always close, because Timeline Mode (src/app/app-timeline.js) opens
-    // its own Excel-style filter popover on `contextmenu` over header
-    // cells, and leaving this sort menu on screen alongside it produces
-    // two overlapping popovers.
+    // Header cells are exempt from mousedown-dismiss so the click handler
+    // (which fires after mousedown) can apply its own toggle logic: close
+    // if the same column is already open, close-then-reopen for a
+    // different column. Without this exemption, mousedown would always
+    // pre-close the popover, defeating the toggle check.
     this._boundHandlers.onDocClick = (e) => {
       if (!this._openPopover) return;
       if (this._openPopover.contains(e.target)) return;
-      if (e.button !== 2 && e.target.closest && e.target.closest('.grid-header-cell')) return;
+      if (e.target.closest && e.target.closest('.grid-header-cell')) return;
       this._closePopover();
     };
     document.addEventListener('mousedown', this._boundHandlers.onDocClick, true);
@@ -1332,10 +1347,12 @@ class GridViewer {
     tr.dataset.vidx = virtualIdx;
     tr.style.top = (virtualIdx * this.ROW_HEIGHT) + 'px';
 
-    // Row-number cell
+    // Row-number cell — shows the display position (1-indexed) so that
+    // when sorted (e.g. ascending by timestamp) the # column counts up
+    // sequentially from 1 regardless of the original file order.
     const numCell = document.createElement('div');
     numCell.className = 'grid-cell grid-row-num';
-    numCell.textContent = String(dataIdx + 1);
+    numCell.textContent = String(virtualIdx + 1);
     tr.appendChild(numCell);
 
     // Data cells
@@ -2060,9 +2077,15 @@ class GridViewer {
    * Hide column, Top values….
    */
   _openHeaderMenu(colIdx, anchorEl) {
+    // Toggle: if the menu is already open for this exact column, close it.
+    if (this._openPopover && this._openPopover.dataset.colIdx === String(colIdx)) {
+      this._closePopover();
+      return;
+    }
     this._closePopover();
     const pop = document.createElement('div');
     pop.className = 'grid-popover grid-header-menu';
+    pop.dataset.colIdx = colIdx;
 
     const mkItem = (label, onClick, opts) => {
       const item = document.createElement('button');
@@ -3535,6 +3558,20 @@ class GridViewer {
     this._sizer.replaceChildren();
     this._drawerBody.replaceChildren();
     this._searchTextCache = null;
+
+    // ── Release heavy data arrays ────────────────────────────────────────
+    // Without explicit nulling, any transient reference (pending RAF,
+    // highlight timer closure, back-reference from a parent view) keeps
+    // the entire row dataset alive. For large files this is hundreds of
+    // MB — repeated load/clear cycles OOM the browser tab.
+    this.rows = null;
+    this.rawText = null;
+    this.rowSearchText = null;
+    this.rowOffsets = null;
+    this._timeMs = null;
+    this._timeBuckets = null;
+    this._timeStackBuckets = null;
+    this._columnLengths = null;
   }
 }
 
