@@ -694,11 +694,26 @@ Object.assign(App.prototype, {
     this.findings = null; this.fileHashes = null;
     this._fileBuffer = null; this._yaraBuffer = null; this._yaraResults = null;
     this._fileMeta = null;
+    // Copy-content cache holds a reference to the previous file's
+    // ArrayBuffer (for same-session paste round-trip). Without clearing
+    // it, every load/clear cycle leaks the full buffer.
+    this._lastCopiedMeta = null;
     // Native-binary triage stash (set by app-load.js pe/elf/macho dispatchers,
     // consumed by the sidebar's Binary Metadata + MITRE sections). Must be
     // cleared here so the next load — which may be any format — doesn't
     // see stale parsed headers or a stale format marker.
     this._binaryParsed = null; this._binaryFormat = null;
+
+    // ── Sidebar highlight teardown ────────────────────────────────────────
+    // Pending highlight timers hold closures over stale findings / DOM
+    // refs. The *ActiveView properties reference the old file's
+    // GridViewer — without clearing them, the entire old view (and its
+    // row data) stays alive until the 5 s timer fires.
+    if (this._matchHighlightTimer) { clearTimeout(this._matchHighlightTimer); this._matchHighlightTimer = null; }
+    if (this._iocEvtxHighlightTimer) { clearTimeout(this._iocEvtxHighlightTimer); this._iocEvtxHighlightTimer = null; }
+    this._yaraHighlightActiveView = null;
+    this._iocCsvHighlightActiveView = null;
+
     // Clear navigation stack and hide breadcrumbs
     this._navStack = [];
     if (this._renderBreadcrumbs) this._renderBreadcrumbs();
