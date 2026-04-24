@@ -760,6 +760,9 @@ subtly misbehave.
   the auto-sizer. User overrides take precedence over kind-based
   widths — `_applyColumnTemplate()` reads the Map returned by
   `_loadUserColumnWidths()` before falling back to the computed value.
+- **GridViewer per-cell annotation hooks.** `GridViewer` accepts two optional callbacks so consumers can annotate specific cells without subclassing: `cellTitle(dataIdx, colIdx, rawValue) → string | null` returns a `title=` tooltip applied to every matching grid cell; `detailAugment(dataIdx, colIdx, value, {keyEl, valEl, colName}) → void` runs while the row-details drawer is built and can append chips / pills to the drawer's value element. The EVTX consumer in `src/app/app-timeline.js` uses both: a `cellTitle` hook that looks up `<Channel>:<EventID>` via `window.EvtxEventIds.lookup()` and returns a formatted multi-line tooltip (`4624: An account was successfully logged on.`), and a `detailAugment` hook that appends a `.tl-evtx-eid-pill` summary badge plus one `.tl-evtx-mitre-pill` per MITRE technique resolved through `window.MITRE.lookup()`. Both hooks are EVTX-only — the Timeline consumer checks `this._isEvtx` before wiring them so CSV / TSV / browser-history viewers get the untouched drawer.
+- **GridViewer row-details drawer search box.** The drawer's topbar now carries an inline search input (`.grid-drawer-search`) built by `_wireDrawerSearch()`. As the analyst types, `_applyDrawerSearch()` walks the drawer body with a `TreeWalker` (skipping existing `.grid-drawer-hit` spans to avoid double-wrapping on re-apply), wraps each case-insensitive literal match in a `<span class="grid-drawer-hit">`, and smooth-scrolls the first hit into view. `Enter` / `Shift+Enter` cycle through hits (`_stepDrawerSearch`), `Esc` clears, `Ctrl/⌘+F` focuses the box when the drawer has focus. Hit count is capped at 400 to keep the TreeWalker bounded on pathologically large drawers; overflow is surfaced as `N+` in `.grid-drawer-search-count`. The search resets itself whenever the drawer opens onto a new row so stale highlights never carry over.
+- **EVTX Event ID registry — `src/evtx-event-ids.js`.** `window.EvtxEventIds = {EVENTS, lookup(id, channel), formatTooltip(info, id), normChannel(raw)}` is the single source of truth for the plain-English name / description of ~80 forensically-relevant Windows Event IDs. Events are keyed by `<channel>:<id>` (e.g. `security:4624`, `sysmon:1`, `system:7045`) with a bare `<id>` fallback for logs where the channel is unknown; each entry is `{name, description, mitre?: string[]}`. `formatTooltip()` returns the short tooltip string the `cellTitle` hook applies to every Event ID grid cell. The file is listed in `JS_FILES` immediately after `src/mitre.js` so both globals are present before any timeline-consuming renderer loads. Adding a new Event ID is a single-file change — extend `EVENTS` with the channel-qualified key and, where applicable, an array of `Tnnnn[.nnn]` MITRE techniques that already exist in `src/mitre.js`'s `TECHNIQUES` table.
 - **GridViewer row-details drawer — JSON-aware picker via
   `src/json-tree.js`.** The right-hand details drawer that opens on row
   click is built by `_buildDetailPaneElement(cols, row, dataIdx)`. For
@@ -808,13 +811,59 @@ subtly misbehave.
 
   - **Automatic JSON→CSV leaf flatten.** `TimelineView._autoExtractScan`
     already proposes URL / hostname extractions via the Auto tab of the
-    ƒx Extract dialog. It now also walks every cell whose text sniffs
-    as JSON, collects the union of leaf paths via
+    ƒx Extract values dialog. It now also walks every cell whose text
+    sniffs as JSON, collects the union of leaf paths via
     `JsonTree.collectLeafPaths(obj)`, and emits one `json-leaf`
     proposal per path (capped at 60 per source column to keep the
     dialog bounded). Accepting a proposal routes through the same
     `_addJsonExtractedCol` path as the drawer picker, so both entry
     points share the same virtual-column shape.
+
+  - **ƒx Extract values dialog shape (three panes).** The dialog
+    `_openExtractionDialog()` renders a tab strip — **Smart scan**
+    (ranked `_autoExtractScan()` proposals), **Regex** (preset + custom
+    capture), **Clicker** (click-to-pick value extractor). The
+    Clicker pane lists the first ~30 non-empty samples from the
+    chosen column; clicking or drag-selecting a token classifies it
+    (UUID, IPv4, MAC, hash, decimal, ISO timestamp, email, URL,
+    hostname, path, identifier, quoted token, or fallback literal),
+    generalises an `\b`-anchored regex by finding the shortest prefix
+    / suffix shared by ≥70% of samples, previews hits live, and
+    commits through the same `_addRegexExtractNoRender` path as the
+    Regex tab so the store shape and rendering pipeline stay
+    identical. When the dialog is opened from a column context menu
+    (`_openExtractionDialog(preselectCol)`) the Clicker column
+    dropdown defaults to that column. The Smart-scan toolbar carries bulk
+    `✓ All` / `☐ None` / `↔ Invert` buttons, a live `N of M selected`
+    counter, kind facets (`All` / `URL` / `Host` / `Key=Value` / `JSON`),
+    a filter input (`/` focuses it), and a sort dropdown. Each proposal
+    row lays out as `[checkbox] [kind-pill] [sample:1fr] [col] [rate]`;
+    a "Will create:" preview strip above the list shows up to five pill
+    names of the columns that will be materialised on Extract.
+    Keyboard: `Enter` extracts the selected set, `Space` toggles the
+    focused row, `/` focuses the filter, `Esc` closes the dialog.
+
+  - **Proposal kinds emitted by `_autoExtractScan()`.** Each proposal
+    carries a `kind` used for the facet filter, the `kindRank` sort
+    order, and the post-extract label. Current kinds: `text-url`,
+    `text-host`, `json-url`, `json-host`, `json-leaf`, `kv-field`,
+    `url-part`. `url-part` is emitted for columns whose header matches
+    `/^url$/i` (typically browser-history SQLite `url` columns) and
+    proposes one row each for host, path, and query — materialised via
+    a regex extract that parses the URL client-side. `kv-field` is
+    emitted for columns where a sizeable fraction of rows contain
+    `Key=Value` pairs; the nudge strip's ranked preview uses the same
+    `kindRank` ordering so the top four shown above the grid match the
+    top four in the dialog.
+
+  - **EVTX forensic preselect + relaxed kv thresholds.** When the
+    active file is EVTX, `_autoExtractScan()` lowers the Key=Value
+    detection floor (`kvDomFrac` 0.5 → 0.1, `minCount` scaled down) so
+    sparse `EventData` fields surface as proposals, and pre-checks the
+    forensic-relevant field names (`CommandLine`, `TargetUserName`,
+    `SubjectUserName`, `ProcessName`, `ParentProcessName`, `Image`,
+    `CommandLineHash`, `IpAddress`, `LogonType`, etc.) in the Smart-scan
+    list so a one-click Extract gives you the canonical triage columns.
 - **GridViewer hidden-columns chip + header menu entry.** Columns can
   be hidden interactively in two ways: (1) the existing "Hide column"
   item in the column-header ▾ menu, or (2) **Ctrl/Meta + Click** on the
@@ -936,6 +985,40 @@ subtly misbehave.
     the function mutates the real pivot selectors, the last-used
     pivot persists to `loupe_timeline_pivot` just like a hand-built
     one — no separate persistence surface was added.
+  - **Initial stack column — header-name heuristic with cardinality gate.**
+    The stacked-bar chart's category split (`this._stackCol`) is picked at
+    construction time. When the caller passes `opts.defaultStackColIdx`
+    (EVTX hands in its `Level` column) that wins verbatim; otherwise
+    `_tlAutoDetectStackCol(baseColumns, rows, timeCol)` runs over a
+    2 000-row sample and scores candidates by (a) header-name match
+    against the exact list `EventName` / `Event` / `EventID` / `Outcome` /
+    `Result` / `Status` / `Action` / `Operation` / `Category` / `Type` /
+    `Kind` / `Severity` / `Level` / `Channel` / `Provider` (plus a loose
+    regex for compound names like `event_type`, `log_level`, …), and
+    (b) a cardinality gate that requires `2 ≤ distinct ≤ 40` and
+    `distinct / nonEmpty ≤ 0.5` so a `UserID` or free-text `Message`
+    column can never win by accident. The time column itself is excluded
+    from the candidate set. If nothing passes the gate the chart falls
+    back to the single-series default (no split). Callers that want to
+    force "no split" should pass `defaultStackColIdx: -1`.
+  - **Selection-preserving search in the ƒx Extract → Smart scan pane.**
+    The Smart-scan proposal list renames its filter box to **Search**
+    ("Search proposals… ( / )") and backs every tick with a stable
+    `_selection: Set<origIdx>` keyed by each proposal's original index
+    in the un-filtered list. `renderList()` reads `_selection.has(origI)`
+    when painting checkboxes, the row change listener mutates the Set
+    (not a per-row `.checked` scan), and `updatePreview` / `updateCount`
+    read `_selection.size` instead of walking the DOM — so ticks survive
+    every Search / facet / sort mutation, including ones that scroll the
+    ticked row off-screen. The **All / None / Invert** bulk-action
+    buttons deliberately operate on `_visibleIndices` only (the rows
+    currently passing the Search + facet filter), mutating the stable
+    Set so an analyst can search for `host`, tick All, clear the search,
+    search for `url`, and tick All again without losing the first batch.
+    `runAuto()` seeds the initial Set from `proposal.preselect !== false`
+    so high-confidence proposals stay ticked by default; the
+    "Extract selected" button iterates `_selection` directly rather than
+    re-filtering the visible list.
   - **DSL query editor (`TimelineQueryEditor` in `app-timeline.js`).** The
     textbox above the chip bar is a CSP-safe **overlay editor** — a
     transparent `<textarea>` painted on top of a `<pre><code>` syntax-
@@ -969,6 +1052,15 @@ subtly misbehave.
        `colIdx === excludeColIdx` before compiling, so the Values list
        keeps showing every value the user has *un-ticked* (the standard
        Excel behaviour — hiding them would make re-ticking impossible).
+    Click-pivot paths (right-click Include / Exclude, column-card click,
+    column-menu Apply, pivot drill-down) funnel through
+    `_queryToggleEqClause` / `_queryToggleNeClause`, both of which call
+    `_queryDropContradictions()` before appending — so Include-after-
+    Exclude (and the reverse, plus the `IN` / `NOT IN` variants) folds
+    the opposing clause out instead of producing an unsatisfiable
+    `col = v AND col != v`. Hand-typed queries are still honoured
+    verbatim: the fold is scoped to the click-pivot path only.
+
     Composition with the existing chip plan happens in
     `_recomputeFilter()`: after the chip plan is applied, the compiled
     query predicate (`this._queryPred`) is ANDed in the hot loop. The
@@ -978,7 +1070,39 @@ subtly misbehave.
     `_buildDOM()`; the editor instance is constructed in `_wireEvents()`
     and torn down in `destroy()`. `_reset()` clears the query via
     `this._queryEditor.setValue('')` + `_applyQueryString('')` so a file
-    reload starts fresh.
+    reload starts fresh. The clear (`✕`) / history (`▾`) / help (`?`)
+    button cluster lives on the **left** edge of the editor (before the
+    overlay textarea) so it sits next to where the analyst is typing —
+    not flung to the opposite end of the bar. There is no clear button
+    on the right anymore, and the old `🔍` lens glyph is gone.
+    **Unified undo / redo ring.** Every value change — native typing,
+    paste / cut / drop, IME composition commit, clear button, `Esc`-
+    clear, history pick, programmatic `setValue()`, and the new
+    clause-delete — is captured onto a **single session-only** ring
+    `_hist` (cap `_HIST_MAX = 500` frames, each `{value, selStart,
+    selEnd, kind}`). `Ctrl/⌘-Z` pops the ring in `_onKeyDown()` and
+    `Ctrl/⌘-Shift-Z` (plus `Ctrl-Y` for muscle-memory parity) walks
+    it forward; both routes go through `_applyHistFrame()` under an
+    `_isUndoing` guard so the restore doesn't re-push itself. The
+    ring is deliberately **not** persisted — closing the tab wipes
+    history, matching VS Code's editor model. Coalescing is VS Code-
+    style: consecutive word-character edits (`[A-Za-z0-9_]` runs)
+    inside `_HIST_COALESCE_MS = 500` collapse into one frame so
+    Ctrl-Z steps by word boundaries, not per-character; whitespace,
+    operators, quotes, and parens always break the run so punctuation
+    is always undoable independently. Paste / cut / drop are
+    classified as `kind: 'replace'` via the `InputEvent.inputType`
+    and never coalesce. `Ctrl/⌘-Backspace` / `Ctrl/⌘-Delete` route
+    to `_deleteClause(dir)`, which uses `_tlTokenize` to find the
+    enclosing DSL clause / operand left (or right) of the caret and
+    wipes it as a single `_applyEdit()` atom — e.g. `AND ClientIP=5.90.40.3`
+    → `AND `. The clause-delete edit snapshots as its own history
+    frame so Ctrl-Z restores the whole wiped clause in one step. We
+    deliberately **replace** (not merge with) the `<textarea>`'s
+    native per-keystroke undo stack: once the ring is populated every
+    Ctrl-Z goes through our handler, so the two stacks can never
+    desync. `Alt`-modified variants still fall through untouched for
+    future shortcuts.
 
 
 ---
@@ -999,7 +1123,7 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_nicelist_builtin_enabled` | string | `setBuiltinEnabled()` in `src/nicelist-user.js` (toggled from Settings → 🛡 Nicelists) | `"1"` (on — default) or `"0"` (off) | Master switch for the Default Nicelist shipped in `src/nicelist.js`. When `"0"`, `isNicelisted()` short-circuits to `false` so every curated global-infrastructure entry stops demoting rows. Missing / unparseable value is treated as on so first-time users still get the noise reduction. |
 | `loupe_nicelists_user` | string (JSON) | `save()` / mutation helpers in `src/nicelist-user.js` (Settings → 🛡 Nicelists UI) | `{version:1, lists:[{id,name,enabled,createdAt,updatedAt,entries}]}` | User-defined nicelists (MDR customer domains, employee emails, on-network hostnames, …). Capped at 64 lists × 10 000 entries × 1 MB serialised to stay inside the localStorage quota; overflow writes are refused without corrupting the previous blob. Entries are normalised + deduplicated on save; matching uses the same label-boundary semantics as the built-in list. Exported / imported via the toolbar buttons in the Nicelists tab. |
 | `loupe_plaintext_highlight` | string | `PlainTextRenderer._writeHighlightPref()` in `src/renderers/plaintext-renderer.js` (info-bar "Highlight" button in the plaintext / catch-all viewer) | `"on"` (default) or `"off"` | Syntax-highlighting master switch for the plaintext / catch-all renderer. When `"off"`, hljs is never invoked regardless of file size or language. Independent of the automatic per-file gates (`HIGHLIGHT_SIZE_LIMIT`, `LONG_LINE_THRESHOLD`) which always disable highlighting on minified / pathological inputs. |
-| `loupe_grid_drawer_w` | string (integer) | `_saveDrawerWidth()` in `src/renderers/grid-viewer.js` (drag handle on the left edge of the detail drawer) | integer pixel width, clamped to `280`–`900` on read | Width of the right-hand row-details drawer used by every GridViewer-backed viewer. Default `420`. Persisted per-browser so analysts who prefer a wide drawer for deeply-nested EVTX events don't have to re-drag it on every file. |
+| `loupe_grid_drawer_w` | string (integer) | `_saveDrawerWidth()` in `src/renderers/grid-viewer.js` (drag handle on the left edge of the detail drawer) | integer pixel width, lower-bound `280` on read; upper bound is dynamic (`viewport − DRAWER_MIN_GRID_W`) so the drawer can be dragged to nearly full-width on large monitors | Width of the right-hand row-details drawer used by every GridViewer-backed viewer. Default `420`. Persisted per-browser so analysts who prefer a wide drawer for deeply-nested EVTX events don't have to re-drag it on every file. The hard `900` px cap was removed in favour of `_drawerMaxW()` so wide EventData payloads and JSON trees have room to breathe. |
 | `loupe_grid_colW_<gridKey>` | string (JSON object) | `_saveUserColumnWidth()` in `src/renderers/grid-viewer.js` (drag handle on the right edge of each `.grid-header-cell`) | `{ "<colIdx>": pixelWidth, … }` — integer pixel widths, clamped to `MIN_COL_W`–`1600` on read | Per-column manual width overrides that survive the kind-aware auto-sizer in `_recomputeColumnWidths()`. Namespaced per renderer via `gridKey` (e.g. `loupe_grid_colW_evtx`, `loupe_grid_colW_csv-view`) so resizing EVTX's Event Data blob column doesn't also bloat an unrelated CSV column 6. Double-clicking the handle deletes the entry (`_resetColumnWidth()`) to restore auto sizing. |
 | `loupe_timeline_grid_h` | string (integer) | drag handle on the `.tl-splitter` between the timeline grid and the per-column cards | integer pixel height, clamped to a sensible min/max on read | Height of the virtual-grid pane inside the Timeline viewer. Persisted per-browser so analysts who prefer a tall grid (scrolling 10 k rows) or a tall column-cards pane don't have to re-drag it on every file. |
 | `loupe_timeline_chart_h` | string (integer) | `.tl-chart-resize` grab-bar along the bottom edge of the stacked-bar histogram | integer pixel height, clamped on read to the chart's min/max (120 – 600 px) | Height of the Timeline histogram pane. Default is deliberately compact (220 px) so the events grid + top-values cards are visible on first paint; analysts who want more bar resolution drag it down and the preference sticks across reloads. |
@@ -1007,11 +1131,13 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_timeline_sections` | JSON object | section-chevron clicks on collapsible `.tl-section` blocks | `{ chart: bool, grid: bool, columns: bool, pivot: bool, … }` — each flag = `true` when collapsed | Collapsed / expanded state of every top-level Timeline section (histogram, events grid, top-values cards, detections, entities, pivot). Lets analysts hide sections they don't use (e.g. pivot starts collapsed). Unknown / unparseable value → all expanded. |
 | `loupe_timeline_card_widths` | JSON object | left / right edge resize handles on each `.tl-col-card` and `.tl-entity-group` | `{ "<fileKey>": { "<key>": { span: N } \| pixelWidth, … } }` — file key = `name|size|lastModified`; `<key>` is a column name for top-value cards or `entity:<IOC_TYPE>` for entity cards; `span` is a `grid-column: span N` integer; legacy integer pixel values are migrated to a span on read | Per-file manual width overrides for the top-value and entity cards, expressed as an integer `grid-column: span N` so the override cooperates with the `.tl-columns` / `.tl-entities-wrap` CSS Grid `auto-fill minmax()` layout. Scoped to a file so resizing a "User" card in one CSV doesn't re-size a same-named column in an unrelated one. |
 | `loupe_timeline_card_order` | JSON object | drag-to-reorder top-value card headers | `{ "<fileKey>": ["colName1", "colName2", …] }` | Per-file column-name ordering for the 🏆 Top values cards. Columns not present in the saved array are appended at the end. Deleted when empty. |
+| `loupe_timeline_pinned_cols` | JSON object | 📌 pin button on top-value card headers | `{ "<fileKey>": ["colName1", …] }` | Per-file list of pinned top-value card column names. Pinned cards sort to the top-left of the card grid. Deleted when empty. |
 | `loupe_timeline_regex_extracts` | JSON object | ƒx Extract dialog → Regex / Auto tabs | `{ "<fileKey>": [{ name, col, pattern, flags, group, kind }, …] }` | Per-file list of extracted virtual columns created via the Regex tab or Auto (URL / hostname) scan. Re-applied automatically next time the same file is loaded so long-form analyses survive a reload. JSON-path extractions are not persisted (they depend on in-memory parsed values). |
 | `loupe_timeline_pivot` | JSON object | Pivot section ▸ Rows / Columns / Aggregate / Build | `{ rows: colIdx, cols: colIdx, aggOp: "count" \| "distinct" \| "sum", aggCol: colIdx }` | Last-used pivot spec. Re-populates the selectors on mount so "Build" reconstructs the same pivot without re-picking columns. Col indices can reference extracted virtual columns; if they no longer exist the selectors silently fall back to `-1`. |
 | `loupe_timeline_query` | string | Timeline DSL query-editor textbox above the chip bar | arbitrary DSL query string (see the Timeline query-language grammar below); empty string = no query | Last-used query in the Timeline viewer's DSL query editor. Re-populated on mount so a saved filter survives a reload; an unparseable value is loaded verbatim but quietly falls back to "no query" until fixed. |
 | `loupe_timeline_query_history` | JSON array | ⌄ history button on the Timeline DSL query editor | array of recent non-empty query strings, most recent first, capped at ~20 entries | Recent query history for the editor's ↑ / ↓ history menu. A committed query is pushed to the front and de-duplicated so the dropdown stays usable over long sessions without ballooning localStorage. |
 | `loupe_timeline_sus_marks` | JSON object | right-click a cell → 🚩 Mark suspicious · `＋ Add Sus` chip-strip button | `{ "<fileKey>": [{ colName, val }, …] }` — file key = `name\|size\|lastModified` | Parallel 🚩 sus-mark list persisted **by column NAME** (not index) so an extracted column that rebuilds under a different index on reload still re-hydrates its marks. Sus marks **tint** matching rows red but do **not** filter them — row filtering is exclusively owned by the DSL query bar. Resolved to a live `colIdx` at filter-time via `_susMarksResolved()`; marks whose column has disappeared stay persisted and re-attach if the column returns. |
+| `loupe_timeline_autoextract_nudged_hard` | string | "Don't show again" button on the post-load auto-extract nudge strip (above the Timeline query bar) | `"1"` when suppressed, absent otherwise | Hard-dismissal flag for the post-lazy-load auto-extract suggestion strip rendered by `_renderAutoExtractNudge()` in `src/app/app-timeline.js`. The strip previews up to four high-confidence virtual-column proposals (URL / host / JSON-leaf / kv-field) from `_autoExtractScan()`; "Dismiss" hides it for the session only, while "Don't show again" writes `"1"` here so the strip is permanently skipped on every future file load. Cleared by Timeline ↺ Reset along with the other `loupe_timeline_*` keys. |
 | `loupe_hosted_dismissed` | string | `_checkHostedMode()` in `src/app/app-core.js` | `"1"` when dismissed, absent otherwise | Controls the floating hosted-mode privacy bar shown when Loupe is served via HTTP/HTTPS instead of `file://`. Once the user clicks ✕, the bar never reappears. |
 
 **Timeline ↺ Reset wipes every Timeline preference.** The Reset button in
