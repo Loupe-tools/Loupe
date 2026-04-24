@@ -58,6 +58,10 @@
 //   - loupe_timeline_regex_extracts    JSON { fileKey: [{name,col,pattern,flags,group}] }
 //   - loupe_timeline_pivot             JSON { rows, cols, aggOp, aggCol }
 //   - loupe_timeline_card_order        JSON { fileKey: ["colName", …] }
+//   - loupe_timeline_pinned_cols       JSON { fileKey: ["colName", …] }
+//   - loupe_timeline_autoextract_nudged_hard  "1" — suppresses the post-load
+//                                              auto-extract nudge strip forever
+//                                              once the user hits "Don't show again"
 // ════════════════════════════════════════════════════════════════════════════
 
 const TIMELINE_KEYS = Object.freeze({
@@ -72,7 +76,10 @@ const TIMELINE_KEYS = Object.freeze({
   QUERY_HISTORY: 'loupe_timeline_query_history',
   SUS_MARKS: 'loupe_timeline_sus_marks',
   CARD_ORDER: 'loupe_timeline_card_order',
+  PINNED_COLS: 'loupe_timeline_pinned_cols',
+  AUTOEXTRACT_NUDGED_HARD: 'loupe_timeline_autoextract_nudged_hard',
 });
+
 
 // Hard row cap.
 const TIMELINE_MAX_ROWS = RENDER_LIMITS.MAX_TIMELINE_ROWS;
@@ -230,14 +237,14 @@ function _tlParseTimestamp(s) {
 //   'year-only'    YYYY
 //   'generic'      mixed / unrecognised — use full _tlParseTimestamp
 
-const _TL_RE_EPOCH_S    = /^-?\d{10}$/;
-const _TL_RE_EPOCH_MS   = /^-?\d{13}$/;
-const _TL_RE_ISO        = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/;
-const _TL_RE_DOTNET     = /^\/Date\((-?\d+)\)\/$/;
-const _TL_RE_DATE_YMD   = /^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/;
+const _TL_RE_EPOCH_S = /^-?\d{10}$/;
+const _TL_RE_EPOCH_MS = /^-?\d{13}$/;
+const _TL_RE_ISO = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/;
+const _TL_RE_DOTNET = /^\/Date\((-?\d+)\)\/$/;
+const _TL_RE_DATE_YMD = /^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/;
 const _TL_RE_YEAR_MONTH = /^(\d{4})[-./](\d{2})$/;
-const _TL_RE_COMPACT8   = /^\d{8}$/;
-const _TL_RE_YEAR_ONLY  = /^\d{4}$/;
+const _TL_RE_COMPACT8 = /^\d{8}$/;
+const _TL_RE_YEAR_ONLY = /^\d{4}$/;
 
 function _tlDetectTimestampFormat(rows, colIdx, sampleSize) {
   const n = Math.min(rows.length, sampleSize || 30);
@@ -249,14 +256,14 @@ function _tlDetectTimestampFormat(rows, colIdx, sampleSize) {
     const str = String(c).trim();
     if (!str) continue;
     let tag = 'generic';
-    if (_TL_RE_EPOCH_S.test(str))         tag = 'epoch-s';
-    else if (_TL_RE_EPOCH_MS.test(str))   tag = 'epoch-ms';
-    else if (_TL_RE_ISO.test(str))        tag = 'iso';
-    else if (_TL_RE_DOTNET.test(str))     tag = 'dotnet';
-    else if (_TL_RE_DATE_YMD.test(str))   tag = 'date-ymd';
+    if (_TL_RE_EPOCH_S.test(str)) tag = 'epoch-s';
+    else if (_TL_RE_EPOCH_MS.test(str)) tag = 'epoch-ms';
+    else if (_TL_RE_ISO.test(str)) tag = 'iso';
+    else if (_TL_RE_DOTNET.test(str)) tag = 'dotnet';
+    else if (_TL_RE_DATE_YMD.test(str)) tag = 'date-ymd';
     else if (_TL_RE_YEAR_MONTH.test(str)) tag = 'year-month';
-    else if (_TL_RE_COMPACT8.test(str))   tag = 'compact8';
-    else if (_TL_RE_YEAR_ONLY.test(str))  tag = 'year-only';
+    else if (_TL_RE_COMPACT8.test(str)) tag = 'compact8';
+    else if (_TL_RE_YEAR_ONLY.test(str)) tag = 'year-only';
     votes.set(tag, (votes.get(tag) || 0) + 1);
   }
   if (!votes.size) return 'generic';
@@ -383,7 +390,72 @@ const _TL_HEADER_HINT_RE = /^(?:time|timestamp|date|datetime|ts|created|modified
 // column parses as a timestamp.
 const _TL_NUMERIC_AXIS_HINT_RE = /^(?:id|index|idx|period|seq|sequence|order|row|row[_-]?num|n|num|month|year)\b/i;
 
+// Stack-column auto-detect. Best-attempt guess at a column whose values
+// form a small, stable set of categorical labels suitable for stacking a
+// histogram. Two tiers:
+//   Tier 1 — exact (case-insensitive) header match against a curated list
+//            of event-categorical field names (EventName, Event, EventID,
+//            Outcome, Result, Status, Action, Operation, Category, Type,
+//            Kind, Severity, Level, Channel, Provider).
+//   Tier 2 — substring hint on the same seeds, for fields like
+//            "event_name" / "operationName" / "log_level".
+// Both tiers must pass a cardinality gate: 2 ≤ distinct ≤ 40 AND
+// distinct/non-empty ≤ 0.5 (on a 2000-row sample), ruling out unique-ish
+// columns (ids, timestamps, free-text). The detected timestamp column is
+// always skipped. Returns a column index or `null`.
+const _TL_STACK_EXACT = new Set([
+  'eventname', 'event', 'eventid', 'event id', 'outcome', 'result', 'status',
+  'action', 'operation', 'category', 'type', 'kind', 'severity', 'level',
+  'channel', 'provider',
+]);
+const _TL_STACK_HINT_RE = /(eventname|event|outcome|result|status|action|operation|category|type|kind|severity|level|channel|provider)/i;
+
+function _tlScoreStackCardinality(rows, colIdx, sampleMax) {
+  const n = Math.min(rows.length, sampleMax || 2000);
+  if (!n) return null;
+  const seen = new Set();
+  let nonEmpty = 0;
+  for (let i = 0; i < n; i++) {
+    const r = rows[i]; if (!r) continue;
+    const c = r[colIdx];
+    if (c == null || c === '') continue;
+    nonEmpty++;
+    seen.add(String(c));
+    if (seen.size > 60) return { distinct: seen.size, nonEmpty, tooMany: true };
+  }
+  return { distinct: seen.size, nonEmpty, tooMany: false };
+}
+
+function _tlStackColumnPasses(rows, colIdx) {
+  const s = _tlScoreStackCardinality(rows, colIdx, 2000);
+  if (!s || s.tooMany) return false;
+  if (s.distinct < 2 || s.distinct > 40) return false;
+  if (s.nonEmpty < 10) return false;
+  if ((s.distinct / s.nonEmpty) > 0.5) return false;
+  return true;
+}
+
+function _tlAutoDetectStackCol(columns, rows, timeColIdx) {
+  if (!columns || !rows || !rows.length) return null;
+  // Tier 1 — exact header match.
+  for (let i = 0; i < columns.length; i++) {
+    if (i === timeColIdx) continue;
+    const name = String(columns[i] || '').trim().toLowerCase();
+    if (!name) continue;
+    if (_TL_STACK_EXACT.has(name) && _tlStackColumnPasses(rows, i)) return i;
+  }
+  // Tier 2 — substring hint.
+  for (let i = 0; i < columns.length; i++) {
+    if (i === timeColIdx) continue;
+    const name = String(columns[i] || '').trim();
+    if (!name) continue;
+    if (_TL_STACK_HINT_RE.test(name) && _tlStackColumnPasses(rows, i)) return i;
+  }
+  return null;
+}
+
 function _tlAutoDetectTimestampCol(columns, rows) {
+
   // Pass 1 — headers that look timestamp-ish AND parse as timestamps.
   for (let i = 0; i < columns.length; i++) {
     if (_TL_HEADER_HINT_RE.test(String(columns[i] || '').trim())) {
@@ -486,6 +558,30 @@ function _tlFormatFullUtc(ms, isNumeric) {
   const d = new Date(ms);
   const pad = n => String(n).padStart(2, '0');
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+}
+
+// Human-friendly duration between two epoch-ms values. Picks the two
+// largest non-zero units so the readout reads like "30m", "2h 15m",
+// "3d 4h", "45s", "1.2s" (sub-second). Used by the active-datetime
+// range banner so the analyst sees span at a glance without mental
+// subtraction. Returns '' for non-finite spans (numeric-axis mode).
+function _tlFormatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  if (ms < 1000) return ms.toFixed(0) + 'ms';
+  const s = ms / 1000;
+  if (s < 60) return (s >= 10 ? s.toFixed(0) : s.toFixed(1)) + 's';
+  const m = Math.floor(s / 60);
+  const secR = Math.round(s - m * 60);
+  if (m < 60) return secR ? `${m}m ${secR}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const minR = m - h * 60;
+  if (h < 24) return minR ? `${h}h ${minR}m` : `${h}h`;
+  const d = Math.floor(h / 24);
+  const hR = h - d * 24;
+  if (d < 365) return hR ? `${d}d ${hR}h` : `${d}d`;
+  const y = Math.floor(d / 365);
+  const dR = d - y * 365;
+  return dR ? `${y}y ${dR}d` : `${y}y`;
 }
 
 function _tlFormatBytes(n) {
@@ -1409,6 +1505,32 @@ class TimelineQueryEditor {
     this._dismissedTokenStart = null;    // Esc → pinned to ctx.tokenStart; cleared on token change
     this._history = TimelineQueryEditor._loadHistory();
 
+    // ── Unified in-memory undo/redo ring ──────────────────────────────────
+    // Session-only (deliberately NOT persisted — see CONTRIBUTING). A single
+    // ring owns every edit: typing (coalesced VS-Code-style), paste/cut,
+    // clause-delete (Ctrl/⌘-Backspace), clear button, Esc-clear, history
+    // pick, programmatic `setValue()`. Both `Ctrl/⌘-Z` (undo) and
+    // `Ctrl/⌘-Shift-Z` / `Ctrl-Y` (redo) walk this ring exclusively — we
+    // always preventDefault on those keys so the native <textarea> undo
+    // stack (which can't reach non-typing changes) never runs alongside
+    // and desyncs us.
+    //
+    // Each frame is `{ value, selStart, selEnd }` so undo/redo restore
+    // the exact caret position (native-feeling). Coalescing: two
+    // consecutive `'type'` snapshots that differ by a single word-char
+    // insertion or deletion within `_HIST_COALESCE_MS` are folded into
+    // one entry. Any whitespace / operator / quote / paren break starts
+    // a new entry, matching VS Code / Sublime / the browser textarea's
+    // own behaviour. `'replace'` and `'delete'` snapshots never coalesce.
+    this._HIST_MAX = 500;
+    this._HIST_COALESCE_MS = 500;
+    this._hist = [{ value: '', selStart: 0, selEnd: 0 }];
+    this._histIdx = 0;
+    this._lastSnapKind = 'replace';
+    this._lastSnapTime = 0;
+    this._isUndoing = false;
+
+
     // Bound doc-level listeners, installed only while a popover is open.
     // Kept as properties so we can remove the exact same references.
     this._onDocPointerDown = (e) => this._handleOutsidePointer(e);
@@ -1422,16 +1544,20 @@ class TimelineQueryEditor {
   _buildDom() {
     const root = document.createElement('div');
     root.className = 'tl-query';
+    // Button cluster is deliberately rendered BEFORE the editor so the
+    // clear / history / help controls sit on the LEFT, next to the
+    // natural "I'm about to type here" focus point. The search-icon
+    // indicator was removed — the placeholder text already carries the
+    // affordance and the icon fought for width with the buttons.
     root.innerHTML = `
       <div class="tl-query-inner">
-        <span class="tl-query-icon" aria-hidden="true">🔍</span>
+        <button class="tl-query-clear" type="button" title="Clear filter" tabindex="-1">✕</button>
+        <button class="tl-query-history" type="button" title="History (Ctrl/⌘-↓)" tabindex="-1">▾</button>
+        <button class="tl-query-help" type="button" title="Query language help (Ctrl/⌘-Z undo · Ctrl/⌘-Shift-Z redo · Ctrl/⌘-Backspace delete clause)" tabindex="-1">?</button>
         <div class="tl-query-editor">
           <pre class="tl-query-hl" aria-hidden="true"><code></code></pre>
           <textarea class="tl-query-input" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" rows="1" placeholder='Filter — e.g. User:admin AND (EventID=4624 OR EventID=4625) NOT "svc_backup"'></textarea>
         </div>
-        <button class="tl-query-clear" type="button" title="Clear filter" tabindex="-1">✕</button>
-        <button class="tl-query-history" type="button" title="History (Ctrl/⌘-↓)" tabindex="-1">▾</button>
-        <button class="tl-query-help" type="button" title="Query language help" tabindex="-1">?</button>
       </div>
       <div class="tl-query-status" aria-live="polite"></div>
     `;
@@ -1445,22 +1571,42 @@ class TimelineQueryEditor {
 
     // Input event = user typed / pasted / cut. This is the ONE place we
     // consider opening the popover automatically. `e.isComposing` skips
-    // IME pre-edit events (we wait for compositionend).
+    // IME pre-edit events (we wait for compositionend). Every `input`
+    // also snaps a frame onto the unified undo/redo ring — `_snapshotHistory`
+    // coalesces consecutive word-char keystrokes inside the timeout so
+    // Ctrl-Z doesn't walk letter-by-letter through a field name, but any
+    // whitespace / operator / quote / paren immediately breaks the run
+    // (matching VS Code / Sublime / the browser's own textarea).
     this.input.addEventListener('input', (e) => {
       if (e && e.isComposing) return;
       // Any real input invalidates a prior "Escape-dismissed here": the
       // user has moved on. Clear the dismissal if the caret left the
       // pinned token, else leave it so Escape sticks while still typing.
       this._maybeClearDismissal();
+      if (!this._isUndoing) {
+        // Paste / cut / drop events arrive on the `input` stream with
+        // `inputType` flags we can use to classify the edit. Treat any
+        // multi-char insertion or non-type inputType as a `replace` so
+        // the whole pasted span is one undo step rather than coalescing
+        // into a neighbouring word run.
+        const it = e && e.inputType;
+        const kind = (it === 'insertFromPaste' || it === 'insertFromDrop'
+          || it === 'deleteByCut' || it === 'historyUndo' || it === 'historyRedo')
+          ? 'replace' : 'type';
+        this._snapshotHistory(kind);
+      }
       this._refreshHighlight();
       this._scheduleCommit();
       this._refreshSuggest({ allowOpen: true });
     });
     this.input.addEventListener('compositionend', () => {
+      // IME commit — one atomic frame for the whole composed run.
+      if (!this._isUndoing) this._snapshotHistory('replace');
       this._refreshHighlight();
       this._scheduleCommit();
       this._refreshSuggest({ allowOpen: true });
     });
+
 
     this.input.addEventListener('keydown', (e) => this._onKeyDown(e));
     this.input.addEventListener('scroll', () => {
@@ -1505,11 +1651,20 @@ class TimelineQueryEditor {
   // Public API — setValue is used on history-pick, query restore, and
   // clear. It's a programmatic change, so it MUST NOT auto-open the
   // popover (rule: open-on-user-input only).
+  //
+  // Every value mutation goes onto the unified undo/redo ring as a
+  // non-coalescing `'replace'` frame so Ctrl/⌘-Z can roll it back in one
+  // hop (matching VS Code / Sublime behaviour on paste or macro edits).
+  // The `_isUndoing` guard prevents a frame-apply during undo from
+  // re-snapshotting the value it just restored.
   setValue(v) {
-    this.input.value = v || '';
+    const next = v || '';
+    const prev = this.input.value;
+    this.input.value = next;
     this._refreshHighlight();
     this._closeSuggest();
     this._dismissedTokenStart = null;
+    if (!this._isUndoing && prev !== next) this._snapshotHistory('replace');
   }
   getValue() { return this.input.value; }
 
@@ -1535,7 +1690,299 @@ class TimelineQueryEditor {
     if (immediate) run(); else this._debounceTimer = setTimeout(run, this.debounceMs);
   }
 
+  // ── Unified undo/redo ring ───────────────────────────────────────────
+  // Push the current `{value, selStart, selEnd}` onto `_hist`. `kind`
+  // classifies the edit for the coalescing heuristic:
+  //   'type'    — ordinary keystroke from the `input` stream. Coalesces
+  //               with the previous 'type' frame iff (a) the prior frame
+  //               was 'type' within `_HIST_COALESCE_MS`, AND (b) the
+  //               diff between prev.value and current.value is a single
+  //               word-char insertion or deletion at the caret. Any
+  //               whitespace / operator / quote / paren break starts a
+  //               new entry — matches VS Code, Sublime, and the browser's
+  //               native textarea. A selection-replacement (non-empty
+  //               selStart != selEnd collapsed to a single-char diff) is
+  //               treated as a fresh frame regardless.
+  //   'replace' — paste / drop / cut / compositionend / programmatic
+  //               `setValue()` / history-pick / clear. Never coalesces.
+  //   'delete'  — Ctrl/⌘-Backspace clause-delete output. Never coalesces.
+  //
+  // Truncates any pending redo tail on a new edit (standard undo-ring
+  // semantics — typing after undo discards the redo path), and caps the
+  // ring at `_HIST_MAX` to bound memory. The first frame is the empty
+  // value pushed at construction time, so `_histIdx === 0` always holds
+  // a valid snapshot to undo back to.
+  _snapshotHistory(kind) {
+    const value = this.input.value;
+    const selStart = this.input.selectionStart || 0;
+    const selEnd = this.input.selectionEnd || selStart;
+    const now = Date.now();
+    const head = this._hist[this._histIdx];
+    // No-op: value and selection unchanged.
+    if (head && head.value === value && head.selStart === selStart && head.selEnd === selEnd) {
+      this._lastSnapKind = kind;
+      this._lastSnapTime = now;
+      return;
+    }
+    // Coalesce consecutive typing runs when the diff is a single word-char
+    // edit at the caret. Whitespace / operator / quote / paren breaks the
+    // run and forces a new frame — matches VS Code word-boundary undo.
+    if (kind === 'type' && this._lastSnapKind === 'type'
+      && head && head.value !== value
+      && (now - this._lastSnapTime) < this._HIST_COALESCE_MS
+      && this._isSimpleWordCharEdit(head.value, value)) {
+      // Replace the head frame in-place (don't push a new one).
+      this._hist[this._histIdx] = { value, selStart, selEnd };
+      this._lastSnapKind = 'type';
+      this._lastSnapTime = now;
+      return;
+    }
+    // Truncate redo tail on any new edit.
+    if (this._histIdx < this._hist.length - 1) {
+      this._hist.length = this._histIdx + 1;
+    }
+    this._hist.push({ value, selStart, selEnd });
+    this._histIdx = this._hist.length - 1;
+    // Cap ring length.
+    if (this._hist.length > this._HIST_MAX) {
+      const drop = this._hist.length - this._HIST_MAX;
+      this._hist.splice(0, drop);
+      this._histIdx -= drop;
+      if (this._histIdx < 0) this._histIdx = 0;
+    }
+    this._lastSnapKind = kind;
+    this._lastSnapTime = now;
+  }
+
+  // Returns true iff `next` is exactly `prev` with a single word-char
+  // inserted or deleted anywhere. Word-char = `[A-Za-z0-9_]`. Any diff
+  // involving whitespace / operator / quote / paren / bracket returns
+  // false so those characters force a new undo frame (VS-Code parity).
+  _isSimpleWordCharEdit(prev, next) {
+    const dLen = next.length - prev.length;
+    if (dLen !== 1 && dLen !== -1) return false;
+    const shorter = dLen === 1 ? prev : next;
+    const longer = dLen === 1 ? next : prev;
+    // Find first diverging char.
+    let i = 0;
+    const n = shorter.length;
+    while (i < n && shorter.charCodeAt(i) === longer.charCodeAt(i)) i++;
+    // Remaining suffix must match.
+    const suffixLenShorter = n - i;
+    if (longer.slice(longer.length - suffixLenShorter) !== shorter.slice(i)) return false;
+    const ch = longer.charAt(i);
+    return /[A-Za-z0-9_]/.test(ch);
+  }
+
+  // Step back one frame. Suppresses `_snapshotHistory` during apply via
+  // `_isUndoing` so the input-event flush (from the programmatic value
+  // change) doesn't re-push the frame we just restored.
+  _undo() {
+    if (this._histIdx <= 0) return;
+    this._histIdx--;
+    this._applyHistFrame(this._hist[this._histIdx]);
+  }
+
+  // Step forward one frame (if a redo tail exists).
+  _redo() {
+    if (this._histIdx >= this._hist.length - 1) return;
+    this._histIdx++;
+    this._applyHistFrame(this._hist[this._histIdx]);
+  }
+
+  _applyHistFrame(f) {
+    if (!f) return;
+    this._isUndoing = true;
+    try {
+      this.input.value = f.value;
+      const s = Math.max(0, Math.min(f.value.length, f.selStart));
+      const e = Math.max(0, Math.min(f.value.length, f.selEnd));
+      this.input.setSelectionRange(s, e);
+      this._refreshHighlight();
+      this._scheduleCommit();
+      this._closeSuggest();
+      this._dismissedTokenStart = null;
+    } finally {
+      this._isUndoing = false;
+    }
+    // Break coalescing — next keystroke starts a fresh run regardless of
+    // what kind the restored frame was tagged as.
+    this._lastSnapKind = 'replace';
+    this._lastSnapTime = 0;
+  }
+
+  // ── Clause-aware delete (Ctrl/⌘-Backspace, Ctrl/⌘-Delete) ────────────
+  // Walks the DSL token stream from `_tlTokenize` so that a single
+  // chord deletes a whole DSL clause rather than one word at a time.
+  // `dir` is `'back'` (Ctrl-Backspace) or `'forward'` (Ctrl-Delete).
+  //
+  // Semantics (back):
+  //   caret after VALUE preceded by `WORD OP VALUE`      → delete WORD + OP + VALUE
+  //   caret after OP in `WORD OP` (no value yet)         → delete WORD + OP
+  //   caret after bare WORD / NUMBER / KW                → delete that token
+  //   caret after `(` / `)` / STRING / REGEX             → delete that token
+  //   caret inside an unterminated STRING / REGEX        → fall through to native
+  //   caret at a selection                               → fall through to native
+  // After any deletion, leading/trailing whitespace around the cut span
+  // is collapsed so clauses don't leave `  ` runs behind.
+  //
+  // Forward direction is the mirror image.
+  //
+  // Returns true iff we handled the key; caller calls preventDefault in
+  // that case. Returning false lets the textarea run its native handler.
+  _deleteClause(dir) {
+    const input = this.input;
+    const selS = input.selectionStart || 0;
+    const selE = input.selectionEnd || selS;
+    if (selS !== selE) return false;    // non-empty selection → native delete
+    const text = input.value;
+    if (!text) return false;
+    // Don't DSL-walk into an unterminated string/regex — native behaviour
+    // is more predictable there.
+    const toks = _tlTokenize(text);
+    // Find the token index whose range brackets the caret. For a caret
+    // sitting exactly on a token boundary, `back` looks at the token
+    // ending there; `forward` looks at the token starting there.
+    const caret = selS;
+    // Bail if caret is inside a STRING / REGEX / ERR with no close.
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (caret > t.start && caret < t.end
+        && (t.kind === 'STRING' || t.kind === 'REGEX' || t.kind === 'ERR')) {
+        return false;
+      }
+    }
+
+    if (dir === 'back') {
+      // Find the last non-WS token ending at or before the caret.
+      let ix = -1;
+      for (let i = toks.length - 1; i >= 0; i--) {
+        const t = toks[i];
+        if (t.end <= caret && t.kind !== 'WS') { ix = i; break; }
+      }
+      if (ix < 0) return false;
+      let startIx = ix, endIx = ix;
+      const t = toks[ix];
+      // Three-token pattern: WORD OP VALUE (where VALUE is our current tok).
+      if (t.kind === 'WORD' || t.kind === 'STRING' || t.kind === 'NUMBER' || t.kind === 'REGEX') {
+        // Look back through WS.
+        let j = ix - 1;
+        while (j >= 0 && toks[j].kind === 'WS') j--;
+        if (j >= 0 && toks[j].kind === 'OP' && toks[j].text !== ',') {
+          let k = j - 1;
+          while (k >= 0 && toks[k].kind === 'WS') k--;
+          if (k >= 0 && (toks[k].kind === 'WORD' || toks[k].kind === 'STRING')) {
+            startIx = k;
+          } else {
+            startIx = j;   // OP without a field → delete OP + VALUE
+          }
+        }
+      } else if (t.kind === 'OP' && t.text !== ',') {
+        // Two-token pattern: WORD OP (no value yet).
+        let j = ix - 1;
+        while (j >= 0 && toks[j].kind === 'WS') j--;
+        if (j >= 0 && (toks[j].kind === 'WORD' || toks[j].kind === 'STRING')) startIx = j;
+      }
+      // Compute splice range + collapse one run of leading whitespace
+      // immediately before startIx so we don't leave "a  b" after deleting
+      // the clause in between.
+      let delStart = toks[startIx].start;
+      const delEnd = toks[endIx].end;
+      // Swallow one WS run before delStart.
+      let ws = delStart;
+      while (ws > 0 && (text.charAt(ws - 1) === ' ' || text.charAt(ws - 1) === '\t')) ws--;
+      // But keep at least one space if both sides have non-WS content,
+      // so `foo AND bar` → Ctrl-Backspace → `foo ` (not `foo`) when the
+      // caret was at the end of `bar`. Simple rule: if there's no content
+      // after delEnd (trailing clause), collapse all; otherwise keep one.
+      const tailIsEmpty = text.slice(delEnd).replace(/\s+$/, '') === '';
+      if (!tailIsEmpty && ws < delStart) ws = Math.max(ws, delStart - 0);
+      delStart = tailIsEmpty ? ws : delStart;
+      return this._applyEdit(delStart, delEnd, '', delStart);
+    }
+
+    // Forward: mirror image.
+    let ix = -1;
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (t.start >= caret && t.kind !== 'WS') { ix = i; break; }
+    }
+    if (ix < 0) return false;
+    let startIx = ix, endIx = ix;
+    const t = toks[ix];
+    if (t.kind === 'WORD' || t.kind === 'STRING') {
+      // WORD OP VALUE pattern, forwards.
+      let j = ix + 1;
+      while (j < toks.length && toks[j].kind === 'WS') j++;
+      if (j < toks.length && toks[j].kind === 'OP' && toks[j].text !== ',') {
+        let k = j + 1;
+        while (k < toks.length && toks[k].kind === 'WS') k++;
+        if (k < toks.length && (toks[k].kind === 'WORD' || toks[k].kind === 'STRING'
+          || toks[k].kind === 'NUMBER' || toks[k].kind === 'REGEX')) {
+          endIx = k;
+        } else {
+          endIx = j;
+        }
+      }
+    }
+    let delStart = toks[startIx].start;
+    let delEnd = toks[endIx].end;
+    // Swallow one WS run after delEnd so `a  b` → `a` when deleting `b`.
+    const headIsEmpty = text.slice(0, delStart).replace(/^\s+/, '') === '';
+    if (headIsEmpty) {
+      while (delEnd < text.length && (text.charAt(delEnd) === ' ' || text.charAt(delEnd) === '\t')) delEnd++;
+    }
+    return this._applyEdit(delStart, delEnd, '', delStart);
+  }
+
+  // Splice `[start, end)` in the textarea with `replacement`, set caret
+  // to `caret`, refresh highlight, snapshot the result onto the history
+  // ring as a `'delete'` frame (never coalesces), and schedule a commit.
+  // Returns true so callers can tail-call this and preventDefault in
+  // one step.
+  _applyEdit(start, end, replacement, caret) {
+    const before = this.input.value;
+    const next = before.slice(0, start) + (replacement || '') + before.slice(end);
+    if (next === before) return true;
+    this.input.value = next;
+    const c = Math.max(0, Math.min(next.length, caret == null ? start : caret));
+    this.input.setSelectionRange(c, c);
+    this._refreshHighlight();
+    // Snapshot as `'delete'` so it never coalesces with surrounding typing.
+    this._snapshotHistory('delete');
+    this._scheduleCommit();
+    this._closeSuggest();
+    this._dismissedTokenStart = null;
+    return true;
+  }
+
   _onKeyDown(e) {
+    // Ctrl/⌘-Z — undo via the unified ring (session-only). We ALWAYS
+    // preventDefault here so the textarea's native undo stack (which
+    // can't see non-typing changes like the clear button or history
+    // pick) never runs alongside and desyncs us. Ctrl/⌘-Shift-Z and
+    // Ctrl-Y redo. The actual apply sets `_isUndoing` so the resulting
+    // `input` event doesn't re-snapshot the frame we just restored.
+    const isUndoKey = (e.key === 'z' || e.key === 'Z')
+      && (e.ctrlKey || e.metaKey) && !e.altKey;
+    const isRedoKey = ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey)
+      || ((e.key === 'y' || e.key === 'Y') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey);
+    if (isRedoKey) { e.preventDefault(); this._redo(); return; }
+    if (isUndoKey) { e.preventDefault(); this._undo(); return; }
+
+    // Ctrl/⌘-Backspace — delete the entire DSL clause to the left of
+    // the caret (comparison operand, single token, or whole
+    // `field op value` triple). Falls through to native word-delete on
+    // unterminated strings/regex or when the tokenizer can't find a
+    // clause boundary, so analysts never lose the familiar shortcut.
+    // Symmetric Ctrl/⌘-Delete for the forward direction.
+    if (e.key === 'Backspace' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+      if (this._deleteClause('back')) { e.preventDefault(); return; }
+      // else fall through to native Ctrl-Backspace
+    }
+    if (e.key === 'Delete' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+      if (this._deleteClause('forward')) { e.preventDefault(); return; }
+    }
     // Manual trigger — Ctrl/Cmd-Space forces suggestions to recompute + open,
     // overriding any prior Esc dismissal for the current token. Mirrors
     // VS Code, Chrome DevTools, most IDEs.
@@ -1545,6 +1992,7 @@ class TimelineQueryEditor {
       this._refreshSuggest({ allowOpen: true, force: true });
       return;
     }
+
     // Ctrl/Cmd+↓ toggles the history menu without leaving the keyboard.
     // Alt+↓ is accepted as a fallback (matches older builds / docs), but
     // Ctrl/⌘ is the canonical binding — it's what combo-boxes on every
@@ -1561,11 +2009,11 @@ class TimelineQueryEditor {
     // the user never loses their caret.
     if (this._isHistoryOpen()) {
       if (e.key === 'ArrowDown') { e.preventDefault(); this._moveHistorySel(1); return; }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); this._moveHistorySel(-1); return; }
-      if (e.key === 'Home')      { e.preventDefault(); this._setHistorySel(0); return; }
-      if (e.key === 'End')       { e.preventDefault(); this._setHistorySel(this._history.length - 1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); this._moveHistorySel(-1); return; }
+      if (e.key === 'Home') { e.preventDefault(); this._setHistorySel(0); return; }
+      if (e.key === 'End') { e.preventDefault(); this._setHistorySel(this._history.length - 1); return; }
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); this._applyHistorySel(); return; }
-      if (e.key === 'Escape')    { e.preventDefault(); this._closeHistoryMenu(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); this._closeHistoryMenu(); return; }
       // Any printable key closes the menu and falls through to the input
       // — matches how <select> behaves when you start typing.
       if (e.key.length === 1) { this._closeHistoryMenu(); /* fall through */ }
@@ -1573,10 +2021,10 @@ class TimelineQueryEditor {
 
     if (this._isSuggestOpen()) {
       if (e.key === 'ArrowDown') { e.preventDefault(); this._moveSuggest(1); return; }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); this._moveSuggest(-1); return; }
-      if (e.key === 'Tab')       { e.preventDefault(); this._applySuggest(false); return; }
-      if (e.key === 'Enter')     { e.preventDefault(); this._applySuggest(true); return; }
-      if (e.key === 'Escape')    {
+      if (e.key === 'ArrowUp') { e.preventDefault(); this._moveSuggest(-1); return; }
+      if (e.key === 'Tab') { e.preventDefault(); this._applySuggest(false); return; }
+      if (e.key === 'Enter') { e.preventDefault(); this._applySuggest(true); return; }
+      if (e.key === 'Escape') {
         e.preventDefault();
         // Pin dismissal to the current token so the popover stays shut
         // while the user keeps typing the same token. Any character that
@@ -1641,8 +2089,8 @@ class TimelineQueryEditor {
     // Respect a live Esc dismissal pinned to the current token (unless
     // the manual trigger forced through).
     if (!force
-        && this._dismissedTokenStart != null
-        && this._dismissedTokenStart === ctx.tokenStart) {
+      && this._dismissedTokenStart != null
+      && this._dismissedTokenStart === ctx.tokenStart) {
       this._closeSuggest();
       return;
     }
@@ -1660,8 +2108,8 @@ class TimelineQueryEditor {
   }
 
   _itemsFor(ctx) {
-    if (ctx.kind === 'field')   return this._fieldSuggestions(ctx.prefix);
-    if (ctx.kind === 'value')   return this._valueSuggestions(ctx.fieldName, ctx.prefix);
+    if (ctx.kind === 'field') return this._fieldSuggestions(ctx.prefix);
+    if (ctx.kind === 'value') return this._valueSuggestions(ctx.fieldName, ctx.prefix);
     if (ctx.kind === 'keyword') return this._keywordSuggestions(ctx.prefix);
     return [];
   }
@@ -2058,6 +2506,7 @@ class TimelineQueryEditor {
         <div><code>is:sus</code> — rows matching a 🚩 suspicious mark</div>
         <div><code>is:detection</code> — rows matching a detection (EVTX)</div>
         <div style="margin-top:4px;opacity:.7">Ctrl/⌘-Space to show suggestions · Esc to dismiss · Tab / Enter to accept · Ctrl/⌘-↓ to open history</div>
+        <div style="margin-top:2px;opacity:.7">Ctrl/⌘-Z to undo · Ctrl/⌘-Shift-Z (or Ctrl-Y) to redo · Ctrl/⌘-Backspace to delete the clause left of the caret</div>
       </div>
     `;
     this._mountFloatingMenu(menu, this.helpBtn);
@@ -2069,7 +2518,11 @@ class TimelineQueryEditor {
     bub.textContent = text;
     const rect = anchor.getBoundingClientRect();
     bub.style.position = 'fixed';
-    bub.style.right = (window.innerWidth - rect.right) + 'px';
+    // Left-anchored because the clear / history / help buttons live on
+    // the LEFT edge of the query bar — aligning under the button's left
+    // edge keeps the bubble in view. (The old right-anchor assumed the
+    // buttons were flush-right and opened off-screen once they moved.)
+    bub.style.left = Math.max(8, rect.left) + 'px';
     bub.style.top = (rect.bottom + 2) + 'px';
     bub.style.zIndex = '10001';
     document.body.appendChild(bub);
@@ -2081,10 +2534,17 @@ class TimelineQueryEditor {
   _mountFloatingMenu(menu, anchor) {
     const rect = anchor.getBoundingClientRect();
     menu.style.position = 'fixed';
-    menu.style.right = (window.innerWidth - rect.right) + 'px';
     menu.style.top = (rect.bottom + 2) + 'px';
     menu.style.zIndex = '10001';
     document.body.appendChild(menu);
+    // Left-align under the button (see _openTransientBubble for why),
+    // but clamp to the viewport so a wide popover near the right edge
+    // doesn't overflow. `offsetWidth` is only meaningful after the menu
+    // is in the DOM — hence the appendChild call above.
+    const menuW = menu.offsetWidth || 240;
+    const maxLeft = Math.max(8, window.innerWidth - menuW - 8);
+    menu.style.left = Math.max(8, Math.min(rect.left, maxLeft)) + 'px';
+
     const dismiss = () => {
       if (menu.parentNode) menu.parentNode.removeChild(menu);
       document.removeEventListener('pointerdown', onPointer, true);
@@ -2399,7 +2859,7 @@ class TimelineView {
     // back to the legacy URL-aggregated view (historyRows) otherwise.
     const useEvents = db.historyEventRows && db.historyEventRows.length > 0;
     const srcCols = useEvents ? db.historyEventColumns : db.historyColumns;
-    const srcRows = useEvents ? db.historyEventRows    : db.historyRows;
+    const srcRows = useEvents ? db.historyEventRows : db.historyRows;
 
     if (!db.browserType || !srcRows || srcRows.length === 0) {
       return new TimelineView({
@@ -2431,7 +2891,7 @@ class TimelineView {
     const browserLabel = db.browserType === 'firefox' ? 'Firefox' : 'Chrome';
     // Per-event: time is col 0 ("Timestamp"), stack-by col 1 ("Type").
     // Legacy:    time is col 3 ("Last Visited"), no default stack.
-    const timeColIdx  = useEvents ? 0 : 3;
+    const timeColIdx = useEvents ? 0 : 3;
     const stackColIdx = useEvents ? 1 : null;
     return new TimelineView({
       file, columns, rows,
@@ -2477,7 +2937,9 @@ class TimelineView {
     this._timeCol = Number.isInteger(opts.defaultTimeColIdx)
       ? opts.defaultTimeColIdx
       : _tlAutoDetectTimestampCol(this._baseColumns, this.rows);
-    this._stackCol = Number.isInteger(opts.defaultStackColIdx) ? opts.defaultStackColIdx : null;
+    this._stackCol = Number.isInteger(opts.defaultStackColIdx)
+      ? opts.defaultStackColIdx
+      : _tlAutoDetectStackCol(this._baseColumns, this.rows, this._timeCol);
     this._stackColorMap = null;
     this._buildStableStackColorMap();
     this._bucketId = TimelineView._loadBucketPref();
@@ -2578,6 +3040,8 @@ class TimelineView {
     this._cardSize = TIMELINE_CARD_SIZE_DEFAULT;
     this._cardWidths = TimelineView._loadCardWidthsFor(this._fileKey);
     this._cardOrder = TimelineView._loadCardOrderFor(this._fileKey);
+    this._pinnedCols = TimelineView._loadPinnedColsFor(this._fileKey);
+    this._pendingCtrlSelect = null; // { colIdx, values: Set, rows: [] }
 
     // Load any persisted regex extractors for this file.
     const persistedRegex = TimelineView._loadRegexExtractsFor(this._fileKey);
@@ -2603,7 +3067,14 @@ class TimelineView {
     this._rebuildDetectionBitmap();
     this._recomputeFilter();
     this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns', 'detections', 'entities', 'pivot', 'sections']);
+    // Auto-extract nudge — run one tick later so the initial render has
+    // painted and the user isn't staring at a nudge before the grid.
+    // Persisted suppression (`loupe_timeline_autoextract_nudged_hard`) is
+    // checked inside `_renderAutoExtractNudge`.
+    this._autoExtractNudgeDismissed = false;
+    setTimeout(() => this._renderAutoExtractNudge(), 60);
   }
+
 
   root() { return this._root; }
 
@@ -2629,7 +3100,8 @@ class TimelineView {
     if (this._onDocClick) document.removeEventListener('mousedown', this._onDocClick, true);
     if (this._onDocKey) document.removeEventListener('keydown', this._onDocKey, true);
     if (this._onDocScroll) window.removeEventListener('scroll', this._onDocScroll, true);
-    this._onDocClick = this._onDocKey = this._onDocScroll = null;
+    if (this._onDocKeyUp) document.removeEventListener('keyup', this._onDocKeyUp, true);
+    this._onDocClick = this._onDocKey = this._onDocScroll = this._onDocKeyUp = null;
     this._grid = null;
     this._resizeObs = null;
     this._els = {};
@@ -2777,6 +3249,24 @@ class TimelineView {
       if (order && order.length) all[fileKey] = order;
       else delete all[fileKey];
       localStorage.setItem(TIMELINE_KEYS.CARD_ORDER, JSON.stringify(all));
+    } catch (_) { /* noop */ }
+  }
+  static _loadPinnedColsFor(fileKey) {
+    try {
+      const raw = localStorage.getItem(TIMELINE_KEYS.PINNED_COLS);
+      if (!raw) return [];
+      const all = JSON.parse(raw);
+      const arr = all && all[fileKey];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+  }
+  static _savePinnedColsFor(fileKey, cols) {
+    try {
+      const raw = localStorage.getItem(TIMELINE_KEYS.PINNED_COLS);
+      const all = raw ? JSON.parse(raw) : {};
+      if (cols && cols.length) all[fileKey] = cols;
+      else delete all[fileKey];
+      localStorage.setItem(TIMELINE_KEYS.PINNED_COLS, JSON.stringify(all));
     } catch (_) { /* noop */ }
   }
   static _loadRegexExtractsFor(fileKey) {
@@ -3444,7 +3934,7 @@ class TimelineView {
         <select class="tl-field-select" data-field="bucket"></select>
       </label>
       <span class="tl-spacer"></span>
-      <button class="tl-tb-btn" type="button" data-act="extract" title="Extract URLs / hostnames / regex into new columns">ƒx Extract</button>
+      <button class="tl-tb-btn" type="button" data-act="extract" title="Extract values (URLs, hostnames, Key=Value fields, regex) into new columns">ƒx Extract values</button>
       <button class="tl-reset-btn" type="button" title="Reset view: clear query, range window, column hides, 🚩 Suspicious marks, stack column, pivot, extracted columns, AND every saved Timeline preference in localStorage (grid/chart heights, bucket, section collapse, card widths, query history, drawer width, grid column widths)">↺ Reset</button>
     `;
     host.appendChild(toolbar);
@@ -3942,6 +4432,12 @@ class TimelineView {
     document.addEventListener('mousedown', this._onDocClick, true);
     document.addEventListener('keydown', this._onDocKey, true);
     window.addEventListener('scroll', this._onDocScroll, true);
+
+    // Ctrl/Meta keyup — commit any pending multi-select IN filter.
+    this._onDocKeyUp = (e) => {
+      if (e.key === 'Control' || e.key === 'Meta') this._commitCtrlSelect();
+    };
+    document.addEventListener('keyup', this._onDocKeyUp, true);
   }
 
   // Canonical "put me back to neutral" button. Wipes every piece of
@@ -3955,6 +4451,153 @@ class TimelineView {
   // the global TimelineQueryEditor history ring. Reset is the single
   // "scrub this workstation clean of Timeline state" button.
   //
+  // ── Auto-extract nudge strip ────────────────────────────────────────
+  // Inserted above `.tl-query-mount` once the lazy load completes. It
+  // only renders if the auto-scanner finds ≥ 1 proposal and the user
+  // hasn't opted out ("Don't show again" → `loupe_timeline_autoextract_nudged_hard`).
+  // The strip surfaces up to 4 preview rows with a per-row "Add" button
+  // plus a "See all N →" escape hatch that opens the full Extract dialog.
+  _renderAutoExtractNudge() {
+    if (this._destroyed) return;
+    if (this._autoExtractNudgeDismissed) return;
+    try {
+      if (localStorage.getItem(TIMELINE_KEYS.AUTOEXTRACT_NUDGED_HARD) === '1') return;
+    } catch (_) { /* noop */ }
+    if (!this._els || !this._els.host || !this._els.queryBar) return;
+    // Don't pile a second strip on top of an existing one.
+    if (this._els.host.querySelector('.tl-autoextract-nudge')) return;
+
+    let proposals = [];
+    try { proposals = this._autoExtractScan() || []; } catch (_) { return; }
+    if (!proposals.length) return;
+
+    // Rank by match %, then by URL/host kind over generic JSON leaves.
+    const kindRank = { 'url-part': 0, 'text-url': 0, 'text-host': 0, 'json-url': 1, 'json-host': 1, 'kv-field': 2, 'json-leaf': 3 };
+    const ranked = proposals.slice().sort((a, b) => {
+      const ka = kindRank[a.kind] == null ? 9 : kindRank[a.kind];
+      const kb = kindRank[b.kind] == null ? 9 : kindRank[b.kind];
+      if (ka !== kb) return ka - kb;
+      return (b.matchPct || 0) - (a.matchPct || 0);
+    });
+    const previewCount = Math.min(4, ranked.length);
+
+    const strip = document.createElement('div');
+    strip.className = 'tl-autoextract-nudge';
+    strip.setAttribute('role', 'region');
+    strip.setAttribute('aria-label', 'Auto-extractable fields');
+
+    const header = document.createElement('div');
+    header.className = 'tl-autoextract-nudge__header';
+    header.innerHTML = `
+      <span class="tl-autoextract-nudge__spark" aria-hidden="true">✨</span>
+      <span class="tl-autoextract-nudge__title">${ranked.length} auto-extractable field${ranked.length === 1 ? '' : 's'} detected</span>
+    `;
+    const actions = document.createElement('div');
+    actions.className = 'tl-autoextract-nudge__actions';
+    actions.innerHTML = `
+      <button type="button" class="tl-autoextract-nudge__seeall">See all ${ranked.length} →</button>
+      <button type="button" class="tl-autoextract-nudge__dismiss" title="Hide for this session">Dismiss</button>
+      <button type="button" class="tl-autoextract-nudge__never" title="Never show this nudge again on any file">Don't show again</button>
+    `;
+    header.appendChild(actions);
+    strip.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'tl-autoextract-nudge__list';
+    const applyOne = (p) => {
+      const before = this._extractedCols.length;
+      if (p.kind === 'json-url' || p.kind === 'json-host' || p.kind === 'json-leaf') {
+        this._addJsonExtractedColNoRender(p.sourceCol, p.path, p.proposedName, { autoKind: p.kind });
+      } else if (p.kind === 'text-url' || p.kind === 'text-host') {
+        this._addRegexExtractNoRender({
+          name: p.proposedName,
+          col: p.sourceCol,
+          pattern: (p.kind === 'text-url' ? TL_URL_RE.source : TL_HOSTNAME_INLINE_RE.source),
+          flags: 'i',
+          group: (p.kind === 'text-host') ? 1 : 0,
+          kind: 'auto',
+        });
+      } else if (p.kind === 'kv-field') {
+        const esc = String(p.fieldName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = `(?:^| \\| )${esc}=([\\s\\S]*?)(?= \\| [A-Za-z_][\\w.-]*=|$)`;
+        this._addRegexExtractNoRender({
+          name: p.proposedName,
+          col: p.sourceCol,
+          pattern,
+          flags: '',
+          group: 1,
+          kind: 'auto',
+          trim: true,
+        });
+      } else if (p.kind === 'url-part') {
+        this._addRegexExtractNoRender({
+          name: p.proposedName,
+          col: p.sourceCol,
+          pattern: p.pattern,
+          flags: '',
+          group: p.group,
+          kind: 'auto',
+        });
+      }
+      const added = this._extractedCols.length - before;
+      if (added) {
+        this._rebuildExtractedStateAndRender();
+
+        if (this._app && this._app._toast) {
+          this._app._toast(`Added "${p.proposedName}"`, 'info');
+        }
+      } else if (this._app && this._app._toast) {
+        this._app._toast('Already extracted', 'info');
+      }
+    };
+
+    for (let i = 0; i < previewCount; i++) {
+      const p = ranked[i];
+      const row = document.createElement('div');
+      row.className = 'tl-autoextract-nudge__row';
+      const colName = this.columns[p.sourceCol] || `(col ${p.sourceCol + 1})`;
+      const pathLabel = p.path
+        ? _tlJsonPathLabel(p.path)
+        : (p.kind === 'kv-field' ? p.fieldName : '(whole cell)');
+      row.innerHTML = `
+        <span class="tl-autoextract-nudge__kind" data-kind="${_tlEsc(p.kind)}">${_tlEsc(p.kindLabel)}</span>
+        <span class="tl-autoextract-nudge__col" title="${_tlEsc(colName)}">${_tlEsc(colName)}</span>
+        <span class="tl-autoextract-nudge__path" title="${_tlEsc(String(pathLabel))}">${_tlEsc(String(pathLabel))}</span>
+        <span class="tl-autoextract-nudge__rate" title="match rate in sample">${(p.matchPct || 0).toFixed(0)}%</span>
+        <span class="tl-autoextract-nudge__sample" title="${_tlEsc(p.sample || '')}">${_tlEsc(this._ellipsis(p.sample || '', 80))}</span>
+        <button type="button" class="tl-autoextract-nudge__add">Add</button>
+      `;
+      row.querySelector('.tl-autoextract-nudge__add').addEventListener('click', () => {
+        applyOne(p);
+        row.classList.add('tl-autoextract-nudge__row--added');
+        const btn = row.querySelector('.tl-autoextract-nudge__add');
+        if (btn) { btn.textContent = '✓ Added'; btn.disabled = true; }
+      });
+      list.appendChild(row);
+    }
+    strip.appendChild(list);
+
+    const removeStrip = () => { if (strip.parentNode) strip.parentNode.removeChild(strip); };
+    actions.querySelector('.tl-autoextract-nudge__seeall').addEventListener('click', () => {
+      removeStrip();
+      this._openExtractionDialog(null);
+    });
+    actions.querySelector('.tl-autoextract-nudge__dismiss').addEventListener('click', () => {
+      this._autoExtractNudgeDismissed = true;
+      removeStrip();
+    });
+    actions.querySelector('.tl-autoextract-nudge__never').addEventListener('click', () => {
+      try { localStorage.setItem(TIMELINE_KEYS.AUTOEXTRACT_NUDGED_HARD, '1'); } catch (_) { /* noop */ }
+      this._autoExtractNudgeDismissed = true;
+      removeStrip();
+      if (this._app && this._app._toast) this._app._toast('Auto-extract nudge disabled', 'info');
+    });
+
+    // Insert directly before the query mount so the nudge sits in the
+    // normal scroll flow above the query bar.
+    this._els.host.insertBefore(strip, this._els.queryBar);
+  }
+
   // Extracted columns are cleared inline (not via `_clearAllExtractedCols`)
   // because that helper pops a window.confirm dialog and emits a toast —
   // both inappropriate for an explicit one-click Reset.
@@ -3990,6 +4633,8 @@ class TimelineView {
     this._sections = {};
     this._cardWidths = {};
     this._cardOrder = null;
+    this._pinnedCols = [];
+    this._pendingCtrlSelect = null;
     if (this._root && this._root.style) {
       this._root.style.setProperty('--tl-grid-h', TIMELINE_GRID_DEFAULT_H + 'px');
       this._root.style.setProperty('--tl-chart-h', TIMELINE_CHART_DEFAULT_H + 'px');
@@ -4279,6 +4924,11 @@ class TimelineView {
           // Row-stat reflects the new count but grid/columns/sus wait for
           // pointerup. This keeps drag rAF under a few ms even at 100k+ rows.
           this._scheduleRender(['scrubber', 'chart']);
+          // Live-update the range banner so the analyst can read the
+          // pending [from → to · duration] while dragging. O(1) text
+          // update — cheaper than a full 'chips' task (which would also
+          // repaint the sus chips strip unnecessarily).
+          this._renderRangeBanner({ min: this._window.min, max: this._window.max, preview: true });
         }
       };
       const onUp = () => {
@@ -4287,8 +4937,10 @@ class TimelineView {
         window.removeEventListener('pointerup', onUp);
         this._windowDragging = false;
         // Commit: run the full render pass once, including grid/columns/sus.
+        // The 'chips' task clears the --preview modifier off the banner.
         this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns']);
       };
+
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     };
@@ -4876,7 +5528,19 @@ class TimelineView {
         // all stay in their pre-drag state until pointer-up, which
         // keeps even 100k-row datasets buttery while the user picks
         // a range.
+        //
+        // One exception: we DO live-update the range banner so the
+        // analyst can read the pending [from → to · duration] while
+        // still dragging. This is a pure text update (O(1)) — no
+        // render pass — so it stays in the same budget as the
+        // overlay rect it mirrors.
+        const previewLo = xToMs(aClamped);
+        const previewHi = xToMs(bClamped);
+        if (Number.isFinite(previewLo) && Number.isFinite(previewHi) && previewHi > previewLo) {
+          this._renderRangeBanner({ min: previewLo, max: previewHi, preview: true });
+        }
       };
+
       const onUp = (ev) => {
         canvas.removeEventListener('pointermove', onMove);
         canvas.removeEventListener('pointerup', onUp);
@@ -4997,17 +5661,40 @@ class TimelineView {
   // unobstructed view in the neutral state. Piggybacks on the 'chips'
   // task in `_scheduleRender` since every site that mutates `_window`
   // already schedules 'chips'.
-  _renderRangeBanner() {
+  _renderRangeBanner(overrides) {
     const el = this._els && this._els.rangeBanner;
     if (!el) return;
-    if (!this._window) { el.classList.add('hidden'); return; }
+    // During a live drag-preview the banner is fed a transient
+    // `{min,max,preview:true}` span so the analyst can see the range
+    // they're about to commit. `preview` adds a `--preview` modifier
+    // so the banner visually reads "not committed yet".
+    const win = overrides || this._window;
+    if (!win) {
+      el.classList.add('hidden');
+      el.classList.remove('tl-range-banner--preview');
+      return;
+    }
     el.classList.remove('hidden');
-    const lo = _tlFormatFullUtc(this._window.min, this._timeIsNumeric);
-    const hi = _tlFormatFullUtc(this._window.max, this._timeIsNumeric);
+    el.classList.toggle('tl-range-banner--preview', !!(overrides && overrides.preview));
+    const lo = _tlFormatFullUtc(win.min, this._timeIsNumeric);
+    const hi = _tlFormatFullUtc(win.max, this._timeIsNumeric);
     if (this._els.rangeBannerText) {
-      this._els.rangeBannerText.textContent = `${lo} → ${hi}`;
+      // Append a human-friendly duration ("30m", "2h 15m", …) to the
+      // end of the readout. Skipped in numeric-axis mode — `_tlFormatDuration`
+      // treats its argument as milliseconds, so a duration of "year 2024"
+      // on a numeric axis has no sensible spelling.
+      let suffix = '';
+      if (!this._timeIsNumeric) {
+        const dur = _tlFormatDuration(win.max - win.min);
+        if (dur) suffix = ' · ' + dur;
+      } else {
+        const span = win.max - win.min;
+        if (Number.isFinite(span)) suffix = ' · Δ ' + _tlFormatNumericTick(span, span);
+      }
+      this._els.rangeBannerText.textContent = `${lo} → ${hi}${suffix}`;
     }
   }
+
 
   // ── Chips ────────────────────────────────────────────────────────────────
   // The chips strip hosts the "＋ Add Suspicious Indicator" button —
@@ -5071,7 +5758,29 @@ class TimelineView {
       });
       el.appendChild(chip);
     }
+
+    // Clear-all button — only when there's at least one sus mark. Mirrors
+    // the per-chip ⊗ teardown (wipe _susMarks, persist, rebuild bitmap,
+    // recompute filter, re-render). margin-left:auto pushes it to the
+    // far right of the chips strip.
+    if (this._susMarks.length > 0) {
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'tl-chips-clear';
+      clearBtn.innerHTML = '✕ Clear';
+      clearBtn.title = 'Remove all suspicious indicators';
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._susMarks = [];
+        TimelineView._saveSusMarksFor(this._fileKey, []);
+        this._rebuildSusBitmap();
+        this._recomputeFilter();
+        this._scheduleRender(['chart', 'chips', 'grid', 'columns']);
+      });
+      el.appendChild(clearBtn);
+    }
   }
+
 
   // ── "＋ Add Sus" popover ─────────────────────────────────────────────────
 
@@ -5192,7 +5901,7 @@ class TimelineView {
     const isFullDataset = idx.length === this.rows.length;
     if (timeCol != null && timeMs && idx.length > 1) {
       if (isFullDataset && this._sortedFullIdx &&
-          this._sortedFullIdx.length === idx.length) {
+        this._sortedFullIdx.length === idx.length) {
         // Cache hit — reuse the previously sorted full-dataset index.
         idx = this._sortedFullIdx;
       } else {
@@ -5227,8 +5936,8 @@ class TimelineView {
     const hasExtracted = this._extractedCols.length > 0;
     const extLen = this._extractedCols.length;
     const cacheHit = isFullDataset && this._cachedRowsConcat &&
-        this._cachedRowsConcat.length === idx.length &&
-        this._cachedRowsConcatExtLen === extLen;
+      this._cachedRowsConcat.length === idx.length &&
+      this._cachedRowsConcatExtLen === extLen;
     let rowsConcat;
     if (cacheHit) {
       rowsConcat = this._cachedRowsConcat;
@@ -5252,9 +5961,9 @@ class TimelineView {
     // maps a cell value → palette index (0–8); when present, every grid
     // row receives a `tl-stack-N` class that tints its background with
     // the matching legend color.
-    const stackCol  = this._stackCol;
-    const colorMap  = this._stackColorMap;   // Map<value, paletteIdx> | null
-    const self      = this;
+    const stackCol = this._stackCol;
+    const colorMap = this._stackColorMap;   // Map<value, paletteIdx> | null
+    const self = this;
 
     const rowClass = (rowIdx) => {
       const orig = origIdx[rowIdx];
@@ -5305,6 +6014,76 @@ class TimelineView {
     // parameter is kept on the method signature because `_tlRole` is still
     // stamped on the GridViewer instance further down — other callers
     // (scroll → cursor resolver) read it.
+    // EVTX Event-ID annotation hooks — only wired when the Timeline is
+    // hosting an EVTX file (identified by the `_evtxFindings` side-
+    // channel). Looks up `<channel>:<eid>` (then bare `<eid>`) in the
+    // EvtxEventIds registry and renders:
+    //   - a multi-line `td.title` tooltip on every Event-ID body cell
+    //     (Row grid view)
+    //   - a summary pill + MITRE-technique pill next to the Event-ID
+    //     value in the drawer pane
+    // Disabled on non-EVTX timeline files (CSV / TSV / JSON) — returning
+    // null from the hooks short-circuits the augment path.
+    const Reg = (typeof window !== 'undefined' && window.EvtxEventIds) || null;
+    const evtxEidCol = (this._evtxFindings && Reg)
+      ? this._baseColumns.indexOf('Event ID')
+      : -1;
+    const evtxChannelCol = (evtxEidCol >= 0)
+      ? this._baseColumns.indexOf('Channel')
+      : -1;
+    const evtxLookupRec = (dataIdx) => {
+      if (evtxEidCol < 0) return null;
+      // dataIdx here is an index into `rowsConcat`, which is the
+      // GridViewer's source. `origIdx` maps back to the un-sorted
+      // original row offset where applicable, but `rowsConcat` rows
+      // are self-contained — the cell at colIdx is already the value
+      // the user sees. Read directly.
+      const row = rowsConcat[dataIdx];
+      if (!row) return null;
+      const eid = row[evtxEidCol];
+      if (!eid) return null;
+      const ch = evtxChannelCol >= 0 ? row[evtxChannelCol] : '';
+      try { return Reg.lookup(eid, ch); } catch (_) { return null; }
+    };
+    const cellTitle = (evtxEidCol >= 0) ? (dataIdx, colIdx /*, raw */) => {
+      if (colIdx !== evtxEidCol) return null;
+      const rec = evtxLookupRec(dataIdx);
+      if (!rec) return null;
+      try { return Reg.formatTooltip(rec); } catch (_) { return null; }
+    } : null;
+    const detailAugment = (evtxEidCol >= 0) ? (dataIdx, colIdx, value, ctx) => {
+      if (colIdx !== evtxEidCol) return;
+      const rec = evtxLookupRec(dataIdx);
+      if (!rec) return;
+      const valEl = ctx && ctx.valEl;
+      if (!valEl) return;
+      try { valEl.title = Reg.formatTooltip(rec); } catch (_) { /* ignore */ }
+      // Summary pill — short analyst-friendly label.
+      if (rec.summary) {
+        const pill = document.createElement('span');
+        pill.className = 'tl-evtx-eid-pill';
+        pill.textContent = rec.summary;
+        if (rec.category) pill.title = `${rec.category} · ${rec.name || ''}`.trim();
+        valEl.appendChild(pill);
+      }
+      // MITRE pill — compact list of technique IDs; tooltip carries the
+      // canonical names pulled from `window.MITRE.lookup`.
+      if (Array.isArray(rec.mitre) && rec.mitre.length) {
+        const mpill = document.createElement('span');
+        mpill.className = 'tl-evtx-mitre-pill';
+        mpill.textContent = 'ATT&CK ' + rec.mitre.join(' · ');
+        const MT = (typeof window !== 'undefined' && window.MITRE) ? window.MITRE : null;
+        if (MT) {
+          const lines = rec.mitre.map(tid => {
+            const info = MT.lookup(tid);
+            return info ? `${tid} — ${info.name || ''}` : tid;
+          });
+          mpill.title = lines.join('\n');
+        }
+        valEl.appendChild(mpill);
+      }
+    } : null;
+
     const existing = (role === 'main' ? this._grid : null);
     if (!existing) {
       const viewer = new GridViewer({
@@ -5316,6 +6095,8 @@ class TimelineView {
         timeColumn: -1,
         rowClass,
         cellClass,
+        cellTitle,
+        detailAugment,
         detailCellClass,
 
         // In Timeline Mode the embedded grid's built-in "Use as timeline"
@@ -5879,6 +6660,19 @@ class TimelineView {
       }
     }
 
+    // Pin sorting — move pinned columns to the front of _indices while
+    // preserving relative order among pinned and unpinned groups.
+    if (this._pinnedCols && this._pinnedCols.length) {
+      const pinnedSet = new Set();
+      const nameOf = (ci) => cols[ci] || `(col ${ci + 1})`;
+      for (const pn of this._pinnedCols) pinnedSet.add(pn);
+      const pinned = _indices.filter(ci => pinnedSet.has(nameOf(ci)));
+      const unpinned = _indices.filter(ci => !pinnedSet.has(nameOf(ci)));
+      _indices.length = 0;
+      for (const ci of pinned) _indices.push(ci);
+      for (const ci of unpinned) _indices.push(ci);
+    }
+
     for (let _ci = 0; _ci < _indices.length; _ci++) {
       const c = _indices[_ci];
       const s = (stats && stats[c]) || { total: 0, distinct: 0, values: [] };
@@ -5897,6 +6691,9 @@ class TimelineView {
       const savedSpan = this._cardSpanFor(colName);
       if (savedSpan > 1) card.style.gridColumn = `span ${savedSpan}`;
 
+      const isPinned = this._pinnedCols && this._pinnedCols.includes(colName);
+      if (isPinned) card.classList.add('tl-col-card-pinned');
+
       const head = document.createElement('div');
       head.className = 'tl-col-head';
       const extractedMark = this._isExtractedCol(c) ? '<span class="tl-col-badge" title="Extracted column">ƒx</span>' : '';
@@ -5907,12 +6704,25 @@ class TimelineView {
       // rebuild (stats refresh), which matches user expectations for a
       // transient view-state toggle.
       const sortLabels = { 'count-desc': '# ↓', 'count-asc': '# ↑', 'az': 'A→Z', 'za': 'Z→A' };
+      // Header layout:
+      //   • Always-visible centred name + muted distinct-count "subscript".
+      //   • Hover-only button cluster (pin / copy-visible-values / sort)
+      //     anchored to the top-right corner — absolutely positioned so
+      //     the centred name never shifts when hover reveals them.
+      //   • Always-visible column-menu button (⋮) top-left so it's always
+      //     reachable without hover.
       head.innerHTML = `
-        ${extractedMark}
-        <span class="tl-col-name" title="${_tlEsc(colName)}">${_tlEsc(colName)}</span>
-        <span class="tl-col-sub" title="distinct values">${s.distinct.toLocaleString()}</span>
-        <button class="tl-col-sort" type="button" title="Cycle sort (count ↓ → count ↑ → A→Z → Z→A · Alt-click to reset)" data-mode="count-desc">${sortLabels['count-desc']}</button>
-        <button class="tl-col-menu" type="button" title="Column menu">▾</button>
+        <button class="tl-col-menu" type="button" title="Column menu">⋮</button>
+        <div class="tl-col-head-actions">
+          <button class="tl-col-pin${isPinned ? ' tl-col-pin-active' : ''}" type="button" title="${isPinned ? 'Unpin card' : 'Pin card to top-left'}">📌</button>
+          <button class="tl-col-copy" type="button" title="Copy visible values to clipboard">📋</button>
+          <button class="tl-col-sort" type="button" title="Cycle sort (count ↓ → count ↑ → A→Z → Z→A · Alt-click to reset)" data-mode="count-desc">${sortLabels['count-desc']}</button>
+        </div>
+        <div class="tl-col-head-title">
+          ${extractedMark}
+          <span class="tl-col-name" title="${_tlEsc(colName)}">${_tlEsc(colName)}</span>
+          <span class="tl-col-sub" title="distinct values">${s.distinct.toLocaleString()} unique</span>
+        </div>
       `;
       card.appendChild(head);
 
@@ -5985,6 +6795,7 @@ class TimelineView {
           const row = document.createElement('div');
           row.className = 'tl-col-row';
           if (susVals && susVals.has(val)) row.classList.add('tl-col-row-sus');
+          if (this._pendingCtrlSelect && this._pendingCtrlSelect.colIdx === c && this._pendingCtrlSelect.values.has(val)) row.classList.add('tl-col-row-selected');
           row.style.top = (i * rowHeight) + 'px';
           row.dataset.value = val;
           const pct = topVal > 0 ? Math.max(2, Math.round((count / topVal) * 100)) : 0;
@@ -6068,15 +6879,17 @@ class TimelineView {
         card._rowsRaf = requestAnimationFrame(() => { card._rowsRaf = null; renderRows(); });
       });
 
-      // Click = add eq chip; shift-click = ne chip; ctrl/meta = only this
+      // Click = add eq chip; shift-click = ne chip; ctrl/meta = accumulate multi-select
       sizer.addEventListener('click', (e) => {
         const row = e.target.closest('.tl-col-row');
         if (!row) return;
         const val = row.dataset.value;
-        this._addOrToggleChip(c, val, {
-          op: e.shiftKey ? 'ne' : 'eq',
-          replace: e.ctrlKey || e.metaKey,
-        });
+        if (e.ctrlKey || e.metaKey) {
+          this._accumulateCtrlSelect(c, val, row);
+          return;
+        }
+        this._clearCtrlSelect();
+        this._addOrToggleChip(c, val, { op: e.shiftKey ? 'ne' : 'eq' });
       });
       // Right-click = context menu
       sizer.addEventListener('contextmenu', (e) => {
@@ -6092,6 +6905,25 @@ class TimelineView {
         this._openColumnMenu(c, head);
       });
 
+      // Pin button
+      head.querySelector('.tl-col-pin').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._togglePinCol(colName);
+      });
+
+      // Copy-visible-values button — copies the currently displayed values
+      // (respecting per-card search filter + active sort order) as
+      // newline-separated text. Stops propagation so the drag-to-reorder
+      // on the head doesn't trigger.
+      head.querySelector('.tl-col-copy').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const txt = displayValues.map(([val]) => String(val == null ? '' : val)).join('\n');
+        this._copyToClipboard(txt);
+        if (this._app && typeof this._app._toast === 'function') {
+          this._app._toast(`Copied ${displayValues.length.toLocaleString()} value${displayValues.length === 1 ? '' : 's'} from "${colName}"`, 'info');
+        }
+      });
+
       // Ctrl/Meta-click anywhere on the card head (but not the ▾ menu
       // button) = hide this column on the underlying grids. Mirrors the
       // Ctrl+Click hide on GridViewer column headers so the user has a
@@ -6101,6 +6933,7 @@ class TimelineView {
       head.addEventListener('click', (e) => {
         if (!(e.ctrlKey || e.metaKey)) return;
         if (e.target.closest('.tl-col-menu')) return;
+        if (e.target.closest('.tl-col-pin')) return;
         e.preventDefault();
         e.stopPropagation();
         if (this._grid && typeof this._grid._toggleHideColumn === 'function') {
@@ -6339,10 +7172,53 @@ class TimelineView {
     this._queryCommitClauses(clauses);
   }
 
+  // Strip any top-level clause that would directly contradict an incoming
+  // `col <op> val` assertion from the click-pivot path (right-click
+  // Include / Exclude, column-card click, etc.) so the resulting query
+  // never ends up with something like `col = v AND col != v` (0 rows,
+  // useless to the analyst). Only `eq` / `ne` / `in` clauses on the same
+  // column are considered — everything else is left alone. `in` lists
+  // have just the contradicting value stripped and collapse to a bare
+  // `pred` when a single value remains, matching the collapse rules used
+  // by `_queryToggleEqClause`.
+  //
+  // `forOp` is the op the CALLER is about to append:
+  //   'eq' → strip clauses that forbid `valStr` (ne + positive-sense
+  //           absence inside a NOT-IN list)
+  //   'ne' → strip clauses that require `valStr` (eq + presence inside
+  //           an IN list)
+  _queryDropContradictions(clauses, colIdx, valStr, forOp) {
+    const stripOp = forOp === 'eq' ? 'ne' : 'eq';
+    const stripNeg = forOp === 'eq';   // eq → strip NOT-IN; ne → strip IN
+    for (let i = clauses.length - 1; i >= 0; i--) {
+      const c = clauses[i];
+      if (!c || c.colIdx !== colIdx) continue;
+      if (c.k === 'pred' && c.op === stripOp && String(c.val) === valStr) {
+        clauses.splice(i, 1);
+        continue;
+      }
+      if (c.k === 'in' && !!c.neg === stripNeg) {
+        const ix = c.vals.indexOf(valStr);
+        if (ix < 0) continue;
+        const newVals = c.vals.slice(); newVals.splice(ix, 1);
+        if (newVals.length === 0) {
+          clauses.splice(i, 1);
+        } else if (newVals.length === 1) {
+          clauses[i] = { k: 'pred', colIdx, op: c.neg ? 'ne' : 'eq', val: newVals[0] };
+        } else {
+          clauses[i] = { k: 'in', colIdx, vals: newVals, neg: !!c.neg };
+        }
+      }
+    }
+  }
+
   // Toggle an eq match against `col = val`. Handles both `pred(eq)` and
   // positive `in` nodes: if the value is found inside an `in` list, it's
   // removed (collapsing to a bare eq if one value remains, dropping the
-  // clause entirely if empty). If not present, appends a bare eq clause.
+  // clause entirely if empty). If not present, folds away any opposing
+  // `ne` / `NOT IN` on the same `(col, val)` pair (so Include-after-
+  // Exclude clears the exclude rather than producing an unsatisfiable
+  // `col = v AND col != v`) and appends a bare eq clause.
   _queryToggleEqClause(colIdx, val) {
     const clauses = this._queryTopLevelClauses(this._queryCurrentAst());
     const valStr = String(val);
@@ -6365,12 +7241,16 @@ class TimelineView {
         }
       }
     }
+    this._queryDropContradictions(clauses, colIdx, valStr, 'eq');
     clauses.push({ k: 'pred', colIdx, op: 'eq', val: valStr });
     this._queryCommitClauses(clauses);
   }
 
   // Toggle a ne match against `col != val`. Symmetric with the eq path
   // above but never folds into an `in` list (DSL has no `NOT IN` toggle).
+  // Folds away any opposing `eq` / `IN` on the same `(col, val)` pair so
+  // Exclude-after-Include clears the include rather than producing an
+  // unsatisfiable `col = v AND col != v`.
   _queryToggleNeClause(colIdx, val) {
     const clauses = this._queryTopLevelClauses(this._queryCurrentAst());
     const valStr = String(val);
@@ -6382,6 +7262,7 @@ class TimelineView {
         return;
       }
     }
+    this._queryDropContradictions(clauses, colIdx, valStr, 'ne');
     clauses.push({ k: 'pred', colIdx, op: 'ne', val: valStr });
     this._queryCommitClauses(clauses);
   }
@@ -6509,6 +7390,46 @@ class TimelineView {
     this._queryReplaceEqForCol(colIdx, values);
   }
 
+  // ── Ctrl+Click multi-select helpers ──────────────────────────────────────
+  _accumulateCtrlSelect(colIdx, val, rowEl) {
+    if (!this._pendingCtrlSelect || this._pendingCtrlSelect.colIdx !== colIdx) {
+      this._clearCtrlSelect();
+      this._pendingCtrlSelect = { colIdx, values: new Set(), rows: [] };
+    }
+    const p = this._pendingCtrlSelect;
+    if (p.values.has(val)) {
+      p.values.delete(val);
+      rowEl.classList.remove('tl-col-row-selected');
+    } else {
+      p.values.add(val);
+      rowEl.classList.add('tl-col-row-selected');
+    }
+    if (!p.values.size) this._pendingCtrlSelect = null;
+  }
+
+  _commitCtrlSelect() {
+    if (!this._pendingCtrlSelect || !this._pendingCtrlSelect.values.size) return;
+    const { colIdx, values } = this._pendingCtrlSelect;
+    this._pendingCtrlSelect = null;
+    this._queryReplaceEqForCol(colIdx, Array.from(values));
+  }
+
+  _clearCtrlSelect() {
+    if (!this._pendingCtrlSelect) return;
+    for (const r of this._pendingCtrlSelect.rows) r.classList.remove('tl-col-row-selected');
+    const host = this._els && this._els.cols;
+    if (host) host.querySelectorAll('.tl-col-row-selected').forEach(el => el.classList.remove('tl-col-row-selected'));
+    this._pendingCtrlSelect = null;
+  }
+
+  _togglePinCol(colName) {
+    const idx = this._pinnedCols.indexOf(colName);
+    if (idx >= 0) this._pinnedCols.splice(idx, 1);
+    else this._pinnedCols.push(colName);
+    TimelineView._savePinnedColsFor(this._fileKey, this._pinnedCols);
+    this._scheduleRender(['columns']);
+  }
+
 
   // ── Chart height drag ────────────────────────────────────────────────────
   // Mirrors the main splitter but targets the `.tl-chart-resize` grab-bar
@@ -6622,8 +7543,27 @@ class TimelineView {
     }
     items.push({ sep: true });
     items.push({ label: `🚩 Mark suspicious`, act: () => this._addOrToggleChip(colIdx, val, { op: 'sus' }) });
+    // Focus-around-this-event pills — only when the row has a parseable
+    // timestamp. Shown on EVERY column (not just the time column) so the
+    // analyst can pivot without having to first click the time cell.
+    const origRow = opts.origRow;
+    const rowTime = (origRow != null && this._timeMs) ? this._timeMs[origRow] : null;
+    if (origRow != null && Number.isFinite(rowTime) && this._dataRange) {
+      items.push({ sep: true });
+      items.push({ label: `🕒 Focus around this event`, labelOnly: true });
+      items.push({
+        pills: [
+          { label: '±10s', ms: 10_000 },
+          { label: '±1m', ms: 60_000 },
+          { label: '±5m', ms: 300_000 },
+          { label: '±10m', ms: 600_000 },
+          { label: '±30m', ms: 1_800_000 },
+        ], origRow
+      });
+    }
     items.push({ sep: true });
-    items.push({ label: `ƒx Extract from this column…`, act: () => this._openExtractionDialog(colIdx) });
+    items.push({ label: `ƒx Extract values from this column…`, act: () => this._openExtractionDialog(colIdx) });
+
     items.push({ sep: true });
     // Auto-pivot — pick a sensible Rows × Cols × Count triple based on the
     // clicked column + the current stack column (if any) and expand the
@@ -6640,6 +7580,35 @@ class TimelineView {
         const sep = document.createElement('div');
         sep.className = 'tl-popover-sep';
         menu.appendChild(sep);
+      } else if (it.labelOnly) {
+        const lbl = document.createElement('div');
+        lbl.className = 'tl-popover-label';
+        lbl.textContent = it.label;
+        menu.appendChild(lbl);
+      } else if (it.pills) {
+        const row = document.createElement('div');
+        row.className = 'tl-popover-pills';
+        for (const p of it.pills) {
+          const pb = document.createElement('button');
+          pb.type = 'button';
+          pb.className = 'tl-popover-pill';
+          pb.textContent = p.label;
+          const ms = p.ms;
+          const oRow = it.origRow;
+          pb.addEventListener('click', () => {
+            try {
+              const t = this._timeMs[oRow];
+              if (!Number.isFinite(t) || !this._dataRange) return;
+              const lo = Math.max(this._dataRange.min, t - ms);
+              const hi = Math.min(this._dataRange.max, t + ms);
+              this._window = { min: lo, max: hi };
+              this._applyWindowOnly();
+              this._scheduleRender(['scrubber', 'chart', 'chips', 'grid', 'columns']);
+            } finally { this._closePopover(); }
+          });
+          row.appendChild(pb);
+        }
+        menu.appendChild(row);
       } else {
         const b = document.createElement('button');
         b.type = 'button';
@@ -6749,6 +7718,7 @@ class TimelineView {
         <div class="tl-colmenu-row">
           <label class="tl-colmenu-label">Values (top 200)</label>
           <input type="text" class="tl-colmenu-input tl-colmenu-input-sm" data-f="valsearch" placeholder="search values…" spellcheck="false">
+          <button class="tl-colmenu-copy" type="button" data-act="copyvals" title="Copy visible values to clipboard">📋</button>
         </div>
         <div class="tl-colmenu-values"></div>
         <div class="tl-colmenu-valactions">
@@ -6762,7 +7732,7 @@ class TimelineView {
       </div>
       ${this._isExtractedCol(colIdx) ? '<div class="tl-colmenu-section"><button class="tl-tb-btn tl-tb-btn-danger" data-act="removeExtract">✕ Remove extracted column</button></div>' : ''}
       <div class="tl-colmenu-section">
-        <button class="tl-tb-btn" data-act="extract">ƒx Extract from this column…</button>
+        <button class="tl-tb-btn" data-act="extract">ƒx Extract values from this column…</button>
         <button class="tl-tb-btn" data-act="autopivot">🧮 Auto pivot on this column</button>
       </div>
       <div class="tl-colmenu-foot">
@@ -6791,7 +7761,7 @@ class TimelineView {
     for (const [val] of items) {
       const checked = initialAll ? true
         : initialAllMinusNe ? !neSet.has(val)
-        : eqSet.has(val);
+          : eqSet.has(val);
       liveState.set(val, checked);
     }
 
@@ -6816,6 +7786,23 @@ class TimelineView {
     paint('');
 
     menu.querySelector('[data-f="valsearch"]').addEventListener('input', (e) => paint(e.target.value));
+
+    // Copy visible values — iterates the currently-rendered checkbox
+    // rows (post search filter) and copies their values as newline-
+    // separated text. Not every localStorage value is preserved on
+    // checkbox state; we copy whatever is visible regardless of checked
+    // state since the analyst can see it.
+    menu.querySelector('[data-act="copyvals"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rows = valsWrap.querySelectorAll('.tl-colmenu-value input[type=checkbox]');
+      const vals = [];
+      rows.forEach(cb => { if (cb.dataset.val != null) vals.push(cb.dataset.val); });
+      if (!vals.length) return;
+      this._copyToClipboard(vals.join('\n'));
+      if (this._app && typeof this._app._toast === 'function') {
+        this._app._toast(`Copied ${vals.length.toLocaleString()} value${vals.length === 1 ? '' : 's'} from "${name}"`, 'info');
+      }
+    });
 
     // Keep liveState in sync when the user toggles individual checkboxes.
     // Delegated on the wrapper so dynamically-created checkboxes after
@@ -6961,7 +7948,7 @@ class TimelineView {
     this._openDialog = null;
   }
 
-  // ── Extraction dialog (Auto + Regex tabs) ────────────────────────────────
+  // ── Extraction dialog (Smart scan + Regex + Clicker tabs) ────────────────
   _openExtractionDialog(preselectCol) {
     this._closePopover();
     this._closeDialog();
@@ -6970,7 +7957,7 @@ class TimelineView {
     dlg.innerHTML = `
       <div class="tl-dialog-card tl-dialog-extract">
         <header class="tl-dialog-head">
-          <strong>ƒx Extract columns</strong>
+          <strong>ƒx Extract values</strong>
           <span class="tl-dialog-spacer"></span>
           ${this._extractedCols.length
         ? `<button class="tl-tb-btn tl-tb-btn-danger" data-act="clear-all" title="Remove all extracted columns">✕ Clear all extracted (${this._extractedCols.length})</button>`
@@ -6978,12 +7965,36 @@ class TimelineView {
           <button class="tl-dialog-close" type="button" aria-label="Close">✕</button>
         </header>
         <div class="tl-dialog-tabs">
-          <button class="tl-dialog-tab tl-dialog-tab-active" data-tab="auto">Auto (URLs &amp; hostnames)</button>
+          <button class="tl-dialog-tab tl-dialog-tab-active" data-tab="auto">Smart scan</button>
           <button class="tl-dialog-tab" data-tab="regex">Regex</button>
+          <button class="tl-dialog-tab" data-tab="clicker">Clicker</button>
         </div>
         <div class="tl-dialog-body">
           <section class="tl-dialog-pane tl-dialog-pane-auto">
-            <p class="tl-dialog-muted">Scans the first 200 rows of every non-empty column for JSON leaves, pipe-delimited <code>Key=Value</code> fields (e.g. EVTX Event Data), and URL/hostname-shaped values. Tick rows to turn them into new columns.</p>
+            <div class="tl-auto-toolbar">
+              <div class="tl-auto-bulk">
+                <button type="button" class="tl-tb-btn" data-act="sel-all" title="Select all visible">✓ All</button>
+                <button type="button" class="tl-tb-btn" data-act="sel-none" title="Deselect all visible">☐ None</button>
+                <button type="button" class="tl-tb-btn" data-act="sel-invert" title="Invert selection (visible)">↔ Invert</button>
+              </div>
+              <span class="tl-auto-count" aria-live="polite">0 of 0 selected</span>
+              <div class="tl-auto-facet" role="tablist">
+                <button type="button" class="tl-auto-facet-btn tl-auto-facet-active" data-facet="all">All</button>
+                <button type="button" class="tl-auto-facet-btn" data-facet="url" title="URL-shaped values">🌐 URL</button>
+                <button type="button" class="tl-auto-facet-btn" data-facet="host" title="Hostnames">🖥 Host</button>
+                <button type="button" class="tl-auto-facet-btn" data-facet="kv" title="Pipe-delimited Key=Value fields">🪵 Key=Value</button>
+                <button type="button" class="tl-auto-facet-btn" data-facet="json" title="Generic JSON leaves">📝 JSON</button>
+              </div>
+              <input type="text" class="tl-auto-filter" placeholder="Search proposals…  ( / )" aria-label="Search proposals" spellcheck="false" autocomplete="off">
+              <select class="tl-auto-sort" title="Sort proposals">
+                <option value="match-desc">Match % ↓</option>
+                <option value="match-asc">Match % ↑</option>
+                <option value="column">Column</option>
+                <option value="kind">Kind</option>
+                <option value="name">Name</option>
+              </select>
+            </div>
+            <p class="tl-dialog-muted">Scans the first 200 rows of every non-empty column for JSON leaves, pipe-delimited <code>Key=Value</code> fields (EVTX Event Data), and URL/hostname values. On browser-history SQLite the <code>url</code> column also yields host / path / query parts. Tick a row to turn it into a new column.</p>
             <div class="tl-auto-body">
               <div class="tl-auto-empty">Running auto-scan…</div>
             </div>
@@ -6993,6 +8004,35 @@ class TimelineView {
               <button class="tl-tb-btn tl-tb-btn-primary" data-act="auto-extract" disabled>Extract selected</button>
             </footer>
           </section>
+
+          <section class="tl-dialog-pane tl-dialog-pane-clicker" style="display:none">
+            <div class="tl-clicker-grid">
+              <label class="tl-field">
+                <span class="tl-field-label">Column</span>
+                <select class="tl-field-select" data-field="clicker-col"></select>
+              </label>
+              <label class="tl-field tl-field-wide">
+                <span class="tl-field-label">Name</span>
+                <input type="text" class="tl-field-select" data-field="clicker-name" placeholder="auto">
+              </label>
+            </div>
+            <p class="tl-dialog-muted">Click a token or drag-select a substring in any sample row below. Loupe infers a regex that captures the same slot on every row — surrounding characters become anchors, and the picked value is classified (digits, hex, IP, UUID, hostname, path, quoted, …). Fine-tune in the <b>Regex</b> tab if the inference isn't quite right.</p>
+            <div class="tl-clicker-samples" aria-label="Sample rows — click a token to pick"></div>
+            <div class="tl-clicker-pick">
+              <span class="tl-clicker-pick-label">Pattern:</span>
+              <code class="tl-clicker-pattern" data-empty="true">(pick a value above)</code>
+            </div>
+            <div class="tl-clicker-preview">
+              <div class="tl-clicker-status">No pick yet.</div>
+              <div class="tl-clicker-hits"></div>
+            </div>
+            <footer class="tl-dialog-foot">
+              <button class="tl-tb-btn" data-act="clicker-edit" disabled title="Copy the inferred pattern into the Regex tab for fine-tuning">✎ Edit as regex →</button>
+              <span class="tl-dialog-spacer"></span>
+              <button class="tl-tb-btn tl-tb-btn-primary" data-act="clicker-extract" disabled>Extract</button>
+            </footer>
+          </section>
+
           <section class="tl-dialog-pane tl-dialog-pane-regex" style="display:none">
             <div class="tl-regex-grid">
               <label class="tl-field">
@@ -7045,22 +8085,67 @@ class TimelineView {
     `;
     document.body.appendChild(dlg);
 
-    // Tabs
+    // Tabs — three panes: Smart scan / Regex / Clicker. Look up each pane
+    // by its `data-tab` attribute so the tab strip can grow without having
+    // to edit the switcher by hand.
     const tabs = dlg.querySelectorAll('.tl-dialog-tab');
-    const paneAuto = dlg.querySelector('.tl-dialog-pane-auto');
-    const paneReg = dlg.querySelector('.tl-dialog-pane-regex');
+    const panes = {
+      auto: dlg.querySelector('.tl-dialog-pane-auto'),
+      regex: dlg.querySelector('.tl-dialog-pane-regex'),
+      clicker: dlg.querySelector('.tl-dialog-pane-clicker'),
+    };
     tabs.forEach(t => t.addEventListener('click', () => {
       tabs.forEach(x => x.classList.remove('tl-dialog-tab-active'));
       t.classList.add('tl-dialog-tab-active');
       const which = t.dataset.tab;
-      paneAuto.style.display = which === 'auto' ? '' : 'none';
-      paneReg.style.display = which === 'regex' ? '' : 'none';
+      for (const [k, el] of Object.entries(panes)) {
+        if (el) el.style.display = (k === which) ? '' : 'none';
+      }
     }));
 
     // Close
     const close = () => this._closeDialog();
     dlg.querySelector('.tl-dialog-close').addEventListener('click', close);
     dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+
+    // Keyboard shortcuts:
+    //   /      → focus the Smart-scan filter input (only when that tab
+    //            is active; inside the filter itself it's a literal char).
+    //   Space  → toggle the checkbox on the row currently hovered under
+    //            the pointer (label-wide hit target).
+    //   Enter  → trigger the active tab's primary action (Extract).
+    // Esc is handled by the global `_onDocKey` listener (closes popover
+    // or dialog).
+    dlg.addEventListener('keydown', (e) => {
+      if (e.key === '/') {
+        const autoTab = dlg.querySelector('.tl-dialog-pane-auto');
+        const inFilter = e.target && e.target.classList
+          && e.target.classList.contains('tl-auto-filter');
+        if (autoTab && autoTab.style.display !== 'none' && !inFilter
+          && !(e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) {
+          const f = dlg.querySelector('.tl-auto-filter');
+          if (f) { e.preventDefault(); f.focus(); f.select(); }
+          return;
+        }
+      }
+      if (e.key === 'Enter') {
+        // Don't steal Enter from text inputs (Regex-tab fields submit
+        // via their own wiring, and multi-line textareas would be
+        // sabotaged). Only act when focus is on a button / select or
+        // the dialog chrome itself.
+        const tag = e.target && e.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        const activeTab = dlg.querySelector('.tl-dialog-tab.tl-dialog-tab-active');
+        const which = activeTab ? activeTab.dataset.tab : 'auto';
+        if (which === 'auto') {
+          const btn = dlg.querySelector('[data-act="auto-extract"]');
+          if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+        } else if (which === 'regex') {
+          const btn = dlg.querySelector('[data-act="regex-extract"]');
+          if (btn) { e.preventDefault(); btn.click(); }
+        }
+      }
+    });
 
     // Clear-all (only rendered when _extractedCols.length > 0)
     const clearAllBtn = dlg.querySelector('[data-act="clear-all"]');
@@ -7071,48 +8156,238 @@ class TimelineView {
     }
 
     // ── Auto tab wiring
+    const autoPane = dlg.querySelector('.tl-dialog-pane-auto');
     const autoBody = dlg.querySelector('.tl-auto-body');
     const autoExtractBtn = dlg.querySelector('[data-act="auto-extract"]');
+    const autoCount = dlg.querySelector('.tl-auto-count');
+    const autoFilter = dlg.querySelector('.tl-auto-filter');
+    const autoSort = dlg.querySelector('.tl-auto-sort');
+    const autoFacetBtns = dlg.querySelectorAll('.tl-auto-facet-btn');
+    const autoToolbar = dlg.querySelector('.tl-auto-toolbar');
+
+    // "Will create:" preview strip — injected between body and footer.
+    const previewStrip = document.createElement('div');
+    previewStrip.className = 'tl-dialog-preview';
+    previewStrip.innerHTML = `<span class="tl-dialog-preview-label">Will create:</span><span class="tl-dialog-preview-list">(none selected)</span>`;
+    autoBody.parentNode.insertBefore(previewStrip, autoBody.nextSibling);
+    const previewListEl = previewStrip.querySelector('.tl-dialog-preview-list');
+
+    // Facet → set of proposal kinds
+    const FACET_KINDS = {
+      all: null,
+      url: new Set(['text-url', 'json-url', 'url-part']),
+      host: new Set(['text-host', 'json-host']),
+      kv: new Set(['kv-field']),
+      json: new Set(['json-leaf']),
+    };
+    let currentFacet = 'all';
+
+    // State used by the toolbar filters + renderer.
+    //   _allProposals — every proposal from the last `_autoExtractScan()` pass.
+    //   _visibleIndices — indices into `_allProposals` that pass the current
+    //                     facet + search filter (the rows the list renders).
+    //   _selection — stable Set<origIdx> of CHECKED proposals. Survives
+    //                facet / search / sort changes, so a tick the analyst
+    //                made before typing into the search box stays ticked
+    //                once the row is re-revealed. Counts + preview +
+    //                Extract all read from this Set, never from DOM
+    //                checkboxes, so hidden-but-selected rows are honoured.
+    let _allProposals = [];
+    let _visibleIndices = [];
+    const _selection = new Set();
+
+    const countMatches = (kind) => {
+      if (!_allProposals.length) return 0;
+      const set = FACET_KINDS[kind];
+      if (!set) return _allProposals.length;
+      let n = 0;
+      for (const p of _allProposals) if (set.has(p.kind)) n++;
+      return n;
+    };
+
+    const updateFacetCounts = () => {
+      autoFacetBtns.forEach(b => {
+        const f = b.dataset.facet;
+        const base = b.dataset.baseLabel || b.textContent;
+        if (!b.dataset.baseLabel) b.dataset.baseLabel = base;
+        const n = countMatches(f);
+        b.textContent = (b.dataset.baseLabel) + ' (' + n + ')';
+      });
+    };
+
+    const sortProposals = (arr, mode) => {
+      const kindOrder = { 'text-url': 0, 'url-part': 1, 'json-url': 2, 'text-host': 3, 'json-host': 4, 'kv-field': 5, 'json-leaf': 6 };
+      const nameOf = (p) => p.proposedName || '';
+      const colOf = (p) => this.columns[p.sourceCol] || '';
+      const cmp = {
+        'match-desc': (a, b) => (b.matchPct || 0) - (a.matchPct || 0),
+        'match-asc': (a, b) => (a.matchPct || 0) - (b.matchPct || 0),
+        'column': (a, b) => colOf(a).localeCompare(colOf(b)) || (b.matchPct - a.matchPct),
+        'kind': (a, b) => (kindOrder[a.kind] || 9) - (kindOrder[b.kind] || 9) || (b.matchPct - a.matchPct),
+        'name': (a, b) => nameOf(a).localeCompare(nameOf(b)),
+      }[mode] || ((a, b) => (b.matchPct || 0) - (a.matchPct || 0));
+      return arr.slice().sort(cmp);
+    };
+
+    const updatePreview = () => {
+      // Read from the stable _selection Set so hidden-but-ticked proposals
+      // (e.g. after the user narrows the search box) still appear in the
+      // "Will create:" strip and get extracted on submit.
+      const picked = [];
+      for (const i of _selection) {
+        if (_allProposals[i]) picked.push(_allProposals[i].proposedName);
+      }
+      if (!picked.length) {
+        previewListEl.textContent = '(none selected)';
+        previewListEl.classList.add('tl-dialog-preview-empty');
+      } else {
+        previewListEl.classList.remove('tl-dialog-preview-empty');
+        const maxShow = 8;
+        const head = picked.slice(0, maxShow).map(n => `<span class="tl-dialog-preview-pill">${_tlEsc(n)}</span>`).join('');
+        const more = picked.length > maxShow ? ` <span class="tl-dialog-preview-more">+${picked.length - maxShow} more</span>` : '';
+        previewListEl.innerHTML = head + more;
+      }
+    };
+
+    const updateCount = () => {
+      // "N of V selected" where V is the number of currently-visible rows
+      // (so search narrows the denominator) and N is the total stable
+      // selection size (so ticks survive searching / faceting).
+      const visN = _visibleIndices.length;
+      const selN = _selection.size;
+      autoCount.textContent = `${selN} of ${visN} selected`;
+      autoExtractBtn.disabled = selN === 0;
+    };
+
+
+    const renderList = () => {
+      if (!_allProposals.length) {
+        autoBody.innerHTML = '<div class="tl-auto-empty">No extractable values found in the first 200 rows.</div>';
+        _visibleIndices = [];
+        autoExtractBtn.disabled = true;
+        updateCount();
+        updatePreview();
+        return;
+      }
+      const facetSet = FACET_KINDS[currentFacet];
+      const filterTxt = (autoFilter.value || '').toLowerCase();
+      // Build visible list, preserving original indices for checkbox mapping.
+      const sorted = sortProposals(_allProposals, autoSort.value);
+      const origIndexOf = new Map(_allProposals.map((p, i) => [p, i]));
+      _visibleIndices = [];
+      const list = document.createElement('div');
+      list.className = 'tl-auto-list';
+      for (const p of sorted) {
+        if (facetSet && !facetSet.has(p.kind)) continue;
+        if (filterTxt) {
+          const hay = (p.proposedName + ' ' + (this.columns[p.sourceCol] || '') + ' ' + (p.sample || '')).toLowerCase();
+          if (hay.indexOf(filterTxt) === -1) continue;
+        }
+        const origI = origIndexOf.get(p);
+        _visibleIndices.push(origI);
+        const row = document.createElement('label');
+        row.className = 'tl-auto-row';
+        row.dataset.i = String(origI);
+        const colName = this.columns[p.sourceCol] || `(col ${p.sourceCol + 1})`;
+        // Checked state is driven by the stable _selection Set, NOT the
+        // proposal's preselect hint — the hint only seeds _selection in
+        // runAuto(). After seeding, survivorship across search / facet /
+        // sort is absolute: a row's tick state is _selection.has(origI).
+        const isChecked = _selection.has(origI);
+        const samplePreview = p.sample || '';
+        row.innerHTML = `
+          <input type="checkbox" data-i="${origI}" ${isChecked ? 'checked' : ''}>
+
+          <span class="tl-auto-kind" data-kind="${_tlEsc(p.kind)}">${_tlEsc(p.kindLabel)}</span>
+          <span class="tl-auto-sample" title="${_tlEsc(samplePreview)}">${_tlEsc(this._ellipsis(samplePreview, 90))}</span>
+          <span class="tl-auto-col" title="${_tlEsc(colName)}">${_tlEsc(colName)}</span>
+          <span class="tl-auto-rate" title="match rate in sample">${(p.matchPct || 0).toFixed(0)}%</span>
+        `;
+        list.appendChild(row);
+      }
+      if (!_visibleIndices.length) {
+        autoBody.innerHTML = '<div class="tl-auto-empty">No proposals match the current filter.</div>';
+      } else {
+        autoBody.innerHTML = '';
+        autoBody.appendChild(list);
+      }
+      autoExtractBtn.disabled = _visibleIndices.length === 0;
+      updateCount();
+      updatePreview();
+    };
+
+    // Bulk select buttons — operate on the *visible* rows only, but mutate
+    // the stable `_selection` Set so ticks persist if the user subsequently
+    // narrows the search box / switches facet. We re-render so the DOM
+    // checkboxes pick up the new ticked state from `_selection.has()`.
+    autoToolbar.querySelector('[data-act="sel-all"]').addEventListener('click', () => {
+      for (const i of _visibleIndices) _selection.add(i);
+      renderList();
+    });
+    autoToolbar.querySelector('[data-act="sel-none"]').addEventListener('click', () => {
+      for (const i of _visibleIndices) _selection.delete(i);
+      renderList();
+    });
+    autoToolbar.querySelector('[data-act="sel-invert"]').addEventListener('click', () => {
+      for (const i of _visibleIndices) {
+        if (_selection.has(i)) _selection.delete(i);
+        else _selection.add(i);
+      }
+      renderList();
+    });
+    autoFacetBtns.forEach(b => b.addEventListener('click', () => {
+      autoFacetBtns.forEach(x => x.classList.remove('tl-auto-facet-active'));
+      b.classList.add('tl-auto-facet-active');
+      currentFacet = b.dataset.facet;
+      renderList();
+    }));
+    let filterTimer = 0;
+    autoFilter.addEventListener('input', () => {
+      clearTimeout(filterTimer);
+      filterTimer = setTimeout(renderList, 80);
+    });
+    autoSort.addEventListener('change', renderList);
+    autoBody.addEventListener('change', (e) => {
+      if (e.target && e.target.type === 'checkbox') {
+        const origI = +e.target.dataset.i;
+        if (Number.isFinite(origI)) {
+          if (e.target.checked) _selection.add(origI);
+          else _selection.delete(origI);
+        }
+        updateCount();
+        updatePreview();
+      }
+    });
+
     const runAuto = () => {
       autoBody.innerHTML = '<div class="tl-auto-empty">Running auto-scan…</div>';
       autoExtractBtn.disabled = true;
-      // Defer to next tick so UI paints.
       setTimeout(() => {
-        const proposals = this._autoExtractScan();
-        if (!proposals.length) {
-          autoBody.innerHTML = '<div class="tl-auto-empty">No URL/hostname-shaped values found in the first 200 rows.</div>';
-          return;
+        _allProposals = this._autoExtractScan() || [];
+        autoExtractBtn._proposals = _allProposals;
+        // Seed the stable selection from each proposal's preselect hint.
+        // Subsequent ticks/unticks mutate this Set directly; facet/search/
+        // sort changes only affect `_visibleIndices`, never `_selection`.
+        _selection.clear();
+        for (let i = 0; i < _allProposals.length; i++) {
+          if (_allProposals[i].preselect !== false) _selection.add(i);
         }
-        const list = document.createElement('div');
-        list.className = 'tl-auto-list';
-        for (let i = 0; i < proposals.length; i++) {
-          const p = proposals[i];
-          const row = document.createElement('label');
-          row.className = 'tl-auto-row';
-          const colName = this.columns[p.sourceCol] || `(col ${p.sourceCol + 1})`;
-          const pathLabel = p.path ? _tlJsonPathLabel(p.path) : '(whole cell)';
-          row.innerHTML = `
-            <input type="checkbox" data-i="${i}" checked>
-            <span class="tl-auto-kind">${_tlEsc(p.kindLabel)}</span>
-            <span class="tl-auto-col" title="${_tlEsc(colName)}">${_tlEsc(colName)}</span>
-            <span class="tl-auto-path">${_tlEsc(pathLabel)}</span>
-            <span class="tl-auto-rate" title="match rate in sample">${p.matchPct.toFixed(0)}%</span>
-            <span class="tl-auto-sample" title="${_tlEsc(p.sample)}">${_tlEsc(this._ellipsis(p.sample, 70))}</span>
-          `;
-          list.appendChild(row);
-        }
-        autoBody.innerHTML = '';
-        autoBody.appendChild(list);
-        autoExtractBtn.disabled = false;
-        autoExtractBtn._proposals = proposals;
+        updateFacetCounts();
+        renderList();
       }, 10);
     };
     dlg.querySelector('[data-act="auto-rescan"]').addEventListener('click', runAuto);
+
     autoExtractBtn.addEventListener('click', () => {
       const props = autoExtractBtn._proposals || [];
-      const chks = autoBody.querySelectorAll('input[type=checkbox]');
+      // Extract every ticked proposal from the stable `_selection` Set —
+      // NOT from the DOM, so rows currently hidden by search/facet are
+      // still honoured.
       const pick = [];
-      chks.forEach((cb) => { if (cb.checked) pick.push(props[+cb.dataset.i]); });
+      for (const i of _selection) {
+        const p = props[i];
+        if (p) pick.push(p);
+      }
       if (!pick.length) return;
       const before = this._extractedCols.length;
       for (const p of pick) {
@@ -7155,6 +8430,19 @@ class TimelineView {
             kind: 'auto',
             trim: true,
           });
+        } else if (p.kind === 'url-part') {
+          // Browser-history SQLite `url` column: extract scheme://host,
+          // path, or ?query using pre-baked regex patterns from the
+          // scanner. `p.pattern` / `p.group` come straight from the
+          // proposal so we don't need to re-derive them here.
+          this._addRegexExtractNoRender({
+            name: p.proposedName,
+            col: p.sourceCol,
+            pattern: p.pattern,
+            flags: p.flags || '',
+            group: p.group != null ? p.group : 1,
+            kind: 'auto',
+          });
         }
       }
       const added = this._extractedCols.length - before;
@@ -7168,6 +8456,339 @@ class TimelineView {
       close();
     });
     runAuto();
+
+    // ── Clicker tab wiring
+    // Pick a value by clicking a token or drag-selecting a substring in
+    // any sample row; Loupe infers a regex that captures the same slot
+    // on every row. Left + right anchors are derived from characters
+    // surrounding the pick and generalised against the other samples;
+    // the picked value itself is classified into a token class
+    // (digits / hex / IP / UUID / MAC / email / hostname / path /
+    // quoted / fallback `\S+`). Output lands in the same regex
+    // extractor store as the Regex tab so persistence is shared.
+    const clickerCol = dlg.querySelector('[data-field="clicker-col"]');
+    const clickerName = dlg.querySelector('[data-field="clicker-name"]');
+    const clickerSamples = dlg.querySelector('.tl-clicker-samples');
+    const clickerPattern = dlg.querySelector('.tl-clicker-pattern');
+    const clickerStatus = dlg.querySelector('.tl-clicker-status');
+    const clickerHits = dlg.querySelector('.tl-clicker-hits');
+    const clickerExtractBtn = dlg.querySelector('[data-act="clicker-extract"]');
+    const clickerEditBtn = dlg.querySelector('[data-act="clicker-edit"]');
+
+    // Populate column select — base columns only (extracting on an
+    // extracted column isn't supported).
+    clickerCol.innerHTML = '';
+    for (let i = 0; i < this._baseColumns.length; i++) {
+      const o = document.createElement('option');
+      o.value = String(i); o.textContent = this._baseColumns[i] || `(col ${i + 1})`;
+      clickerCol.appendChild(o);
+    }
+    if (preselectCol != null && preselectCol < this._baseColumns.length) {
+      clickerCol.value = String(preselectCol);
+    }
+
+    // Token classifier — inspects a picked substring and returns a regex
+    // fragment that matches the same shape. Ordered from most specific
+    // to most general so a UUID doesn't degenerate to `[0-9a-f]+`.
+    const _classifyPick = (s) => {
+      if (!s) return { pattern: '\\S+', label: 'text' };
+      if (/^\d+$/.test(s)) return { pattern: '\\d+', label: 'digits' };
+      if (/^[+-]?\d+\.\d+$/.test(s)) return { pattern: '[+-]?\\d+\\.\\d+', label: 'decimal' };
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) {
+        return { pattern: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', label: 'UUID' };
+      }
+      if (/^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(s)) {
+        return { pattern: '(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?:\\.(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}', label: 'IPv4' };
+      }
+      if (/^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(s)) {
+        return { pattern: '(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}', label: 'MAC' };
+      }
+      if (/^[0-9a-f]{32}$/i.test(s)) return { pattern: '[0-9a-f]{32}', label: 'MD5' };
+      if (/^[0-9a-f]{40}$/i.test(s)) return { pattern: '[0-9a-f]{40}', label: 'SHA1' };
+      if (/^[0-9a-f]{64}$/i.test(s)) return { pattern: '[0-9a-f]{64}', label: 'SHA256' };
+      if (/^[0-9a-f]+$/i.test(s) && s.length >= 4) return { pattern: '[0-9a-f]+', label: 'hex' };
+      if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(s)) {
+        return { pattern: '\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?', label: 'ISO timestamp' };
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { pattern: '\\d{4}-\\d{2}-\\d{2}', label: 'date' };
+      if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(s)) {
+        return { pattern: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}', label: 'email' };
+      }
+      if (/^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(s)) {
+        return { pattern: '[a-z][a-z0-9+.\\-]*:\\/\\/\\S+', label: 'URL' };
+      }
+      if (/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(s)) {
+        return { pattern: '(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}', label: 'hostname' };
+      }
+      if (/^[A-Za-z]:\\/.test(s)) return { pattern: '[A-Za-z]:\\\\[^\\s"<>|?*]+', label: 'Windows path' };
+      if (/^\/[^\s]+$/.test(s)) return { pattern: '\\/[^\\s]+', label: 'POSIX path' };
+      if (/^[A-Za-z_][\w-]*$/.test(s)) return { pattern: '[A-Za-z_][\\w-]*', label: 'identifier' };
+      if (/^\S+$/.test(s)) return { pattern: '\\S+', label: 'token' };
+      return { pattern: '.+?', label: 'text' };
+    };
+
+    // Regex-escape a literal anchor. Newlines collapse to \n (so
+    // multi-line cells don't paste a raw CR/LF into the pattern).
+    const _escLiteral = (s) => String(s)
+      .replace(/\\/g, '\\\\')
+      .replace(/[.*+?^${}()|[\]]/g, '\\$&')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/\t/g, '\\t');
+
+    // Collect up to 30 non-empty samples for the pick pane + anchor check.
+    const _collectClickerSamples = (colIdx) => {
+      const out = [];
+      const cap = Math.min(this.rows.length, 400);
+      for (let i = 0; i < cap && out.length < 30; i++) {
+        const v = this._cellAt(i, colIdx);
+        if (v) out.push(v);
+      }
+      return out;
+    };
+
+    // Generalise a left anchor: keep trimming from the LEFT (so the
+    // anchor stays adjacent to the pick) until ≥ 70 % of samples match
+    // `escAnchor + tokenPattern` somewhere. Empty anchor = use `\b`.
+    const _generaliseAnchor = (rawAnchor, tokenPattern, samples, side) => {
+      if (!rawAnchor) return side === 'left' ? '\\b' : '\\b';
+      // Start from the full raw anchor and shrink.
+      let anchor = rawAnchor;
+      const threshold = Math.max(1, Math.ceil(samples.length * 0.7));
+      // Try full → progressively shorter. For left side, drop chars from
+      // the start; for right, drop from the end.
+      while (anchor.length > 0) {
+        const escAnchor = _escLiteral(anchor);
+        let re;
+        try {
+          re = side === 'left'
+            ? new RegExp(escAnchor + '(' + tokenPattern + ')', 'i')
+            : new RegExp('(' + tokenPattern + ')' + escAnchor, 'i');
+        } catch (_) { break; }
+        let hits = 0;
+        for (const s of samples) if (re.test(s)) hits++;
+        if (hits >= threshold) return escAnchor;
+        anchor = side === 'left' ? anchor.slice(1) : anchor.slice(0, -1);
+      }
+      return '\\b';
+    };
+
+    // State for the current pick — pattern + name preset.
+    let currentPattern = null;
+    let currentFlags = 'i';
+    let currentGroup = 1;
+    let currentLabel = null;
+
+    const renderClickerSamples = () => {
+      const col = parseInt(clickerCol.value, 10);
+      if (!Number.isFinite(col) || col < 0) { clickerSamples.innerHTML = ''; return; }
+      const samples = _collectClickerSamples(col);
+      clickerSamples.innerHTML = '';
+      if (!samples.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tl-clicker-empty';
+        empty.textContent = '(no non-empty values in this column)';
+        clickerSamples.appendChild(empty);
+        return;
+      }
+      for (const s of samples) {
+        const row = document.createElement('div');
+        row.className = 'tl-clicker-row';
+        row.textContent = this._ellipsis(s, 400);
+        row._fullText = s;
+        clickerSamples.appendChild(row);
+      }
+    };
+
+    const runClickerPreview = () => {
+      const col = parseInt(clickerCol.value, 10);
+      if (!currentPattern || !Number.isFinite(col)) {
+        clickerStatus.textContent = 'No pick yet.';
+        clickerHits.innerHTML = '';
+        clickerExtractBtn.disabled = true;
+        clickerEditBtn.disabled = true;
+        return;
+      }
+      let re;
+      try { re = new RegExp(currentPattern, currentFlags); }
+      catch (e) {
+        clickerStatus.textContent = 'Inferred regex failed to compile: ' + (e.message || e);
+        clickerHits.innerHTML = '';
+        clickerExtractBtn.disabled = true;
+        clickerEditBtn.disabled = true;
+        return;
+      }
+      const N = Math.min(this.rows.length, 200);
+      let seen = 0, captured = 0;
+      const hits = [];
+      for (let i = 0; i < N; i++) {
+        const v = this._cellAt(i, col);
+        if (!v) continue;
+        seen++;
+        const m = re.exec(v);
+        if (!m) continue;
+        const cap = (currentGroup < m.length) ? (m[currentGroup] == null ? '' : m[currentGroup]) : m[0];
+        if (cap !== '') {
+          captured++;
+          if (hits.length < 12) hits.push({ src: v, cap });
+        }
+      }
+      const pct = seen ? (captured * 100 / seen) : 0;
+      clickerStatus.textContent = `${captured}/${seen} sampled rows captured (${pct.toFixed(0)}%)` +
+        (currentLabel ? ` · class: ${currentLabel}` : '');
+      clickerHits.innerHTML = '';
+      for (const h of hits) {
+        const d = document.createElement('div');
+        d.className = 'tl-clicker-hit';
+        d.innerHTML = `<span class="tl-clicker-hit-cap">${_tlEsc(h.cap)}</span><span class="tl-clicker-hit-src" title="${_tlEsc(h.src)}">${_tlEsc(this._ellipsis(h.src, 120))}</span>`;
+        clickerHits.appendChild(d);
+      }
+      clickerExtractBtn.disabled = captured === 0;
+      clickerEditBtn.disabled = false;
+    };
+
+    // Handle a pick — either from selection (drag) or from a click
+    // (word under click). `rowEl` = the `.tl-clicker-row`, `anchorText` =
+    // its untruncated source text.
+    const handlePick = (rowEl) => {
+      if (!rowEl) return;
+      const full = rowEl._fullText || rowEl.textContent || '';
+      if (!full) return;
+      // Prefer the current selection if it's inside this row.
+      const sel = window.getSelection();
+      let picked = '';
+      let start = -1;
+      if (sel && sel.rangeCount && !sel.isCollapsed) {
+        const range = sel.getRangeAt(0);
+        if (rowEl.contains(range.startContainer) && rowEl.contains(range.endContainer)) {
+          picked = sel.toString();
+          // Approximate offset by searching for `picked` in `full`.
+          start = full.indexOf(picked);
+        }
+      }
+      if (!picked) {
+        // Click-only fallback: pick the word-ish run under the caret.
+        // We approximate the click offset via the visible text.
+        const visible = rowEl.textContent || '';
+        // Find any click-derived caret position; DOM doesn't give us one
+        // directly on a simple click, so fall back to "first recognisable
+        // token in the row" — the user can drag-select if they want
+        // something specific.
+        const m = /\S+/.exec(visible);
+        if (m) {
+          picked = m[0];
+          start = full.indexOf(picked);
+        }
+      }
+      if (!picked) return;
+      if (start < 0) start = 0;
+      const end = start + picked.length;
+
+      // Build anchors from up to 24 chars either side, trimmed at the
+      // nearest whitespace so we don't anchor mid-word.
+      const ANCHOR_MAX = 24;
+      let left = full.slice(Math.max(0, start - ANCHOR_MAX), start);
+      let right = full.slice(end, end + ANCHOR_MAX);
+      // Trim left to start at a whitespace boundary if possible.
+      const leftWs = left.search(/\s\S*$/);
+      if (leftWs >= 0) left = left.slice(leftWs);
+      // Trim right to end at a whitespace boundary if possible.
+      const rightWsEnd = right.search(/\s/);
+      if (rightWsEnd > 0) right = right.slice(0, rightWsEnd);
+      // Collapse leading/trailing whitespace — a pure-whitespace anchor
+      // generalises poorly.
+      left = left.replace(/^\s+/, '');
+      right = right.replace(/\s+$/, '');
+
+      // Classify and build pattern.
+      const cls = _classifyPick(picked);
+      const col = parseInt(clickerCol.value, 10);
+      const samples = Number.isFinite(col) ? _collectClickerSamples(col) : [];
+      const leftEsc = _generaliseAnchor(left, cls.pattern, samples, 'left');
+      const rightEsc = _generaliseAnchor(right, cls.pattern, samples, 'right');
+      currentPattern = leftEsc + '(' + cls.pattern + ')' + rightEsc;
+      currentFlags = 'i';
+      currentGroup = 1;
+      currentLabel = cls.label;
+
+      clickerPattern.textContent = '/' + currentPattern + '/' + currentFlags;
+      clickerPattern.dataset.empty = 'false';
+
+      // Default name preset: "<colName>.<label>" — unique-ified on extract.
+      const colName = this._baseColumns[col] || `col${col + 1}`;
+      if (!clickerName.value.trim()) {
+        clickerName.placeholder = `${colName}.${cls.label.replace(/\s+/g, '_')}`;
+      }
+
+      runClickerPreview();
+    };
+
+    clickerCol.addEventListener('change', () => {
+      // Reset pick state when column changes — anchors / samples are
+      // column-specific.
+      currentPattern = null;
+      currentLabel = null;
+      clickerPattern.textContent = '(pick a value above)';
+      clickerPattern.dataset.empty = 'true';
+      clickerName.value = '';
+      clickerName.placeholder = 'auto';
+      renderClickerSamples();
+      runClickerPreview();
+    });
+    clickerSamples.addEventListener('mouseup', (e) => {
+      const row = e.target.closest('.tl-clicker-row');
+      if (!row) return;
+      // Give the browser a tick to finalise the selection.
+      setTimeout(() => handlePick(row), 0);
+    });
+
+    clickerEditBtn.addEventListener('click', () => {
+      if (!currentPattern) return;
+      // Copy pattern/flags/group/col into the Regex tab fields and
+      // switch tabs. User can then fine-tune.
+      const col = clickerCol.value;
+      const regexColSel = dlg.querySelector('[data-field="col"]');
+      const patternEl = dlg.querySelector('[data-field="pattern"]');
+      const flagsEl = dlg.querySelector('[data-field="flags"]');
+      const groupEl = dlg.querySelector('[data-field="group"]');
+      const nameEl = dlg.querySelector('[data-field="name"]');
+      const presetSel = dlg.querySelector('[data-field="preset"]');
+      if (regexColSel) regexColSel.value = col;
+      if (patternEl) patternEl.value = currentPattern;
+      if (flagsEl) flagsEl.value = currentFlags;
+      if (groupEl) groupEl.value = String(currentGroup);
+      if (presetSel) presetSel.value = '-1';
+      if (nameEl) nameEl.value = clickerName.value.trim() || clickerName.placeholder || '';
+      // Activate the Regex tab.
+      const regexTab = dlg.querySelector('.tl-dialog-tab[data-tab="regex"]');
+      if (regexTab) regexTab.click();
+      // Fire the regex test so the preview populates.
+      if (patternEl) patternEl.dispatchEvent(new Event('input'));
+    });
+
+    clickerExtractBtn.addEventListener('click', () => {
+      if (!currentPattern) return;
+      const col = parseInt(clickerCol.value, 10);
+      if (!Number.isFinite(col) || col < 0) return;
+      const colName = this._baseColumns[col] || `col${col + 1}`;
+      const name = (clickerName.value || '').trim()
+        || clickerName.placeholder
+        || `${colName}.clicked`;
+      const before = this._extractedCols.length;
+      this._addRegexExtractNoRender({
+        name, col, pattern: currentPattern, flags: currentFlags,
+        group: currentGroup, kind: 'regex',
+      });
+      if (this._extractedCols.length === before) {
+        if (this._app && this._app._toast) this._app._toast('That column is already extracted', 'info');
+        return;
+      }
+      this._rebuildExtractedStateAndRender();
+      close();
+    });
+
+    // Initial paint.
+    renderClickerSamples();
 
     // ── Regex tab wiring
     const colSel = dlg.querySelector('[data-field="col"]');
@@ -7313,7 +8934,58 @@ class TimelineView {
     const sampleCap = Math.min(this.rows.length, 200);
     const cols = this._baseColumns.length;
 
+    // EVTX detection: format label is "EVTX", or the base columns include
+    // the synthesised "Event Data" column emitted by `fromEvtx`. When EVTX
+    // is detected, the KV-field heuristic uses looser thresholds so sparse
+    // but forensically-important fields (LogonType, UserAccountControl…)
+    // surface in the dialog instead of being filtered out as noise.
+    const isEvtx = this.formatLabel === 'EVTX'
+      || (this._baseColumns && this._baseColumns.indexOf('Event Data') !== -1);
+
+    // Forensics-grade EVTX fields: pre-selected by default (others stay
+    // visible but unchecked) so analysts can Extract-selected and get a
+    // tight investigatable column set without triaging 40 checkboxes.
+    const FORENSIC_EVTX_FIELDS = new Set([
+      'CommandLine', 'ParentCommandLine', 'TargetUserName', 'SubjectUserName',
+      'ProcessName', 'NewProcessName', 'IpAddress', 'LogonType',
+    ]);
+
+    // Browser-history SQLite — the `url` column gets three additional
+    // `url-part` proposals (host / path / query) so analysts can split a
+    // visited URL into its components with one click.
+    const isBrowserHistory = typeof this.formatLabel === 'string'
+      && this.formatLabel.indexOf('SQLite') === 0
+      && this.formatLabel.indexOf('History') !== -1;
+
     for (let c = 0; c < cols; c++) {
+      // Browser-history: emit url-part proposals for the `url` column
+      // before the generic branches, so they appear at the top of the
+      // list sorted by match %.
+      if (isBrowserHistory && (this._baseColumns[c] || '').toLowerCase() === 'url') {
+        const colName = this._baseColumns[c] || 'url';
+        // Sample a value for the preview column.
+        let sampleVal = '';
+        for (let i = 0; i < Math.min(this.rows.length, 50); i++) {
+          const v = this._cellAt(i, c);
+          if (v) { sampleVal = v; break; }
+        }
+        const parts = [
+          { sub: 'host', label: 'URL host', pattern: '^[a-z][a-z0-9+.\\-]*:\\/\\/([^\\/?#]+)', group: 1 },
+          { sub: 'path', label: 'URL path', pattern: '^[a-z][a-z0-9+.\\-]*:\\/\\/[^\\/?#]+([^?#]*)', group: 1 },
+          { sub: 'query', label: 'URL query', pattern: '\\?([^#]*)', group: 1 },
+        ];
+        for (const p of parts) {
+          proposals.push({
+            kind: 'url-part', kindLabel: p.label, sourceCol: c, path: null,
+            subKind: p.sub, pattern: p.pattern, group: p.group,
+            matchPct: 95,
+            proposedName: `${colName}.${p.sub}`,
+            sample: sampleVal,
+            preselect: true,
+          });
+        }
+      }
+
       // Sample cells.
       const samples = [];
       for (let i = 0; i < sampleCap; i++) {
@@ -7433,16 +9105,17 @@ class TimelineView {
           }
           if (pairs >= 2) kvRows++;
         }
-        const kvDominant = kvRows >= Math.max(3, samples.length * 0.5);
+        // EVTX: lower the KV-dominance and per-field thresholds so sparse
+        // but forensically important fields surface. On generic logs the
+        // stricter 50 %/2 % defaults still apply — so a column that is only
+        // occasionally `key=value` won't spuriously trigger.
+        const kvDomFrac = isEvtx ? 0.1 : 0.5;
+        const kvDominant = kvRows >= Math.max(3, samples.length * kvDomFrac);
         if (kvDominant && fieldStats.size) {
           const KV_FIELD_CAP = 80;
-          // Low floor (2 % of sampled rows, absolute min 3) so sparse but
-          // meaningful EVTX fields still surface — e.g. `UserAccountControl`,
-          // `PuaCount`, `MemberSid`, `TargetLogonGuid` only appear in a few
-          // event types out of a mixed Security log but are exactly what an
-          // analyst wants to filter on. The existing KV_FIELD_CAP=80 and the
-          // absolute 3-occurrence floor still filter out true noise.
-          const minCount = Math.max(3, Math.floor(samples.length * 0.02));
+          const minCount = isEvtx
+            ? Math.max(2, Math.floor(samples.length * 0.01))
+            : Math.max(3, Math.floor(samples.length * 0.02));
           const ranked = Array.from(fieldStats.entries())
             .filter(([, rec]) => rec.count >= minCount)
             .sort((a, b) => b[1].count - a[1].count)
@@ -7454,6 +9127,10 @@ class TimelineView {
               matchPct: rec.count * 100 / samples.length,
               proposedName: `${this._baseColumns[c] || 'col' + c}.${name}`,
               sample: rec.sample,
+              // On EVTX, pre-check only forensic-grade fields so Extract-all
+              // lands a tight investigatable set. Non-EVTX columns default
+              // to checked so the classic "extract everything" flow still works.
+              preselect: isEvtx ? FORENSIC_EVTX_FIELDS.has(name) : true,
             });
           }
           continue;   // skip URL / host probing on KV-dominant columns
@@ -7671,7 +9348,7 @@ class TimelineView {
   _clearAllExtractedCols() {
     if (!this._extractedCols.length) return false;
     const n = this._extractedCols.length;
-     
+
     if (!window.confirm(`Remove ${n} extracted column${n === 1 ? '' : 's'}? This cannot be undone.`)) return false;
     const baseLen = this._baseColumns.length;
 
