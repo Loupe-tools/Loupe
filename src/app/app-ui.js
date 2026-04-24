@@ -977,7 +977,17 @@ Object.assign(App.prototype, {
 
 
   _setLoading(on) {
-    document.getElementById('loading').classList.toggle('hidden', !on);
+    const el = document.getElementById('loading');
+    if (on) {
+      const spans = el.querySelectorAll('.loading-msg .lm');
+      const indices = Array.from({length: spans.length}, (_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
+      }
+      spans.forEach((s, i) => s.style.setProperty('--i', indices[i]));
+    }
+    el.classList.toggle('hidden', !on);
   },
 
   _toast(msg, type = 'info') {

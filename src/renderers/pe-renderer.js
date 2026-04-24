@@ -3400,8 +3400,13 @@ class PeRenderer {
           riskScore += 2;
         }
         if (sec.entropy > 7.0) {
-          issues.push(`Section "${sec.name}" has very high entropy (${sec.entropy.toFixed(3)}) — likely packed or encrypted`);
-          riskScore += 1.5;
+          if (sec.name === '.rsrc') {
+            issues.push(`Section "${sec.name}" has very high entropy (${sec.entropy.toFixed(3)}) — compressed resources`);
+            riskScore += 0.5;
+          } else {
+            issues.push(`Section "${sec.name}" has very high entropy (${sec.entropy.toFixed(3)}) — likely packed or encrypted`);
+            riskScore += 1.5;
+          }
         }
         if (sec.packerMatch) {
           issues.push(`Section "${sec.name}" matches known packer: ${sec.packerMatch}`);
@@ -3411,8 +3416,11 @@ class PeRenderer {
       }
 
       // Low import count + high entropy = likely packed
+      // Exclude .rsrc from this check — resource sections naturally have high
+      // entropy due to compressed images / icons / manifests.
       const totalImportFuncs = pe.imports.reduce((s, d) => s + d.functions.length, 0);
-      if (totalImportFuncs < 10 && pe.sections.some(s => s.entropy > 6.5)) {
+      const hasHighEntropyNonResource = pe.sections.some(s => s.entropy > 6.5 && s.name !== '.rsrc');
+      if (totalImportFuncs < 10 && hasHighEntropyNonResource) {
         if (!packerDetected) {
           issues.push('Very few imports (' + totalImportFuncs + ') with high-entropy sections — likely packed');
           riskScore += 2;
