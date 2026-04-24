@@ -367,6 +367,29 @@ class App {
       return;
     }
 
+    // Snapshot clipboard data synchronously while DataTransfer is still
+    // valid.  The browser invalidates the DataTransfer object once the
+    // paste-event handler returns, so by the time the user clicks
+    // "Load for analysis" the original `dt` would be empty.  The snapshot
+    // mimics the DataTransfer surface that `_loadPastePayload` consumes.
+    const snapshot = {
+      files: dt.files && dt.files.length ? Array.from(dt.files) : [],
+      items: [],
+      _textPlain: dt.getData('text/plain'),
+      _textHtml:  dt.getData('text/html'),
+      getData(type) {
+        if (type === 'text/plain') return this._textPlain;
+        if (type === 'text/html')  return this._textHtml;
+        return '';
+      },
+    };
+    for (const item of (dt.items || [])) {
+      if (item.type && item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (blob) snapshot.items.push({ type: item.type, getAsFile: () => blob });
+      }
+    }
+
     const overlay = document.createElement('div');
     overlay.className = 'help-overlay timeline-paste-overlay';
 
@@ -439,7 +462,7 @@ class App {
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
     loadBtn.addEventListener('click', () => {
       close();
-      this._loadPastePayload(dt);
+      this._loadPastePayload(snapshot);
     });
 
     // Autofocus the safer action (Cancel) so Enter doesn't accidentally
