@@ -1226,7 +1226,7 @@ Object.assign(App.prototype, {
 
     // Exports trie — the count is a useful gauge of how public a dylib is.
     if (mo.exportsTrie && mo.exportsTrie.length != null) {
-      const n = Array.isArray(mo.exportsTrie) ? mo.exportsTrie.length : mo.exportsTrie.length;
+      const n = mo.exportsTrie.length;
       if (n) parts.push(`\n**Exports trie:** ${n} symbols`);
     }
 

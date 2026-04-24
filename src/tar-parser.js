@@ -529,7 +529,8 @@ const TarParser = {
     let readPos = 0;
     for (const chunk of (entry.sparseMap || [])) {
       if (chunk.len <= 0) continue;
-      if (chunk.off + chunk.len > cappedSize) break;   // would overflow output
+      if (chunk.off < 0) break;                         // reject negative offsets from malformed tar
+      if (chunk.off + chunk.len > cappedSize) break;    // would overflow output
       if (readPos + chunk.len > rawData.length) break;  // would overflow input
       output.set(rawData.subarray(readPos, readPos + chunk.len), chunk.off);
       readPos += chunk.len;

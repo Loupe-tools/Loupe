@@ -725,7 +725,6 @@ class GridViewer {
 
     this._columnKinds = kinds;
     this._columnLengths = lens;
-    return kinds;
   }
 
   /** Compute each column's "base" width — the width it would get in
@@ -1821,6 +1820,7 @@ class GridViewer {
     const h = { ...spec, ...base };
     this.state.highlight = h;
     h.timer = setTimeout(() => {
+      if (this._destroyed) return;
       // Only clear if this is still the active highlight (later sets
       // override timer reference via cancelHighlightTimer).
       if (this.state.highlight === h) {
