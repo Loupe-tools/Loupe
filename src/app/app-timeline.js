@@ -6830,8 +6830,8 @@ class TimelineView {
         if (sample && sample.offsetHeight > 0 && sample.offsetHeight !== rowHeight) {
           rowHeight = sample.offsetHeight;
           applySortAndFilter();
-          renderRows();
         }
+        renderRows();
       });
 
       // Wire per-card search — debounced input → re-sort + re-render.
