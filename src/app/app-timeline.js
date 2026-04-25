@@ -7562,7 +7562,7 @@ class TimelineView {
       });
     }
     items.push({ sep: true });
-    items.push({ label: `ƒx Extract values from this column…`, act: () => this._openExtractionDialog(colIdx) });
+    items.push({ label: `ƒx Extract values`, act: () => this._openExtractionDialog(colIdx, 'manual') });
 
     items.push({ sep: true });
     // Auto-pivot — pick a sensible Rows × Cols × Count triple based on the
@@ -7732,7 +7732,7 @@ class TimelineView {
       </div>
       ${this._isExtractedCol(colIdx) ? '<div class="tl-colmenu-section"><button class="tl-tb-btn tl-tb-btn-danger" data-act="removeExtract">✕ Remove extracted column</button></div>' : ''}
       <div class="tl-colmenu-section">
-        <button class="tl-tb-btn" data-act="extract">ƒx Extract values from this column…</button>
+        <button class="tl-tb-btn" data-act="extract">ƒx Extract values</button>
         <button class="tl-tb-btn" data-act="autopivot">🧮 Auto pivot on this column</button>
       </div>
       <div class="tl-colmenu-foot">
@@ -7868,7 +7868,7 @@ class TimelineView {
     });
     menu.querySelector('[data-act="extract"]').addEventListener('click', () => {
       this._closePopover();
-      this._openExtractionDialog(colIdx);
+      this._openExtractionDialog(colIdx, 'manual');
     });
     menu.querySelector('[data-act="autopivot"]').addEventListener('click', () => {
       this._closePopover();
@@ -7949,7 +7949,7 @@ class TimelineView {
   }
 
   // ── Extraction dialog (Smart scan + Regex + Clicker tabs) ────────────────
-  _openExtractionDialog(preselectCol) {
+  _openExtractionDialog(preselectCol, defaultTab) {
     this._closePopover();
     this._closeDialog();
     const dlg = this._openDialog = document.createElement('div');
@@ -7965,9 +7965,8 @@ class TimelineView {
           <button class="tl-dialog-close" type="button" aria-label="Close">✕</button>
         </header>
         <div class="tl-dialog-tabs">
-          <button class="tl-dialog-tab tl-dialog-tab-active" data-tab="auto">Smart scan</button>
-          <button class="tl-dialog-tab" data-tab="regex">Regex</button>
-          <button class="tl-dialog-tab" data-tab="clicker">Clicker</button>
+          <button class="tl-dialog-tab tl-dialog-tab-active" data-tab="auto">Auto</button>
+          <button class="tl-dialog-tab" data-tab="manual">Manual</button>
         </div>
         <div class="tl-dialog-body">
           <section class="tl-dialog-pane tl-dialog-pane-auto">
@@ -8085,23 +8084,27 @@ class TimelineView {
     `;
     document.body.appendChild(dlg);
 
-    // Tabs — three panes: Smart scan / Regex / Clicker. Look up each pane
-    // by its `data-tab` attribute so the tab strip can grow without having
-    // to edit the switcher by hand.
+    // Tabs — two panes: Auto / Manual.  The Manual tab shows both the
+    // Clicker and Regex sub-panes side-by-side (well, stacked).  We map
+    // `manual` to an array of DOM elements so the switcher can handle both
+    // single-pane and multi-pane tabs uniformly.
     const tabs = dlg.querySelectorAll('.tl-dialog-tab');
     const panes = {
-      auto: dlg.querySelector('.tl-dialog-pane-auto'),
-      regex: dlg.querySelector('.tl-dialog-pane-regex'),
-      clicker: dlg.querySelector('.tl-dialog-pane-clicker'),
+      auto: [dlg.querySelector('.tl-dialog-pane-auto')],
+      manual: [dlg.querySelector('.tl-dialog-pane-clicker'), dlg.querySelector('.tl-dialog-pane-regex')],
     };
-    tabs.forEach(t => t.addEventListener('click', () => {
+    const _showTab = (which) => {
       tabs.forEach(x => x.classList.remove('tl-dialog-tab-active'));
-      t.classList.add('tl-dialog-tab-active');
-      const which = t.dataset.tab;
-      for (const [k, el] of Object.entries(panes)) {
-        if (el) el.style.display = (k === which) ? '' : 'none';
+      const btn = dlg.querySelector(`.tl-dialog-tab[data-tab="${which}"]`);
+      if (btn) btn.classList.add('tl-dialog-tab-active');
+      for (const [k, els] of Object.entries(panes)) {
+        const vis = (k === which);
+        for (const el of els) { if (el) el.style.display = vis ? '' : 'none'; }
       }
-    }));
+    };
+    tabs.forEach(t => t.addEventListener('click', () => _showTab(t.dataset.tab)));
+    // Activate requested tab (default = auto)
+    _showTab(defaultTab && panes[defaultTab] ? defaultTab : 'auto');
 
     // Close
     const close = () => this._closeDialog();
@@ -8140,9 +8143,14 @@ class TimelineView {
         if (which === 'auto') {
           const btn = dlg.querySelector('[data-act="auto-extract"]');
           if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
-        } else if (which === 'regex') {
-          const btn = dlg.querySelector('[data-act="regex-extract"]');
-          if (btn) { e.preventDefault(); btn.click(); }
+        } else if (which === 'manual') {
+          // Manual tab has both Clicker and Regex panes visible — try
+          // the Clicker extract first (if enabled), else fall back to
+          // the Regex extract button.
+          const cBtn = dlg.querySelector('[data-act="clicker-extract"]');
+          if (cBtn && !cBtn.disabled) { e.preventDefault(); cBtn.click(); return; }
+          const rBtn = dlg.querySelector('[data-act="regex-extract"]');
+          if (rBtn) { e.preventDefault(); rBtn.click(); }
         }
       }
     });
@@ -8475,15 +8483,22 @@ class TimelineView {
     const clickerExtractBtn = dlg.querySelector('[data-act="clicker-extract"]');
     const clickerEditBtn = dlg.querySelector('[data-act="clicker-edit"]');
 
-    // Populate column select — base columns only (extracting on an
-    // extracted column isn't supported).
+    // Populate column select — base columns + extracted (virtual) columns
+    // so the analyst can chain extractions (e.g. extract URL from a JSON
+    // column, then extract the hostname from that URL column).
     clickerCol.innerHTML = '';
     for (let i = 0; i < this._baseColumns.length; i++) {
       const o = document.createElement('option');
       o.value = String(i); o.textContent = this._baseColumns[i] || `(col ${i + 1})`;
       clickerCol.appendChild(o);
     }
-    if (preselectCol != null && preselectCol < this._baseColumns.length) {
+    for (let i = 0; i < this._extractedCols.length; i++) {
+      const o = document.createElement('option');
+      o.value = String(this._baseColumns.length + i);
+      o.textContent = this._extractedCols[i].name + ' ⚡';
+      clickerCol.appendChild(o);
+    }
+    if (preselectCol != null && preselectCol < this.columns.length) {
       clickerCol.value = String(preselectCol);
     }
 
@@ -8594,7 +8609,7 @@ class TimelineView {
       for (const s of samples) {
         const row = document.createElement('div');
         row.className = 'tl-clicker-row';
-        row.textContent = this._ellipsis(s, 400);
+        row.textContent = s;
         row._fullText = s;
         clickerSamples.appendChild(row);
       }
@@ -8798,7 +8813,13 @@ class TimelineView {
       o.value = String(i); o.textContent = this._baseColumns[i] || `(col ${i + 1})`;
       colSel.appendChild(o);
     }
-    if (preselectCol != null && preselectCol < this._baseColumns.length) colSel.value = String(preselectCol);
+    for (let i = 0; i < this._extractedCols.length; i++) {
+      const o = document.createElement('option');
+      o.value = String(this._baseColumns.length + i);
+      o.textContent = this._extractedCols[i].name + ' ⚡';
+      colSel.appendChild(o);
+    }
+    if (preselectCol != null && preselectCol < this.columns.length) colSel.value = String(preselectCol);
 
     const presetSel = dlg.querySelector('[data-field="preset"]');
     for (const p of TL_REGEX_PRESETS) {
