@@ -407,9 +407,15 @@
     }
 
     // Draw connections between nearby nodes.
+    // Bucket lines by quantised alpha (8 buckets) so we batch many segments
+    // into one beginPath/stroke call instead of one per line — large drop in
+    // canvas draw-call overhead for dense node counts.
     const nc = cfg.nodeColor;
     const lc = cfg.lineColor;
     ctx.lineWidth = cfg.lineWidth;
+    const BUCKETS = 8;
+    const buckets = new Array(BUCKETS);
+    for (let b = 0; b < BUCKETS; b++) buckets[b] = [];
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const dx = nodes[i].x - nodes[j].x;
@@ -417,14 +423,23 @@
         const d2 = dx * dx + dy * dy;
         if (d2 < maxDist2) {
           const d = Math.sqrt(d2);
-          const a = cfg.lineAlpha * (1 - d / maxDist);
-          ctx.strokeStyle = 'rgba(' + lc[0] + ',' + lc[1] + ',' + lc[2] + ',' + a + ')';
-          ctx.beginPath();
-          ctx.moveTo(nodes[i].x, nodes[i].y);
-          ctx.lineTo(nodes[j].x, nodes[j].y);
-          ctx.stroke();
+          const t = 1 - d / maxDist;                   // 0..1 proximity
+          const b = Math.min(BUCKETS - 1, (t * BUCKETS) | 0);
+          buckets[b].push(i, j);
         }
       }
+    }
+    for (let b = 0; b < BUCKETS; b++) {
+      const segs = buckets[b];
+      if (!segs.length) continue;
+      const a = cfg.lineAlpha * ((b + 0.5) / BUCKETS);
+      ctx.strokeStyle = 'rgba(' + lc[0] + ',' + lc[1] + ',' + lc[2] + ',' + a + ')';
+      ctx.beginPath();
+      for (let k = 0; k < segs.length; k += 2) {
+        ctx.moveTo(nodes[segs[k]].x, nodes[segs[k]].y);
+        ctx.lineTo(nodes[segs[k + 1]].x, nodes[segs[k + 1]].y);
+      }
+      ctx.stroke();
     }
 
     // Draw nodes as small filled circles.
@@ -444,17 +459,17 @@
   // no cursor interaction. Throttled to ~24 fps like the Penrose engines.
   function _initNetworkDark() {
     const pal = PALETTES.dark;
-    const NODE_COUNT = 100;
+    const NODE_COUNT = 60;
     const SPEED_MIN = 6;
     const SPEED_MAX = 14;
     const cfg = {
       nodeColor: pal.nodeColor,
       lineColor: pal.lineColor,
       nodeRadius: 1.8,
-      nodeAlpha: 0.1,
-      lineAlpha: 0.06,
+      nodeAlpha: 0.08,
+      lineAlpha: 0.045,
       lineWidth: 0.6,
-      maxDist: 180,
+      maxDist: 160,
     };
 
     let nodes = [];
