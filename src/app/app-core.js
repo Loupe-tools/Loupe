@@ -15,7 +15,13 @@ class App {
     // Lives in its own module (`app-bg.js`) and exposes a tiny
     // `window.BgCanvas` singleton. Safe to no-op if the module failed to
     // load for any reason (we never want a cosmetic effect to break init).
-    try { if (window.BgCanvas) window.BgCanvas.init(); } catch (_) { /* background is cosmetic */ }
+    // Defer canvas init to the next animation frame so the first paint
+    // (toolbar + drop-zone) is never blocked by the tiling/network build.
+    try {
+      if (window.BgCanvas) requestAnimationFrame(() => {
+        try { window.BgCanvas.init(); } catch (_) { /* background is cosmetic */ }
+      });
+    } catch (_) { /* background is cosmetic */ }
     this._setupDrop();
 
 
