@@ -30,6 +30,30 @@ const RENDER_LIMITS = Object.freeze({
   DECODE_CHUNK_BYTES:   16 * 1024 * 1024,   // 16 MB — TextDecoder chunk size for large files
 });
 
+// ── EVTX column schema ────────────────────────────────────────────────────────
+// Canonical column names for the EVTX timeline view.  Used by
+// evtx-renderer.js (parser output), app-timeline.js (column lookups),
+// and grid-viewer.js (column-specific styling).
+// Changing a name here automatically propagates everywhere.
+const EVTX_COLUMNS = Object.freeze({
+  TIMESTAMP:  'Timestamp',
+  EVENT_ID:   'Event ID',
+  LEVEL:      'Level',
+  PROVIDER:   'Provider',
+  CHANNEL:    'Channel',
+  COMPUTER:   'Computer',
+  EVENT_DATA: 'Event Data',
+});
+const EVTX_COLUMN_ORDER = Object.freeze([
+  EVTX_COLUMNS.TIMESTAMP,
+  EVTX_COLUMNS.EVENT_ID,
+  EVTX_COLUMNS.LEVEL,
+  EVTX_COLUMNS.PROVIDER,
+  EVTX_COLUMNS.CHANNEL,
+  EVTX_COLUMNS.COMPUTER,
+  EVTX_COLUMNS.EVENT_DATA,
+]);
+
 // ── XML namespace constants ───────────────────────────────────────────────────
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
