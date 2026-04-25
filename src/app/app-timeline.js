@@ -8004,35 +8004,7 @@ class TimelineView {
             </footer>
           </section>
 
-          <section class="tl-dialog-pane tl-dialog-pane-clicker" style="display:none">
-            <div class="tl-clicker-grid">
-              <label class="tl-field">
-                <span class="tl-field-label">Column</span>
-                <select class="tl-field-select" data-field="clicker-col"></select>
-              </label>
-              <label class="tl-field tl-field-wide">
-                <span class="tl-field-label">Name</span>
-                <input type="text" class="tl-field-select" data-field="clicker-name" placeholder="auto">
-              </label>
-            </div>
-            <p class="tl-dialog-muted">Click a token or drag-select a substring in any sample row below. Loupe infers a regex that captures the same slot on every row — surrounding characters become anchors, and the picked value is classified (digits, hex, IP, UUID, hostname, path, quoted, …). Fine-tune in the <b>Regex</b> tab if the inference isn't quite right.</p>
-            <div class="tl-clicker-samples" aria-label="Sample rows — click a token to pick"></div>
-            <div class="tl-clicker-pick">
-              <span class="tl-clicker-pick-label">Pattern:</span>
-              <code class="tl-clicker-pattern" data-empty="true">(pick a value above)</code>
-            </div>
-            <div class="tl-clicker-preview">
-              <div class="tl-clicker-status">No pick yet.</div>
-              <div class="tl-clicker-hits"></div>
-            </div>
-            <footer class="tl-dialog-foot">
-              <button class="tl-tb-btn" data-act="clicker-edit" disabled title="Copy the inferred pattern into the Regex tab for fine-tuning">✎ Edit as regex →</button>
-              <span class="tl-dialog-spacer"></span>
-              <button class="tl-tb-btn tl-tb-btn-primary" data-act="clicker-extract" disabled>Extract</button>
-            </footer>
-          </section>
-
-          <section class="tl-dialog-pane tl-dialog-pane-regex" style="display:none">
+          <section class="tl-dialog-pane tl-dialog-pane-manual" style="display:none">
             <div class="tl-regex-grid">
               <label class="tl-field">
                 <span class="tl-field-label">Column</span>
@@ -8045,6 +8017,14 @@ class TimelineView {
                 </select>
               </label>
               <label class="tl-field tl-field-wide">
+                <span class="tl-field-label">Name</span>
+                <input type="text" class="tl-field-select" data-field="name" placeholder="auto">
+              </label>
+            </div>
+            <p class="tl-dialog-muted">Click a token or drag-select a substring in any sample row below — Loupe infers a regex that captures the same slot on every row and fills the Pattern field automatically. Or write a Pattern directly. The picked value is classified (digits, hex, IP, UUID, hostname, path, quoted, …) and surrounding characters become anchors.</p>
+            <div class="tl-clicker-samples" aria-label="Sample rows — click a token to pick"></div>
+            <div class="tl-regex-grid">
+              <label class="tl-field tl-field-wide">
                 <span class="tl-field-label">Pattern</span>
                 <input type="text" class="tl-field-select" data-field="pattern" spellcheck="false" placeholder="e.g. \\b\\d+\\b">
               </label>
@@ -8056,21 +8036,19 @@ class TimelineView {
                 <span class="tl-field-label">Group</span>
                 <input type="number" class="tl-field-select" data-field="group" value="0" min="0" max="9">
               </label>
-              <label class="tl-field tl-field-wide">
-                <span class="tl-field-label">Name</span>
-                <input type="text" class="tl-field-select" data-field="name" placeholder="auto">
-              </label>
             </div>
-            <div class="tl-regex-hint">
-              <b>Cheatsheet:</b>
-              <code>\\b</code> word boundary · <code>\\d+</code> digits · <code>[a-z]+</code> letters ·
-              <code>(...)</code> capture group · <code>\\.</code> literal dot · flags: <code>i</code> case-insensitive.
-              Capture group <code>0</code> is the full match; <code>1</code> is the first <code>(...)</code>.
-              <br>⚠ <code>|</code> is alternation — to match a literal pipe, escape it as <code>\\|</code>
-              (e.g. in an EVTX Event Data cell, write <code>DestAddress=(.+?) \\|</code>, not <code>DestAddress=(.+?) |</code>).
-            </div>
+            <details class="tl-regex-cheatsheet">
+              <summary>Regex cheatsheet</summary>
+              <div class="tl-regex-hint">
+                <code>\\b</code> word boundary · <code>\\d+</code> digits · <code>[a-z]+</code> letters ·
+                <code>(...)</code> capture group · <code>\\.</code> literal dot · flags: <code>i</code> case-insensitive.
+                Capture group <code>0</code> is the full match; <code>1</code> is the first <code>(...)</code>.
+                <br>⚠ <code>|</code> is alternation — to match a literal pipe, escape it as <code>\\|</code>
+                (e.g. in an EVTX Event Data cell, write <code>DestAddress=(.+?) \\|</code>, not <code>DestAddress=(.+?) |</code>).
+              </div>
+            </details>
             <div class="tl-regex-preview">
-              <div class="tl-regex-status">Enter a pattern to preview.</div>
+              <div class="tl-regex-status">Pick a value above or enter a pattern to preview.</div>
               <div class="tl-regex-samples"></div>
             </div>
             <footer class="tl-dialog-foot">
@@ -8084,14 +8062,13 @@ class TimelineView {
     `;
     document.body.appendChild(dlg);
 
-    // Tabs — two panes: Auto / Manual.  The Manual tab shows both the
-    // Clicker and Regex sub-panes side-by-side (well, stacked).  We map
-    // `manual` to an array of DOM elements so the switcher can handle both
-    // single-pane and multi-pane tabs uniformly.
+    // Tabs — two panes: Auto / Manual. The Manual tab is a single unified
+    // pane that combines Clicker (sample rows) + Regex (Pattern/Flags/Group)
+    // wiring, sharing one Column dropdown, one Name field, and one preview.
     const tabs = dlg.querySelectorAll('.tl-dialog-tab');
     const panes = {
       auto: [dlg.querySelector('.tl-dialog-pane-auto')],
-      manual: [dlg.querySelector('.tl-dialog-pane-clicker'), dlg.querySelector('.tl-dialog-pane-regex')],
+      manual: [dlg.querySelector('.tl-dialog-pane-manual')],
     };
     const _showTab = (which) => {
       tabs.forEach(x => x.classList.remove('tl-dialog-tab-active'));
@@ -8144,11 +8121,8 @@ class TimelineView {
           const btn = dlg.querySelector('[data-act="auto-extract"]');
           if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
         } else if (which === 'manual') {
-          // Manual tab has both Clicker and Regex panes visible — try
-          // the Clicker extract first (if enabled), else fall back to
-          // the Regex extract button.
-          const cBtn = dlg.querySelector('[data-act="clicker-extract"]');
-          if (cBtn && !cBtn.disabled) { e.preventDefault(); cBtn.click(); return; }
+          // Unified Manual tab — single Extract button covers both
+          // clicker-inferred and hand-written patterns.
           const rBtn = dlg.querySelector('[data-act="regex-extract"]');
           if (rBtn) { e.preventDefault(); rBtn.click(); }
         }
@@ -8465,44 +8439,18 @@ class TimelineView {
     });
     runAuto();
 
-    // ── Clicker tab wiring
-    // Pick a value by clicking a token or drag-selecting a substring in
-    // any sample row; Loupe infers a regex that captures the same slot
-    // on every row. Left + right anchors are derived from characters
-    // surrounding the pick and generalised against the other samples;
-    // the picked value itself is classified into a token class
-    // (digits / hex / IP / UUID / MAC / email / hostname / path /
-    // quoted / fallback `\S+`). Output lands in the same regex
-    // extractor store as the Regex tab so persistence is shared.
-    const clickerCol = dlg.querySelector('[data-field="clicker-col"]');
-    const clickerName = dlg.querySelector('[data-field="clicker-name"]');
+    // ── Manual tab wiring (unified Clicker + Regex)
+    // The Manual tab is a single pane that shares one Column dropdown,
+    // one Name field, and one preview between the click-to-pick sample
+    // rows and the hand-authored Pattern/Flags/Group fields. Picking a
+    // token / drag-selecting in a sample row infers a regex which is
+    // written directly into the Pattern field — there is no separate
+    // "Edit in Regex tab" step. The single Extract button at the foot
+    // saves whatever pattern is currently in the form.
     const clickerSamples = dlg.querySelector('.tl-clicker-samples');
-    const clickerPattern = dlg.querySelector('.tl-clicker-pattern');
-    const clickerStatus = dlg.querySelector('.tl-clicker-status');
-    const clickerHits = dlg.querySelector('.tl-clicker-hits');
-    const clickerExtractBtn = dlg.querySelector('[data-act="clicker-extract"]');
-    const clickerEditBtn = dlg.querySelector('[data-act="clicker-edit"]');
-
-    // Populate column select — base columns + extracted (virtual) columns
-    // so the analyst can chain extractions (e.g. extract URL from a JSON
-    // column, then extract the hostname from that URL column).
-    clickerCol.innerHTML = '';
-    for (let i = 0; i < this._baseColumns.length; i++) {
-      const o = document.createElement('option');
-      o.value = String(i); o.textContent = this._baseColumns[i] || `(col ${i + 1})`;
-      clickerCol.appendChild(o);
-    }
-    for (let i = 0; i < this._extractedCols.length; i++) {
-      const o = document.createElement('option');
-      o.value = String(this._baseColumns.length + i);
-      o.textContent = this._extractedCols[i].name + ' ⚡';
-      clickerCol.appendChild(o);
-    }
-    if (preselectCol != null && preselectCol < this.columns.length) {
-      clickerCol.value = String(preselectCol);
-    }
 
     // Token classifier — inspects a picked substring and returns a regex
+
     // fragment that matches the same shape. Ordered from most specific
     // to most general so a UUID doesn't degenerate to `[0-9a-f]+`.
     const _classifyPick = (s) => {
@@ -8588,224 +8536,7 @@ class TimelineView {
       return '\\b';
     };
 
-    // State for the current pick — pattern + name preset.
-    let currentPattern = null;
-    let currentFlags = 'i';
-    let currentGroup = 1;
-    let currentLabel = null;
-
-    const renderClickerSamples = () => {
-      const col = parseInt(clickerCol.value, 10);
-      if (!Number.isFinite(col) || col < 0) { clickerSamples.innerHTML = ''; return; }
-      const samples = _collectClickerSamples(col);
-      clickerSamples.innerHTML = '';
-      if (!samples.length) {
-        const empty = document.createElement('div');
-        empty.className = 'tl-clicker-empty';
-        empty.textContent = '(no non-empty values in this column)';
-        clickerSamples.appendChild(empty);
-        return;
-      }
-      for (const s of samples) {
-        const row = document.createElement('div');
-        row.className = 'tl-clicker-row';
-        row.textContent = s;
-        row._fullText = s;
-        clickerSamples.appendChild(row);
-      }
-    };
-
-    const runClickerPreview = () => {
-      const col = parseInt(clickerCol.value, 10);
-      if (!currentPattern || !Number.isFinite(col)) {
-        clickerStatus.textContent = 'No pick yet.';
-        clickerHits.innerHTML = '';
-        clickerExtractBtn.disabled = true;
-        clickerEditBtn.disabled = true;
-        return;
-      }
-      let re;
-      try { re = new RegExp(currentPattern, currentFlags); }
-      catch (e) {
-        clickerStatus.textContent = 'Inferred regex failed to compile: ' + (e.message || e);
-        clickerHits.innerHTML = '';
-        clickerExtractBtn.disabled = true;
-        clickerEditBtn.disabled = true;
-        return;
-      }
-      const N = Math.min(this.rows.length, 200);
-      let seen = 0, captured = 0;
-      const hits = [];
-      for (let i = 0; i < N; i++) {
-        const v = this._cellAt(i, col);
-        if (!v) continue;
-        seen++;
-        const m = re.exec(v);
-        if (!m) continue;
-        const cap = (currentGroup < m.length) ? (m[currentGroup] == null ? '' : m[currentGroup]) : m[0];
-        if (cap !== '') {
-          captured++;
-          if (hits.length < 12) hits.push({ src: v, cap });
-        }
-      }
-      const pct = seen ? (captured * 100 / seen) : 0;
-      clickerStatus.textContent = `${captured}/${seen} sampled rows captured (${pct.toFixed(0)}%)` +
-        (currentLabel ? ` · class: ${currentLabel}` : '');
-      clickerHits.innerHTML = '';
-      for (const h of hits) {
-        const d = document.createElement('div');
-        d.className = 'tl-clicker-hit';
-        d.innerHTML = `<span class="tl-clicker-hit-cap">${_tlEsc(h.cap)}</span><span class="tl-clicker-hit-src" title="${_tlEsc(h.src)}">${_tlEsc(this._ellipsis(h.src, 120))}</span>`;
-        clickerHits.appendChild(d);
-      }
-      clickerExtractBtn.disabled = captured === 0;
-      clickerEditBtn.disabled = false;
-    };
-
-    // Handle a pick — either from selection (drag) or from a click
-    // (word under click). `rowEl` = the `.tl-clicker-row`, `anchorText` =
-    // its untruncated source text.
-    const handlePick = (rowEl) => {
-      if (!rowEl) return;
-      const full = rowEl._fullText || rowEl.textContent || '';
-      if (!full) return;
-      // Prefer the current selection if it's inside this row.
-      const sel = window.getSelection();
-      let picked = '';
-      let start = -1;
-      if (sel && sel.rangeCount && !sel.isCollapsed) {
-        const range = sel.getRangeAt(0);
-        if (rowEl.contains(range.startContainer) && rowEl.contains(range.endContainer)) {
-          picked = sel.toString();
-          // Approximate offset by searching for `picked` in `full`.
-          start = full.indexOf(picked);
-        }
-      }
-      if (!picked) {
-        // Click-only fallback: pick the word-ish run under the caret.
-        // We approximate the click offset via the visible text.
-        const visible = rowEl.textContent || '';
-        // Find any click-derived caret position; DOM doesn't give us one
-        // directly on a simple click, so fall back to "first recognisable
-        // token in the row" — the user can drag-select if they want
-        // something specific.
-        const m = /\S+/.exec(visible);
-        if (m) {
-          picked = m[0];
-          start = full.indexOf(picked);
-        }
-      }
-      if (!picked) return;
-      if (start < 0) start = 0;
-      const end = start + picked.length;
-
-      // Build anchors from up to 24 chars either side, trimmed at the
-      // nearest whitespace so we don't anchor mid-word.
-      const ANCHOR_MAX = 24;
-      let left = full.slice(Math.max(0, start - ANCHOR_MAX), start);
-      let right = full.slice(end, end + ANCHOR_MAX);
-      // Trim left to start at a whitespace boundary if possible.
-      const leftWs = left.search(/\s\S*$/);
-      if (leftWs >= 0) left = left.slice(leftWs);
-      // Trim right to end at a whitespace boundary if possible.
-      const rightWsEnd = right.search(/\s/);
-      if (rightWsEnd > 0) right = right.slice(0, rightWsEnd);
-      // Collapse leading/trailing whitespace — a pure-whitespace anchor
-      // generalises poorly.
-      left = left.replace(/^\s+/, '');
-      right = right.replace(/\s+$/, '');
-
-      // Classify and build pattern.
-      const cls = _classifyPick(picked);
-      const col = parseInt(clickerCol.value, 10);
-      const samples = Number.isFinite(col) ? _collectClickerSamples(col) : [];
-      const leftEsc = _generaliseAnchor(left, cls.pattern, samples, 'left');
-      const rightEsc = _generaliseAnchor(right, cls.pattern, samples, 'right');
-      currentPattern = leftEsc + '(' + cls.pattern + ')' + rightEsc;
-      currentFlags = 'i';
-      currentGroup = 1;
-      currentLabel = cls.label;
-
-      clickerPattern.textContent = '/' + currentPattern + '/' + currentFlags;
-      clickerPattern.dataset.empty = 'false';
-
-      // Default name preset: "<colName>.<label>" — unique-ified on extract.
-      const colName = this._baseColumns[col] || `col${col + 1}`;
-      if (!clickerName.value.trim()) {
-        clickerName.placeholder = `${colName}.${cls.label.replace(/\s+/g, '_')}`;
-      }
-
-      runClickerPreview();
-    };
-
-    clickerCol.addEventListener('change', () => {
-      // Reset pick state when column changes — anchors / samples are
-      // column-specific.
-      currentPattern = null;
-      currentLabel = null;
-      clickerPattern.textContent = '(pick a value above)';
-      clickerPattern.dataset.empty = 'true';
-      clickerName.value = '';
-      clickerName.placeholder = 'auto';
-      renderClickerSamples();
-      runClickerPreview();
-    });
-    clickerSamples.addEventListener('mouseup', (e) => {
-      const row = e.target.closest('.tl-clicker-row');
-      if (!row) return;
-      // Give the browser a tick to finalise the selection.
-      setTimeout(() => handlePick(row), 0);
-    });
-
-    clickerEditBtn.addEventListener('click', () => {
-      if (!currentPattern) return;
-      // Copy pattern/flags/group/col into the Regex tab fields and
-      // switch tabs. User can then fine-tune.
-      const col = clickerCol.value;
-      const regexColSel = dlg.querySelector('[data-field="col"]');
-      const patternEl = dlg.querySelector('[data-field="pattern"]');
-      const flagsEl = dlg.querySelector('[data-field="flags"]');
-      const groupEl = dlg.querySelector('[data-field="group"]');
-      const nameEl = dlg.querySelector('[data-field="name"]');
-      const presetSel = dlg.querySelector('[data-field="preset"]');
-      if (regexColSel) regexColSel.value = col;
-      if (patternEl) patternEl.value = currentPattern;
-      if (flagsEl) flagsEl.value = currentFlags;
-      if (groupEl) groupEl.value = String(currentGroup);
-      if (presetSel) presetSel.value = '-1';
-      if (nameEl) nameEl.value = clickerName.value.trim() || clickerName.placeholder || '';
-      // Activate the Regex tab.
-      const regexTab = dlg.querySelector('.tl-dialog-tab[data-tab="regex"]');
-      if (regexTab) regexTab.click();
-      // Fire the regex test so the preview populates.
-      if (patternEl) patternEl.dispatchEvent(new Event('input'));
-    });
-
-    clickerExtractBtn.addEventListener('click', () => {
-      if (!currentPattern) return;
-      const col = parseInt(clickerCol.value, 10);
-      if (!Number.isFinite(col) || col < 0) return;
-      const colName = this._baseColumns[col] || `col${col + 1}`;
-      const name = (clickerName.value || '').trim()
-        || clickerName.placeholder
-        || `${colName}.clicked`;
-      const before = this._extractedCols.length;
-      this._addRegexExtractNoRender({
-        name, col, pattern: currentPattern, flags: currentFlags,
-        group: currentGroup, kind: 'regex',
-      });
-      if (this._extractedCols.length === before) {
-        if (this._app && this._app._toast) this._app._toast('That column is already extracted', 'info');
-        return;
-      }
-      this._rebuildExtractedStateAndRender();
-      close();
-    });
-
-    // Initial paint.
-    renderClickerSamples();
-
-    // ── Regex tab wiring
+    // ── Regex / pattern wiring (shared by the unified Manual pane)
     const colSel = dlg.querySelector('[data-field="col"]');
     colSel.innerHTML = '';
     for (let i = 0; i < this._baseColumns.length; i++) {
@@ -8833,7 +8564,107 @@ class TimelineView {
     const statusEl = dlg.querySelector('.tl-regex-status');
     const samplesEl = dlg.querySelector('.tl-regex-samples');
 
+    // Render the clicker sample rows for the currently-selected column.
+    // Each row carries its untruncated text on `_fullText` so `handlePick`
+    // can compute pick offsets without re-reading the table.
+    const renderClickerSamples = () => {
+      const col = parseInt(colSel.value, 10);
+      if (!Number.isFinite(col) || col < 0) { clickerSamples.innerHTML = ''; return; }
+      const samples = _collectClickerSamples(col);
+      clickerSamples.innerHTML = '';
+      if (!samples.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tl-clicker-empty';
+        empty.textContent = '(no non-empty values in this column)';
+        clickerSamples.appendChild(empty);
+        return;
+      }
+      for (const s of samples) {
+        const row = document.createElement('div');
+        row.className = 'tl-clicker-row';
+        row.textContent = s;
+        row._fullText = s;
+        clickerSamples.appendChild(row);
+      }
+    };
+
+    // Pick handler — fires on mouseup inside a `.tl-clicker-row`. Builds a
+    // regex from the picked / drag-selected substring + sniffed anchors,
+    // writes it directly into the unified Pattern / Flags / Group fields,
+    // resets the Preset dropdown to "— custom —", optionally seeds the
+    // Name placeholder, then calls `runTest()` so the unified preview
+    // updates. The user can fine-tune the pattern by hand and click
+    // Extract — there is no separate "Edit in Regex tab" step.
+    const handlePick = (rowEl) => {
+      if (!rowEl) return;
+      const full = rowEl._fullText || rowEl.textContent || '';
+      if (!full) return;
+      const sel = window.getSelection();
+      let picked = '';
+      let start = -1;
+      if (sel && sel.rangeCount && !sel.isCollapsed) {
+        const range = sel.getRangeAt(0);
+        if (rowEl.contains(range.startContainer) && rowEl.contains(range.endContainer)) {
+          picked = sel.toString();
+          start = full.indexOf(picked);
+        }
+      }
+      if (!picked) {
+        // Click-only fallback: pick the first whitespace-delimited token.
+        const visible = rowEl.textContent || '';
+        const m = /\S+/.exec(visible);
+        if (m) {
+          picked = m[0];
+          start = full.indexOf(picked);
+        }
+      }
+      if (!picked) return;
+      if (start < 0) start = 0;
+      const end = start + picked.length;
+
+      const ANCHOR_MAX = 24;
+      let left = full.slice(Math.max(0, start - ANCHOR_MAX), start);
+      let right = full.slice(end, end + ANCHOR_MAX);
+      const leftWs = left.search(/\s\S*$/);
+      if (leftWs >= 0) left = left.slice(leftWs);
+      const rightWsEnd = right.search(/\s/);
+      if (rightWsEnd > 0) right = right.slice(0, rightWsEnd);
+      left = left.replace(/^\s+/, '');
+      right = right.replace(/\s+$/, '');
+
+      const cls = _classifyPick(picked);
+      const col = parseInt(colSel.value, 10);
+      const samples = Number.isFinite(col) ? _collectClickerSamples(col) : [];
+      const leftEsc = _generaliseAnchor(left, cls.pattern, samples, 'left');
+      const rightEsc = _generaliseAnchor(right, cls.pattern, samples, 'right');
+      const inferred = leftEsc + '(' + cls.pattern + ')' + rightEsc;
+
+      patternEl.value = inferred;
+      flagsEl.value = 'i';
+      groupEl.value = '1';
+      if (presetSel) presetSel.value = '-1';
+
+      // Default Name placeholder: "<colName>.<label>" — only set if the
+      // user hasn't typed their own name. Keeps the value field empty so
+      // the extract handler's `(nameEl.value || '').trim()` fallback to
+      // `${colName} (regex)` still applies if the placeholder is rejected.
+      const colName = this._baseColumns[col] || `col${col + 1}`;
+      if (!nameEl.value.trim()) {
+        nameEl.placeholder = `${colName}.${cls.label.replace(/\s+/g, '_')}`;
+      }
+
+      runTest();
+    };
+
+    clickerSamples.addEventListener('mouseup', (e) => {
+      const row = e.target.closest('.tl-clicker-row');
+      if (!row) return;
+      // Give the browser a tick to finalise the selection before reading it.
+      setTimeout(() => handlePick(row), 0);
+    });
+
     presetSel.addEventListener('change', () => {
+
       const p = TL_REGEX_PRESETS.find(x => x.label === presetSel.value);
       if (p) {
         patternEl.value = p.pattern;
@@ -8923,7 +8754,9 @@ class TimelineView {
     patternEl.addEventListener('input', runTest);
     flagsEl.addEventListener('input', runTest);
     groupEl.addEventListener('input', runTest);
-    colSel.addEventListener('change', runTest);
+    // Column change repaints the click-to-pick samples (so users see rows
+    // from the newly-selected column) and re-runs the regex preview.
+    colSel.addEventListener('change', () => { renderClickerSamples(); runTest(); });
     dlg.querySelector('[data-act="regex-test"]').addEventListener('click', runTest);
 
     dlg.querySelector('[data-act="regex-extract"]').addEventListener('click', () => {
@@ -8947,9 +8780,16 @@ class TimelineView {
       close();
       void re;  // re already constructed
     });
+
+    // Initial paint of the click-to-pick samples for the preselected
+    // column so the unified Manual pane shows rows the moment the dialog
+    // opens — without this, samples only appeared after the user changed
+    // the Column dropdown.
+    renderClickerSamples();
   }
 
   // ── Auto-extract scanner ─────────────────────────────────────────────────
+
   _autoExtractScan() {
     const proposals = [];
     const sampleCap = Math.min(this.rows.length, 200);

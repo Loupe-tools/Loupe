@@ -15682,55 +15682,7 @@ body.dark .grid-cell.tl-stack-text-35 {
   font-style: italic;
 }
 
-/* ── Clicker pane ─────────────────────────────────────────────── */
-.tl-dialog-pane-clicker {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 14px 6px;
-  min-height: 280px;
-}
-
-.tl-clicker-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 12px;
-}
-
-.tl-clicker-grid .tl-field {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 3px;
-}
-
-.tl-clicker-grid .tl-field-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.tl-clicker-grid .tl-field-select,
-.tl-clicker-grid input[type="text"] {
-  padding: 4px 8px;
-  font-size: 11.5px;
-  border: 1px solid var(--input-border);
-  border-radius: 5px;
-  background: var(--input-bg);
-  color: var(--text);
-  font-family: 'Fira Code', 'Consolas', monospace;
-  max-width: none;
-}
-
-.tl-clicker-grid input[type="text"]:focus,
-.tl-clicker-grid .tl-field-select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / .15);
-}
-
+/* ── Clicker sample rows (used inside the unified Manual pane) ──── */
 .tl-clicker-samples {
   border: 1px solid var(--hairline);
   border-radius: 6px;
@@ -15769,85 +15721,14 @@ body.dark .grid-cell.tl-stack-text-35 {
   font-style: italic;
 }
 
-.tl-clicker-pick {
+/* ── Unified Manual extract pane (column / preset / name / pattern /
+   flags / group + sample rows + preview) ─────────────────────────── */
+.tl-dialog-pane-manual {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  flex-wrap: wrap;
-}
-
-.tl-clicker-pick-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.tl-clicker-pattern {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11.5px;
-  padding: 3px 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 4px;
-  background: var(--bg-elev);
-  color: var(--accent);
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
-.tl-clicker-pattern[data-empty="true"] {
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.tl-clicker-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 60px;
-}
-
-.tl-clicker-status {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.tl-clicker-hits {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 140px;
-  overflow: auto;
-}
-
-.tl-clicker-hit {
-  display: grid;
-  grid-template-columns: minmax(80px, 30%) 1fr;
-  gap: 10px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.tl-clicker-hit:nth-child(odd) { background: rgb(var(--accent-rgb) / .04); }
-
-.tl-clicker-hit-cap {
-  color: var(--accent);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tl-clicker-hit-src {
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 8px 14px 6px;
+  min-height: 280px;
 }
 
 /* ── Regex extract pane ──────────────────────────────────────────── */
