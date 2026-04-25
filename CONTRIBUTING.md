@@ -262,7 +262,11 @@ subtly misbehave.
   (`MAX_TEXT_LINES`, `MAX_TEXT_LINES_SMALL`, `MAX_CSV_ROWS`,
   `MAX_TIMELINE_ROWS`, `MAX_EVTX_EVENTS`) — raising it only affects
   completeness / memory, not safety. New render caps should reference
-  `RENDER_LIMITS.*` rather than invent a fresh magic number.
+   `RENDER_LIMITS.*` rather than invent a fresh magic number.
+- **EVTX column names live in `EVTX_COLUMNS` / `EVTX_COLUMN_ORDER`**
+  (`src/constants.js`). Use `EVTX_COLUMNS.EVENT_ID` etc. instead of bare
+  `'Event ID'` strings when doing `indexOf` look-ups or building the
+  column array in `evtx-renderer.js` and `app-timeline.js`.
 
 ### Determinism (for `scripts/build.py` and anything it runs)
 
