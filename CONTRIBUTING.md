@@ -1877,6 +1877,158 @@ Every IOC the renderer emits — whether onto `findings.externalRefs` or `findin
    `analyzeForSecurity`) are **not** subject to this cap — renderers are
    responsible for their own truncation (see item 4).
 
+### Renderer Spread Matrix
+
+The contributor-facing dual of [FEATURES.md → Renderer Capability Matrix](FEATURES.md#-renderer-capability-matrix)
+(landed in PLAN Track A3). FEATURES.md describes **what the analyst gets**;
+this table describes **what is left to fix per renderer** so a future agent
+session can pick a row, close a gap, ship a Track-sized PR. Where FEATURES.md
+prints `✅` / `◐` / `—`, this matrix prints `✓` (compliant), `◐` (partial /
+opt-out by design / known gap with a tracking issue), or `✗` (gap a
+contributor should close). The columns deliberately diverge from FEATURES.md
+because the gap categories are not 1:1 with the user-visible capabilities:
+
+| Column | What it measures | When to write `◐` / `✗` |
+|---|---|---|
+| **Verdict band** | Tier-A summary banner via `binary-triage.js` + `BinaryVerdict.summarize()` | `✓` when the renderer feeds the verdict band; `—` for non-binary formats; `✗` for binary-shaped formats that should but don't (e.g. OOXML / OLE2 — see PLAN H5) |
+| **Encoded recursion** | Routes the rendered surface (or a derived buffer) through `EncodedContentDetector.scan()` so nested Base64 / hex / gzip / zlib / Base32 / SafeLinks layers are surfaced | `◐` when recursion runs per-row inside a grid (EVTX / CSV) instead of producing the full lineage view; `✗` when a script-like surface (`.iqy`, `.slk`, `.reg`, `.inf`, `.osascript`) would benefit but is not wired |
+| **Click-to-focus** | `container._rawText` LF-normalised + plaintext-table backing **or** `_showSourcePane()` toggle | `◐` for renderers that scroll-to-card / -row / -page but cannot land a per-character `<mark>` (Office, MSI, OneNote, PDF, JAR); `✗` for surfaces with no text plane at all (image, archive listing) |
+| **Drill-down** | Forwards `open-inner-file` through `App.openInnerFile` (PLAN D3) **or** calls it directly with a synthetic File | `◐` for listing-only formats (7z / RAR / DMG — entries locked behind missing decompressors per PLAN §7); `—` for terminal formats (text scripts, certificates, single-page documents) |
+| **Contract conformance** | What's broken or missing today under `scripts/check_renderer_contract.py` (D5) **plus** the soft contract items: `mirrorMetadataIOCs` adoption, no hand-rolled `interestingStrings.push(...)`, `escalateRisk()` for risk transitions, async findings via `app.updateFindings(patch, {token})` instead of post-snapshot mutation | `✓` when D5 passes and every soft item is satisfied; otherwise list the specific gap (e.g. `◐ no mirrorMetadataIOCs`, `◐ hand-rolls iS.push×N`, `◐ snapshot-only async`). Free-text by design — this column drives follow-up Tracks. |
+
+**Source-of-truth note.** Cells were populated from a structured grep over
+`src/renderers/` on 2026-04-25 plus the FEATURES.md ◐ end-notes. Hand-rolled
+push counts are the literal `interestingStrings.push(` matches and may
+include legitimate truncation-marker emissions; treat them as an upper-bound
+audit list, not a bug count. PLAN issue-ID cross-references appear in the
+punch-list below the table.
+
+| Renderer | Verdict band | Encoded recursion | Click-to-focus | Drill-down | Contract conformance |
+|---|:-:|:-:|:-:|:-:|---|
+| `pe-renderer` | ✓ | ✓ | ✓ | ✓ (resources, overlay) | ✓ |
+| `elf-renderer` | ✓ | ✓ | ✓ | ✓ (overlay) | ✓ |
+| `macho-renderer` | ✓ | ✓ | ✓ | ✓ (overlay) | ✓ |
+| `pdf-renderer` | — | ✓ | ◐ (page-anchored only) | ✓ (`/EmbeddedFile`, JS bodies, XFA) | ◐ snapshot-only async (PLAN D2 cutover pending — QR / `/JS` bodies) |
+| `eml-renderer` | — | ✓ | ✓ | ✓ (attachments) | ✓ |
+| `msg-renderer` | — | ✓ | ✓ | ✓ (attachments) | ✓ |
+| `onenote-renderer` | — | ✓ | ◐ (FileDataStoreObject only) | ✓ (FileDataStoreObject blobs) | ◐ no `mirrorMetadataIOCs`; ◐ snapshot-only async (inflate continuation) |
+| `image-renderer` | — | ✓ (EXIF / chunks / QR) | — (no text plane) | — | ◐ snapshot-only async (QR decode continuation — PLAN D2 cutover pending) |
+| `svg-renderer` | — | — (XML walker covers it) | ✓ (source toggle) | — | ◐ uses augmented `_yaraBuffer` via `findings.augmentedBuffer` — verify alignment with PLAN D4 cutover |
+| `html-renderer` | — | — | ✓ (source toggle) | — | ◐ same `findings.augmentedBuffer` path as SVG |
+| `xlsx-renderer` | ✗ (OOXML triage absent — PLAN H5) | ✗ (no `EncodedContentDetector` over decoded sheet text) | ◐ (per-sheet / VBA cards) | ✓ (VBA, embeds) | ◐ no `mirrorMetadataIOCs` |
+| `doc-renderer` | ✗ (OLE2 triage absent — PLAN H5) | ✗ | ◐ (per-stream cards) | ✓ (VBA streams) | ◐ no `pushIOC` adoption visible; ◐ no `mirrorMetadataIOCs` |
+| `pptx-renderer` | ✗ (OOXML triage absent) | ✗ | ◐ (per-slide cards) | ◐ (delegates to xlsx pipeline) | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `ppt-renderer` | ✗ (OLE2 triage absent) | ✗ | ◐ (per-stream cards) | ◐ | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `odp-renderer` | — | ✗ | ◐ | — | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `odt-renderer` | — | ✗ | ◐ | — | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `rtf-renderer` | — | ✗ | ✓ | ✓ (OLE objects) | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `lnk-renderer` | — | — | — (binary view) | — | ✓ |
+| `hta-renderer` | — | — | ✓ | — | ◐ no `mirrorMetadataIOCs` |
+| `wsf-renderer` | — | — | ✓ | — | ◐ no `mirrorMetadataIOCs` |
+| `inf-renderer` | — | ✗ | ✓ | — | ◐ hand-rolls `iS.push×1`; no `pushIOC`; no `mirrorMetadataIOCs` |
+| `reg-renderer` | — | ✗ | ✓ | — | ◐ hand-rolls `iS.push×1`; no `pushIOC`; no `mirrorMetadataIOCs` |
+| `url-renderer` | — | — | ✓ (source toggle) | — | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `msi-renderer` | — | ✗ | ◐ (per-row cards) | ✓ (CustomActions, embedded CAB / streams) | ◐ no `pushIOC` adoption; partial `mirrorMetadataIOCs` |
+| `clickonce-renderer` | — | — | ✓ | — | ◐ no `pushIOC` / no `mirrorMetadataIOCs` (cert subject + thumbprint should mirror) |
+| `msix-renderer` | — | — | ✓ | ✓ (inner files) | ◐ hand-rolls `iS.push×2` (PLAN M1) |
+| `browserext-renderer` | — | — | ✓ | ✓ (manifest, scripts, icons) | ◐ hand-rolls `iS.push×3`; no `pushIOC` |
+| `npm-renderer` | — | — | ✓ | ✓ (`package/*` entries) | ◐ hand-rolls `iS.push×4` |
+| `jar-renderer` | — | — | ◐ (per-class cards) | ✓ (class files, manifest) | ◐ hand-rolls `iS.push×7` (largest hand-roll site); no `pushIOC`; no `mirrorMetadataIOCs` |
+| `osascript-renderer` | — | ✗ (script bodies) | ✓ | — | ◐ no `mirrorMetadataIOCs` |
+| `plist-renderer` | — | — | ✓ | — | ◐ no `mirrorMetadataIOCs` |
+| `dmg-renderer` | ✗ (Apple disk image triage absent) | — | — | ◐ (partition listing; `.app` paths surfaced but not extracted) | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `pkg-renderer` | — | — | — | ✓ (xar TOC entries, scripts) | ◐ no `pushIOC` adoption visible |
+| `x509-renderer` | — | — | — (structured view) | — | ✓ |
+| `pgp-renderer` | — | — | — (structured view) | — | ✓ |
+| `evtx-renderer` | — | ◐ (per-row EventData via Timeline route) | — (Timeline grid) | — | ◐ analysis-bypass route — PLAN C2 / E1 guard preserved by design |
+| `sqlite-renderer` | — | ✗ (per-cell scan deferred) | ✓ | — | ◐ no `mirrorMetadataIOCs` |
+| `csv-renderer` | — | ◐ (per-cell via Timeline route) | — (Timeline grid) | — | ◐ analysis-bypass route — by design |
+| `json-renderer` | — | ✗ (per-leaf scan deferred) | ✓ | — | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `iqy-slk-renderer` | — | ✗ | ✓ | — | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+| `zip-renderer` | — | — (per-entry) | — (archive listing) | ✓ (per-entry) | ✓ |
+| `seven7-renderer` | — | — | — | ◐ (listing-only — PLAN §7 out of scope) | ✓ |
+| `rar-renderer` | — | — | — | ◐ (listing-only — PLAN §7 out of scope) | ✓ |
+| `cab-renderer` | — | — | — | ✓ (uncompressed / MSZIP) | ✓ |
+| `iso-renderer` | — | — | — | ✓ (ISO 9660 entries) | ◐ no `pushIOC` adoption visible |
+| `plaintext-renderer` | — | ✓ (catch-all surface) | ✓ | — | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
+
+**Helper modules** (allow-listed by `scripts/check_renderer_contract.py`,
+exempt from per-format contract checks): `archive-tree.js`,
+`grid-viewer.js`, `ole-cfb-parser.js`, `protobuf-reader.js`. They have no
+per-format render contract — drill-down and grid viewer plumbing only.
+
+#### Highest-leverage punch-list
+
+A future Track / agent session should pick from the rows above in this
+order — chosen to maximise the breadth of analyst-visible improvement per
+hour of contributor time. Each bullet cross-references the PLAN issue ID
+that already records the structural problem so the audit trail stays in
+one place.
+
+1. **Verdict band for OOXML / OLE2 / DMG** (PLAN H5, FEATURES.md `✗` /
+   `—` rows for `xlsx` / `pptx` / `doc` / `ppt` / `dmg`). Largest gap on
+   the table: five formats with active triage value but no Tier-A banner.
+   Requires generalising `binary-triage.js` from "PE/ELF/Mach-O only" to
+   "any format that exposes a parsed-struct + signature-evidence surface"
+   — a Track-sized refactor on its own.
+2. **Hand-rolled `interestingStrings.push(...)` sweep** (PLAN M1; build
+   gate B2 covers the bare-string IOC `type:` shape but not the choice
+   to bypass `pushIOC()` itself). Hot spots: `jar-renderer` (×7),
+   `npm-renderer` (×4), `browserext-renderer` (×3), `msix-renderer`
+   (×2), `inf-renderer` / `reg-renderer` (×1 each). Each push is a
+   missed `tldts` registrable-domain sibling, a missed punycode/IDN
+   homoglyph flag, and a missed abuse-TLD pattern. Switch them to
+   `pushIOC()` and the IOC fan-out is automatic.
+3. **`mirrorMetadataIOCs()` adoption** (PLAN M7). ~24 renderers ship
+   `findings.metadata` fields the user can see in the right pane but
+   cannot pivot from in the IOC list. Top candidates because their
+   metadata is rich and pivot-ready: `clickonce-renderer` (cert
+   subject + thumbprint), `hta-renderer` (`<HTA:APPLICATION>` GUID +
+   author + version), `wsf-renderer` (script-element id + language),
+   `osascript-renderer` (`OSA` author + bundle ids), `plist-renderer`
+   (bundle id + version + minimum OS + paths), `iqy-slk-renderer`
+   (target URL — already a real IOC), `json-renderer` (any leaf-detected
+   URL / hash / GUID), `xlsx` / `doc` / `ppt` family (already mirror
+   from the OOXML / OLE2 deep-walk in copy-analysis but not via the
+   helper).
+4. **Encoded-content recursion in script-like formats** (PLAN M2 / M4
+   secondary). `osascript-renderer`, `iqy-slk-renderer`,
+   `inf-renderer`, `reg-renderer`, `json-renderer`, `sqlite-renderer`
+   all have a plaintext surface that today bypasses
+   `EncodedContentDetector`. Adding the worker (PLAN C3) call site is
+   one line per renderer once the surface text is in scope.
+5. **Async findings cutover via `App.updateFindings()`** (PLAN D2 —
+   the four binary-renderer continuations migrated; the remaining
+   sites are the `image-renderer` QR-decode continuation, the
+   `pdf-renderer` `/JS` body decode, the `onenote-renderer` inflate
+   continuation, the `eml-renderer` / `msg-renderer` attachment chain
+   when QR is enabled, and the `pe-renderer` / `elf-renderer` /
+   `macho-renderer` `EncodedContentDetector` worker call site after
+   the C3 cutover). Each one is a 1-2 line tail-call replacing a
+   direct `findings.…` mutation that lands after the snapshot.
+6. **Click-to-focus precision in Office / MSI / OneNote / JAR** (PLAN
+   H3 baseline, FEATURES.md ◐ end-note). All five render per-card
+   surfaces with no per-character text plane today — clicks scroll to
+   the right card but cannot land on a `<mark>`. Closing the gap
+   requires per-card `_rawText` slices wired into the sidebar's
+   `_findIOCMatches` helper; a single helper carrying `(card,
+   sliceText)` would let every member of this group adopt at once.
+7. **Listing-only archive drill-down (7z / RAR / DMG)** is **out of
+   scope** per PLAN §7 (no LZMA / LZSS / PPMd / native APFS decoders
+   shipped). These rows stay `◐` permanently; do not extend without
+   re-opening the §7 vendor decision.
+8. **Worker migration of remaining binary `EncodedContentDetector`
+   call sites** (PLAN C3, second wave). PE / ELF / Mach-O still call
+   the synchronous detector path inside their `analyzeForSecurity`
+   today — once the C3 worker is the default for PDF + EML, fold these
+   three in next.
+
+The grade-against-rule helper for this matrix is the
+`cross-renderer-sanity-check` skill referenced after [Risk Tier
+Calibration](#risk-tier-calibration); when adding a new renderer (or
+upgrading an existing row) run that skill to confirm the column you
+just changed lights green before ticking it `✓` in this table.
+
 ---
 
 ## Adding a New File Format Renderer
