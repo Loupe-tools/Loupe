@@ -1,0 +1,1149 @@
+'use strict';
+// ════════════════════════════════════════════════════════════════════════════
+// timeline-query-editor.js — TimelineQueryEditor class.
+//
+// Split out of the legacy app-timeline.js monolith (PLAN E1). Owns the
+// overlay <textarea> + syntax-highlighted <pre> + suggestion dropdown +
+// inline history + undo/redo ring. Bound to a TimelineView instance via
+// constructor opts.
+//
+// Loads AFTER timeline-query.js (uses _tlSuggestContext, _tlTokenize,
+// _tlParseQuery, _tlFormatHighlightHtml, _tlCompileAst, etc.) and
+// BEFORE timeline-view.js (which instantiates it from _buildDOM /
+// _wireEvents).
+// ════════════════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════════════════
+// TimelineQueryEditor — overlay `<textarea>` + syntax-highlighted `<pre>`
+// + suggestion dropdown. Owned by a TimelineView.
+//
+// Design note (see CONTRIBUTING / DSL query editor): the suggestion
+// popover is driven by a small, explicit state machine, NOT by
+// heuristics over every caret position. This replaces the old design
+// that reran `_updateSuggestions` on every `input` / `click`, invented
+// a `_suppressUntilSpace` guard to stop Enter hijacking after accept,
+// and rebuilt every row on every keystroke.
+//
+//   State:
+//     this._sugg = {
+//       el,               // the portalled dropdown element, created once
+//       items,            // current item list
+//       sel,              // selected index
+//       ctx,              // _tlSuggestContext() snapshot at last open
+//       anchorTokenStart, // ctx.tokenStart when opened
+//       itemsKey,         // cheap hash so re-renders reuse rows
+//     } | null
+//     this._dismissedTokenStart = integer | null   // Esc → set; leaving
+//                                                  // the token clears it.
+//
+//   Open triggers (explicit): user-initiated `input` events (except
+//     programmatic setValue), AND Ctrl/Cmd-Space (manual request). No
+//     `click` trigger — moving the caret through finished tokens does
+//     not spawn a popover.
+//
+//   Close triggers: Escape (also marks dismissed for this token),
+//     focus loss (blur with relatedTarget outside popover), outside
+//     pointerdown, window resize, view scroll, programmatic setValue.
+//
+//   The caret-in-quoted-string guard and token-boundary checks are all
+//   absorbed by `_tlSuggestContext` returning `kind: 'none'`; once the
+//   context is 'none' the popover just closes. No other "when to open"
+//   logic lives in this class.
+// ════════════════════════════════════════════════════════════════════════════
+class TimelineQueryEditor {
+  constructor(opts) {
+    this.view = opts.view;
+    this.onChange = opts.onChange || (() => { });
+    this.onCommit = opts.onCommit || (() => { });
+    this.debounceMs = opts.debounceMs != null ? opts.debounceMs : 60;
+
+    this._debounceTimer = 0;
+    this._sugg = null;                   // suggestion state (see class header)
+    this._dismissedTokenStart = null;    // Esc → pinned to ctx.tokenStart; cleared on token change
+    this._history = TimelineQueryEditor._loadHistory();
+
+    // ── Unified in-memory undo/redo ring ──────────────────────────────────
+    // Session-only (deliberately NOT persisted — see CONTRIBUTING). A single
+    // ring owns every edit: typing (coalesced VS-Code-style), paste/cut,
+    // clause-delete (Ctrl/⌘-Backspace), clear button, Esc-clear, history
+    // pick, programmatic `setValue()`. Both `Ctrl/⌘-Z` (undo) and
+    // `Ctrl/⌘-Shift-Z` / `Ctrl-Y` (redo) walk this ring exclusively — we
+    // always preventDefault on those keys so the native <textarea> undo
+    // stack (which can't reach non-typing changes) never runs alongside
+    // and desyncs us.
+    //
+    // Each frame is `{ value, selStart, selEnd }` so undo/redo restore
+    // the exact caret position (native-feeling). Coalescing: two
+    // consecutive `'type'` snapshots that differ by a single word-char
+    // insertion or deletion within `_HIST_COALESCE_MS` are folded into
+    // one entry. Any whitespace / operator / quote / paren break starts
+    // a new entry, matching VS Code / Sublime / the browser textarea's
+    // own behaviour. `'replace'` and `'delete'` snapshots never coalesce.
+    this._HIST_MAX = 500;
+    this._HIST_COALESCE_MS = 500;
+    this._hist = [{ value: '', selStart: 0, selEnd: 0 }];
+    this._histIdx = 0;
+    this._lastSnapKind = 'replace';
+    this._lastSnapTime = 0;
+    this._isUndoing = false;
+
+
+    // Bound doc-level listeners, installed only while a popover is open.
+    // Kept as properties so we can remove the exact same references.
+    this._onDocPointerDown = (e) => this._handleOutsidePointer(e);
+    this._onWinResize = () => this._repositionSuggest();
+    this._onViewScroll = (e) => this._handleScroll(e);
+
+    this._buildDom();
+    this.setValue(opts.initialValue || '');
+  }
+
+  _buildDom() {
+    const root = document.createElement('div');
+    root.className = 'tl-query';
+    // Button cluster is deliberately rendered BEFORE the editor so the
+    // clear / history / help controls sit on the LEFT, next to the
+    // natural "I'm about to type here" focus point. The search-icon
+    // indicator was removed — the placeholder text already carries the
+    // affordance and the icon fought for width with the buttons.
+    root.innerHTML = `
+      <div class="tl-query-inner">
+        <button class="tl-query-clear" type="button" title="Clear filter" tabindex="-1">✕</button>
+        <button class="tl-query-history" type="button" title="History (Ctrl/⌘-↓)" tabindex="-1">▾</button>
+        <button class="tl-query-help" type="button" title="Query language help (Ctrl/⌘-Z undo · Ctrl/⌘-Shift-Z redo · Ctrl/⌘-Backspace delete clause)" tabindex="-1">?</button>
+        <div class="tl-query-editor">
+          <pre class="tl-query-hl" aria-hidden="true"><code></code></pre>
+          <textarea class="tl-query-input" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" rows="1" placeholder='Filter — e.g. User:admin AND (EventID=4624 OR EventID=4625) NOT "svc_backup"'></textarea>
+        </div>
+      </div>
+      <div class="tl-query-status" aria-live="polite"></div>
+    `;
+    this.root = root;
+    this.input = root.querySelector('.tl-query-input');
+    this.hl = root.querySelector('.tl-query-hl code');
+    this.status = root.querySelector('.tl-query-status');
+    this.clearBtn = root.querySelector('.tl-query-clear');
+    this.historyBtn = root.querySelector('.tl-query-history');
+    this.helpBtn = root.querySelector('.tl-query-help');
+
+    // Input event = user typed / pasted / cut. This is the ONE place we
+    // consider opening the popover automatically. `e.isComposing` skips
+    // IME pre-edit events (we wait for compositionend). Every `input`
+    // also snaps a frame onto the unified undo/redo ring — `_snapshotHistory`
+    // coalesces consecutive word-char keystrokes inside the timeout so
+    // Ctrl-Z doesn't walk letter-by-letter through a field name, but any
+    // whitespace / operator / quote / paren immediately breaks the run
+    // (matching VS Code / Sublime / the browser's own textarea).
+    this.input.addEventListener('input', (e) => {
+      if (e && e.isComposing) return;
+      // Any real input invalidates a prior "Escape-dismissed here": the
+      // user has moved on. Clear the dismissal if the caret left the
+      // pinned token, else leave it so Escape sticks while still typing.
+      this._maybeClearDismissal();
+      if (!this._isUndoing) {
+        // Paste / cut / drop events arrive on the `input` stream with
+        // `inputType` flags we can use to classify the edit. Treat any
+        // multi-char insertion or non-type inputType as a `replace` so
+        // the whole pasted span is one undo step rather than coalescing
+        // into a neighbouring word run.
+        const it = e && e.inputType;
+        const kind = (it === 'insertFromPaste' || it === 'insertFromDrop'
+          || it === 'deleteByCut' || it === 'historyUndo' || it === 'historyRedo')
+          ? 'replace' : 'type';
+        this._snapshotHistory(kind);
+      }
+      this._refreshHighlight();
+      this._scheduleCommit();
+      this._refreshSuggest({ allowOpen: true });
+    });
+    this.input.addEventListener('compositionend', () => {
+      // IME commit — one atomic frame for the whole composed run.
+      if (!this._isUndoing) this._snapshotHistory('replace');
+      this._refreshHighlight();
+      this._scheduleCommit();
+      this._refreshSuggest({ allowOpen: true });
+    });
+
+
+    this.input.addEventListener('keydown', (e) => this._onKeyDown(e));
+    this.input.addEventListener('scroll', () => {
+      // Mirror scroll so the highlight layer stays aligned.
+      this.hl.parentNode.scrollLeft = this.input.scrollLeft;
+      this.hl.parentNode.scrollTop = this.input.scrollTop;
+      // And reposition the popover so it stays glued to the caret.
+      if (this._sugg) this._repositionSuggest();
+    });
+
+    this.input.addEventListener('blur', (e) => {
+      // Only close if focus actually left both the input and the popover.
+      // The popover rows use `pointerdown.preventDefault()` so focus never
+      // moves to them, but we check relatedTarget as a belt-and-braces.
+      const next = e.relatedTarget;
+      if (this._sugg && this._sugg.el && next && this._sugg.el.contains(next)) return;
+      this._closeSuggest();
+    });
+
+    // Deliberately NO click handler — clicking between finished tokens
+    // should not spawn suggestions. If the user wants them, Ctrl/Cmd-Space
+    // is the manual trigger. Arrow keys still fire keydown → `_onKeyDown`
+    // which intercepts navigation when the popover is open.
+
+    this.clearBtn.addEventListener('click', () => {
+      if (this.input.value === '') return;
+      this.setValue('');
+      this._scheduleCommit(true);
+      this._closeSuggest();
+      this.input.focus();
+    });
+    this.historyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._openHistoryMenu();
+    });
+    this.helpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._openHelpPopover();
+    });
+  }
+
+  // Public API — setValue is used on history-pick, query restore, and
+  // clear. It's a programmatic change, so it MUST NOT auto-open the
+  // popover (rule: open-on-user-input only).
+  //
+  // Every value mutation goes onto the unified undo/redo ring as a
+  // non-coalescing `'replace'` frame so Ctrl/⌘-Z can roll it back in one
+  // hop (matching VS Code / Sublime behaviour on paste or macro edits).
+  // The `_isUndoing` guard prevents a frame-apply during undo from
+  // re-snapshotting the value it just restored.
+  setValue(v) {
+    const next = v || '';
+    const prev = this.input.value;
+    this.input.value = next;
+    this._refreshHighlight();
+    this._closeSuggest();
+    this._dismissedTokenStart = null;
+    if (!this._isUndoing && prev !== next) this._snapshotHistory('replace');
+  }
+  getValue() { return this.input.value; }
+
+  focus() { this.input.focus(); }
+
+  setStatus(html, kind) {
+    this.status.className = 'tl-query-status' + (kind ? ' tl-query-status-' + kind : '');
+    this.status.innerHTML = html || '';
+  }
+
+  _refreshHighlight() {
+    const raw = this.input.value || '';
+    const tokens = _tlTokenize(raw);
+    this.hl.innerHTML = _tlFormatHighlightHtml(tokens);
+  }
+
+  _scheduleCommit(immediate) {
+    clearTimeout(this._debounceTimer);
+    const run = () => {
+      this._debounceTimer = 0;
+      try { this.onChange(this.input.value); } catch (e) { /* noop */ }
+    };
+    if (immediate) run(); else this._debounceTimer = setTimeout(run, this.debounceMs);
+  }
+
+  // ── Unified undo/redo ring ───────────────────────────────────────────
+  // Push the current `{value, selStart, selEnd}` onto `_hist`. `kind`
+  // classifies the edit for the coalescing heuristic:
+  //   'type'    — ordinary keystroke from the `input` stream. Coalesces
+  //               with the previous 'type' frame iff (a) the prior frame
+  //               was 'type' within `_HIST_COALESCE_MS`, AND (b) the
+  //               diff between prev.value and current.value is a single
+  //               word-char insertion or deletion at the caret. Any
+  //               whitespace / operator / quote / paren break starts a
+  //               new entry — matches VS Code, Sublime, and the browser's
+  //               native textarea. A selection-replacement (non-empty
+  //               selStart != selEnd collapsed to a single-char diff) is
+  //               treated as a fresh frame regardless.
+  //   'replace' — paste / drop / cut / compositionend / programmatic
+  //               `setValue()` / history-pick / clear. Never coalesces.
+  //   'delete'  — Ctrl/⌘-Backspace clause-delete output. Never coalesces.
+  //
+  // Truncates any pending redo tail on a new edit (standard undo-ring
+  // semantics — typing after undo discards the redo path), and caps the
+  // ring at `_HIST_MAX` to bound memory. The first frame is the empty
+  // value pushed at construction time, so `_histIdx === 0` always holds
+  // a valid snapshot to undo back to.
+  _snapshotHistory(kind) {
+    const value = this.input.value;
+    const selStart = this.input.selectionStart || 0;
+    const selEnd = this.input.selectionEnd || selStart;
+    const now = Date.now();
+    const head = this._hist[this._histIdx];
+    // No-op: value and selection unchanged.
+    if (head && head.value === value && head.selStart === selStart && head.selEnd === selEnd) {
+      this._lastSnapKind = kind;
+      this._lastSnapTime = now;
+      return;
+    }
+    // Coalesce consecutive typing runs when the diff is a single word-char
+    // edit at the caret. Whitespace / operator / quote / paren breaks the
+    // run and forces a new frame — matches VS Code word-boundary undo.
+    if (kind === 'type' && this._lastSnapKind === 'type'
+      && head && head.value !== value
+      && (now - this._lastSnapTime) < this._HIST_COALESCE_MS
+      && this._isSimpleWordCharEdit(head.value, value)) {
+      // Replace the head frame in-place (don't push a new one).
+      this._hist[this._histIdx] = { value, selStart, selEnd };
+      this._lastSnapKind = 'type';
+      this._lastSnapTime = now;
+      return;
+    }
+    // Truncate redo tail on any new edit.
+    if (this._histIdx < this._hist.length - 1) {
+      this._hist.length = this._histIdx + 1;
+    }
+    this._hist.push({ value, selStart, selEnd });
+    this._histIdx = this._hist.length - 1;
+    // Cap ring length.
+    if (this._hist.length > this._HIST_MAX) {
+      const drop = this._hist.length - this._HIST_MAX;
+      this._hist.splice(0, drop);
+      this._histIdx -= drop;
+      if (this._histIdx < 0) this._histIdx = 0;
+    }
+    this._lastSnapKind = kind;
+    this._lastSnapTime = now;
+  }
+
+  // Returns true iff `next` is exactly `prev` with a single word-char
+  // inserted or deleted anywhere. Word-char = `[A-Za-z0-9_]`. Any diff
+  // involving whitespace / operator / quote / paren / bracket returns
+  // false so those characters force a new undo frame (VS-Code parity).
+  _isSimpleWordCharEdit(prev, next) {
+    const dLen = next.length - prev.length;
+    if (dLen !== 1 && dLen !== -1) return false;
+    const shorter = dLen === 1 ? prev : next;
+    const longer = dLen === 1 ? next : prev;
+    // Find first diverging char.
+    let i = 0;
+    const n = shorter.length;
+    while (i < n && shorter.charCodeAt(i) === longer.charCodeAt(i)) i++;
+    // Remaining suffix must match.
+    const suffixLenShorter = n - i;
+    if (longer.slice(longer.length - suffixLenShorter) !== shorter.slice(i)) return false;
+    const ch = longer.charAt(i);
+    return /[A-Za-z0-9_]/.test(ch);
+  }
+
+  // Step back one frame. Suppresses `_snapshotHistory` during apply via
+  // `_isUndoing` so the input-event flush (from the programmatic value
+  // change) doesn't re-push the frame we just restored.
+  _undo() {
+    if (this._histIdx <= 0) return;
+    this._histIdx--;
+    this._applyHistFrame(this._hist[this._histIdx]);
+  }
+
+  // Step forward one frame (if a redo tail exists).
+  _redo() {
+    if (this._histIdx >= this._hist.length - 1) return;
+    this._histIdx++;
+    this._applyHistFrame(this._hist[this._histIdx]);
+  }
+
+  _applyHistFrame(f) {
+    if (!f) return;
+    this._isUndoing = true;
+    try {
+      this.input.value = f.value;
+      const s = Math.max(0, Math.min(f.value.length, f.selStart));
+      const e = Math.max(0, Math.min(f.value.length, f.selEnd));
+      this.input.setSelectionRange(s, e);
+      this._refreshHighlight();
+      this._scheduleCommit();
+      this._closeSuggest();
+      this._dismissedTokenStart = null;
+    } finally {
+      this._isUndoing = false;
+    }
+    // Break coalescing — next keystroke starts a fresh run regardless of
+    // what kind the restored frame was tagged as.
+    this._lastSnapKind = 'replace';
+    this._lastSnapTime = 0;
+  }
+
+  // ── Clause-aware delete (Ctrl/⌘-Backspace, Ctrl/⌘-Delete) ────────────
+  // Walks the DSL token stream from `_tlTokenize` so that a single
+  // chord deletes a whole DSL clause rather than one word at a time.
+  // `dir` is `'back'` (Ctrl-Backspace) or `'forward'` (Ctrl-Delete).
+  //
+  // Semantics (back):
+  //   caret after VALUE preceded by `WORD OP VALUE`      → delete WORD + OP + VALUE
+  //   caret after OP in `WORD OP` (no value yet)         → delete WORD + OP
+  //   caret after bare WORD / NUMBER / KW                → delete that token
+  //   caret after `(` / `)` / STRING / REGEX             → delete that token
+  //   caret inside an unterminated STRING / REGEX        → fall through to native
+  //   caret at a selection                               → fall through to native
+  // After any deletion, leading/trailing whitespace around the cut span
+  // is collapsed so clauses don't leave `  ` runs behind.
+  //
+  // Forward direction is the mirror image.
+  //
+  // Returns true iff we handled the key; caller calls preventDefault in
+  // that case. Returning false lets the textarea run its native handler.
+  _deleteClause(dir) {
+    const input = this.input;
+    const selS = input.selectionStart || 0;
+    const selE = input.selectionEnd || selS;
+    if (selS !== selE) return false;    // non-empty selection → native delete
+    const text = input.value;
+    if (!text) return false;
+    // Don't DSL-walk into an unterminated string/regex — native behaviour
+    // is more predictable there.
+    const toks = _tlTokenize(text);
+    // Find the token index whose range brackets the caret. For a caret
+    // sitting exactly on a token boundary, `back` looks at the token
+    // ending there; `forward` looks at the token starting there.
+    const caret = selS;
+    // Bail if caret is inside a STRING / REGEX / ERR with no close.
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (caret > t.start && caret < t.end
+        && (t.kind === 'STRING' || t.kind === 'REGEX' || t.kind === 'ERR')) {
+        return false;
+      }
+    }
+
+    if (dir === 'back') {
+      // Find the last non-WS token ending at or before the caret.
+      let ix = -1;
+      for (let i = toks.length - 1; i >= 0; i--) {
+        const t = toks[i];
+        if (t.end <= caret && t.kind !== 'WS') { ix = i; break; }
+      }
+      if (ix < 0) return false;
+      let startIx = ix, endIx = ix;
+      const t = toks[ix];
+      // Three-token pattern: WORD OP VALUE (where VALUE is our current tok).
+      if (t.kind === 'WORD' || t.kind === 'STRING' || t.kind === 'NUMBER' || t.kind === 'REGEX') {
+        // Look back through WS.
+        let j = ix - 1;
+        while (j >= 0 && toks[j].kind === 'WS') j--;
+        if (j >= 0 && toks[j].kind === 'OP' && toks[j].text !== ',') {
+          let k = j - 1;
+          while (k >= 0 && toks[k].kind === 'WS') k--;
+          if (k >= 0 && (toks[k].kind === 'WORD' || toks[k].kind === 'STRING')) {
+            startIx = k;
+          } else {
+            startIx = j;   // OP without a field → delete OP + VALUE
+          }
+        }
+      } else if (t.kind === 'OP' && t.text !== ',') {
+        // Two-token pattern: WORD OP (no value yet).
+        let j = ix - 1;
+        while (j >= 0 && toks[j].kind === 'WS') j--;
+        if (j >= 0 && (toks[j].kind === 'WORD' || toks[j].kind === 'STRING')) startIx = j;
+      }
+      // Compute splice range + collapse one run of leading whitespace
+      // immediately before startIx so we don't leave "a  b" after deleting
+      // the clause in between.
+      let delStart = toks[startIx].start;
+      const delEnd = toks[endIx].end;
+      // Swallow one WS run before delStart.
+      let ws = delStart;
+      while (ws > 0 && (text.charAt(ws - 1) === ' ' || text.charAt(ws - 1) === '\t')) ws--;
+      // But keep at least one space if both sides have non-WS content,
+      // so `foo AND bar` → Ctrl-Backspace → `foo ` (not `foo`) when the
+      // caret was at the end of `bar`. Simple rule: if there's no content
+      // after delEnd (trailing clause), collapse all; otherwise keep one.
+      const tailIsEmpty = text.slice(delEnd).replace(/\s+$/, '') === '';
+      if (!tailIsEmpty && ws < delStart) ws = Math.max(ws, delStart - 0);
+      delStart = tailIsEmpty ? ws : delStart;
+      return this._applyEdit(delStart, delEnd, '', delStart);
+    }
+
+    // Forward: mirror image.
+    let ix = -1;
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i];
+      if (t.start >= caret && t.kind !== 'WS') { ix = i; break; }
+    }
+    if (ix < 0) return false;
+    let startIx = ix, endIx = ix;
+    const t = toks[ix];
+    if (t.kind === 'WORD' || t.kind === 'STRING') {
+      // WORD OP VALUE pattern, forwards.
+      let j = ix + 1;
+      while (j < toks.length && toks[j].kind === 'WS') j++;
+      if (j < toks.length && toks[j].kind === 'OP' && toks[j].text !== ',') {
+        let k = j + 1;
+        while (k < toks.length && toks[k].kind === 'WS') k++;
+        if (k < toks.length && (toks[k].kind === 'WORD' || toks[k].kind === 'STRING'
+          || toks[k].kind === 'NUMBER' || toks[k].kind === 'REGEX')) {
+          endIx = k;
+        } else {
+          endIx = j;
+        }
+      }
+    }
+    let delStart = toks[startIx].start;
+    let delEnd = toks[endIx].end;
+    // Swallow one WS run after delEnd so `a  b` → `a` when deleting `b`.
+    const headIsEmpty = text.slice(0, delStart).replace(/^\s+/, '') === '';
+    if (headIsEmpty) {
+      while (delEnd < text.length && (text.charAt(delEnd) === ' ' || text.charAt(delEnd) === '\t')) delEnd++;
+    }
+    return this._applyEdit(delStart, delEnd, '', delStart);
+  }
+
+  // Splice `[start, end)` in the textarea with `replacement`, set caret
+  // to `caret`, refresh highlight, snapshot the result onto the history
+  // ring as a `'delete'` frame (never coalesces), and schedule a commit.
+  // Returns true so callers can tail-call this and preventDefault in
+  // one step.
+  _applyEdit(start, end, replacement, caret) {
+    const before = this.input.value;
+    const next = before.slice(0, start) + (replacement || '') + before.slice(end);
+    if (next === before) return true;
+    this.input.value = next;
+    const c = Math.max(0, Math.min(next.length, caret == null ? start : caret));
+    this.input.setSelectionRange(c, c);
+    this._refreshHighlight();
+    // Snapshot as `'delete'` so it never coalesces with surrounding typing.
+    this._snapshotHistory('delete');
+    this._scheduleCommit();
+    this._closeSuggest();
+    this._dismissedTokenStart = null;
+    return true;
+  }
+
+  _onKeyDown(e) {
+    // Ctrl/⌘-Z — undo via the unified ring (session-only). We ALWAYS
+    // preventDefault here so the textarea's native undo stack (which
+    // can't see non-typing changes like the clear button or history
+    // pick) never runs alongside and desyncs us. Ctrl/⌘-Shift-Z and
+    // Ctrl-Y redo. The actual apply sets `_isUndoing` so the resulting
+    // `input` event doesn't re-snapshot the frame we just restored.
+    const isUndoKey = (e.key === 'z' || e.key === 'Z')
+      && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey;
+    const isRedoKey = ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey)
+      || ((e.key === 'y' || e.key === 'Y') && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey);
+    if (isRedoKey) { e.preventDefault(); this._redo(); return; }
+    if (isUndoKey) { e.preventDefault(); this._undo(); return; }
+
+    // Ctrl/⌘-Backspace — delete the entire DSL clause to the left of
+    // the caret (comparison operand, single token, or whole
+    // `field op value` triple). Falls through to native word-delete on
+    // unterminated strings/regex or when the tokenizer can't find a
+    // clause boundary, so analysts never lose the familiar shortcut.
+    // Symmetric Ctrl/⌘-Delete for the forward direction.
+    if (e.key === 'Backspace' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+      if (this._deleteClause('back')) { e.preventDefault(); return; }
+      // else fall through to native Ctrl-Backspace
+    }
+    if (e.key === 'Delete' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+      if (this._deleteClause('forward')) { e.preventDefault(); return; }
+    }
+    // Manual trigger — Ctrl/Cmd-Space forces suggestions to recompute + open,
+    // overriding any prior Esc dismissal for the current token. Mirrors
+    // VS Code, Chrome DevTools, most IDEs.
+    if (e.key === ' ' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      this._dismissedTokenStart = null;
+      this._refreshSuggest({ allowOpen: true, force: true });
+      return;
+    }
+
+    // Ctrl/Cmd+↓ toggles the history menu without leaving the keyboard.
+    // Alt+↓ is accepted as a fallback (matches older builds / docs), but
+    // Ctrl/⌘ is the canonical binding — it's what combo-boxes on every
+    // major platform use and doesn't collide with WM window shortcuts.
+    if (e.key === 'ArrowDown' && (e.ctrlKey || e.metaKey || e.altKey) && !this._isSuggestOpen()) {
+      e.preventDefault();
+      if (this._isHistoryOpen()) this._closeHistoryMenu();
+      else this._openHistoryMenu();
+      return;
+    }
+
+    // History menu open → arrow keys move selection, Enter/Tab applies,
+    // Escape dismisses. Focus stays on the <textarea> the whole time so
+    // the user never loses their caret.
+    if (this._isHistoryOpen()) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); this._moveHistorySel(1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); this._moveHistorySel(-1); return; }
+      if (e.key === 'Home') { e.preventDefault(); this._setHistorySel(0); return; }
+      if (e.key === 'End') { e.preventDefault(); this._setHistorySel(this._history.length - 1); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); this._applyHistorySel(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); this._closeHistoryMenu(); return; }
+      // Any printable key closes the menu and falls through to the input
+      // — matches how <select> behaves when you start typing.
+      if (e.key.length === 1) { this._closeHistoryMenu(); /* fall through */ }
+    }
+
+    if (this._isSuggestOpen()) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); this._moveSuggest(1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); this._moveSuggest(-1); return; }
+      if (e.key === 'Tab') { e.preventDefault(); this._applySuggest(false); return; }
+      if (e.key === 'Enter') { e.preventDefault(); this._applySuggest(true); return; }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        // Pin dismissal to the current token so the popover stays shut
+        // while the user keeps typing the same token. Any character that
+        // changes the token's start (crossing a boundary) clears it.
+        const ctx = this._sugg.ctx;
+        this._dismissedTokenStart = ctx ? ctx.tokenStart : null;
+        this._closeSuggest();
+        return;
+      }
+      // Any other key falls through — the ensuing `input` event will
+      // update the item list in-place (no re-creation of the dropdown).
+      return;
+    }
+
+    // Popover closed — Enter / Escape are the committed meanings.
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      this._scheduleCommit(true);
+      this._pushHistory(this.input.value);
+      try { this.onCommit(this.input.value); } catch (_) { /* noop */ }
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (this.input.value !== '') {
+        e.preventDefault();
+        this.setValue('');
+        this._scheduleCommit(true);
+      }
+      return;
+    }
+    // Keep single-line.
+    if (e.key === 'Enter' || e.key === 'NumpadEnter') e.preventDefault();
+  }
+
+  _isSuggestOpen() { return !!(this._sugg && this._sugg.items && this._sugg.items.length); }
+
+  // Clear the Esc-dismissal flag iff the caret has left the pinned token.
+  _maybeClearDismissal() {
+    if (this._dismissedTokenStart == null) return;
+    const caret = this.input.selectionStart || 0;
+    const ctx = _tlSuggestContext(this.input.value, caret);
+    if (ctx.tokenStart !== this._dismissedTokenStart) {
+      this._dismissedTokenStart = null;
+    }
+  }
+
+  // ── Suggestions ────────────────────────────────────────────────────────
+  // Single entry point. `allowOpen` says whether this call is eligible to
+  // bring up a popover that's currently closed (true for input / manual
+  // trigger, false for programmatic refresh). `force` ignores the
+  // dismissal flag (manual trigger only).
+  _refreshSuggest(opts) {
+    const allowOpen = !!(opts && opts.allowOpen);
+    const force = !!(opts && opts.force);
+
+    const caret = this.input.selectionStart || 0;
+    const text = this.input.value || '';
+    const ctx = _tlSuggestContext(text, caret);
+
+    if (ctx.kind === 'none') { this._closeSuggest(); return; }
+
+    // Respect a live Esc dismissal pinned to the current token (unless
+    // the manual trigger forced through).
+    if (!force
+      && this._dismissedTokenStart != null
+      && this._dismissedTokenStart === ctx.tokenStart) {
+      this._closeSuggest();
+      return;
+    }
+
+    const items = this._itemsFor(ctx);
+    if (!items.length) { this._closeSuggest(); return; }
+
+    if (this._isSuggestOpen()) {
+      this._updateSuggestItems(items, ctx);
+      this._repositionSuggest();
+      return;
+    }
+    if (!allowOpen) return;
+    this._openSuggest(items, ctx);
+  }
+
+  _itemsFor(ctx) {
+    if (ctx.kind === 'field') return this._fieldSuggestions(ctx.prefix);
+    if (ctx.kind === 'value') return this._valueSuggestions(ctx.fieldName, ctx.prefix);
+    if (ctx.kind === 'keyword') return this._keywordSuggestions(ctx.prefix);
+    return [];
+  }
+
+  _fieldSuggestions(prefix) {
+    const lc = String(prefix || '').toLowerCase();
+    const cols = this.view.columns;
+    const out = [];
+    if ('any'.startsWith(lc) || !lc) out.push({ label: 'any', text: 'any:', kind: 'field' });
+    if ('is'.startsWith(lc) || !lc) out.push({ label: 'is', text: 'is:', kind: 'field' });
+    for (let i = 0; i < cols.length; i++) {
+      const name = String(cols[i] || ''); if (!name) continue;
+      const lcName = name.toLowerCase();
+      if (!lc || lcName.includes(lc)) {
+        const safe = /[\s=!:~<>()"]/.test(name) ? `[${name}]` : name;
+        out.push({ label: name, text: safe + ':', kind: 'field', rank: lcName.startsWith(lc) ? 0 : 1 });
+      }
+    }
+    for (const kw of ['AND', 'OR', 'NOT']) {
+      if (kw.toLowerCase().startsWith(lc) && lc) out.push({ label: kw, text: kw + ' ', kind: 'kw' });
+    }
+    out.sort((a, b) => (a.rank || 0) - (b.rank || 0));
+    return out.slice(0, 40);
+  }
+
+  _valueSuggestions(fieldName, prefix) {
+    const lcPrefix = String(prefix || '').toLowerCase();
+    const cols = this.view.columns;
+    const cleanField = String(fieldName || '').trim();
+    if (cleanField.toLowerCase() === 'is') {
+      const out = [];
+      for (const f of ['sus', 'detection']) {
+        if (!lcPrefix || f.startsWith(lcPrefix)) out.push({ label: f, text: f, kind: 'value' });
+      }
+      return out;
+    }
+    if (!cleanField || cleanField.toLowerCase() === 'any' || cleanField === '*') return [];
+    const lcField = cleanField.toLowerCase();
+    let colIdx = -1;
+    for (let i = 0; i < cols.length; i++) {
+      if (String(cols[i] || '').toLowerCase() === lcField) { colIdx = i; break; }
+    }
+    if (colIdx < 0) return [];
+    const distinct = this.view._distinctValuesFor(colIdx, this.view._filteredIdx || null, 80);
+    const out = [];
+    for (const [val, count] of distinct) {
+      const vs = String(val || '');
+      if (lcPrefix && !vs.toLowerCase().includes(lcPrefix)) continue;
+      const needsQuote = /[\s=!:~<>()"]/.test(vs) || vs === '';
+      const text = needsQuote ? `"${vs.replace(/"/g, '\\"')}"` : vs;
+      out.push({ label: vs === '' ? '(empty)' : vs, text, kind: 'value', count });
+    }
+    return out.slice(0, 30);
+  }
+
+  _keywordSuggestions(prefix) {
+    const lc = String(prefix || '').toLowerCase();
+    const out = [];
+    for (const kw of ['AND', 'OR', 'NOT']) {
+      if (!lc || kw.toLowerCase().startsWith(lc)) out.push({ label: kw, text: kw + ' ', kind: 'kw' });
+    }
+    return out;
+  }
+
+  // Cheap stable hash of items (label+kind) so `_updateSuggestItems` can
+  // skip DOM rebuilds when only the active index changed.
+  _itemsKey(items) {
+    let s = '';
+    for (const it of items) s += it.kind + '\0' + it.label + '\x1f';
+    return s;
+  }
+
+  _openSuggest(items, ctx) {
+    const el = document.createElement('div');
+    el.className = 'tl-query-suggest';
+    el.setAttribute('role', 'listbox');
+    document.body.appendChild(el);
+    this._sugg = { el, items: [], sel: 0, ctx, anchorTokenStart: ctx.tokenStart, itemsKey: '' };
+    this._updateSuggestItems(items, ctx);
+    this._repositionSuggest();
+    document.addEventListener('pointerdown', this._onDocPointerDown, true);
+    window.addEventListener('resize', this._onWinResize, true);
+    window.addEventListener('scroll', this._onViewScroll, true);
+  }
+
+  _updateSuggestItems(items, ctx) {
+    if (!this._sugg) return;
+    this._sugg.ctx = ctx;
+    const key = this._itemsKey(items);
+    if (key === this._sugg.itemsKey) return;   // same items, skip rebuild
+    this._sugg.itemsKey = key;
+    this._sugg.items = items;
+    // Clamp selection rather than resetting to 0 — keeps the user's
+    // arrow-key position stable while they continue typing.
+    if (this._sugg.sel >= items.length) this._sugg.sel = 0;
+    const el = this._sugg.el;
+    el.innerHTML = '';
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const row = document.createElement('div');
+      row.className = 'tl-query-suggest-item tl-query-suggest-' + it.kind
+        + (i === this._sugg.sel ? ' tl-query-suggest-active' : '');
+      row.setAttribute('role', 'option');
+      row.dataset.idx = String(i);
+      const countHtml = it.count != null
+        ? `<span class="tl-query-suggest-count">${it.count.toLocaleString()}</span>` : '';
+      row.innerHTML = `<span class="tl-query-suggest-label">${_tlEsc(it.label)}</span>${countHtml}`;
+      // pointerdown.preventDefault — keep focus on the textarea so blur
+      // doesn't fire mid-accept.
+      row.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this._sugg.sel = i;
+        this._applySuggest();
+      });
+      el.appendChild(row);
+    }
+  }
+
+  // Pixel-accurate caret positioning via a hidden mirror span in the
+  // existing highlight `<pre><code>` layer. The layer already occupies
+  // the exact same padding-box as the textarea (see core CSS comment on
+  // `.tl-query-hl, .tl-query-input`), so a `<span>` stuffed with the
+  // text-up-to-caret has its bounding rect exactly where the caret is.
+  // Survives zoom, font changes, proportional-looking monospace fonts,
+  // horizontal scroll of the textarea.
+  _caretScreenPos() {
+    const caret = this.input.selectionStart || 0;
+    const text = this.input.value.slice(0, caret) || '';
+    // Build a mirror string: NBSP for leading spaces so the span actually
+    // renders them. The highlight layer uses `white-space: pre`, so we
+    // can put raw text including spaces.
+    const probe = document.createElement('span');
+    probe.textContent = text.length ? text : '\u200b'; // zero-width so rect is non-empty
+    // Park a zero-width anchor right after the text — its left edge is
+    // the caret column.
+    const anchor = document.createElement('span');
+    anchor.textContent = '\u200b';
+    // Park inside the code element, preserving its current children so
+    // we can restore on teardown. We don't actually want the probe to
+    // be visible — the user is looking at the tokenised highlight, not
+    // the raw text. Use `visibility: hidden` + `position: absolute` so
+    // it occupies space for layout measurement without painting.
+    probe.style.cssText = 'visibility:hidden;position:absolute;left:-99999px;top:-99999px;white-space:pre;font:inherit;padding:0;border:0;';
+    const hlParent = this.hl.parentNode;   // the <pre>
+    hlParent.appendChild(probe);
+    // Copy the mirror's computed font metrics from the textarea so the
+    // measured width matches the caret column 1:1.
+    const cs = getComputedStyle(this.input);
+    probe.style.font = cs.font;
+    probe.style.letterSpacing = cs.letterSpacing;
+    probe.appendChild(anchor);
+    const anchorRect = anchor.getBoundingClientRect();
+    const probeWidth = probe.getBoundingClientRect().width;
+    hlParent.removeChild(probe);
+    // The caret's client X is the textarea's content-box left (inside
+    // padding) + the measured width − scrollLeft. Use the input's rect
+    // since its layout box is the authoritative one.
+    const inRect = this.input.getBoundingClientRect();
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const x = inRect.left + padL + probeWidth - (this.input.scrollLeft || 0);
+    const y = inRect.bottom;
+    // Fall back to anchorRect only if the parent layout produced no
+    // useful width (e.g. display:none).
+    if (!Number.isFinite(x) || probeWidth <= 0) {
+      return { x: anchorRect.left, y: anchorRect.bottom, inputRect: inRect };
+    }
+    return { x, y, inputRect: inRect };
+  }
+
+  _repositionSuggest() {
+    if (!this._sugg) return;
+    const el = this._sugg.el;
+    const { x, y, inputRect } = this._caretScreenPos();
+    // Keep the popover visually inside the viewport with a small margin.
+    const margin = 6;
+    el.style.position = 'fixed';
+    el.style.visibility = 'hidden';      // measure first, then place
+    el.style.left = '0px';
+    el.style.top = '0px';
+    el.style.zIndex = '10001';
+    el.style.display = 'block';
+    // Force layout read.
+    const w = el.offsetWidth || 240;
+    const h = el.offsetHeight || 200;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // Default: below the caret.
+    let left = Math.max(margin, Math.min(vw - w - margin, x - 8));
+    let top = y + 2;
+    // Flip above if not enough room below and there's room above.
+    if (top + h > vh - margin && inputRect.top - h - 2 > margin) {
+      top = inputRect.top - h - 2;
+    }
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+    el.style.visibility = '';
+  }
+
+  _moveSuggest(d) {
+    if (!this._sugg) return;
+    const items = this._sugg.items;
+    if (!items.length) return;
+    const prev = this._sugg.sel;
+    const next = (prev + d + items.length) % items.length;
+    this._sugg.sel = next;
+    const rows = this._sugg.el.querySelectorAll('.tl-query-suggest-item');
+    if (rows[prev]) rows[prev].classList.remove('tl-query-suggest-active');
+    if (rows[next]) {
+      rows[next].classList.add('tl-query-suggest-active');
+      rows[next].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  _applySuggest(commit) {
+    if (!this._sugg) return;
+    const item = this._sugg.items[this._sugg.sel];
+    if (!item) { this._closeSuggest(); return; }
+    const ctx = this._sugg.ctx;
+    const before = this.input.value.slice(0, ctx.replaceStart);
+    const after = this.input.value.slice(ctx.replaceEnd);
+    const inserted = item.text;
+    this.input.value = before + inserted + after;
+    const newCaret = (before + inserted).length;
+    this.input.setSelectionRange(newCaret, newCaret);
+    this._refreshHighlight();
+
+    // Accepting a FIELD (inserts "Name:") → caret is now in value context;
+    // we want to immediately show value suggestions so the analyst keeps
+    // flowing. Accepting a VALUE / KW / IS-flag → natural stop point;
+    // close and pin an Escape-equivalent dismissal to this token so the
+    // popover doesn't immediately pop back up. Typing whitespace after
+    // the accept will cross the token boundary and clear the pin.
+    if (item.kind === 'field') {
+      // Still composing (need a value next) — debounced commit, no history.
+      this._scheduleCommit();
+      this._dismissedTokenStart = null;
+      this._refreshSuggest({ allowOpen: true, force: true });
+    } else {
+      // Natural stop point — if triggered by Enter, treat as a full commit
+      // so the query is saved to history immediately (the user expects
+      // Enter-accept to behave like Enter-submit). Tab keeps the old
+      // debounced behaviour so the analyst can keep composing.
+      this._scheduleCommit(!!commit);
+      const nextCtx = _tlSuggestContext(this.input.value, newCaret);
+      this._dismissedTokenStart = nextCtx.tokenStart;
+      this._closeSuggest();
+      if (commit) {
+        this._pushHistory(this.input.value);
+        try { this.onCommit(this.input.value); } catch (_) { /* noop */ }
+      }
+    }
+  }
+
+  _closeSuggest() {
+    if (!this._sugg) return;
+    if (this._sugg.el && this._sugg.el.parentNode) {
+      this._sugg.el.parentNode.removeChild(this._sugg.el);
+    }
+    this._sugg = null;
+    document.removeEventListener('pointerdown', this._onDocPointerDown, true);
+    window.removeEventListener('resize', this._onWinResize, true);
+    window.removeEventListener('scroll', this._onViewScroll, true);
+  }
+
+  _handleOutsidePointer(e) {
+    if (!this._sugg) return;
+    const t = e.target;
+    if (this._sugg.el.contains(t)) return;
+    if (this.input === t) return;
+    this._closeSuggest();
+  }
+
+  _handleScroll(e) {
+    if (!this._sugg) return;
+    // Ignore scrolls that originate inside the popover itself (it's
+    // internally scrollable).
+    if (e && e.target && this._sugg.el.contains(e.target)) return;
+    // Any ancestor scroll closes — the popover is position:fixed so it
+    // would otherwise detach visually from the caret.
+    this._closeSuggest();
+  }
+
+  // ── History ────────────────────────────────────────────────────────────
+  _pushHistory(q) {
+    q = String(q || '').trim();
+    if (!q) return;
+    const list = this._history.filter(e => e !== q);
+    list.unshift(q);
+    if (list.length > 20) list.length = 20;
+    this._history = list;
+    TimelineQueryEditor._saveHistory(this._history);
+  }
+
+  // History menu is keyboard-first: a persistent `_hist` handle tracks
+  // the mounted menu + selected index so the editor's `_onKeyDown` can
+  // drive it without stealing focus from the <textarea>. Pointer hover
+  // mirrors keyboard selection so mouse + keys stay in sync.
+  _isHistoryOpen() { return !!(this._hist && this._hist.el && this._hist.el.parentNode); }
+
+  _openHistoryMenu() {
+    this._closeSuggest();
+    this._closeHistoryMenu();
+    if (!this._history.length) {
+      this._openTransientBubble(this.historyBtn, 'No history yet — press Enter to save a query.');
+      return;
+    }
+    const menu = document.createElement('div');
+    menu.className = 'tl-query-hist-menu';
+    menu.setAttribute('role', 'listbox');
+    this._hist = { el: menu, sel: 0, items: this._history.slice() };
+    for (let i = 0; i < this._history.length; i++) {
+      const q = this._history[i];
+      const row = document.createElement('div');
+      row.className = 'tl-query-hist-item' + (i === 0 ? ' tl-query-hist-item-active' : '');
+      row.setAttribute('role', 'option');
+      row.dataset.idx = String(i);
+      row.textContent = q;
+      row.title = q;
+      row.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (!this._hist) return;
+        this._hist.sel = i;
+        this._applyHistorySel();
+      });
+      // Hover syncs keyboard selection so mouse + keys can't desync.
+      row.addEventListener('pointermove', () => {
+        if (!this._hist || this._hist.sel === i) return;
+        this._setHistorySel(i);
+      });
+      menu.appendChild(row);
+    }
+    this._mountFloatingMenu(menu, this.historyBtn, { onDismiss: () => { this._hist = null; } });
+    // Keep focus on the textarea so the editor's _onKeyDown keeps
+    // receiving arrow / Enter / Escape.
+    this.input.focus();
+  }
+
+  _setHistorySel(i) {
+    if (!this._hist) return;
+    const n = this._hist.items.length;
+    if (!n) return;
+    const next = ((i % n) + n) % n;
+    if (next === this._hist.sel) return;
+    const rows = this._hist.el.querySelectorAll('.tl-query-hist-item');
+    if (rows[this._hist.sel]) rows[this._hist.sel].classList.remove('tl-query-hist-item-active');
+    this._hist.sel = next;
+    if (rows[next]) {
+      rows[next].classList.add('tl-query-hist-item-active');
+      rows[next].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  _moveHistorySel(d) { if (this._hist) this._setHistorySel(this._hist.sel + d); }
+
+  _applyHistorySel() {
+    if (!this._hist) return;
+    const q = this._hist.items[this._hist.sel];
+    this._closeHistoryMenu();
+    if (q == null) return;
+    this.setValue(q);
+    this._scheduleCommit(true);
+    this.input.focus();
+  }
+
+  _closeHistoryMenu() {
+    const existing = document.querySelector('.tl-query-hist-menu');
+    // Trigger the dismiss handler (which removes DOM + cleans up document
+    // listeners) rather than just ripping the element out of the DOM.
+    if (existing) {
+      if (typeof existing._dismiss === 'function') existing._dismiss();
+      else if (existing.parentNode) existing.parentNode.removeChild(existing);
+    }
+    this._hist = null;
+  }
+
+  _openHelpPopover() {
+    const existing = document.querySelector('.tl-query-help-menu');
+    if (existing) { existing.parentNode.removeChild(existing); return; }
+    this._closeSuggest();
+    const menu = document.createElement('div');
+    menu.className = 'tl-query-help-menu';
+    menu.innerHTML = `
+      <div class="tl-query-help-title">Query language</div>
+      <div class="tl-query-help-body">
+        <div><code>foo</code> — any column contains <i>foo</i></div>
+        <div><code>col:foo</code> — column contains <i>foo</i></div>
+        <div><code>col=foo</code> — column equals <i>foo</i> (<code>!=</code> for not equals)</div>
+        <div><code>col~/re/i</code> — column matches regex</div>
+        <div><code>col&gt;10</code> <code>col&gt;=10</code> <code>col&lt;10</code> — numeric / time compare</div>
+        <div><code>AND</code> <code>OR</code> <code>NOT</code> <code>(…)</code> — booleans + grouping</div>
+        <div><code>-foo</code> — shorthand for <code>NOT foo</code></div>
+        <div><code>"foo bar"</code> — phrase</div>
+        <div><code>[Event ID]:4624</code> — name with spaces</div>
+        <div><code>is:sus</code> — rows matching a 🚩 suspicious mark</div>
+        <div><code>is:detection</code> — rows matching a detection (EVTX)</div>
+        <div style="margin-top:4px;opacity:.7">Ctrl/⌘-Space to show suggestions · Esc to dismiss · Tab / Enter to accept · Ctrl/⌘-↓ to open history</div>
+        <div style="margin-top:2px;opacity:.7">Ctrl/⌘-Z to undo · Ctrl/⌘-Shift-Z (or Ctrl-Y) to redo · Ctrl/⌘-Backspace to delete the clause left of the caret</div>
+      </div>
+    `;
+    this._mountFloatingMenu(menu, this.helpBtn);
+  }
+
+  _openTransientBubble(anchor, text) {
+    const bub = document.createElement('div');
+    bub.className = 'tl-query-bubble';
+    bub.textContent = text;
+    const rect = anchor.getBoundingClientRect();
+    bub.style.position = 'fixed';
+    // Left-anchored because the clear / history / help buttons live on
+    // the LEFT edge of the query bar — aligning under the button's left
+    // edge keeps the bubble in view. (The old right-anchor assumed the
+    // buttons were flush-right and opened off-screen once they moved.)
+    bub.style.left = Math.max(8, rect.left) + 'px';
+    bub.style.top = (rect.bottom + 2) + 'px';
+    bub.style.zIndex = '10001';
+    document.body.appendChild(bub);
+    setTimeout(() => { if (bub.parentNode) bub.parentNode.removeChild(bub); }, 1800);
+  }
+
+  // Shared mount helper for history / help menus — same dismiss rules as
+  // the suggestion popover (outside pointerdown, Escape, window resize).
+  _mountFloatingMenu(menu, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.position = 'fixed';
+    menu.style.top = (rect.bottom + 2) + 'px';
+    menu.style.zIndex = '10001';
+    document.body.appendChild(menu);
+    // Left-align under the button (see _openTransientBubble for why),
+    // but clamp to the viewport so a wide popover near the right edge
+    // doesn't overflow. `offsetWidth` is only meaningful after the menu
+    // is in the DOM — hence the appendChild call above.
+    const menuW = menu.offsetWidth || 240;
+    const maxLeft = Math.max(8, window.innerWidth - menuW - 8);
+    menu.style.left = Math.max(8, Math.min(rect.left, maxLeft)) + 'px';
+
+    const dismiss = () => {
+      if (menu.parentNode) menu.parentNode.removeChild(menu);
+      document.removeEventListener('pointerdown', onPointer, true);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', onResize, true);
+    };
+    // Expose dismiss so _closeHistoryMenu can invoke it cleanly.
+    menu._dismiss = dismiss;
+    const onPointer = (e) => { if (!menu.contains(e.target) && e.target !== anchor) dismiss(); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); dismiss(); } };
+    const onResize = () => dismiss();
+    // Defer binding so the click that opened us doesn't immediately close.
+    setTimeout(() => {
+      document.addEventListener('pointerdown', onPointer, true);
+      document.addEventListener('keydown', onKey, true);
+      window.addEventListener('resize', onResize, true);
+    }, 0);
+  }
+
+  destroy() {
+    this._closeSuggest();
+    clearTimeout(this._debounceTimer);
+    if (this.root && this.root.parentNode) this.root.parentNode.removeChild(this.root);
+    // Drop back-references so the parent TimelineView (and its row data)
+    // can be collected even if the editor instance lingers in a closure.
+    this.view = null;
+    this.onChange = null;
+    this.onCommit = null;
+  }
+
+  static _loadHistory() {
+    try {
+      const raw = localStorage.getItem(TIMELINE_KEYS.QUERY_HISTORY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.filter(x => typeof x === 'string') : [];
+    } catch (_) { return []; }
+  }
+  static _saveHistory(list) {
+    try { localStorage.setItem(TIMELINE_KEYS.QUERY_HISTORY, JSON.stringify(list || [])); } catch (_) { /* noop */ }
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════

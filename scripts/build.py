@@ -368,13 +368,42 @@ JS_FILES = [
     'src/app/app-bg.js',
     'src/app/app-core.js',
 
-    # app-timeline.js — dedicated perf-focused CSV/TSV/EVTX timeline mode.
-    # Must load AFTER app-core.js (defines `App`), and AFTER grid-viewer.js /
-    # csv-renderer.js / evtx-renderer.js (all under src/renderers/, already
-    # concatenated above) since TimelineView reuses them directly. Attaches
-    # _initTimelineMode / _toggleTimelineMode / _timelineTryHandle onto
-    # App.prototype via Object.assign, called from app-core.js::init().
-    'src/app/app-timeline.js',
+    # src/app/timeline/ — Timeline mode (CSV / TSV / EVTX / SQLite browser
+    # history), split out of the legacy `app-timeline.js` monolith by PLAN
+    # Track E1 (10,061 LOC → 7 cohesive modules under src/app/timeline/).
+    # Must load AFTER app-core.js (defines `App`) and AFTER grid-viewer.js /
+    # csv-renderer.js / evtx-renderer.js / sqlite-renderer.js (all under
+    # src/renderers/, already concatenated above) since TimelineView reuses
+    # them directly. Load order within the group matters:
+    #   1. timeline-helpers.js       — TIMELINE_* constants + `_tl*` pure helpers
+    #   2. timeline-query.js         — query language tokenizer / parser /
+    #                                  compiler (consumes helpers)
+    #   3. timeline-query-editor.js  — `TimelineQueryEditor` class (consumes
+    #                                  query module)
+    #   4. timeline-view.js          — `class TimelineView` core: DOM, state,
+    #                                  scroll grid, scrubber, histogram, plus
+    #                                  the `static fromCsvAsync / fromEvtx /
+    #                                  fromSqlite` factories
+    #   5. timeline-detections.js    — TimelineView.prototype mixin: Detections
+    #                                  + Entities (EVTX-only, in-view only)
+    #   6. timeline-drawer.js        — TimelineView.prototype mixin: JSON
+    #                                  drawer + extracted-column helpers
+    #   7. timeline-router.js        — App.prototype mixin: `_timelineTryHandle`
+    #                                  / `_loadFileInTimeline` /
+    #                                  `_clearTimelineFile` (the analyser-bypass
+    #                                  routing entrypoint).
+    # **Analysis-bypass property.** Nothing in src/app/timeline/ pushes IOCs,
+    # mutates `app.findings`, runs `EncodedContentDetector`, or invokes
+    # `pushIOC`. EVTX is the sole controlled exception: the router calls
+    # `EvtxDetector.analyzeForSecurity` and threads the result into
+    # TimelineView purely to feed the in-view Detections + Entities sections.
+    'src/app/timeline/timeline-helpers.js',
+    'src/app/timeline/timeline-query.js',
+    'src/app/timeline/timeline-query-editor.js',
+    'src/app/timeline/timeline-view.js',
+    'src/app/timeline/timeline-detections.js',
+    'src/app/timeline/timeline-drawer.js',
+    'src/app/timeline/timeline-router.js',
 
     'src/app/app-load.js',
     'src/app/app-sidebar.js',

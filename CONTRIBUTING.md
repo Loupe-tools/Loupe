@@ -159,7 +159,7 @@ flowchart TD
     RB --> SNIFF{Timeline<br/>3-probe sniff?}
 
     %% Timeline branch
-    SNIFF -- "CSV / TSV / EVTX" --> TL["Timeline route<br/>app-timeline.js<br/>(monolith)"]
+    SNIFF -- "CSV / TSV / EVTX / SQLite" --> TL["Timeline route<br/>src/app/timeline/<br/>(7-file split)"]
 
     %% Generic branch
     SNIFF -- other --> RR2["RenderRoute.run<br/>src/render-route.js"]
@@ -471,18 +471,35 @@ subtly misbehave.
   `window.BgCanvas` singleton that `App.init()` and `_setTheme()` both
   invoke — the two call sites are guarded (`if (window.BgCanvas) …`) so
   the cosmetic background is optional, but the load order keeps that
-  guard a no-op in production. `app-timeline.js` loads immediately
-  after `app-core.js` and owns the **only** viewer path for CSV / TSV /
-  EVTX files — there is no user-visible mode toggle, no `T` keybind, no
+  guard a no-op in production. The Timeline route lives under
+  `src/app/timeline/` (split out of the legacy `app-timeline.js`
+  10,061-LOC monolith by PLAN Track E1 into seven cohesive modules:
+  `timeline-helpers.js` for the `TIMELINE_*` constants and the `_tl*`
+  pure helpers; `timeline-query.js` for the DSL tokeniser / parser /
+  compiler / suggester; `timeline-query-editor.js` for the
+  `TimelineQueryEditor` overlay class; `timeline-view.js` for the
+  `class TimelineView` core — DOM, state, virtual-scroll grid,
+  scrubber, stacked-bar histogram, top-values cards, pivot table — plus
+  the `static fromCsvAsync` / `fromEvtx` / `fromSqlite` factories;
+  `timeline-detections.js` for the EVTX-only Detections + Entities
+  prototype mixin; `timeline-drawer.js` for the JSON-leaf and
+  extracted-column prototype mixin; and `timeline-router.js` for the
+  `App.prototype` mixin that owns `_timelineTryHandle` /
+  `_loadFileInTimeline` / `_buildTimelineViewFromWorker` /
+  `_clearTimelineFile`). The directory loads immediately after
+  `app-core.js` in the strict order above, and owns the **only** viewer
+  path for CSV / TSV / EVTX / SQLite (browser-history) files — there is
+  no user-visible mode toggle, no `T` keybind, no
   📈 toolbar button, and no autoswitch threshold. When any CSV / TSV /
   EVTX is loaded the app adds `has-timeline` to `document.body.classList`
   so CSS in `core.css` swaps the sidebar/viewer stack for the timeline
   stack without re-mounting either; `_clearTimelineFile()` removes the
   class on file close. Routing is driven by three independent probes in
-  `app-load.js::_loadFile()`, each guarded by a one-shot
-  `this._skipTimelineRoute` escape-hatch so a failed parse can fall back
-  without re-entering the router: (1) `_isTimelineExt(file)` — a cheap
-  extension match (`.csv` / `.tsv` / `.evtx`); (2) a magic-byte EVTX
+  `app-load.js::_loadFile()` (defined in `timeline-router.js`), each
+  guarded by a one-shot `this._skipTimelineRoute` escape-hatch so a
+  failed parse can fall back without re-entering the router:
+  (1) `_isTimelineExt(file)` — a cheap extension match (`.csv` /
+  `.tsv` / `.evtx` / `.sqlite`); (2) a magic-byte EVTX
   sniff for extensionless files whose first 7 bytes spell `ElfFile`; (3)
   `_sniffTimelineContent(buffer)` — a text-head sniff that looks for
   delimiter-separated rows in the first few KiB. Any probe that matches
@@ -498,10 +515,20 @@ subtly misbehave.
   other IOC types — `HOSTNAME` / `USERNAME` / `FILENAME` / `PROCESS` /
   `HASH` / `IP` / `URL` / `UNC_PATH` / `FILE_PATH` / `COMMAND_LINE` /
   `REGISTRY_KEY` / `DOMAIN` / `EMAIL` — grouped by type with per-value
-  hit counts, `PATTERN` / `INFO` / `YARA` rows filtered out). EVTX events
-  are parsed once: `app-timeline.js` passes the already-parsed event
-  array to `EvtxDetector.analyzeForSecurity(buffer, fileName,
-  prebuiltEvents)` so detection extraction doesn't re-parse the log.
+  hit counts, `PATTERN` / `INFO` / `YARA` rows filtered out). The two
+  EVTX-only sections live in `timeline-detections.js`, attached as a
+  `TimelineView.prototype` mixin so the core view file stays focused on
+  format-agnostic concerns. **Analysis-bypass guard.** Nothing under
+  `src/app/timeline/` pushes IOCs, mutates `app.findings`, runs
+  `EncodedContentDetector`, or invokes `pushIOC`. EVTX is the sole
+  controlled exception: the router in `timeline-router.js` calls
+  `EvtxDetector.analyzeForSecurity(buffer, fileName, prebuiltEvents)`
+  on the main thread and threads the result into `TimelineView` via
+  the `evtxFindings` constructor opt purely to feed the in-view
+  Detections + Entities sections — never the global sidebar. EVTX
+  events are parsed once: the router passes the already-parsed event
+  array straight into `EvtxDetector.analyzeForSecurity` so detection
+  extraction doesn't re-parse the log.
   The analyzer was extracted from `evtx-renderer.js` into its own module
   `src/evtx-detector.js` so the Timeline worker bundle can ship the
   parser without dragging the threat-detection pass with it;
@@ -596,7 +623,7 @@ subtly misbehave.
 - **EVTX column names live in `EVTX_COLUMNS` / `EVTX_COLUMN_ORDER`**
   (`src/constants.js`). Use `EVTX_COLUMNS.EVENT_ID` etc. instead of bare
   `'Event ID'` strings when doing `indexOf` look-ups or building the
-  column array in `evtx-renderer.js` and `app-timeline.js`.
+  column array in `evtx-renderer.js` and `src/app/timeline/timeline-view.js`.
 - **Don't write `app._fileBuffer` / `app._yaraBuffer` / `app._binaryFormat` /
   `app._binaryParsed` directly when you have access to `currentResult`.**
   The four legacy fields are PLAN D4 deprecation aliases — `Object.defineProperty`
@@ -1140,7 +1167,7 @@ subtly misbehave.
   the auto-sizer. User overrides take precedence over kind-based
   widths — `_applyColumnTemplate()` reads the Map returned by
   `_loadUserColumnWidths()` before falling back to the computed value.
-- **GridViewer per-cell annotation hooks.** `GridViewer` accepts two optional callbacks so consumers can annotate specific cells without subclassing: `cellTitle(dataIdx, colIdx, rawValue) → string | null` returns a `title=` tooltip applied to every matching grid cell; `detailAugment(dataIdx, colIdx, value, {keyEl, valEl, colName}) → void` runs while the row-details drawer is built and can append chips / pills to the drawer's value element. The EVTX consumer in `src/app/app-timeline.js` uses both: a `cellTitle` hook that looks up `<Channel>:<EventID>` via `window.EvtxEventIds.lookup()` and returns a formatted multi-line tooltip (`4624: An account was successfully logged on.`), and a `detailAugment` hook that appends a `.tl-evtx-eid-pill` summary badge plus one `.tl-evtx-mitre-pill` per MITRE technique resolved through `window.MITRE.lookup()`. Both hooks are EVTX-only — the Timeline consumer checks `this._isEvtx` before wiring them so CSV / TSV / browser-history viewers get the untouched drawer.
+- **GridViewer per-cell annotation hooks.** `GridViewer` accepts two optional callbacks so consumers can annotate specific cells without subclassing: `cellTitle(dataIdx, colIdx, rawValue) → string | null` returns a `title=` tooltip applied to every matching grid cell; `detailAugment(dataIdx, colIdx, value, {keyEl, valEl, colName}) → void` runs while the row-details drawer is built and can append chips / pills to the drawer's value element. The EVTX consumer in `src/app/timeline/timeline-view.js` uses both: a `cellTitle` hook that looks up `<Channel>:<EventID>` via `window.EvtxEventIds.lookup()` and returns a formatted multi-line tooltip (`4624: An account was successfully logged on.`), and a `detailAugment` hook that appends a `.tl-evtx-eid-pill` summary badge plus one `.tl-evtx-mitre-pill` per MITRE technique resolved through `window.MITRE.lookup()`. Both hooks are EVTX-only — the Timeline consumer checks `this._isEvtx` before wiring them so CSV / TSV / browser-history viewers get the untouched drawer.
 - **GridViewer row-details drawer search box.** The drawer's topbar now carries an inline search input (`.grid-drawer-search`) built by `_wireDrawerSearch()`. As the analyst types, `_applyDrawerSearch()` walks the drawer body with a `TreeWalker` (skipping existing `.grid-drawer-hit` spans to avoid double-wrapping on re-apply), wraps each case-insensitive literal match in a `<span class="grid-drawer-hit">`, and smooth-scrolls the first hit into view. `Enter` / `Shift+Enter` cycle through hits (`_stepDrawerSearch`), `Esc` clears, `Ctrl/⌘+F` focuses the box when the drawer has focus. Hit count is capped at 400 to keep the TreeWalker bounded on pathologically large drawers; overflow is surfaced as `N+` in `.grid-drawer-search-count`. The search resets itself whenever the drawer opens onto a new row so stale highlights never carry over.
 - **EVTX Event ID registry — `src/evtx-event-ids.js`.** `window.EvtxEventIds = {EVENTS, lookup(id, channel), formatTooltip(info, id), normChannel(raw)}` is the single source of truth for the plain-English name / description of ~80 forensically-relevant Windows Event IDs. Events are keyed by `<channel>:<id>` (e.g. `security:4624`, `sysmon:1`, `system:7045`) with a bare `<id>` fallback for logs where the channel is unknown; each entry is `{name, description, mitre?: string[]}`. `formatTooltip()` returns the short tooltip string the `cellTitle` hook applies to every Event ID grid cell. The file is listed in `JS_FILES` immediately after `src/mitre.js` so both globals are present before any timeline-consuming renderer loads. Adding a new Event ID is a single-file change — extend `EVENTS` with the channel-qualified key and, where applicable, an array of `Tnnnn[.nnn]` MITRE techniques that already exist in `src/mitre.js`'s `TECHNIQUES` table.
 - **GridViewer row-details drawer — JSON-aware picker via
@@ -1276,7 +1303,7 @@ subtly misbehave.
   call on both grids so the per-column top-value card and the grid
   stay in sync.
 - **Timeline-mode filter pipeline — two-phase drag + window-only fast
-  path.** `TimelineView` in `src/app/app-timeline.js` composes a chip /
+  path.** `TimelineView` in `src/app/timeline/timeline-view.js` composes a chip /
   range / text / sus filter over tens of thousands of rows and re-renders
   a scrubber + stacked-bar chart + virtual grid + per-column cards on
   every mutation. A naive rebuild on every pointermove from the scrubber
@@ -1405,7 +1432,7 @@ subtly misbehave.
     so high-confidence proposals stay ticked by default; the
     "Extract selected" button iterates `_selection` directly rather than
     re-filtering the visible list.
-  - **DSL query editor (`TimelineQueryEditor` in `app-timeline.js`).** The
+  - **DSL query editor (`TimelineQueryEditor` in `src/app/timeline/timeline-query-editor.js`).** The
     textbox above the chip bar is a CSP-safe **overlay editor** — a
     transparent `<textarea>` painted on top of a `<pre><code>` syntax-
     highlighted layer — so users get pill-style token rendering, colouring,
@@ -1523,11 +1550,11 @@ state is (a) easy to grep for, (b) easy to clear with a single filter, and
 | `loupe_timeline_query` | string | Timeline DSL query-editor textbox above the chip bar | arbitrary DSL query string (see the Timeline query-language grammar below); empty string = no query | Last-used query in the Timeline viewer's DSL query editor. Re-populated on mount so a saved filter survives a reload; an unparseable value is loaded verbatim but quietly falls back to "no query" until fixed. |
 | `loupe_timeline_query_history` | JSON array | ⌄ history button on the Timeline DSL query editor | array of recent non-empty query strings, most recent first, capped at ~20 entries | Recent query history for the editor's ↑ / ↓ history menu. A committed query is pushed to the front and de-duplicated so the dropdown stays usable over long sessions without ballooning localStorage. |
 | `loupe_timeline_sus_marks` | JSON object | right-click a cell → 🚩 Mark suspicious · `＋ Add Sus` chip-strip button | `{ "<fileKey>": [{ colName, val }, …] }` — file key = `name\|size\|lastModified` | Parallel 🚩 sus-mark list persisted **by column NAME** (not index) so an extracted column that rebuilds under a different index on reload still re-hydrates its marks. Sus marks **tint** matching rows red but do **not** filter them — row filtering is exclusively owned by the DSL query bar. Resolved to a live `colIdx` at filter-time via `_susMarksResolved()`; marks whose column has disappeared stay persisted and re-attach if the column returns. |
-| `loupe_timeline_autoextract_nudged_hard` | string | "Don't show again" button on the post-load auto-extract nudge strip (above the Timeline query bar) | `"1"` when suppressed, absent otherwise | Hard-dismissal flag for the post-lazy-load auto-extract suggestion strip rendered by `_renderAutoExtractNudge()` in `src/app/app-timeline.js`. The strip previews up to four high-confidence virtual-column proposals (URL / host / JSON-leaf / kv-field) from `_autoExtractScan()`; "Dismiss" hides it for the session only, while "Don't show again" writes `"1"` here so the strip is permanently skipped on every future file load. Cleared by Timeline ↺ Reset along with the other `loupe_timeline_*` keys. |
+| `loupe_timeline_autoextract_nudged_hard` | string | "Don't show again" button on the post-load auto-extract nudge strip (above the Timeline query bar) | `"1"` when suppressed, absent otherwise | Hard-dismissal flag for the post-lazy-load auto-extract suggestion strip rendered by `_renderAutoExtractNudge()` in `src/app/timeline/timeline-view.js`. The strip previews up to four high-confidence virtual-column proposals (URL / host / JSON-leaf / kv-field) from `_autoExtractScan()`; "Dismiss" hides it for the session only, while "Don't show again" writes `"1"` here so the strip is permanently skipped on every future file load. Cleared by Timeline ↺ Reset along with the other `loupe_timeline_*` keys. |
 | `loupe_hosted_dismissed` | string | `_checkHostedMode()` in `src/app/app-core.js` | `"1"` when dismissed, absent otherwise | Controls the floating hosted-mode privacy bar shown when Loupe is served via HTTP/HTTPS instead of `file://`. Once the user clicks ✕, the bar never reappears. |
 
 **Timeline ↺ Reset wipes every Timeline preference.** The Reset button in
-the Timeline toolbar (`TimelineView._reset()` in `src/app/app-timeline.js`)
+the Timeline toolbar (`TimelineView._reset()` in `src/app/timeline/timeline-view.js`)
 deliberately clears **every** `loupe_timeline_*` key above — not only the
 one matching the current file — plus `loupe_grid_drawer_w` and every
 `loupe_grid_colW_tl-grid-inner_*` override written by the embedded
