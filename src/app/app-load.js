@@ -1096,17 +1096,65 @@ Object.assign(App.prototype, {
     },
   },
 
+  // ── Unified inner-file drill-down (PLAN D3) ────────────────────────────
+  //
+  // Single entry point for every recursive load: archive entry, attachment,
+  // binary overlay, decoded encoded-content blob, PE/ELF/Mach-O resource,
+  // Back-button replay (`_reRender*`). Every drill-down funnels through
+  // here so the nav-stack push, the optional `returnFocus` payload, and
+  // the re-entry into `_loadFile` (which re-runs the full
+  // `RendererRegistry.dispatch` chain — no inline reclassification) live
+  // in one canonical helper.
+  //
+  // Replaces the historic `_wireInnerFileListener` (event listener) +
+  // `_drillDownToSynthetic` (sidebar synthetic-File builder) +
+  // four copy-pasted `addEventListener('open-inner-file', …)` blocks
+  // inside `_reRenderZip` / `_reRenderMsi` / `_reRenderIso` / `_reRenderJar`.
+  // Those callers now delegate here.
+  //
+  // @param {File} file              Real or synthetic File to load.
+  // @param {ArrayBuffer?} parentBuf Optional prefetched bytes (skips a re-read).
+  //                                 Honoured by `_loadFile`'s `prefetchedBuffer`
+  //                                 parameter — see CONTRIBUTING.md →
+  //                                 "Drill-down: the open-inner-file event
+  //                                 protocol" for the public contract.
+  // @param {Object?} ctx
+  // @param {string?} ctx.parentName     Display name for the breadcrumb;
+  //                                     defaults to current `_fileMeta.name`.
+  // @param {Object?} ctx.returnFocus    e.g. { section:'deobfuscation',
+  //                                     findingOffset:N } — replayed by
+  //                                     `_renderSidebar` after the drill-down
+  //                                     round-trip completes.
+  openInnerFile(file, parentBuf, ctx) {
+    if (!file) return;
+    const opts = ctx || {};
+    const crumb = opts.parentName
+      || (this._fileMeta && this._fileMeta.name)
+      || '';
+    this._pushNavState(crumb);
+    if (opts.returnFocus) {
+      const top = this._navStack && this._navStack[this._navStack.length - 1];
+      if (top) top.returnFocus = opts.returnFocus;
+    }
+    this._loadFile(file, parentBuf || null);
+  },
+
   // Wire `open-inner-file` events from a container renderer (msg / eml /
-  // zip / pdf / msix / browserext / jar / msi) to the nav-stack push +
-  // recursive `_loadFile`. Pulled out of every dispatch handler so the
-  // listener semantics live in one place.
+  // zip / pdf / msix / browserext / jar / msi / pe / elf / macho overlay)
+  // to the unified drill-down helper. Honours the documented
+  // `e.detail._prefetchedBuffer` escape hatch (CONTRIBUTING → drill-down
+  // event protocol) so a parent that already has the bytes in memory can
+  // skip the re-read.
   _wireInnerFileListener(docEl, parentName) {
     if (!docEl || typeof docEl.addEventListener !== 'function') return;
     docEl.addEventListener('open-inner-file', (e) => {
       const innerFile = e.detail;
       if (!innerFile) return;
-      this._pushNavState(parentName);
-      this._loadFile(innerFile);
+      this.openInnerFile(
+        innerFile,
+        innerFile._prefetchedBuffer || null,
+        { parentName }
+      );
     });
   },
 
@@ -1557,13 +1605,7 @@ Object.assign(App.prototype, {
       const r = new ZipRenderer();
       const buf = state.fileBuffer;
       const docEl = await r.render(buf, state.parentName);
-      docEl.addEventListener('open-inner-file', (e) => {
-        const innerFile = e.detail;
-        if (innerFile) {
-          this._pushNavState(state.parentName);
-          this._loadFile(innerFile);
-        }
-      });
+      this._wireInnerFileListener(docEl, state.parentName);
       pc.innerHTML = '';
       pc.appendChild(docEl);
     } catch (_) { /* fallback: static HTML already set */ }
@@ -1574,13 +1616,7 @@ Object.assign(App.prototype, {
       const r = new MsiRenderer();
       const buf = state.fileBuffer;
       const docEl = r.render(buf, state.parentName);
-      docEl.addEventListener('open-inner-file', (e) => {
-        const innerFile = e.detail;
-        if (innerFile) {
-          this._pushNavState(state.parentName);
-          this._loadFile(innerFile);
-        }
-      });
+      this._wireInnerFileListener(docEl, state.parentName);
       pc.innerHTML = '';
       pc.appendChild(docEl);
     } catch (_) { /* fallback: static HTML already set */ }
@@ -1591,13 +1627,7 @@ Object.assign(App.prototype, {
       const r = new IsoRenderer();
       const buf = state.fileBuffer;
       const docEl = r.render(buf, state.parentName);
-      docEl.addEventListener('open-inner-file', (e) => {
-        const innerFile = e.detail;
-        if (innerFile) {
-          this._pushNavState(state.parentName);
-          this._loadFile(innerFile);
-        }
-      });
+      this._wireInnerFileListener(docEl, state.parentName);
       pc.innerHTML = '';
       pc.appendChild(docEl);
     } catch (_) { /* fallback: static HTML already set */ }
@@ -1608,13 +1638,7 @@ Object.assign(App.prototype, {
       const r = new JarRenderer();
       const buf = state.fileBuffer;
       const docEl = await r.render(buf, state.parentName);
-      docEl.addEventListener('open-inner-file', (e) => {
-        const innerFile = e.detail;
-        if (innerFile) {
-          this._pushNavState(state.parentName);
-          this._loadFile(innerFile);
-        }
-      });
+      this._wireInnerFileListener(docEl, state.parentName);
       pc.innerHTML = '';
       pc.appendChild(docEl);
     } catch (_) { /* fallback: static HTML already set */ }

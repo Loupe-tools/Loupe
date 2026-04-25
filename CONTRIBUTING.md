@@ -194,13 +194,14 @@ flowchart TD
     SBR --> YARA["App._autoYaraScan()<br/>worker (yara.worker.js);<br/>sync main-thread fallback"]
     YARA --> SBY[Sidebar YARA section]
 
-    %% Drill-down
+    %% Drill-down (PLAN D3 — unified via App.openInnerFile)
     subgraph DRILL["Drill-down (recursive)"]
         D1[archive-tree row click] --> DEV[open-inner-file CustomEvent]
         D2[binary-overlay re-dispatch] --> DEV
         D3["encoded-content-detector<br/>decoded blob"] --> D3a[synthetic File]
-        D3a --> DEV
-        DEV --> RR
+        DEV --> OIF["App.openInnerFile<br/>(push nav frame, re-enter _loadFile)"]
+        D3a --> OIF
+        OIF --> RR
     end
 
     %% Sidebar surfaces
@@ -300,14 +301,30 @@ the main load path.
 - `pe-renderer.js` resource-tree row click (embedded PE/script/data resources)
 - `eml-renderer.js`, `msg-renderer.js`, `pdf-renderer.js`, `onenote-renderer.js` attachment opens
 
-**Listener:** `src/app/app-load.js` (one App-level handler). It pushes a
-nav-stack frame, then re-enters `_loadFile(file, prefetchedBuffer)` which
+**Unified entry point — `App.openInnerFile(file, parentBuf?, ctx?)`** in
+`src/app/app-load.js` (PLAN D3). Every drill-down funnels through here
+— the `open-inner-file` listener, the encoded-content sidebar's
+`_drillDownToSynthetic`, every `_reRender{Zip,Msi,Iso,Jar}` Back-replay
+helper. The helper pushes a nav-stack frame (with optional
+`ctx.returnFocus` payload, used by the Deobfuscation card buttons to
+flash the originating finding on Back), records `ctx.parentName` as the
+breadcrumb crumb, then re-enters `_loadFile(file, parentBuf)` which
 re-runs the full `RendererRegistry.dispatch` chain. The Back button pops
 the frame and replays the parent.
 
-`encoded-content-detector` is a partial exception: it inline-classifies
-decoded blobs today rather than going through `open-inner-file`. Roadmap
-item D3 unifies both paths under a single `App.openInnerFile` helper.
+`_wireInnerFileListener(docEl, parentName)` is the thin bubbling-event
+adapter every container renderer (msg / eml / zip / pdf / msix /
+browserext / jar / msi / pe / elf / macho overlay) calls on its
+returned `docEl` so dispatched `open-inner-file` events are forwarded
+to `openInnerFile()`. It honours the documented
+`event.detail._prefetchedBuffer` escape hatch so a parent that already
+has the bytes in memory skips the re-read.
+
+The encoded-content sidebar's `_drillDownToSynthetic` (decode &
+analyse / load embedded ZIP / decompress & analyse / "all the way")
+calls `openInnerFile` directly with a synthetic `File` rather than
+dispatching the bubbling event — same nav-stack push, same
+`_loadFile` re-entry, no second code path.
 
 ### YARA cost model
 

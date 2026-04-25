@@ -7,19 +7,22 @@ const _SIDEBAR_SEV_ORDER = { critical: 0, high: 1, medium: 2, info: 3 };
 
 Object.assign(App.prototype, {
 
-  // Shared helper: create a synthetic file from decoded bytes, push the
-  // current file onto the nav stack (with return-focus metadata), and load
-  // the new file. Deduplicated from the five "Decode & Analyse" / "Load for
-  // analysis" / "Load embedded ZIP" / "Decompress & Analyse" / "All the way"
-  // button handlers.
+  // Shared helper: create a synthetic file from decoded bytes and dispatch
+  // it through the unified `App.openInnerFile` drill-down (PLAN D3).
+  // Deduplicated from the five "Decode & Analyse" / "Load for analysis" /
+  // "Load embedded ZIP" / "Decompress & Analyse" / "All the way" button
+  // handlers in the encoded-content card. The returnFocus payload tells
+  // `_renderSidebar` to scroll + flash the originating Deobfuscation
+  // finding when the user navigates back from the drill-down.
   _drillDownToSynthetic(bytes, synName, mime, fileName, findingOffset) {
     const blob = new Blob([bytes], { type: mime || 'application/octet-stream' });
     const syntheticFile = new File([blob], synName, { type: mime || 'application/octet-stream' });
-    this._pushNavState(fileName);
-    const _top = this._navStack && this._navStack[this._navStack.length - 1];
-    if (_top) _top.returnFocus = { section: 'deobfuscation', findingOffset: findingOffset };
-    this._loadFile(syntheticFile);
+    this.openInnerFile(syntheticFile, null, {
+      parentName: fileName,
+      returnFocus: { section: 'deobfuscation', findingOffset },
+    });
   },
+
 
   // Truncate a string shown inside a match toast to keep the notification
   // compact. IOCs extracted from decoded blobs can be kilobytes long.
