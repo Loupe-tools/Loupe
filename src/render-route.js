@@ -1,67 +1,78 @@
 'use strict';
 // ════════════════════════════════════════════════════════════════════════════
-// render-route.js — central renderer dispatch (PLAN D1)
+// render-route.js — central renderer dispatch (PLAN D1 + D4)
 // ════════════════════════════════════════════════════════════════════════════
 //
 // `RenderRoute.run(file, buffer, app, rctx?)` is the single entry point that
 // connects `RendererRegistry.detect()` to the per-id handlers in
 // `App.prototype._rendererDispatch` (defined in `src/app/app-load.js`). It
-// owns three concerns that previously lived inline in `App._loadFile`:
+// owns four concerns that previously lived inline in `App._loadFile`:
 //
 //   1. **Parser-watchdog wrap (PLAN B5).** Every renderer is invoked under
 //      `ParserWatchdog.run(..., { timeout: PARSER_LIMITS.RENDERER_TIMEOUT_MS,
 //      name: dispatchId })`. On a watchdog timeout we reset the partial
 //      state the hung renderer may have written (`app.findings`,
-//      `app._binaryParsed` / `_binaryFormat`, `app._yaraBuffer`), hand the
-//      buffer to the `plaintext` handler, and surface a single `IOC.INFO`
-//      row explaining why the structured viewer didn't load. Genuine parser
-//      exceptions (i.e. errors that are NOT a watchdog timeout) bubble out
-//      to the caller's outer `catch` — the failure surface is unchanged
-//      from before D1.
+//      `app.currentResult.binary`, `app.currentResult.yaraBuffer`), hand
+//      the buffer to the `plaintext` handler, and surface a single
+//      `IOC.INFO` row explaining why the structured viewer didn't load.
+//      Genuine parser exceptions (i.e. errors that are NOT a watchdog
+//      timeout) bubble out to the caller's outer `catch` — the failure
+//      surface is unchanged.
 //
 //   2. **`RenderResult` normalisation.** Renderer handlers today return
 //      either a bare `HTMLElement` (legacy) or `{ docEl, analyzer? }`. The
 //      RenderResult object surfaced to `_loadFile` is the canonical
-//      typedef from `PLAN.md` Track D1:
+//      typedef from `PLAN.md` Tracks D1 + D4:
 //        ```
-//        { docEl, findings, rawText, binary?, navTitle, analyzer?, dispatchId }
+//        { docEl, findings, rawText, buffer, binary?, yaraBuffer?,
+//          navTitle, analyzer?, dispatchId }
 //        ```
 //      • `docEl`     — the view container, ready to mount under
 //                      `#page-container`.
 //      • `findings`  — read-through to `app.findings` (renderers still
-//                      mutate the App-level field; D4 will move this to a
-//                      return value).
+//                      mutate the App-level field).
 //      • `rawText`   — `lfNormalize(docEl._rawText || docEl.textContent || '')`.
-//                      This is the centralised LF-normalisation the
-//                      `_loadFile` post-render passes (IOC sweep, encoded-
-//                      content scan) read from. Even a renderer that
-//                      forgot to LF-normalise `docEl.textContent` (the
-//                      fallback path) won't misalign click-to-focus
-//                      offsets after the first CR — the issue tracked as
-//                      H3 in `PLAN.md`.
+//                      Centralised LF-normalisation: the post-render
+//                      consumers (IOC sweep, encoded-content scan,
+//                      click-to-focus offsets) see one consistent
+//                      line-ending convention even when a renderer's
+//                      `textContent` fallback path leaks CRLF.
+//      • `buffer`    — the original file `ArrayBuffer`. Replaces the
+//                      legacy `app._fileBuffer` instance-property stash
+//                      (PLAN D4). `Object.defineProperty` aliases on
+//                      `App.prototype` keep the legacy name working with
+//                      a deprecation warn for one release cycle.
 //      • `binary`    — `{ format, parsed }` when the renderer stamped
-//                      `app._binaryFormat` (PE / ELF / Mach-O); absent
-//                      for non-binary loads.
-//      • `navTitle`  — defaults to `file.name`. Reserved for D3 / D4.
+//                      `app._binaryFormat` (PE / ELF / Mach-O); `null`
+//                      otherwise. Also written to via the alias setter
+//                      (PLAN D4).
+//      • `yaraBuffer`— optional augmented buffer (SVG/HTML/Plist/Scpt
+//                      `findings.augmentedBuffer` is hoisted here so
+//                      `_autoYaraScan` reads a single canonical handle).
+//                      Replaces the legacy `app._yaraBuffer` instance
+//                      stash. `null` when not augmented.
+//      • `navTitle`  — defaults to `file.name`.
 //      • `analyzer`  — pass-through for the DOCX module-renderer path
 //                      (`SecurityAnalyzer` is the only renderer-side
 //                      object the sidebar still consults directly).
 //      • `dispatchId`— the registry decision id (e.g. `'pdf'`, `'pe'`).
 //
-//   3. **`app.currentResult` stamping.** The result is also assigned to
-//      `app.currentResult` so future tracks can migrate read sites off the
-//      scattered `app._fileBuffer` / `app._binaryParsed` / `app._latestIOCs`
-//      globals. **D1 does not yet rewrite any consumer** — the sidebar,
-//      copy-analysis, and YARA paths still read the legacy fields. D4
-//      replaces them with `app.currentResult.*` and adds deprecation
-//      aliases for one release cycle.
+//   3. **`app.currentResult` skeleton allocation (PLAN D4).** A skeleton
+//      is stamped on `app` *before* the renderer handler is invoked so
+//      that the legacy-field aliases (`app._fileBuffer`, `_binaryFormat`,
+//      `_binaryParsed`, `_yaraBuffer`) — defined in `src/app/app-core.js`
+//      — have a write target during the render. Renderer dispatchers
+//      that still write `this._binaryFormat = 'pe'` etc. land in
+//      `currentResult.binary` via the setter alias; no renderer-side
+//      change is needed.
+//
+//   4. **Watchdog reset.** On timeout the partial `currentResult.binary`
+//      / `currentResult.yaraBuffer` / `app.findings` writes from the
+//      hung renderer are reset to `null` / a fresh empty findings object
+//      before re-dispatching to `plaintext`.
 //
 // What `RenderRoute.run` deliberately does NOT do:
 //
-//   • It does not read or write `app._fileBuffer` / `app._yaraBuffer` /
-//     `app._binaryParsed` / `app._binaryFormat`. Those are still set
-//     directly by the per-id handlers in `_rendererDispatch` (PE / ELF /
-//     Mach-O / SVG / HTML / Plist / OsaScript). D4 cuts them over.
 //   • It does not run the post-render IOC sweep, encoded-content scan,
 //     hash join, sidebar render, or auto-YARA. Those still live in
 //     `App._loadFile` after the `RenderRoute.run(...)` call returns.
@@ -69,9 +80,7 @@
 //     analysis-bypass route (`_loadFileInTimeline`) that never touches
 //     the registry. RenderRoute is for the generic branch only.
 //   • It does not own the `_rendererDispatch` table. The table stays in
-//     `app-load.js`; D4 moves it (or the equivalent) into a registry-
-//     driven structure once the renderer return-shape migration is far
-//     enough along that the table can be regenerated mechanically.
+//     `app-load.js`.
 //
 // Dependencies (load-order):
 //   • `src/constants.js`        — `PARSER_LIMITS`, `lfNormalize`, `pushIOC`, `IOC`
@@ -86,6 +95,23 @@
 
 const RenderRoute = {
 
+  /** Build a fresh, empty `currentResult` skeleton. Used by `run()` and by
+   *  `App._loadFile`'s pre-render path so the legacy-field aliases (PLAN D4)
+   *  always have a write target. */
+  _emptyResult(buffer) {
+    return {
+      docEl: null,
+      findings: null,         // filled post-render from `app.findings`
+      rawText: '',
+      buffer: buffer || null,
+      binary: null,           // { format, parsed } when stamped by a renderer
+      yaraBuffer: null,       // optional augmented buffer (SVG/HTML/etc.)
+      navTitle: '',
+      analyzer: null,
+      dispatchId: null,
+    };
+  },
+
   /**
    * Centralised dispatch entry point.
    *
@@ -96,10 +122,7 @@ const RenderRoute = {
    *                                the read/write target for the per-id
    *                                renderer-side stamps).
    * @param {object?}     rctx    — optional pre-built RendererRegistry
-   *                                context. Callers that already
-   *                                memoised one (none today, but D2/D3
-   *                                may) can pass it in; otherwise we
-   *                                build it from `(file, buffer)`.
+   *                                context.
    * @returns {Promise<RenderResult>}
    */
   async run(file, buffer, app, rctx = null) {
@@ -107,6 +130,14 @@ const RenderRoute = {
     const decision = RendererRegistry.detect(rctx);
     const dispatchId = decision.id;
     const handler = app._rendererDispatch[dispatchId] || app._rendererDispatch.plaintext;
+
+    // ── PLAN D4 — currentResult skeleton allocation ──────────────────
+    // Allocate before invoking the handler so the legacy-field aliases
+    // on `App.prototype` (`_fileBuffer`, `_binaryFormat`, `_binaryParsed`,
+    // `_yaraBuffer`) have a write target the moment a renderer's body
+    // begins executing. Without this, the first `this._binaryFormat =
+    // 'pe'` inside `pe()` would throw or silently lose the write.
+    app.currentResult = RenderRoute._emptyResult(buffer);
 
     let raw;
     let analyzer = null;
@@ -129,9 +160,11 @@ const RenderRoute = {
         // into the sidebar (findings.risk pre-stamps, half-built IOC
         // arrays, binary-triage globals from a half-parsed PE/ELF/Mach-O).
         app.findings = { risk: 'low', externalRefs: [], interestingStrings: [], metadata: {} };
-        app._binaryParsed = null;
-        app._binaryFormat = null;
-        app._yaraBuffer = null;
+        // The legacy-field setters (PLAN D4) route into
+        // `currentResult.binary` / `currentResult.yaraBuffer`, which is
+        // exactly what we want to clear.
+        app.currentResult.binary = null;
+        app.currentResult.yaraBuffer = null;
         raw = await app._rendererDispatch.plaintext.call(app, file, buffer, rctx);
         analyzer = null;
         // Surface the fallback to the analyst as a visible IOC.INFO row
@@ -147,10 +180,6 @@ const RenderRoute = {
     }
 
     // Normalise the renderer return into a RenderResult.
-    //
-    // Legacy renderers return a bare `HTMLElement`; the dispatch handlers
-    // wrap that into `{ docEl, analyzer? }` before we get here. A few
-    // older paths still hand back the raw element directly — accept both.
     let docEl;
     if (raw && raw.nodeType === 1) {
       // bare HTMLElement
@@ -159,41 +188,25 @@ const RenderRoute = {
       docEl = raw.docEl;
       if (raw.analyzer && !analyzer) analyzer = raw.analyzer;
     } else {
-      // Defensive: handler returned nothing usable. Caller's outer catch
-      // will render the "Failed to open file" box if docEl is undefined.
       docEl = null;
     }
 
-    // Centralised LF-normalisation (PLAN H3 fix). `docEl._rawText` is
-    // already required to be LF-normalised at every renderer write site
-    // (B4 build gate), but `docEl.textContent` — the fallback when a
-    // renderer didn't attach `_rawText` — has no such guarantee. Run the
-    // result through `lfNormalize` once, here, so every downstream
-    // consumer (IOC sweep, encoded-content scan, click-to-focus string
-    // search) sees a single consistent line-ending convention.
+    // Centralised LF-normalisation (PLAN H3 fix).
     const rawTextSource = (docEl && docEl._rawText)
       || (docEl && docEl.textContent)
       || '';
     const rawText = lfNormalize(rawTextSource);
 
-    const result = {
-      docEl,
-      findings: app.findings,
-      rawText,
-      navTitle: file.name,
-      analyzer,
-      dispatchId,
-    };
-    if (app._binaryFormat) {
-      result.binary = { format: app._binaryFormat, parsed: app._binaryParsed || null };
-    }
-
-    // D2 / D3 / D4 will read from `app.currentResult` exclusively. D1
-    // just stamps it as a read-only mirror so existing call sites
-    // (sidebar, copy-analysis, auto-YARA) continue reading the legacy
-    // `app._fileBuffer` / `app._binaryParsed` / `app._latestIOCs` fields
-    // unchanged.
-    app.currentResult = result;
+    // Fill in the remaining fields of the in-flight currentResult. The
+    // skeleton already holds `buffer` and any `binary` / `yaraBuffer`
+    // writes the renderer made via the alias setters.
+    const result = app.currentResult;
+    result.docEl = docEl;
+    result.findings = app.findings;
+    result.rawText = rawText;
+    result.navTitle = file.name;
+    result.analyzer = analyzer;
+    result.dispatchId = dispatchId;
 
     return result;
   },

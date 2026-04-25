@@ -50,23 +50,29 @@ Object.assign(App.prototype, {
     // badge list, and any anomaly ribbon chips. Mirrors the Tier-A band
     // the main-pane renderer draws so a pasted analysis ticket opens with
     // the same "is this bad?" gloss the analyst saw on screen.
+    // PLAN D4: read binary triage stash + buffer through `currentResult`.
+    const _crBin = (this.currentResult && this.currentResult.binary) || null;
+    const _binFormat = _crBin ? _crBin.format : null;
+    const _binParsed = _crBin ? _crBin.parsed : null;
+    const _crBuffer  = (this.currentResult && this.currentResult.buffer) || null;
     if ((f.peInfo || f.elfInfo || f.machoInfo)
         && typeof BinaryVerdict !== 'undefined'
-        && this._binaryParsed && this._binaryFormat) {
-      const fmtLabel = this._binaryFormat === 'pe' ? 'PE'
-        : this._binaryFormat === 'elf' ? 'ELF'
-        : this._binaryFormat === 'macho' ? 'Mach-O' : '';
+        && _binParsed && _binFormat) {
+      const fmtLabel = _binFormat === 'pe' ? 'PE'
+        : _binFormat === 'elf' ? 'ELF'
+        : _binFormat === 'macho' ? 'Mach-O' : '';
       const fileSize = (this._fileMeta && this._fileMeta.size)
-        || (this._fileBuffer && this._fileBuffer.byteLength) || 0;
+        || (_crBuffer && _crBuffer.byteLength) || 0;
       let verdict = null;
       try {
         verdict = BinaryVerdict.summarize({
-          parsed: this._binaryParsed,
+          parsed: _binParsed,
           findings: f,
           format: fmtLabel,
           fileSize,
         });
       } catch (_e) { /* non-fatal — clipboard output only */ }
+
       if (verdict) {
         parts.push('\n## Binary Triage');
         parts.push(`- **Verdict:** ${verdict.headline || '—'}`);
@@ -89,10 +95,11 @@ Object.assign(App.prototype, {
           let anoms = null;
           try {
             anoms = BinaryAnomalies.detect({
-              parsed: this._binaryParsed,
+              parsed: _binParsed,
               findings: f,
               format: fmtLabel,
             });
+
           } catch (_e) { /* non-fatal */ }
           if (anoms && Array.isArray(anoms.ribbon) && anoms.ribbon.length) {
             parts.push('- **Anomalies:**');

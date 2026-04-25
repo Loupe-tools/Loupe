@@ -1,28 +1,30 @@
 #!/usr/bin/env python3
 """make.py — single-command orchestrator for Loupe's build toolchain.
 
-Loupe ships with four standalone Python scripts under ``scripts/`` — each
+Loupe ships with five standalone Python scripts under ``scripts/`` — each
 intentionally usable on its own (and driven independently by CI):
 
-  * scripts/verify_vendored.py    — SHA-256 pin-check every file in vendor/ against VENDORED.md
-  * scripts/build.py              — concatenate src/ + vendor/ into docs/index.html
-  * scripts/generate_codemap.py   — (re)generate CODEMAP.md from the current src/ tree
-  * scripts/generate_sbom.py      — emit CycloneDX SBOM (dist/loupe.cdx.json) from VENDORED.md
+  * scripts/verify_vendored.py          — SHA-256 pin-check every file in vendor/ against VENDORED.md
+  * scripts/build.py                    — concatenate src/ + vendor/ into docs/index.html
+  * scripts/check_renderer_contract.py  — static contract check for src/renderers/ (PLAN D5)
+  * scripts/generate_codemap.py         — (re)generate CODEMAP.md from the current src/ tree
+  * scripts/generate_sbom.py            — emit CycloneDX SBOM (dist/loupe.cdx.json) from VENDORED.md
 
 This orchestrator chains them into a single `python make.py` invocation for
-the common local workflow (verify → build → codemap). The SBOM step is opt-in
-because it is only relevant at release time. The underlying scripts are
-untouched — CI and one-off usage keep working exactly as before.
+the common local workflow (verify → build → contract → codemap). The SBOM
+step is opt-in because it is only relevant at release time. The underlying
+scripts are untouched — CI and one-off usage keep working exactly as before.
 
 Usage
 -----
-    python make.py                 # run verify, build, codemap (default)
-    python make.py all             # same as default
-    python make.py verify          # just verify_vendored.py
-    python make.py build           # just build.py
-    python make.py codemap         # just generate_codemap.py
-    python make.py sbom            # just generate_sbom.py  (opt-in)
-    python make.py build codemap   # any subset, in the order given
+    python make.py                          # run verify, build, contract, codemap (default)
+    python make.py all                      # same as default
+    python make.py verify                   # just verify_vendored.py
+    python make.py build                    # just build.py
+    python make.py contract                 # just check_renderer_contract.py
+    python make.py codemap                  # just generate_codemap.py
+    python make.py sbom                     # just generate_sbom.py  (opt-in)
+    python make.py build contract codemap   # any subset, in the order given
 
 Exit code is the first non-zero exit code encountered. Subsequent steps are
 skipped on failure — there's no point generating a codemap for a tree that
@@ -47,14 +49,20 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 # step id → (human label, script path relative to BASE). Kept in canonical
 # execution order. 'sbom' is deliberately omitted from DEFAULT_STEPS — it is
 # only relevant at release time and the artefact is regenerated in CI.
+# 'contract' (PLAN D5) is the renderer-contract static check; it runs after
+# the build because the build gates (B1/B2/B4/C0) reject most violations
+# tree-wide first, and the contract check then re-validates the renderer
+# surface for the structural rules (class + render method) the build gates
+# don't cover.
 STEPS: dict[str, tuple[str, str]] = {
-    'verify':  ('Verify vendored SHA-256 pins', 'scripts/verify_vendored.py'),
-    'build':   ('Build docs/index.html',        'scripts/build.py'),
-    'codemap': ('Regenerate CODEMAP.md',        'scripts/generate_codemap.py'),
-    'sbom':    ('Generate CycloneDX SBOM',      'scripts/generate_sbom.py'),
+    'verify':   ('Verify vendored SHA-256 pins', 'scripts/verify_vendored.py'),
+    'build':    ('Build docs/index.html',        'scripts/build.py'),
+    'contract': ('Check renderer contract',      'scripts/check_renderer_contract.py'),
+    'codemap':  ('Regenerate CODEMAP.md',        'scripts/generate_codemap.py'),
+    'sbom':     ('Generate CycloneDX SBOM',      'scripts/generate_sbom.py'),
 }
 
-DEFAULT_STEPS = ['verify', 'build', 'codemap']
+DEFAULT_STEPS = ['verify', 'build', 'contract', 'codemap']
 ALL_STEPS = list(STEPS.keys())
 
 

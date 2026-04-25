@@ -241,8 +241,8 @@ in [Renderer Contract](#renderer-contract) and [IOC Push Checklist](#ioc-push-ch
 |---|---|---|---|
 | 1 | required | Build a DOM container and return it (or `{ docEl }`) | `_rendererDispatch` mounts it under `#page-container` |
 | 2 | required | Mutate `app.findings` (`risk`, `externalRefs[]`, `interestingStrings[]`, `metadata`, …) | Sidebar render |
-| 3 | sometimes | Stamp `app._fileBuffer`, `app._yaraBuffer` | Auto-YARA prefers `_yaraBuffer`, else `_fileBuffer` |
-| 4 | binary only | Stamp `app._binaryParsed`, `app._binaryFormat` | Copy-Analysis + verdict band |
+| 3 | sometimes | Stamp `app._fileBuffer`, `app._yaraBuffer` (PLAN D4: legacy aliases — `app.currentResult.{buffer,yaraBuffer}` is the canonical home) | Auto-YARA prefers `_yaraBuffer`, else `_fileBuffer` |
+| 4 | binary only | Stamp `app._binaryParsed`, `app._binaryFormat` (PLAN D4: legacy aliases — `app.currentResult.binary.{parsed,format}` is the canonical home) | Copy-Analysis + verdict band |
 | 5 | required | Set `container._rawText` (LF-normalised) | Click-to-focus string search |
 | 6 | required | Use `pushIOC()` and `IOC.*` constants — never bare strings | Sidebar IOC filter |
 | 7 | optional | Call `mirrorMetadataIOCs()` to surface metadata as clickable IOCs | File Info → IOCs |
@@ -597,6 +597,29 @@ subtly misbehave.
   (`src/constants.js`). Use `EVTX_COLUMNS.EVENT_ID` etc. instead of bare
   `'Event ID'` strings when doing `indexOf` look-ups or building the
   column array in `evtx-renderer.js` and `app-timeline.js`.
+- **Don't write `app._fileBuffer` / `app._yaraBuffer` / `app._binaryFormat` /
+  `app._binaryParsed` directly when you have access to `currentResult`.**
+  The four legacy fields are PLAN D4 deprecation aliases — `Object.defineProperty`
+  setters in `src/app/app-core.js` route every write to its canonical slot
+  on `app.currentResult.{buffer,yaraBuffer,binary.format,binary.parsed}`,
+  and reads emit a one-shot `console.warn`. Renderers can keep stamping
+  the legacy fields for now (the aliases keep things consistent across
+  the migration); new code in app-shell modules (sidebar, copy-analysis,
+  YARA, exporters) should read from `app.currentResult.*` directly so the
+  per-session deprecation warning isn't tripped. The aliases are scheduled
+  for removal in a follow-up Track once every read site has migrated.
+- **Renderers must pass `scripts/check_renderer_contract.py`.** The PLAN
+  Track D5 enforcer narrows the tree-wide build gates (B1 risk pre-stamp /
+  B2 bare-string IOC `type:` / B4 `_rawText` LF) to `src/renderers/` and
+  adds two structural checks: every non-helper file under `src/renderers/`
+  must declare a `class …Renderer` **and** a `render(` method. Helpers
+  (`archive-tree.js`, `grid-viewer.js`, `ole-cfb-parser.js`,
+  `protobuf-reader.js`) are allow-listed in `HELPER_FILES`; the three
+  content-rule checks still apply. Wired into `make.py` as the `contract`
+  step (between `build` and `codemap`), so a bare `python make.py` runs
+  verify → build → contract → codemap end-to-end. See the **Renderer
+  Contract — Reference** subsection further down for the rule meanings
+  and fix-up snippets.
 - **Hot-path renderers must finish within `PARSER_LIMITS.RENDERER_TIMEOUT_MS`
   (30 s).** `_loadFile` wraps every per-id handler in `_rendererDispatch`
   with `ParserWatchdog.run(fn, { timeout, name })`; on timeout it resets
@@ -1549,6 +1572,24 @@ elsewhere in this file. The deeper subsections (Risk Tier Calibration, IOC
 Push Helpers / Checklist, click-to-highlight hooks) are the spelled-out forms
 of rules 4, 5, and the table that follows this preamble respectively.
 
+**Enforced by `scripts/check_renderer_contract.py`** (PLAN Track D5). The
+script narrows the tree-wide build gates from `scripts/build.py` (B1 risk
+pre-stamp / B2 bare-string IOC `type:` / B4 `_rawText` LF-normalisation) to
+`src/renderers/` and adds two structural checks the build gates don't cover:
+every non-helper file under `src/renderers/` must declare a `class …Renderer`
+**and** a `render(` method (instance-, `static`-, or `async`-flavoured all
+accepted — the `_rendererDispatch` table adapts both shapes). Helpers
+without a per-format render contract (`archive-tree.js`, `grid-viewer.js`,
+`ole-cfb-parser.js`, `protobuf-reader.js`) are allow-listed in
+`HELPER_FILES`; the three content-rule checks still apply. Wired into
+`make.py` as the `contract` step (between `build` and `codemap`), so a bare
+`python make.py` runs verify → build → contract → codemap end-to-end. CSP-
+forbidden APIs (`eval`, `new Function`, `fetch`, `XMLHttpRequest`) are
+**not** part of the static check — runtime CSP already blocks them, and
+renderers that detect those literal tokens in user-supplied SVG / HTML / JS
+content (see `svg-renderer.js`'s threat-pattern table) would otherwise
+produce false positives.
+
 1. **Return shape.** Renderers may return either a bare `HTMLElement` (the
    legacy shape) **or** the canonical `RenderResult` object introduced by
    PLAN Track D1:
@@ -1580,8 +1621,26 @@ of rules 4, 5, and the table that follows this preamble respectively.
    | `app._binaryParsed`, `app._binaryFormat` | binary renderers only (PE / ELF / Mach-O) | verdict band, copy-analysis |
    | `container._rawText` | every text-backed renderer | click-to-focus string search |
 
-   Track D4 in PLAN.md replaces the scattered `app.*_buffer` globals with a
-   single `app.currentResult`; until that lands, write the legacy fields.
+   **PLAN D4 is now in effect — `app.currentResult` is the canonical home,
+   the four `app._fileBuffer` / `app._yaraBuffer` / `app._binaryFormat` /
+   `app._binaryParsed` fields are deprecation aliases.** `RenderRoute.run`
+   (`src/render-route.js`) allocates `app.currentResult = { buffer, binary:
+   { format, parsed }, yaraBuffer, iocs }` *before* invoking the renderer, so
+   every legacy write you do (`this._fileBuffer = buffer; this._binaryFormat
+   = 'pe'; this._binaryParsed = peStruct;`) is silently routed through
+   `Object.defineProperty` setters in `src/app/app-core.js` to its
+   canonical slot on `currentResult`. **Reads** of any of the four legacy
+   fields emit a one-shot `console.warn('[loupe] D4: app._fileBuffer is
+   deprecated; use app.currentResult.buffer')` — the surviving read sites
+   in `app-yara.js`, `app-ui.js` exporters, `app-core.js` `_isRawCopyable`
+   gate, `app-settings.js` Summary builder, and `app-sidebar.js`
+   encoded-content drill-down still work but trigger one warning per field
+   per session as the migration proceeds. New renderers should write the
+   legacy fields the same way for now (the aliases keep things consistent
+   and the cutover happens in a follow-up session); migrating renderer
+   write sites to assign `app.currentResult.{buffer,binary,yaraBuffer}`
+   directly is **deferred to a future Track**, after which the aliases
+   are removed.
 
 3. **`container._rawText` must be LF-normalised — wrap the RHS in `lfNormalize(...)`.**
    Click-to-focus offsets misalign past the first CR otherwise — this is

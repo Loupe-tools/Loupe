@@ -1045,32 +1045,41 @@ Object.assign(App.prototype, {
   // `findings.metadata`). The deep structural detail (section tables,
   // resource walks, dylibs, etc.) stays in the main viewer's Tier-C cards.
   //
-  // Stash contract: `this._binaryParsed` and `this._binaryFormat` are
-  // populated by `app-load.js::pe() / elf() / macho()` dispatchers after
-  // the renderer returns; `_clearFile()` nulls them both on file close.
-  // If either is missing we quietly bail — the guard in `_renderSidebar`
-  // already skips this path for non-binary formats, but the internal
-  // guard keeps the method safe against a mid-render state flip.
+  // Stash contract (PLAN D4): the binary triage stash now lives on
+  // `this.currentResult.binary` (`{ format, parsed }`), populated by the
+  // `app-load.js::pe() / elf() / macho()` dispatchers after the renderer
+  // returns. Legacy `this._binaryFormat` / `this._binaryParsed` are
+  // `Object.defineProperty` aliases that read through to the same fields
+  // for one deprecation cycle; the reads here use the canonical path so
+  // sidebar repaints don't emit a deprecation warn.
+  // `_clearFile()` nulls `currentResult` on file close, transparently
+  // clearing both subfields. The outer `_renderSidebar` guard already
+  // skips this path for non-binary formats; the internal guard keeps
+  // the method safe against a mid-render state flip.
   //
   // Docs: see CONTRIBUTING.md → "Binary triage surfaces" for the module
   // family (`mitre.js`, `binary-verdict.js`, `binary-anomalies.js`,
   // `binary-triage.js`) and the renderer-contract notes that keep
   // the stash in sync with each Tier-A band.
   _renderBinaryMetadataSection(container, fileName) {
-    if (!this._binaryFormat || !this._binaryParsed) return;
+    const cr = this.currentResult || null;
+    const bin = cr && cr.binary;
+    const binFormat = bin ? bin.format : null;
+    const binParsed = bin ? bin.parsed : null;
+    if (!binFormat || !binParsed) return;
     if (typeof BinaryVerdict === 'undefined') return;
 
     const f = this.findings || {};
     const fileSize = (this._fileMeta && this._fileMeta.size) ||
-      (this._fileBuffer && this._fileBuffer.byteLength) || 0;
+      (cr && cr.buffer && cr.buffer.byteLength) || 0;
 
     let verdict;
     try {
       verdict = BinaryVerdict.summarize({
-        parsed: this._binaryParsed,
+        parsed: binParsed,
         findings: f,
-        format: this._binaryFormat === 'pe' ? 'PE'
-              : this._binaryFormat === 'elf' ? 'ELF'
+        format: binFormat === 'pe' ? 'PE'
+              : binFormat === 'elf' ? 'ELF'
               : 'Mach-O',
         fileSize,
       });
@@ -1090,9 +1099,10 @@ Object.assign(App.prototype, {
 
     const sum = document.createElement('summary');
     sum.className = 'sb-details-summary';
-    const fmtLabel = this._binaryFormat === 'pe' ? 'PE'
-      : this._binaryFormat === 'elf' ? 'ELF'
+    const fmtLabel = binFormat === 'pe' ? 'PE'
+      : binFormat === 'elf' ? 'ELF'
       : 'Mach-O';
+
     sum.textContent = `🧬 Binary Triage — ${fmtLabel} (${verdict.risk})`;
     det.appendChild(sum);
 
@@ -1157,21 +1167,22 @@ Object.assign(App.prototype, {
     if (verdict.signer) rows.push(['Signer', verdict.signer]);
 
     // Format-specific identity row
-    if (this._binaryFormat === 'pe') {
+    if (binFormat === 'pe') {
       if (md['CLR Runtime'])       rows.push(['CLR Runtime',  md['CLR Runtime']]);
       if (md['Installer'])         rows.push(['Installer',    md['Installer']]);
-    } else if (this._binaryFormat === 'elf') {
+    } else if (binFormat === 'elf') {
       if (md['Build ID'])          rows.push(['Build ID',     md['Build ID']]);
       if (md['SONAME'])            rows.push(['SONAME',       md['SONAME']]);
       if (md['Interpreter'])       rows.push(['Interpreter',  md['Interpreter']]);
       if (md['Linking'])           rows.push(['Linking',      md['Linking']]);
-    } else if (this._binaryFormat === 'macho') {
-      const csi = (this._binaryParsed.codeSignatureInfo) || {};
+    } else if (binFormat === 'macho') {
+      const csi = (binParsed.codeSignatureInfo) || {};
       if (csi.teamId)              rows.push(['Team ID',      csi.teamId]);
       if (md['Bundle ID'])         rows.push(['Bundle ID',    md['Bundle ID']]);
       if (md['Platform'])          rows.push(['Platform',     md['Platform']]);
       if (md['UUID'])              rows.push(['UUID',         md['UUID']]);
     }
+
 
     // Hash pivots (import / rich / sym)
     if (md['Imphash'])                 rows.push(['Imphash',      md['Imphash']]);
@@ -1224,10 +1235,11 @@ Object.assign(App.prototype, {
     if (typeof BinaryAnomalies !== 'undefined') {
       try {
         const a = BinaryAnomalies.detect({
-          parsed: this._binaryParsed,
+          parsed: binParsed,
           findings: f,
           format: fmtLabel,
         });
+
         if (a && Array.isArray(a.ribbon) && a.ribbon.length) {
           body.appendChild(this._sec('Anomalies'));
           const row = document.createElement('div');
@@ -1269,8 +1281,13 @@ Object.assign(App.prototype, {
   // side-load hosts, etc. — so any new emission that tags itself with a
   // MITRE id will automatically surface here without further wiring.
   _renderMitreSection(container, fileName) {
-    if (!this._binaryFormat) return;
+    // PLAN D4: read binary format through `currentResult.binary` rather
+    // than the deprecated `_binaryFormat` alias.
+    const cr = this.currentResult || null;
+    const binFormat = cr && cr.binary ? cr.binary.format : null;
+    if (!binFormat) return;
     if (typeof MITRE === 'undefined') return;
+
 
     const f = this.findings || {};
     const refs = Array.isArray(f.externalRefs) ? f.externalRefs : [];

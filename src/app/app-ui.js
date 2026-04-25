@@ -692,17 +692,22 @@ Object.assign(App.prototype, {
     document.getElementById('sb-risk-title').textContent = 'No threats detected';
     // Reset state
     this.findings = null; this.fileHashes = null;
-    this._fileBuffer = null; this._yaraBuffer = null; this._yaraResults = null;
+    this._yaraResults = null;
     this._fileMeta = null;
     // Copy-content cache holds a reference to the previous file's
     // ArrayBuffer (for same-session paste round-trip). Without clearing
     // it, every load/clear cycle leaks the full buffer.
     this._lastCopiedMeta = null;
-    // Native-binary triage stash (set by app-load.js pe/elf/macho dispatchers,
-    // consumed by the sidebar's Binary Metadata + MITRE sections). Must be
-    // cleared here so the next load — which may be any format — doesn't
-    // see stale parsed headers or a stale format marker.
-    this._binaryParsed = null; this._binaryFormat = null;
+    // ── PLAN D4 — single-line currentResult teardown ──────────────────────
+    // Drop the entire RenderRoute result in one assignment. The legacy
+    // fields (`_fileBuffer`, `_yaraBuffer`, `_binaryFormat`, `_binaryParsed`)
+    // are now `Object.defineProperty` aliases that read/write through
+    // `currentResult`, so nulling the wrapper transparently nulls all four
+    // at once. Setting it to `null` (rather than a fresh skeleton) ensures
+    // a stale pre-render alias-write race during the next file's bootstrap
+    // can't pick up dangling state from this one.
+    this.currentResult = null;
+
     // ── Stale-load guard reset (PLAN D2) ──────────────────────────────────
     // `_loadToken` is the monotonic counter `_loadFile` bumps on every
     // invocation; deferred mutations (pdf-worker QR decode, async overlay
