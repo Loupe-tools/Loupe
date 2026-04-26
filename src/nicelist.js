@@ -291,9 +291,7 @@ function isNicelisted(value, type) {
   // as `loupe_nicelist_builtin_enabled` — "0" means off, anything else (or
   // missing) means on. Kept opt-out so first-time users still get the
   // Default Nicelist demoting noise.
-  try {
-    if (localStorage.getItem('loupe_nicelist_builtin_enabled') === '0') return false;
-  } catch (_) { /* storage blocked → treat as enabled */ }
+  if (safeStorage.get('loupe_nicelist_builtin_enabled') === '0') return false;
 
   const v = String(value).trim();
   if (!v) return false;

@@ -49,7 +49,7 @@
 // dropped log with a missing or mislabelled extension still lands here
 // instead of falling through to the plaintext renderer.
 // ════════════════════════════════════════════════════════════════════════════
-Object.assign(App.prototype, {
+extendApp({
 
   _initTimelineState() {
     this._timelineCurrent = null;

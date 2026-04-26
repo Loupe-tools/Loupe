@@ -158,26 +158,20 @@ class PlainTextRenderer {
   static SOFT_WRAP_CHUNK = 2000;
   // Hard cap on total lines rendered to the DOM.
   static MAX_LINES = RENDER_LIMITS.MAX_TEXT_LINES;
-  // localStorage key for the syntax-highlight on/off toggle.
+  // Storage key for the syntax-highlight on/off toggle.
   static HIGHLIGHT_PREF_KEY = 'loupe_plaintext_highlight';
 
   // ── Preference accessors ────────────────────────────────────────────────
 
   /** Read the user's syntax-highlight preference (default: on). */
   static _readHighlightPref() {
-    try {
-      const v = localStorage.getItem(PlainTextRenderer.HIGHLIGHT_PREF_KEY);
-      return v !== 'off';
-    } catch (_) {
-      return true;
-    }
+    const v = safeStorage.get(PlainTextRenderer.HIGHLIGHT_PREF_KEY);
+    return v !== 'off';
   }
 
   /** Persist the user's syntax-highlight preference. */
   static _writeHighlightPref(enabled) {
-    try {
-      localStorage.setItem(PlainTextRenderer.HIGHLIGHT_PREF_KEY, enabled ? 'on' : 'off');
-    } catch (_) { /* quota / disabled — ignore */ }
+    safeStorage.set(PlainTextRenderer.HIGHLIGHT_PREF_KEY, enabled ? 'on' : 'off');
   }
 
   // ── Render ──────────────────────────────────────────────────────────────

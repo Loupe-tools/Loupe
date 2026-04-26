@@ -1133,16 +1133,13 @@ class TimelineQueryEditor {
   }
 
   static _loadHistory() {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.QUERY_HISTORY);
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr.filter(x => typeof x === 'string') : [];
-    } catch (_) { return []; }
+    const arr = safeStorage.getJSON(TIMELINE_KEYS.QUERY_HISTORY, []);
+    return Array.isArray(arr) ? arr.filter(x => typeof x === 'string') : [];
   }
   static _saveHistory(list) {
-    try { localStorage.setItem(TIMELINE_KEYS.QUERY_HISTORY, JSON.stringify(list || [])); } catch (_) { /* noop */ }
+    safeStorage.setJSON(TIMELINE_KEYS.QUERY_HISTORY, list || []);
   }
+
 }
 
 

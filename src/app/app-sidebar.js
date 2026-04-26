@@ -5,7 +5,7 @@
 // Shared severity ranking — used by both the deobfuscation and IOC/refs sections.
 const _SIDEBAR_SEV_ORDER = { critical: 0, high: 1, medium: 2, info: 3 };
 
-Object.assign(App.prototype, {
+extendApp({
 
   // Shared helper: create a synthetic file from decoded bytes and dispatch
   // it through the unified `App.openInnerFile` drill-down.
@@ -43,12 +43,10 @@ Object.assign(App.prototype, {
   // Key: `loupe_ioc_hide_nicelisted`  →  "0" | "1"
   // (see the persistence-keys table in CONTRIBUTING.md).
   _getHideNicelisted() {
-    try { return localStorage.getItem('loupe_ioc_hide_nicelisted') === '1'; }
-    catch (_) { return false; }
+    return safeStorage.get('loupe_ioc_hide_nicelisted') === '1';
   },
   _setHideNicelisted(v) {
-    try { localStorage.setItem('loupe_ioc_hide_nicelisted', v ? '1' : '0'); }
-    catch (_) { /* storage blocked — in-memory only, toggle still works for this session */ }
+    safeStorage.set('loupe_ioc_hide_nicelisted', v ? '1' : '0');
   },
 
   _renderSidebar(fileName, analyzer) {

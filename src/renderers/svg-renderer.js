@@ -42,7 +42,7 @@ class SvgRenderer {
     { pattern: /XMLHttpRequest/gi, label: 'XMLHttpRequest' },
     { pattern: /\bfetch\s*\(/gi, label: 'fetch()' },
     { pattern: /navigator\.\w+/gi, label: 'navigator access' },
-    { pattern: /localStorage|sessionStorage/gi, label: 'Web Storage access' },
+    { pattern: /localStorage|sessionStorage/gi, label: 'Web Storage access' }, // loupe-allow:safe-storage
     { pattern: /\.submit\s*\(/gi, label: 'form.submit()' },
     { pattern: /\.execCommand/gi, label: 'execCommand()' },
     { pattern: /Function\s*\(/gi, label: 'Function constructor' },

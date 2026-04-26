@@ -139,30 +139,26 @@
   // ── storage ────────────────────────────────────────────────────────────
 
   function _loadRaw() {
-    try {
-      const s = localStorage.getItem(STORAGE_KEY);
-      if (!s) return null;
-      const j = JSON.parse(s);
-      if (!j || typeof j !== 'object' || !Array.isArray(j.lists)) return null;
-      return j;
-    } catch (_) { return null; }
+    const j = safeStorage.getJSON(STORAGE_KEY, null);
+    if (!j || typeof j !== 'object' || !Array.isArray(j.lists)) return null;
+    return j;
   }
 
   function _saveRaw(blob) {
-    const s = JSON.stringify(blob);
+    let s;
+    try { s = JSON.stringify(blob); }
+    catch (_) { return false; }
     if (s.length > MAX_BLOB_BYTES) {
        
       console.warn('[nicelist-user] refusing to save: blob exceeds 1 MB cap (' + s.length + ' bytes)');
       return false;
     }
-    try {
-      localStorage.setItem(STORAGE_KEY, s);
-      return true;
-    } catch (e) {
+    if (!safeStorage.set(STORAGE_KEY, s)) {
        
-      console.warn('[nicelist-user] save failed:', e && e.message);
+      console.warn('[nicelist-user] save failed: storage write rejected');
       return false;
     }
+    return true;
   }
 
   function _normaliseList(l) {
@@ -528,12 +524,10 @@
   // ── built-in toggle (small API so Settings UI doesn't need to know the
   //    storage key) ──────────────────────────────────────────────────────
   function getBuiltinEnabled() {
-    try { return localStorage.getItem(BUILTIN_ENABLED_KEY) !== '0'; }
-    catch (_) { return true; }
+    return safeStorage.get(BUILTIN_ENABLED_KEY) !== '0';
   }
   function setBuiltinEnabled(on) {
-    try { localStorage.setItem(BUILTIN_ENABLED_KEY, on ? '1' : '0'); }
-    catch (_) { /* storage blocked */ }
+    safeStorage.set(BUILTIN_ENABLED_KEY, on ? '1' : '0');
   }
 
   // ── expose ─────────────────────────────────────────────────────────────

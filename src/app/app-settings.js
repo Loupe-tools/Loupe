@@ -35,31 +35,30 @@ const SUMMARY_DEFAULT_ID = 'default';
 const SUMMARY_PREF_KEY = 'loupe_summary_target';
 const SUMMARY_LEGACY_KEY = 'loupe_summary_chars';
 
-Object.assign(App.prototype, {
+extendApp({
   // ── Persisted state helpers ────────────────────────────────────────────
   _initSettings() {
     let saved = SUMMARY_DEFAULT_ID;
-    try {
-      const raw = localStorage.getItem(SUMMARY_PREF_KEY);
-      if (raw && SUMMARY_TARGETS.some(t => t.id === raw)) {
-        saved = raw;
-      } else {
-        // One-shot migration from the legacy 10-step integer key.
-        const legacy = localStorage.getItem(SUMMARY_LEGACY_KEY);
-        if (legacy != null) {
-          const n = parseInt(legacy, 10);
-          if (Number.isFinite(n)) {
-            if (n >= 9) saved = 'unlimited';
-            else if (n >= 5) saved = 'large';
-            else saved = 'default';
-          }
-          try { localStorage.setItem(SUMMARY_PREF_KEY, saved); } catch (_) { /* storage blocked */ }
-          try { localStorage.removeItem(SUMMARY_LEGACY_KEY); } catch (_) { /* storage blocked */ }
+    const raw = safeStorage.get(SUMMARY_PREF_KEY);
+    if (raw && SUMMARY_TARGETS.some(t => t.id === raw)) {
+      saved = raw;
+    } else {
+      // One-shot migration from the legacy 10-step integer key.
+      const legacy = safeStorage.get(SUMMARY_LEGACY_KEY);
+      if (legacy != null) {
+        const n = parseInt(legacy, 10);
+        if (Number.isFinite(n)) {
+          if (n >= 9) saved = 'unlimited';
+          else if (n >= 5) saved = 'large';
+          else saved = 'default';
         }
+        safeStorage.set(SUMMARY_PREF_KEY, saved);
+        safeStorage.remove(SUMMARY_LEGACY_KEY);
       }
-    } catch (_) { /* storage blocked */ }
+    }
     this._summaryTarget = saved;
   },
+
 
   _getSummaryTarget() {
     return this._summaryTarget || SUMMARY_DEFAULT_ID;
@@ -74,8 +73,9 @@ Object.assign(App.prototype, {
   _setSummaryTarget(id) {
     if (!SUMMARY_TARGETS.some(t => t.id === id)) return;
     this._summaryTarget = id;
-    try { localStorage.setItem(SUMMARY_PREF_KEY, id); } catch (_) { /* storage blocked */ }
+    safeStorage.set(SUMMARY_PREF_KEY, id);
   },
+
 
   // ── Dialog open / close ────────────────────────────────────────────────
   //

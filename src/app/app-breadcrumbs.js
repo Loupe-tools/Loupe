@@ -11,16 +11,18 @@
 //      the dev-mode flag mid-session to see the last 50 events that already
 //      happened, not start with an empty list.
 //
-//   2. If the dev-mode flag (`localStorage.loupe_dev_breadcrumbs === '1'`)
-//      is on, mounts a small fixed-position overlay in the bottom-right
-//      corner and renders the buffer as a stack of rows
+//   2. If the dev-mode flag (`loupe_dev_breadcrumbs === '1'` in the
+//      persistence layer) is on, mounts a small fixed-position overlay in
+//      the bottom-right corner and renders the buffer as a stack of rows
 //      `[+Δms] scope · msg`. Row click expands the optional `data` payload
 //      as a single-line JSON.stringify (truncated to 240 chars). Theme-
 //      aware via the existing CSS custom properties — no new tokens.
 //
 //   3. Exposes `app._toggleDevBreadcrumbs()` so a dev can flip the flag
-//      from the browser console without poking localStorage by hand. The
-//      panel re-mounts immediately; close-button does the inverse.
+//      from the browser console without poking the persistence layer by
+//      hand. The panel re-mounts immediately; close-button does the
+//      inverse.
+
 //
 // Out of scope (deliberate):
 //   • Persisting buffer across reloads — diagnostics are session-scoped;
@@ -37,17 +39,16 @@ const _DEV_BREADCRUMBS_KEY = 'loupe_dev_breadcrumbs';
 const _BREADCRUMB_MAX = 50;
 const _DATA_PREVIEW_MAX_CHARS = 240;
 
-Object.assign(App.prototype, {
+extendApp({
 
   // Wired into App.init() (src/app/app-core.js). Reads the persisted flag
   // and, if set, mounts the overlay panel. The buffer itself is a
   // lazy-initialised array on `_breadcrumb()` calls, so the helper is safe
   // to call before init runs.
   _initBreadcrumbs() {
-    let on = false;
-    try { on = localStorage.getItem(_DEV_BREADCRUMBS_KEY) === '1'; } catch (_) { /* private mode */ }
-    if (on) this._mountBreadcrumbsPanel();
+    if (safeStorage.get(_DEV_BREADCRUMBS_KEY) === '1') this._mountBreadcrumbsPanel();
   },
+
 
   // Public diagnostic primitive. Always pushes to the buffer; renders only
   // if the panel is mounted. Callers should keep `scope` short and
@@ -72,17 +73,15 @@ Object.assign(App.prototype, {
   // the new state ('on' | 'off') so an analyst poking from devtools
   // immediately sees what happened.
   _toggleDevBreadcrumbs() {
-    let cur = false;
-    try { cur = localStorage.getItem(_DEV_BREADCRUMBS_KEY) === '1'; } catch (_) {}
+    const cur = safeStorage.get(_DEV_BREADCRUMBS_KEY) === '1';
     const next = !cur;
-    try {
-      if (next) localStorage.setItem(_DEV_BREADCRUMBS_KEY, '1');
-      else localStorage.removeItem(_DEV_BREADCRUMBS_KEY);
-    } catch (_) { /* private mode — fall back to in-session toggle only */ }
+    if (next) safeStorage.set(_DEV_BREADCRUMBS_KEY, '1');
+    else safeStorage.remove(_DEV_BREADCRUMBS_KEY);
     if (next) this._mountBreadcrumbsPanel();
     else this._unmountBreadcrumbsPanel();
     return next ? 'on' : 'off';
   },
+
 
   _mountBreadcrumbsPanel() {
     if (this._breadcrumbsPanel) return;
@@ -118,7 +117,8 @@ Object.assign(App.prototype, {
     closeBtn.type = 'button';
     closeBtn.className = 'loupe-breadcrumbs-btn';
     closeBtn.textContent = '✕';
-    closeBtn.title = 'Hide panel and disable breadcrumbs (loupe_dev_breadcrumbs flag cleared)';
+    closeBtn.title = 'Hide panel and disable breadcrumbs (dev breadcrumbs flag cleared)';
+
     closeBtn.addEventListener('click', () => { this._toggleDevBreadcrumbs(); });
     header.appendChild(closeBtn);
 

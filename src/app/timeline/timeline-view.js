@@ -615,183 +615,130 @@ class TimelineView {
 
   // ── Persistence helpers ─────────────────────────────────────────────────
   static _loadBucketPref() {
-    try {
-      const v = localStorage.getItem(TIMELINE_KEYS.BUCKET);
-      if (v && TIMELINE_BUCKET_OPTIONS.some(o => o.id === v)) return v;
-    } catch (_) { /* noop */ }
+    const v = safeStorage.get(TIMELINE_KEYS.BUCKET);
+    if (v && TIMELINE_BUCKET_OPTIONS.some(o => o.id === v)) return v;
     return 'auto';
   }
   static _saveBucketPref(id) {
-    try { localStorage.setItem(TIMELINE_KEYS.BUCKET, id); } catch (_) { /* noop */ }
+    safeStorage.set(TIMELINE_KEYS.BUCKET, id);
   }
   static _loadGridH() {
-    try {
-      const v = parseInt(localStorage.getItem(TIMELINE_KEYS.GRID_H), 10);
-      if (Number.isFinite(v) && v >= TIMELINE_GRID_MIN_H) return v;
-    } catch (_) { /* noop */ }
+    const v = parseInt(safeStorage.get(TIMELINE_KEYS.GRID_H), 10);
+    if (Number.isFinite(v) && v >= TIMELINE_GRID_MIN_H) return v;
     return TIMELINE_GRID_DEFAULT_H;
   }
   static _saveGridH(h) {
-    try { localStorage.setItem(TIMELINE_KEYS.GRID_H, String(h)); } catch (_) { /* noop */ }
+    safeStorage.set(TIMELINE_KEYS.GRID_H, String(h));
   }
   static _loadChartH() {
-    try {
-      const v = parseInt(localStorage.getItem(TIMELINE_KEYS.CHART_H), 10);
-      if (Number.isFinite(v) && v >= TIMELINE_CHART_MIN_H && v <= TIMELINE_CHART_MAX_H) return v;
-    } catch (_) { /* noop */ }
+    const v = parseInt(safeStorage.get(TIMELINE_KEYS.CHART_H), 10);
+    if (Number.isFinite(v) && v >= TIMELINE_CHART_MIN_H && v <= TIMELINE_CHART_MAX_H) return v;
     return TIMELINE_CHART_DEFAULT_H;
   }
   static _saveChartH(h) {
-    try { localStorage.setItem(TIMELINE_KEYS.CHART_H, String(h)); } catch (_) { /* noop */ }
+    safeStorage.set(TIMELINE_KEYS.CHART_H, String(h));
   }
   static _loadSections() {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.SECTIONS);
-      if (!raw) return {};
-      const obj = JSON.parse(raw);
-      return obj && typeof obj === 'object' ? obj : {};
-    } catch (_) { return {}; }
+    const obj = safeStorage.getJSON(TIMELINE_KEYS.SECTIONS, {});
+    return obj && typeof obj === 'object' ? obj : {};
   }
   static _saveSections(obj) {
-    try { localStorage.setItem(TIMELINE_KEYS.SECTIONS, JSON.stringify(obj)); } catch (_) { /* noop */ }
+    safeStorage.setJSON(TIMELINE_KEYS.SECTIONS, obj);
   }
   static _loadCardWidthsFor(fileKey) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.CARD_WIDTHS);
-      if (!raw) return {};
-      const all = JSON.parse(raw);
-      return (all && all[fileKey]) || {};
-    } catch (_) { return {}; }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.CARD_WIDTHS, null);
+    return (all && all[fileKey]) || {};
   }
   static _saveCardWidthsFor(fileKey, widths) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.CARD_WIDTHS);
-      const all = raw ? JSON.parse(raw) : {};
-      all[fileKey] = widths;
-      localStorage.setItem(TIMELINE_KEYS.CARD_WIDTHS, JSON.stringify(all));
-    } catch (_) { /* noop */ }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.CARD_WIDTHS, {}) || {};
+    all[fileKey] = widths;
+    safeStorage.setJSON(TIMELINE_KEYS.CARD_WIDTHS, all);
   }
   static _loadCardOrderFor(fileKey) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.CARD_ORDER);
-      if (!raw) return null;
-      const all = JSON.parse(raw);
-      const arr = all && all[fileKey];
-      return Array.isArray(arr) ? arr : null;
-    } catch (_) { return null; }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.CARD_ORDER, null);
+    const arr = all && all[fileKey];
+    return Array.isArray(arr) ? arr : null;
   }
   static _saveCardOrderFor(fileKey, order) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.CARD_ORDER);
-      const all = raw ? JSON.parse(raw) : {};
-      if (order && order.length) all[fileKey] = order;
-      else delete all[fileKey];
-      localStorage.setItem(TIMELINE_KEYS.CARD_ORDER, JSON.stringify(all));
-    } catch (_) { /* noop */ }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.CARD_ORDER, {}) || {};
+    if (order && order.length) all[fileKey] = order;
+    else delete all[fileKey];
+    safeStorage.setJSON(TIMELINE_KEYS.CARD_ORDER, all);
   }
   static _loadPinnedColsFor(fileKey) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.PINNED_COLS);
-      if (!raw) return [];
-      const all = JSON.parse(raw);
-      const arr = all && all[fileKey];
-      return Array.isArray(arr) ? arr : [];
-    } catch (_) { return []; }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.PINNED_COLS, null);
+    const arr = all && all[fileKey];
+    return Array.isArray(arr) ? arr : [];
   }
   static _savePinnedColsFor(fileKey, cols) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.PINNED_COLS);
-      const all = raw ? JSON.parse(raw) : {};
-      if (cols && cols.length) all[fileKey] = cols;
-      else delete all[fileKey];
-      localStorage.setItem(TIMELINE_KEYS.PINNED_COLS, JSON.stringify(all));
-    } catch (_) { /* noop */ }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.PINNED_COLS, {}) || {};
+    if (cols && cols.length) all[fileKey] = cols;
+    else delete all[fileKey];
+    safeStorage.setJSON(TIMELINE_KEYS.PINNED_COLS, all);
   }
   static _loadRegexExtractsFor(fileKey) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.REGEX_EXTRACTS);
-      if (!raw) return [];
-      const all = JSON.parse(raw);
-      const list = (all && all[fileKey]) || [];
-      return Array.isArray(list) ? list : [];
-    } catch (_) { return []; }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.REGEX_EXTRACTS, null);
+    const list = (all && all[fileKey]) || [];
+    return Array.isArray(list) ? list : [];
   }
   static _saveRegexExtractsFor(fileKey, list) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.REGEX_EXTRACTS);
-      const all = raw ? JSON.parse(raw) : {};
-      all[fileKey] = list;
-      localStorage.setItem(TIMELINE_KEYS.REGEX_EXTRACTS, JSON.stringify(all));
-    } catch (_) { /* noop */ }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.REGEX_EXTRACTS, {}) || {};
+    all[fileKey] = list;
+    safeStorage.setJSON(TIMELINE_KEYS.REGEX_EXTRACTS, all);
   }
   static _loadPivotSpec() {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.PIVOT);
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      return obj && typeof obj === 'object' ? obj : null;
-    } catch (_) { return null; }
+    const obj = safeStorage.getJSON(TIMELINE_KEYS.PIVOT, null);
+    return obj && typeof obj === 'object' ? obj : null;
   }
   static _savePivotSpec(obj) {
-    try { localStorage.setItem(TIMELINE_KEYS.PIVOT, JSON.stringify(obj)); } catch (_) { /* noop */ }
+    safeStorage.setJSON(TIMELINE_KEYS.PIVOT, obj);
   }
+
 
   // Per-file last-typed query — keyed by `_fileKey` so a large CSV the
   // analyst revisits tomorrow still has their last filter stuck in the
   // editor when they re-open it. Read on construction (see `_queryStr`
   // init), written every time the query is committed (Enter key).
   static _loadQueryFor(fileKey) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.QUERY);
-      if (!raw) return '';
-      const all = JSON.parse(raw);
-      return (all && typeof all[fileKey] === 'string') ? all[fileKey] : '';
-    } catch (_) { return ''; }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.QUERY, null);
+    return (all && typeof all[fileKey] === 'string') ? all[fileKey] : '';
   }
   static _saveQueryFor(fileKey, q) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.QUERY);
-      const all = raw ? JSON.parse(raw) : {};
-      if (q) all[fileKey] = q;
-      else delete all[fileKey];
-      localStorage.setItem(TIMELINE_KEYS.QUERY, JSON.stringify(all));
-    } catch (_) { /* noop */ }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.QUERY, {}) || {};
+    if (q) all[fileKey] = q;
+    else delete all[fileKey];
+    safeStorage.setJSON(TIMELINE_KEYS.QUERY, all);
   }
+
 
   // Per-file suspicious marks — `[{ colName, val }]`. Persisted by column
   // NAME (not index) so an extracted column that rebuilds under a different
   // index on reload still re-hydrates its 🚩 marks. The view resolves the
   // name back to a live colIdx at filter-time (`_susMarksResolved`).
   static _loadSusMarksFor(fileKey) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.SUS_MARKS);
-      if (!raw) return [];
-      const all = JSON.parse(raw);
-      const arr = all && Array.isArray(all[fileKey]) ? all[fileKey] : [];
-      // Two shapes are persisted: column-scoped marks carry `colName`, and
-      // "Any column" marks carry `any: true` with `colName: null`. Filter
-      // on the presence of a usable discriminator + value.
-      return arr
-        .filter(m => m && m.val != null && (m.any === true || typeof m.colName === 'string'))
-        .map(m => (m.any === true
-          ? { any: true, colName: null, val: String(m.val) }
-          : { colName: String(m.colName), val: String(m.val) }));
-    } catch (_) { return []; }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.SUS_MARKS, null);
+    const arr = all && Array.isArray(all[fileKey]) ? all[fileKey] : [];
+    // Two shapes are persisted: column-scoped marks carry `colName`, and
+    // "Any column" marks carry `any: true` with `colName: null`. Filter
+    // on the presence of a usable discriminator + value.
+    return arr
+      .filter(m => m && m.val != null && (m.any === true || typeof m.colName === 'string'))
+      .map(m => (m.any === true
+        ? { any: true, colName: null, val: String(m.val) }
+        : { colName: String(m.colName), val: String(m.val) }));
   }
   static _saveSusMarksFor(fileKey, marks) {
-    try {
-      const raw = localStorage.getItem(TIMELINE_KEYS.SUS_MARKS);
-      const all = raw ? JSON.parse(raw) : {};
-      if (marks && marks.length) {
-        all[fileKey] = marks.map(m => (m.any === true
-          ? { any: true, colName: null, val: String(m.val) }
-          : { colName: String(m.colName), val: String(m.val) }));
-      } else {
-        delete all[fileKey];
-      }
-      localStorage.setItem(TIMELINE_KEYS.SUS_MARKS, JSON.stringify(all));
-    } catch (_) { /* noop */ }
+    const all = safeStorage.getJSON(TIMELINE_KEYS.SUS_MARKS, {}) || {};
+    if (marks && marks.length) {
+      all[fileKey] = marks.map(m => (m.any === true
+        ? { any: true, colName: null, val: String(m.val) }
+        : { colName: String(m.colName), val: String(m.val) }));
+    } else {
+      delete all[fileKey];
+    }
+    safeStorage.setJSON(TIMELINE_KEYS.SUS_MARKS, all);
   }
+
 
 
 
@@ -1373,7 +1320,8 @@ class TimelineView {
       </label>
       <span class="tl-spacer"></span>
       <button class="tl-tb-btn" type="button" data-act="extract" title="Extract values (URLs, hostnames, Key=Value fields, regex) into new columns">ƒx Extract values</button>
-      <button class="tl-reset-btn" type="button" title="Reset view: clear query, range window, column hides, 🚩 Suspicious marks, stack column, pivot, extracted columns, AND every saved Timeline preference in localStorage (grid/chart heights, bucket, section collapse, card widths, query history, drawer width, grid column widths)">↺ Reset</button>
+      <button class="tl-reset-btn" type="button" title="Reset view: clear query, range window, column hides, 🚩 Suspicious marks, stack column, pivot, extracted columns, AND every saved Timeline preference (grid/chart heights, bucket, section collapse, card widths, query history, drawer width, grid column widths)">↺ Reset</button>
+
     `;
     host.appendChild(toolbar);
 
@@ -1882,7 +1830,8 @@ class TimelineView {
   // analyst-authored filter / view state on this view: time window,
   // hidden columns, typed query, 🚩 Suspicious marks, stack column,
   // pivot spec, and every extracted (ƒx / regex / JSON-leaf) column.
-  // Also wipes every Timeline-related `loupe_*` localStorage key and
+  // Also wipes every Timeline-related `loupe_*` persisted key and
+
   // resets the in-memory layout prefs (`_gridH`, `_chartH`,
   // `_sections`, `_bucketId`, `_cardWidths`, `_cardOrder`), plus the
   // embedded GridViewer's saved column widths and drawer width, plus
@@ -1898,10 +1847,9 @@ class TimelineView {
   _renderAutoExtractNudge() {
     if (this._destroyed) return;
     if (this._autoExtractNudgeDismissed) return;
-    try {
-      if (localStorage.getItem(TIMELINE_KEYS.AUTOEXTRACT_NUDGED_HARD) === '1') return;
-    } catch (_) { /* noop */ }
+    if (safeStorage.get(TIMELINE_KEYS.AUTOEXTRACT_NUDGED_HARD) === '1') return;
     if (!this._els || !this._els.host || !this._els.queryBar) return;
+
     // Don't pile a second strip on top of an existing one.
     if (this._els.host.querySelector('.tl-autoextract-nudge')) return;
 
@@ -2043,11 +1991,12 @@ class TimelineView {
       removeStrip();
     });
     actions.querySelector('.tl-autoextract-nudge__never').addEventListener('click', () => {
-      try { localStorage.setItem(TIMELINE_KEYS.AUTOEXTRACT_NUDGED_HARD, '1'); } catch (_) { /* noop */ }
+      safeStorage.set(TIMELINE_KEYS.AUTOEXTRACT_NUDGED_HARD, '1');
       this._autoExtractNudgeDismissed = true;
       removeStrip();
       if (this._app && this._app._toast) this._app._toast('Auto-extract nudge disabled', 'info');
     });
+
 
     // Insert directly before the query mount so the nudge sits in the
     // normal scroll flow above the query bar.
@@ -2060,25 +2009,17 @@ class TimelineView {
   _reset() {
     const baseLen = this._baseColumns.length;
 
-    // ── Wipe every Timeline-related localStorage key ──────────────────
+    // ── Wipe every Timeline-related persisted key ────────────────────
     // This covers:
     //   - every `loupe_timeline_*` key (per-file + global)
     //   - the embedded GridViewer's saved column widths
     //     (`loupe_grid_colW_tl-grid-inner_csv-view`)
     //   - the shared drawer width (`loupe_grid_drawer_w`)
-    try {
-      const toRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (!k) continue;
-        if (k.startsWith('loupe_timeline_')) { toRemove.push(k); continue; }
-        if (k === 'loupe_grid_drawer_w') { toRemove.push(k); continue; }
-        if (k.startsWith('loupe_grid_colW_tl-grid-inner')) { toRemove.push(k); continue; }
-      }
-      for (const k of toRemove) {
-        try { localStorage.removeItem(k); } catch (_) { /* noop */ }
-      }
-    } catch (_) { /* noop */ }
+    safeStorage.removeMatching(k =>
+      k.startsWith('loupe_timeline_')
+      || k === 'loupe_grid_drawer_w'
+      || k.startsWith('loupe_grid_colW_tl-grid-inner'));
+
 
     // ── Reset in-memory layout / workstation prefs ────────────────────
     // Must happen before the grid is destroyed below so the CSS custom
@@ -2105,8 +2046,9 @@ class TimelineView {
     }
 
     // Embedded GridViewer — flush saved column widths + drawer width
-    // that live on the instance (the localStorage copies were removed
+    // that live on the instance (the persisted copies were removed
     // above; this stops the destroy-path from re-persisting them).
+
     if (this._grid) {
       try {
         if (this._grid._userColWidths && typeof this._grid._userColWidths.clear === 'function') {
@@ -4231,7 +4173,8 @@ class TimelineView {
   }
 
   // Persist a card's column-span override. Deletes the key when span
-  // falls back to the default (1) so localStorage stays tidy.
+  // falls back to the default (1) so the persistence layer stays tidy.
+
   _cardSizeSave(colName, span) {
     if (span <= 1) delete this._cardWidths[colName];
     else this._cardWidths[colName] = { span };
@@ -4964,9 +4907,10 @@ class TimelineView {
 
     // Copy visible values — iterates the currently-rendered checkbox
     // rows (post search filter) and copies their values as newline-
-    // separated text. Not every localStorage value is preserved on
-    // checkbox state; we copy whatever is visible regardless of checked
+    // separated text. Not every checkbox state is preserved across
+    // searches; we copy whatever is visible regardless of checked
     // state since the analyst can see it.
+
     menu.querySelector('[data-act="copyvals"]').addEventListener('click', (e) => {
       e.stopPropagation();
       const rows = valsWrap.querySelectorAll('.tl-colmenu-value input[type=checkbox]');

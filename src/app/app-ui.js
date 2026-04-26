@@ -32,7 +32,7 @@ const THEMES = [
 const _THEME_PREF_KEY = 'loupe_theme';
 const _DEFAULT_THEME = 'dark';
 
-Object.assign(App.prototype, {
+extendApp({
 
 
   // ── Helper: section heading ──────────────────────────────────────────────
@@ -728,6 +728,14 @@ Object.assign(App.prototype, {
     // `_sbRefreshScheduled` are the microtask coalescing flags; clear so
     // a stale microtask doesn't try to repaint the sidebar after teardown.
     this._loadToken = 0;
+    // ── Render-epoch reset ────────────────────────────────────────────────
+    // The fence used by `RenderRoute.run` (and Phase-2 callers) to drop
+    // late writes from a superseded renderer. Reset to 0 here so that any
+    // continued in-flight work from the just-cleared file's renderer (an
+    // EVTX chunk loop, an OneNote inflate) sees a different value when it
+    // finally checks and no-ops on its `app.findings` / `currentResult`
+    // writes. The next `RenderRoute.run` call will bump it back to 1.
+    this._renderEpoch = 0;
     this._currentAnalyzer = null;
     this._pendingSbSections = null;
     this._sbRefreshScheduled = false;
@@ -958,7 +966,7 @@ Object.assign(App.prototype, {
     this.dark = !!theme.dark;     // kept for any legacy callers
     this._themeId = theme.id;
 
-    try { localStorage.setItem(_THEME_PREF_KEY, theme.id); } catch (_) { /* storage blocked */ }
+    safeStorage.set(_THEME_PREF_KEY, theme.id);
 
     // Retint the landing-surface background canvas to match. The module
     // rebuilds its engine on every call (never reuses across themes) so
@@ -985,8 +993,7 @@ Object.assign(App.prototype, {
   // priority and sets the theme + dark classes on <body> before CSS
   // applies, so `_initTheme` is mostly a re-apply + internal-state sync.
   _initTheme() {
-    let saved = null;
-    try { saved = localStorage.getItem(_THEME_PREF_KEY); } catch (_) { /* storage blocked */ }
+    const saved = safeStorage.get(_THEME_PREF_KEY);
     let id;
     if (saved && THEMES.some(t => t.id === saved)) {
       id = saved;

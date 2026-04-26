@@ -8,7 +8,7 @@
 // target data being absent and silently no-ops, so ordering is cosmetic.
 // ════════════════════════════════════════════════════════════════════════════
 
-Object.assign(App.prototype, {
+extendApp({
 
   // ── Format-specific section builder for _copyAnalysis ─────────────────
   _copyAnalysisFormatSpecific(f, tp) {

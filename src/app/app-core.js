@@ -1,15 +1,53 @@
 // ════════════════════════════════════════════════════════════════════════════
 // App — core class definition, constructor, init, drop-zone, toolbar wiring
 // ════════════════════════════════════════════════════════════════════════════
+
+// ── extendApp(obj) — collision-checked App.prototype mixin ───────────────────
+// Every App-method file follows the `Object.assign(App.prototype, { ... })`
+// pattern. The plain `Object.assign` is silently last-writer-wins: rename a
+// method in two mixins and the second silently shadows the first with no
+// runtime warning. `extendApp(obj)` is the same contract with one extra
+// guarantee — if any key in `obj` is already defined on `App.prototype`, the
+// build aborts loudly at load time so the conflict is visible the moment the
+// page boots.
+//
+// Migrate every `Object.assign(App.prototype, { ... })` site to
+// `extendApp({ ... })`; the build gate `_check_app_mixin_collisions` in
+// `scripts/build.py` enforces the migration.
+function extendApp(obj) {
+  if (!obj || typeof obj !== 'object') return;
+  for (const k of Object.keys(obj)) {
+    if (Object.prototype.hasOwnProperty.call(App.prototype, k)) {
+      throw new Error(
+        `extendApp: App.prototype.${k} is already defined. ` +
+        `Two mixins are colliding on the same method name — rename one.`
+      );
+    }
+  }
+  Object.assign(App.prototype, obj);
+}
+window.extendApp = extendApp;
+
 class App {
   constructor() {
     this.zoom = 100; this.dark = true; this.findings = null;
     this.fileHashes = null; this.sidebarOpen = false; this.activeTab = 'summary';
     this.currentResult = null; this._yaraResults = null; this._yaraEscHandler = null;
+    // ── Render-epoch fence (Phase-1 of the C1/C2/C3 fix) ────────────────
+    // Monotonic counter bumped by `RenderRoute.run` on entry and on every
+    // fallback (watchdog timeout, size-cap, generic renderer error). Phase-2
+    // callers (PE/ELF/Mach-O/EVTX/encoded loops + WorkerManager + the next
+    // `_loadFile` invocation) capture it and ignore stale callbacks. The
+    // current contract: any code path that intends to write to `app.findings`
+    // / `app.currentResult` long after `RenderRoute.run` returned should
+    // capture this value at the moment the work is queued and bail when it
+    // no longer matches. See PLAN.md C1 + the "Render-epoch fence" block in
+    // src/render-route.js.
+    this._renderEpoch = 0;
   }
 
   init() {
-    this._initTheme();    // applies persisted theme (localStorage) or default
+    this._initTheme();    // applies persisted theme preference or default
     this._initSettings(); // restores summary-budget step + paints ⚡ chip
     // Dev-mode debug breadcrumb ribbon. No-op unless the
     // `loupe_dev_breadcrumbs` localStorage flag is "1". Helper is defined
@@ -540,7 +578,7 @@ class App {
     const DL = 'https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html';
 
     // 2. Floating bar below toolbar (unless previously dismissed)
-    try { if (localStorage.getItem('loupe_hosted_dismissed')) return; } catch (_) { }
+    if (safeStorage.get('loupe_hosted_dismissed')) return;
 
     const bar = document.createElement('div');
     bar.id = 'hosted-bar';
@@ -552,7 +590,7 @@ class App {
     dismiss.title = 'Dismiss';
     dismiss.addEventListener('click', () => {
       bar.remove();
-      try { localStorage.setItem('loupe_hosted_dismissed', '1'); } catch (_) { }
+      safeStorage.set('loupe_hosted_dismissed', '1');
     });
     bar.appendChild(dismiss);
 

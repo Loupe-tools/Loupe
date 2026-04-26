@@ -15,7 +15,7 @@
 // the section builders that attach click handlers calling into the focus
 // engine defined here).
 // ════════════════════════════════════════════════════════════════════════════
-Object.assign(App.prototype, {
+extendApp({
 
   // ── Navigate to finding in content view ─────────────────────────────────
   //

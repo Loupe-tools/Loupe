@@ -11,7 +11,7 @@ const _YARA_KW = new Set([
   'uint8', 'uint16', 'uint32', 'int8', 'int16', 'int32'
 ]);
 
-// localStorage key for user-uploaded YARA rules
+// Storage key for user-uploaded YARA rules
 const _YARA_UPLOAD_KEY = 'loupe_uploaded_yara';
 
 // ─── YARA category reference dictionary ────────────────────────────────────
@@ -129,7 +129,7 @@ const _YARA_CATEGORY_INFO = (() => {
   };
 })();
 
-Object.assign(App.prototype, {
+extendApp({
 
   // ═══════════════════════════════════════════════════════════════════════
   //  Category-aware YARA parser
@@ -194,21 +194,18 @@ Object.assign(App.prototype, {
   },
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  Uploaded rules persistence (localStorage)
+  //  Uploaded rules persistence (via safeStorage)
   // ═══════════════════════════════════════════════════════════════════════
 
-  /** Get user-uploaded YARA rules from localStorage. */
+  /** Get user-uploaded YARA rules. */
   _getUploadedYaraRules() {
-    try { return localStorage.getItem(_YARA_UPLOAD_KEY) || ''; }
-    catch (_) { return ''; }
+    return safeStorage.get(_YARA_UPLOAD_KEY) || '';
   },
 
-  /** Set user-uploaded YARA rules in localStorage. */
+  /** Set user-uploaded YARA rules. */
   _setUploadedYaraRules(source) {
-    try {
-      if (source) localStorage.setItem(_YARA_UPLOAD_KEY, source);
-      else localStorage.removeItem(_YARA_UPLOAD_KEY);
-    } catch (_) { /* storage full or blocked */ }
+    if (source) safeStorage.set(_YARA_UPLOAD_KEY, source);
+    else safeStorage.remove(_YARA_UPLOAD_KEY);
   },
 
   /** Remove a single rule by name from uploaded rules. Returns true if removed. */

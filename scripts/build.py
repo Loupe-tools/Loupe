@@ -220,6 +220,16 @@ EARLY_JS_FILES = [
 APP_JS_FILES = [
     'src/constants.js',
 
+    # storage.js — single chokepoint for every `localStorage.*` access in the
+    # bundle. Exposes `window.safeStorage.{get,set,remove,getJSON,setJSON,
+    # keys,removeMatching}`. Pure ceremony — try/catch + JSON serialise. Must
+    # load AFTER constants.js (no constant deps today, but the namespacing
+    # convention `loupe_*` lives there) and BEFORE any consumer that touches
+    # storage. The build-gate `_check_storage_access()` allow-lists this file
+    # plus `scripts/build.py` itself (FOUC theme bootstrap is hand-written
+    # inline JS in <head>, not a `src/` module).
+    'src/storage.js',
+
     # nicelist.js — known-good global infrastructure (NICELIST) used by the
     # sidebar IOC table to demote / hide benign cloud / registry / CA /
     # XML-namespace surfaces. Pure data + string helpers, no dependencies,
@@ -958,6 +968,100 @@ def _check_silent_catches():
         raise SystemExit(msg)
 
 _check_silent_catches()
+
+
+# ── Build gate: localStorage access must funnel through `safeStorage` ─────────
+# `src/storage.js` exposes `window.safeStorage.{get,set,remove,getJSON,
+# setJSON,keys,removeMatching}`, which centralises the try/catch ceremony and
+# JSON parse/stringify dance every storage call site used to repeat. Direct
+# `localStorage.*` access outside that file (a) duplicates the boilerplate,
+# (b) silently varies its error handling between consumers, and (c) blocks any
+# future migration to IndexedDB / encrypted profile export.
+#
+# The gate matches `\blocalStorage\b` over every entry in `EARLY_JS_FILES +
+# APP_JS_FILES`. Allow-listed: only `src/storage.js` itself, which IS the
+# wrapper. The FOUC theme bootstrap in `scripts/build.py` is hand-written
+# inline JS in `<head>` and runs BEFORE any `src/` module — it stays direct
+# (`localStorage.getItem('loupe_theme')`), is wrapped in its own try/catch,
+# and lives outside `src/` so the gate doesn't see it.
+#
+# Escape hatch: append `// loupe-allow:safe-storage` to a line that has a
+# legitimate reason to bypass the wrapper (we don't have any today; the
+# marker is forward-looking and consistent with the silent-catch gate's
+# escape hatch).
+_LOCAL_STORAGE_RE = _re.compile(r"\blocalStorage\b")
+_STORAGE_GATE_ALLOWLIST = { 'src/storage.js' }
+
+def _check_storage_access():
+    violations = []
+    for rel in EARLY_JS_FILES + APP_JS_FILES:
+        if rel in _STORAGE_GATE_ALLOWLIST:
+            continue
+        text = read(rel)
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            stripped = line.lstrip()
+            # Skip pure comment lines so docstring references don't trip the gate.
+            if stripped.startswith('//') or stripped.startswith('*'):
+                continue
+            if '// loupe-allow:safe-storage' in line:
+                continue
+            if _LOCAL_STORAGE_RE.search(line):
+                violations.append(f"{rel}:{lineno}: {line.strip()}")
+    if violations:
+        msg = (
+            "Build gate failed — direct `localStorage` access detected.\n"
+            "Use `safeStorage.{get,set,remove,getJSON,setJSON,keys,removeMatching}`\n"
+            "from src/storage.js instead — it centralises the try/catch ceremony\n"
+            "and JSON parse/stringify dance. See CONTRIBUTING.md →\n"
+            "Persistence keys / safeStorage.\n"
+            "Offending sites:\n  " + "\n  ".join(violations)
+        )
+        raise SystemExit(msg)
+
+_check_storage_access()
+
+
+# ── Build gate: App.prototype mixins must funnel through `extendApp` ──────────
+# `src/app/app-core.js` defines the global `extendApp(obj)` helper which:
+#   • runs `Object.assign(App.prototype, obj)` like the old pattern, and
+#   • throws if `obj` carries a key that is already defined on `App.prototype`,
+#     catching the silent late-bind override that two mixins on the same
+#     method name produced before. Today no two mixins collide, but the
+#     bundle has 9 of them and the dependency-by-load-order convention is
+#     fragile under refactoring. The gate keeps any future
+#     `Object.assign(App.prototype, …)` from sneaking in and bypassing the
+#     collision check.
+#
+# Allow-listed: only `src/app/app-core.js` itself, which IS the helper plus
+# the place where `App` is constructed.
+_APP_PROTOTYPE_ASSIGN_RE = _re.compile(r"Object\.assign\s*\(\s*App\.prototype\b")
+_APP_MIXIN_GATE_ALLOWLIST = { 'src/app/app-core.js' }
+
+def _check_app_mixin_collisions():
+    violations = []
+    for rel in EARLY_JS_FILES + APP_JS_FILES:
+        if rel in _APP_MIXIN_GATE_ALLOWLIST:
+            continue
+        text = read(rel)
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            stripped = line.lstrip()
+            # Skip pure comment lines so docstring references don't trip the gate.
+            if stripped.startswith('//') or stripped.startswith('*'):
+                continue
+            if _APP_PROTOTYPE_ASSIGN_RE.search(line):
+                violations.append(f"{rel}:{lineno}: {line.strip()}")
+    if violations:
+        msg = (
+            "Build gate failed — bare `Object.assign(App.prototype, …)` detected.\n"
+            "Use `extendApp({...})` from src/app/app-core.js instead — it runs\n"
+            "the same Object.assign but throws if any key already exists on\n"
+            "App.prototype, catching silent late-bind overrides between mixins.\n"
+            "See CONTRIBUTING.md → Gotchas / App.prototype mixin pattern.\n"
+            "Offending sites:\n  " + "\n  ".join(violations)
+        )
+        raise SystemExit(msg)
+
+_check_app_mixin_collisions()
 
 
 # File extensions accepted by the open-file input. Keep as a list for sanity.

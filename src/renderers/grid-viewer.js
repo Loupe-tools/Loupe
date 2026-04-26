@@ -978,31 +978,25 @@ class GridViewer {
 
   _loadUserColumnWidths() {
     const m = new Map();
-    try {
-      const raw = localStorage.getItem(this._colWidthStorageKey());
-      if (!raw) return m;
-      const obj = JSON.parse(raw);
-      if (obj && typeof obj === 'object') {
-        for (const k of Object.keys(obj)) {
-          const i = parseInt(k, 10);
-          const v = parseInt(obj[k], 10);
-          if (Number.isFinite(i) && Number.isFinite(v)) {
-            m.set(i, Math.max(this.MIN_COL_W, Math.min(1600, v)));
-          }
+    const obj = safeStorage.getJSON(this._colWidthStorageKey(), null);
+    if (obj && typeof obj === 'object') {
+      for (const k of Object.keys(obj)) {
+        const i = parseInt(k, 10);
+        const v = parseInt(obj[k], 10);
+        if (Number.isFinite(i) && Number.isFinite(v)) {
+          m.set(i, Math.max(this.MIN_COL_W, Math.min(1600, v)));
         }
       }
-    } catch (_) { /* corrupted storage — ignore */ }
+    }
     return m;
   }
 
   _saveUserColumnWidth(colIdx, widthPx) {
-    try {
-      const obj = {};
-      for (const [k, v] of this._userColWidths) obj[k] = v;
-      if (widthPx == null) delete obj[colIdx];
-      else obj[colIdx] = widthPx;
-      localStorage.setItem(this._colWidthStorageKey(), JSON.stringify(obj));
-    } catch (_) { /* storage full / disabled — persistence is best-effort */ }
+    const obj = {};
+    for (const [k, v] of this._userColWidths) obj[k] = v;
+    if (widthPx == null) delete obj[colIdx];
+    else obj[colIdx] = widthPx;
+    safeStorage.setJSON(this._colWidthStorageKey(), obj);
   }
 
   /** Reset one column back to its auto-calculated width. Called from the
@@ -1293,14 +1287,12 @@ class GridViewer {
   }
 
   _loadDrawerWidth() {
-    try {
-      const v = parseInt(localStorage.getItem('loupe_grid_drawer_w'), 10);
-      if (Number.isFinite(v)) return Math.max(this.DRAWER_MIN_W, Math.min(this._drawerMaxW(), v));
-    } catch (_) { /* ignore */ }
+    const v = parseInt(safeStorage.get('loupe_grid_drawer_w'), 10);
+    if (Number.isFinite(v)) return Math.max(this.DRAWER_MIN_W, Math.min(this._drawerMaxW(), v));
     return 420;
   }
   _saveDrawerWidth(w) {
-    try { localStorage.setItem('loupe_grid_drawer_w', String(w)); } catch (_) { /* ignore */ }
+    safeStorage.set('loupe_grid_drawer_w', String(w));
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
