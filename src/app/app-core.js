@@ -124,6 +124,15 @@ class App {
     this._setupSidebarResize();
     this._setupViewerPan();
     this._setupSearch();
+    // Selection-decode chip — listens for click+drag selections inside the
+    // content viewer and pipes the highlighted bytes through the encoded-
+    // content pipeline as a synthetic File. Defined in
+    // `src/app/app-selection-decode.js`; guard with `typeof` since module
+    // load order is enforced by scripts/build.py but the chip is purely
+    // additive — a missing module must not take the rest of init down.
+    if (typeof this._setupSelectionDecode === 'function') {
+      try { this._setupSelectionDecode(); } catch (_) { /* chip is additive */ }
+    }
     this._initTimelineState();
     this._checkVersionParam();
     this._checkHostedMode();

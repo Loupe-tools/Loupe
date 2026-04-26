@@ -383,6 +383,12 @@ extendApp({
       try {
         let encodedFindings;
         let usedWorker = false;
+        // Aggressive mode is single-shot — clear it before the scan so
+        // a later "regular" inner-file load (e.g. a renderer's
+        // open-inner-file event) doesn't accidentally inherit the flag
+        // from an earlier selection-decode click.
+        const aggressive = !!this._pendingAggressiveDecode;
+        this._pendingAggressiveDecode = false;
         try {
           const out = await WorkerManager.runEncoded(
             buffer.slice(0),
@@ -390,6 +396,7 @@ extendApp({
             {
               fileType: ext,
               mimeAttachments: this.findings._mimeAttachments || null,
+              aggressive,
             }
           );
           encodedFindings = out.findings || [];
@@ -408,7 +415,7 @@ extendApp({
             // diagnostic for devs.
             this._reportNonFatal('encoded-worker-fallback', workerErr, { silent: true });
           }
-          const detector = new EncodedContentDetector();
+          const detector = new EncodedContentDetector({ aggressive });
           encodedFindings = await detector.scan(
             analysisText,
             new Uint8Array(buffer),
@@ -1210,6 +1217,14 @@ extendApp({
     if (opts.returnFocus) {
       const top = this._navStack && this._navStack[this._navStack.length - 1];
       if (top) top.returnFocus = opts.returnFocus;
+    }
+    // Selection-driven decode (`app-selection-decode.js`) sets
+    // `_aggressiveDecode: true` so the encoded-content scan stage in
+    // `_loadFile` lowers finder thresholds. Stashed as a transient
+    // single-shot flag — consumed and cleared by the encoded-content
+    // block below to keep state out of every other code path.
+    if (opts._aggressiveDecode) {
+      this._pendingAggressiveDecode = true;
     }
     this._loadFile(file, parentBuf || null);
   },

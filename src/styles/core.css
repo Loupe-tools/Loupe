@@ -4967,3 +4967,40 @@ body.has-timeline #timeline-root {
   word-break: break-all;
   white-space: pre-wrap;
 }
+
+/* ── Selection-decode chip ────────────────────────────────────────────────
+   Floating chip surfaced by `src/app/app-selection-decode.js` whenever the
+   analyst click-drags a non-trivial text selection inside one of the
+   supported viewer surfaces (.plaintext-scroll, .html-source-pane,
+   .hta-source-pane, .url-source, .iqy-source, .eml-body, .json-tree,
+   .csv-view, .ps1-source). Clicking it pipes the highlighted bytes through
+   the encoded-content analyser as a synthetic File, with aggressive-mode
+   thresholds enabled. Position is set via inline style by the JS at show
+   time; height MUST stay in sync with the `chipH = 28` constant in
+   `_showDecodeChip`. */
+.loupe-decode-chip {
+  position: fixed;
+  z-index: 100000;
+  height: 28px;
+  padding: 0 10px;
+  font: 600 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #fff;
+  background: var(--accent, #3b7dd8);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out;
+}
+.loupe-decode-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+.loupe-decode-chip:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.loupe-decode-chip.hidden { display: none; }

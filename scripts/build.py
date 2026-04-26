@@ -589,6 +589,22 @@ APP_JS_FILES = [
     # App.prototype. Must load AFTER app-ui.js because the Settings tab's
     # theme picker references the THEMES registry + _setTheme defined there.
     'src/app/app-settings.js',
+    # app-selection-decode.js — the floating "🔍 Decode selection" chip that
+    # spawns when the analyst click-drags a selection inside a supported text
+    # viewer (`.plaintext-scroll`, `.html-source-pane`, `.hta-source-pane`,
+    # `.url-source`, `.iqy-source`, `.eml-body`, `.json-tree`, `.csv-view`,
+    # `.ps1-source`). Clicking the chip wraps the highlighted bytes in a
+    # synthetic .txt File and dispatches via `App.openInnerFile(syn, null,
+    # { _aggressiveDecode: true, … })` so the encoded-content pipeline runs
+    # against just the selection — the deobfuscation sidebar then renders the
+    # result like any other drill-down. Aggressive mode lowers finder
+    # thresholds (consumed in `app-load.js`'s encoded-content scan block, then
+    # threaded into `WorkerManager.runEncoded({ aggressive: true })` and the
+    # `EncodedContentDetector` constructor). Pure mixin; no cross-mixin
+    # dependencies; persistence key `loupe_deobf_selection_enabled`. Must
+    # load AFTER `app-core.js` (defines `extendApp`) — the canonical late-
+    # mixin slot.
+    'src/app/app-selection-decode.js',
     # Dev-mode debug breadcrumbs ribbon. Pure mixin
     # (`Object.assign(App.prototype, {...})`) with no cross-mixin
     # dependencies; every consumer (`_initBreadcrumbs`, `_breadcrumb`,
