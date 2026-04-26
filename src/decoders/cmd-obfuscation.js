@@ -173,13 +173,20 @@ Object.assign(EncodedContentDetector.prototype, {
     }
 
     // ── PowerShell backtick escape: I`nv`o`ke-`E`xp`ression ──
-    // Match words with 2+ backticks that form known cmdlets/keywords
-    const backtickRe = /[a-zA-Z`]{4,}(?:-[a-zA-Z`]{3,})?/g;
+    // Tightened pattern: require ≥2 literal backticks inside the token
+    // itself (not just an open character class that matches every word
+    // and then re-checks). Capped match length keeps backtracking
+    // bounded on adversarial inputs (the previous open `{4,}` form
+    // matched every word in the file and ran the suspicious-keyword
+    // test on each one — quadratic on documents full of long words).
+    const backtickRe = /\b[a-zA-Z]+(?:`[a-zA-Z]+){2,80}(?:-[a-zA-Z]+(?:`[a-zA-Z]+){0,80})?\b/g;
     while ((m = backtickRe.exec(text)) !== null) {
       throwIfAborted();
       if (candidates.length >= this.maxCandidatesPerType) break;
       const raw = m[0];
+      if (raw.length > 200) continue; // pathological-length guard
       if ((raw.match(/`/g) || []).length < 2) continue;
+
       const cleaned = raw.replace(/`/g, '');
       // Must resolve to a known suspicious keyword
       const suspiciousKeywords = /^(invoke-expression|invoke-webrequest|invoke-restmethod|downloadstring|downloadfile|start-process|new-object|set-executionpolicy|invoke-command|get-credential|convertto-securestring|frombase64string|encodedcommand|invoke-mimikatz|invoke-shellcode|powershell|cmd|wscript|cscript|mshta|certutil|bitsadmin|regsvr32|rundll32)$/i;

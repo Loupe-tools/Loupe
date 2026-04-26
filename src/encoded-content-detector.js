@@ -123,26 +123,88 @@ class EncodedContentDetector {
   async scan(textContent, rawBytes, context = {}) {
     const findings = [];
 
-    // Find primary text-encoding candidates (Base64 / Hex / Base32).
+    // ── Primary finders: tight patterns, always run. ────────────────────
+    // Base64 / Hex / Base32 / compressed-blob finders use anchored
+    // patterns where match cost is dominated by decode-and-classify
+    // (already capped via `maxCandidatesPerType`).
     const b64Candidates = this._findBase64Candidates(textContent, context);
     const hexCandidates = this._findHexCandidates(textContent, context);
     const b32Candidates = this._findBase32Candidates(textContent, context);
 
-    // Find secondary encoding candidates (URL-enc / HTML entities /
-    // \\uXXXX / char-array / octal / Script.Encode / space-hex / ROT13 /
-    // split-join).
-    const urlEncCandidates = this._findUrlEncodedCandidates(textContent, context);
-    const htmlEntCandidates = this._findHtmlEntityCandidates(textContent, context);
-    const unicodeEscCandidates = this._findUnicodeEscapeCandidates(textContent, context);
-    const charArrayCandidates = this._findCharArrayCandidates(textContent, context);
-    const octalCandidates = this._findOctalEscapeCandidates(textContent, context);
-    const scriptEncCandidates = this._findScriptEncodedCandidates(textContent, context);
-    const spaceHexCandidates = this._findSpaceDelimitedHexCandidates(textContent, context);
-    const rot13Candidates = this._findRot13Candidates(textContent, context);
-    const splitJoinCandidates = this._findSplitJoinCandidates(textContent, context);
+    // ── Secondary finders + cmd-obfuscation: regex-heavy, bounded. ──────
+    // The secondary family (URL-enc, HTML entities, Unicode escapes, char
+    // arrays, octal, Script.Encode, space-hex, ROT13, split-join) and the
+    // CMD / PowerShell obfuscation finders historically had at least two
+    // patterns with catastrophic-backtracking exposure on adversarial
+    // inputs (rot13, backtick-escape). Bound them with an input-size gate
+    // and a cumulative wall-clock budget so a hostile sample can never
+    // hang the worker even if a future regex regresses.
+    const finderMaxBytes  = (typeof PARSER_LIMITS !== 'undefined') ? PARSER_LIMITS.FINDER_MAX_INPUT_BYTES : (4 * 1024 * 1024);
+    const finderBudgetMs  = (typeof PARSER_LIMITS !== 'undefined') ? PARSER_LIMITS.FINDER_BUDGET_MS       : 2_500;
+    const finderStart     = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const oversize        = (typeof textContent === 'string') && textContent.length > finderMaxBytes;
+    let   budgetExhausted = false;
+    let   skipReason      = oversize
+      ? `Encoded-content secondary scan skipped: text size ${textContent.length.toLocaleString()} bytes exceeds finder cap of ${finderMaxBytes.toLocaleString()} bytes`
+      : null;
 
-    // Find CMD / PowerShell command-obfuscation candidates.
-    const cmdObfCandidates = this._findCommandObfuscationCandidates(textContent, context);
+    const _runFinder = (fn) => {
+      if (oversize || budgetExhausted) return [];
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (now - finderStart > finderBudgetMs) {
+        budgetExhausted = true;
+        skipReason = `Encoded-content secondary scan truncated: cumulative finder budget of ${finderBudgetMs} ms exhausted (partial coverage)`;
+        return [];
+      }
+      try {
+        return fn.call(this, textContent, context) || [];
+      } catch (err) {
+        // Treat any per-finder failure (regex backtracking abort, etc.)
+        // as a "skip the rest" signal — we'd rather lose secondary
+        // coverage than hang the worker.
+        if (err && err.name === 'AbortError') throw err;
+        budgetExhausted = true;
+        skipReason = `Encoded-content secondary scan aborted: ${(err && err.message) || 'finder error'}`;
+        return [];
+      }
+    };
+
+    const urlEncCandidates       = _runFinder(this._findUrlEncodedCandidates);
+    const htmlEntCandidates      = _runFinder(this._findHtmlEntityCandidates);
+    const unicodeEscCandidates   = _runFinder(this._findUnicodeEscapeCandidates);
+    const charArrayCandidates    = _runFinder(this._findCharArrayCandidates);
+    const octalCandidates        = _runFinder(this._findOctalEscapeCandidates);
+    const scriptEncCandidates    = _runFinder(this._findScriptEncodedCandidates);
+    const spaceHexCandidates     = _runFinder(this._findSpaceDelimitedHexCandidates);
+    const rot13Candidates        = _runFinder(this._findRot13Candidates);
+    const splitJoinCandidates    = _runFinder(this._findSplitJoinCandidates);
+    const cmdObfCandidates       = _runFinder(this._findCommandObfuscationCandidates);
+
+    // Surface a single info-level finding so the analyst knows the
+    // secondary scan ran in degraded mode. Without this, an oversize
+    // input would silently miss URL-encoded / char-array / cmd-obfusc
+    // matches with no breadcrumb in the sidebar.
+    if (skipReason) {
+      findings.push({
+        type: 'encoded-content',
+        severity: 'info',
+        encoding: 'finder-budget',
+        offset: 0,
+        length: 0,
+        decodedSize: 0,
+        decodedBytes: null,
+        chain: ['finder-budget'],
+        classification: { type: null, ext: null },
+        entropy: 0,
+        hint: skipReason,
+        iocs: [],
+        innerFindings: [],
+        autoDecoded: false,
+        canLoad: false,
+        snippet: '',
+      });
+    }
+
 
     // Find compressed-blob candidates in the raw bytes (zlib / gzip / etc.).
     const compressedCandidates = this._findCompressedBlobCandidates(rawBytes, context);

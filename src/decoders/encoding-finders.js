@@ -414,7 +414,14 @@ Object.assign(EncodedContentDetector.prototype, {
     const candidates = [];
     // Match: ROT13 implementation pattern near a quoted string
     // Look for the classic JS ROT13 pattern: .replace(/[a-zA-Z]/g, function(c){...charCodeAt(0)+13...})
-    const rot13PatternRe = /["']([a-zA-Z][a-zA-Z0-9\s.()\\/"'!@#$%^&*\-_+=:;,<>?{}[\]|~`]{10,})["']\s*[;,)]/g;
+    //
+    // Inner-class quantifier capped at 400 to prevent quadratic backtracking
+    // on adversarial inputs full of long quoted strings (the previous open
+    // `{10,}` form scanned every quoted blob in the file, then ran the
+    // `hasRot13Context` window scan against each one — quadratic for
+    // megabyte-scale inputs).
+    const rot13PatternRe = /["']([a-zA-Z][a-zA-Z0-9\s.()\\/"'!@#$%^&*\-_+=:;,<>?{}[\]|~`]{10,400})["']\s*[;,)]/g;
+
     let m;
     while ((m = rot13PatternRe.exec(text)) !== null) {
       throwIfAborted();

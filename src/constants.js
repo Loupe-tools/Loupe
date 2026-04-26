@@ -43,7 +43,34 @@ const PARSER_LIMITS = Object.freeze({
                                              // pointing the user at the manual
                                              // YARA tab (which is unrestricted on
                                              // both worker and fallback paths).
+  // ── Encoded-content finder budgets ──────────────────────
+  // The secondary-family finders in `EncodedContentDetector` (URL-enc,
+  // HTML entities, Unicode escapes, char arrays, octal, Script.Encode,
+  // space-hex, ROT13, split-join, CMD/PowerShell obfuscation) are regex-
+  // heavy and at least one pattern (`rot13PatternRe`, `backtickRe`) had
+  // catastrophic-backtracking exposure on adversarial inputs. These
+  // budgets bound runtime regardless of pattern shape:
+  //
+  //   FINDER_MAX_INPUT_BYTES — text inputs larger than this skip the
+  //     entire secondary-family + cmd-obfuscation scan. The Base64 / Hex
+  //     / Base32 / compressed-blob primary finders still run because
+  //     their patterns are much tighter and the cost is dominated by
+  //     decode-and-classify (already capped by `maxCandidatesPerType`).
+  //     A single `IOC.INFO` row surfaces the skip in the sidebar so the
+  //     analyst knows partial coverage was used.
+  //
+  //   FINDER_BUDGET_MS — cumulative wall-clock budget across the whole
+  //     secondary-family finder dispatch. Once exhausted, remaining
+  //     finders are skipped (same `IOC.INFO` surfaced).
+  //
+  // Tune via empirical feedback. Numbers picked to keep the worker pool
+  // healthy on the largest in-tree examples while still aborting in
+  // single-digit seconds on adversarial inputs.
+  FINDER_MAX_INPUT_BYTES: 4 * 1024 * 1024,
+  FINDER_BUDGET_MS:       2_500,
+
   WORKER_TIMEOUT_MS:    300_000,             // 5 min — preemptive deadline on
+
                                              // any `WorkerManager.run*` job
                                              //. On expiry the active
                                              // worker is `terminate()`-d (real
