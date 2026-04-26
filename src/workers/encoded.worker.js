@@ -120,6 +120,12 @@ self.onmessage = async function (ev) {
       // lowers finder thresholds — see EncodedContentDetector constructor
       // and the per-finder `this._aggressive` reads in encoding-finders.js.
       aggressive:           !!options.aggressive,
+      // Bruteforce ("kitchen sink") mode — implies aggressive. Set ONLY by
+      // the "Decode selection" chip path. Bypasses every whitelist filter,
+      // raises depth/per-type cap, runs ROT-1…ROT-25, multi-byte XOR + crib
+      // analysis, and the interleaved-separator finder. See the constructor
+      // in src/encoded-content-detector.js for the full list of knobs.
+      bruteforce:           !!options.bruteforce,
     });
 
     const findings = await detector.scan(textContent, rawBytes, {

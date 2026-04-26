@@ -4069,6 +4069,41 @@ body:not(.dark) #hosted-bar {
   100%    { opacity: 0; }
 }
 
+/* Decode-mode phrase pool — surfaced only while
+   `#loading[data-mode="decode"]` is set by the selection-decode flow
+   (src/app/app-selection-decode.js). 32 phrases × 2.5 s = 80 s cycle.
+   Each phrase is visible for 1/32 ≈ 3.125 %.
+   The default `.lm` pool is hidden in this mode and the decode pool
+   takes over. `_setLoading(false)` clears the data-attribute so the
+   next analyser run reverts to the default pool automatically. */
+.loading-msg .lm-decode {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+}
+
+#loading[data-mode="decode"] .loading-msg .lm {
+  display: none;
+}
+
+#loading[data-mode="decode"] .loading-msg .lm-decode {
+  display: flex;
+  animation: lm-cycle-decode 80s ease infinite;
+  animation-delay: calc(var(--i) * 2.5s);
+}
+
+@keyframes lm-cycle-decode {
+  0%      { opacity: 0; }
+  0.58%   { opacity: 1; }
+  2.55%   { opacity: 1; }
+  3.13%   { opacity: 0; }
+  100%    { opacity: 0; }
+}
+
+
 /* ── Toast ── */
 #toast {
   position: fixed;

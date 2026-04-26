@@ -447,6 +447,32 @@ Object.assign(EncodedContentDetector.prototype, {
       if (candidates.length >= this.maxCandidatesPerType) break;
       const raw = m[1];
       const offset = m.index;
+
+      // Bruteforce mode: emit one candidate per non-zero shift (ROT-1..25)
+      // over every quoted literal we matched. The recursion driver +
+      // classifier will reject the noise; the analyst has explicitly
+      // opted in via the kitchen-sink button. We deliberately drop the
+      // ROT13-context regex AND the post-decode keyword gate here — the
+      // whole point of bruteforce is to find a Caesar shift the surrounding
+      // source does NOT advertise.
+      if (this._bruteforce) {
+        for (let shift = 1; shift <= 25; shift++) {
+          if (candidates.length >= this.maxCandidatesPerType) break;
+          candidates.push({
+            type: 'ROT-N',
+            raw,
+            offset,
+            length: raw.length,
+            entropy: 0,
+            confidence: 'normal',
+            hint: `ROT-${shift} (bruteforce)`,
+            autoDecoded: true,
+            _shift: shift,
+          });
+        }
+        continue;
+      }
+
       // Check if nearby context mentions ROT13 or charCodeAt+13
       const region = text.substring(Math.max(0, offset - 200), Math.min(text.length, offset + raw.length + 200));
       const hasRot13Context = /charCodeAt\s*\(\s*0?\s*\)\s*\+\s*13/i.test(region) ||
@@ -474,6 +500,7 @@ Object.assign(EncodedContentDetector.prototype, {
     }
     return candidates;
   },
+
 
   /**
    * Split-Join deobfuscation: "c o n s o l e . l o g".split(' ').join('')

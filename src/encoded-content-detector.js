@@ -35,8 +35,11 @@
 class EncodedContentDetector {
 
   constructor(opts = {}) {
-    this.maxRecursionDepth = opts.maxRecursionDepth || 4;
-    this.maxCandidatesPerType = opts.maxCandidatesPerType || 50;
+    // Bruteforce mode (kitchen-sink) has the highest cap because the
+    // analyst is staring at a 200-char selection — depth 6 still costs
+    // peanuts on that scope.
+    this.maxRecursionDepth   = opts.maxRecursionDepth   || (opts.bruteforce ? 6 : 4);
+    this.maxCandidatesPerType = opts.maxCandidatesPerType || (opts.bruteforce ? 200 : 50);
     // Aggressive mode lowers finder thresholds for selection-driven
     // decode (the analyst has explicitly highlighted a region they
     // suspect is encoded — accept higher noise in exchange for catching
@@ -44,7 +47,26 @@ class EncodedContentDetector {
     // etc.). Threaded through to nested detectors via the recursion
     // constructor calls inside `_processCandidate`.
     this._aggressive = !!opts.aggressive;
+    // Bruteforce mode (one rung above aggressive) — only reached via the
+    // "Decode selection" chip, never auto-fired. On top of `aggressive`'s
+    // lowered thresholds it ALSO:
+    //   • bypasses every whitelist filter (PEM / data: / MIME / hash /
+    //     GUID / base32-context) — analyst is looking at a small region
+    //     and has explicitly opted in;
+    //   • drops the exec-keyword plausibility gates on the synthetic
+    //     finders (Reversed / String Concat / Spaced Tokens /
+    //     Comment-Stripped / Interleaved Separator);
+    //   • extends ROT13 to ROT-1…ROT-25 over every quoted literal;
+    //   • runs single-byte XOR unconditionally + adds 2/3/4-byte
+    //     repeating-key crib analysis;
+    //   • raises the secondary-finder wall-clock budget;
+    //   • runs the new `interleaved-separator.js` finder for the
+    //     `$\x00W\x00C\x00=…` / `a.b.c.d…` / `&#0;…` family.
+    // Implies aggressive — every aggressive-only knob also fires.
+    this._bruteforce = !!opts.bruteforce;
+    if (this._bruteforce) this._aggressive = true;
   }
+
 
   // ── Helper: propagate severity & IOCs from inner findings ────────────────
   static _propagateInnerFindings(severity, iocs, innerFindings) {
@@ -157,7 +179,14 @@ class EncodedContentDetector {
     // and a cumulative wall-clock budget so a hostile sample can never
     // hang the worker even if a future regex regresses.
     const finderMaxBytes  = (typeof PARSER_LIMITS !== 'undefined') ? PARSER_LIMITS.FINDER_MAX_INPUT_BYTES : (4 * 1024 * 1024);
-    const finderBudgetMs  = (typeof PARSER_LIMITS !== 'undefined') ? PARSER_LIMITS.FINDER_BUDGET_MS       : 2_500;
+    // Bruteforce mode (kitchen-sink decode of an analyst-selected region)
+    // gets a much fatter wall-clock budget — selections are by definition
+    // small, so the regex-cost we're guarding against is bounded by input
+    // size, not by the budget.
+    const finderBudgetMs  = this._bruteforce
+      ? 8_000
+      : ((typeof PARSER_LIMITS !== 'undefined') ? PARSER_LIMITS.FINDER_BUDGET_MS : 2_500);
+
     const finderStart     = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     const oversize        = (typeof textContent === 'string') && textContent.length > finderMaxBytes;
     let   budgetExhausted = false;
@@ -202,6 +231,13 @@ class EncodedContentDetector {
     const commentObfCandidates   = _runFinder(this._findCommentObfuscationCandidates);
     const cmdObfCandidates       = _runFinder(this._findCommandObfuscationCandidates);
     const psVarResCandidates     = _runFinder(this._findPsVariableResolutionCandidates);
+    // Interleaved-separator finder (`$\x00W\x00C\x00=…`, `a.b.c.d…`,
+    // `&#0;A&#0;B…`). Defensively guarded so a missing prototype method
+    // doesn't blow up the bundle if the mixin order regresses.
+    const interleavedCandidates  = (typeof this._findInterleavedSeparatorCandidates === 'function')
+      ? _runFinder(this._findInterleavedSeparatorCandidates)
+      : [];
+
 
     // Surface a single info-level finding so the analyst knows the
     // secondary scan ran in degraded mode. Without this, an oversize
@@ -298,6 +334,10 @@ class EncodedContentDetector {
       if (result) findings.push(result);
     }
     for (const cand of commentObfCandidates) {
+      const result = await this._processCandidate(cand, 0);
+      if (result) findings.push(result);
+    }
+    for (const cand of interleavedCandidates) {
       const result = await this._processCandidate(cand, 0);
       if (result) findings.push(result);
     }
@@ -405,6 +445,7 @@ class EncodedContentDetector {
                 maxRecursionDepth: this.maxRecursionDepth,
                 maxCandidatesPerType: this.maxCandidatesPerType,
                 aggressive: this._aggressive,
+                bruteforce: this._bruteforce,
               });
               decompInner = await innerDet.scan(decompText, decompData, { fileType: '' });
               for (const f of decompInner) {
@@ -493,18 +534,32 @@ class EncodedContentDetector {
       // Only attempt XOR if the primary decode produced gibberish — text
       // that already classifies (script, document, etc.) is not the
       // post-XOR product.
-      if (xorCarriers.has(candidate.type) && !cleartextLooksLikeText) {
+      // In bruteforce mode (kitchen-sink decode-selection), bypass both the
+      // carrier whitelist and the XOR-context regex — try XOR against every
+      // candidate's decoded bytes regardless of surrounding source.
+      const xorCarrierOK = this._bruteforce || xorCarriers.has(candidate.type);
+      if (xorCarrierOK && !cleartextLooksLikeText) {
         const scanText = this._scanText || '';
-        const ctxOK = scanText && this._hasXorContext(scanText, candidate.offset, candidate.raw);
+        const ctxOK = this._bruteforce
+          || (scanText && this._hasXorContext(scanText, candidate.offset, candidate.raw));
         if (ctxOK) {
           let xorResult = null;
           try {
             xorResult = this._tryXorBruteforce(decoded);
+            // Bruteforce mode also tries multi-byte (L=2,3,4) keys.
+            if (!xorResult && this._bruteforce
+                && typeof this._tryXorBruteforceMulti === 'function') {
+              xorResult = this._tryXorBruteforceMulti(decoded);
+            }
           } catch (_) { xorResult = null; }
           if (xorResult && xorResult.bytes && xorResult.bytes.length > 0) {
             const xorBytes = xorResult.bytes;
             const xorKey   = xorResult.key;
-            const keyHex   = '0x' + xorKey.toString(16).toUpperCase().padStart(2, '0');
+            // Single-byte key is a Number; multi-byte key is already a
+            // pre-formatted '0x<HEX...>' string (see _tryXorBruteforceMulti).
+            const keyHex   = (typeof xorKey === 'number')
+              ? '0x' + xorKey.toString(16).toUpperCase().padStart(2, '0')
+              : String(xorKey);
             const xorClass = this._classify(xorBytes);
             const xorEntropy = this._shannonEntropyBytes(xorBytes);
             const xorIocs = this._extractIOCsFromDecoded(xorBytes);
@@ -527,6 +582,7 @@ class EncodedContentDetector {
                   maxRecursionDepth: this.maxRecursionDepth,
                   maxCandidatesPerType: this.maxCandidatesPerType,
                   aggressive: this._aggressive,
+                  bruteforce: this._bruteforce,
                 });
                 xorInner = await innerDet.scan(xorText, xorBytes, { fileType: '' });
                 for (const f of xorInner) {
@@ -570,6 +626,7 @@ class EncodedContentDetector {
           maxRecursionDepth: this.maxRecursionDepth,
           maxCandidatesPerType: this.maxCandidatesPerType,
           aggressive: this._aggressive,
+          bruteforce: this._bruteforce,
         });
         innerFindings = await innerDetector.scan(decodedText, decoded, { fileType: '' });
         // Add parent chain to inner findings

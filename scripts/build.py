@@ -213,6 +213,16 @@ _DETECTOR_FILES = [
     # `cmd-obfuscation` candidates that flow through
     # `_processCommandObfuscation`). See PLAN.md → D3.
     'src/decoders/ps-mini-evaluator.js',
+    # interleaved-separator.js — finds + decodes interleaved-separator
+    # obfuscation (`$\x00W\x00C\x00=\x00…` → `$WC=…`). Two-pass finder:
+    # (1) single-character separator at strides 2/3/4 (e.g. `a.b.c.d`),
+    # (2) multi-character literal separator (`\x00`, `\u0000`, `&#0;`,
+    # `&nbsp;`, `&#x00;`). Loaded last because it's a pure
+    # `Object.assign(...prototype, …)` mixin with no internal deps
+    # beyond `_tryDecodeUTF8` (entropy.js), and the `_decodeCandidate`
+    # dispatch in `encoding-decoders.js` already routes
+    # `Interleaved Separator` candidate types here via prefix match.
+    'src/decoders/interleaved-separator.js',
 ]
 
 
@@ -1390,11 +1400,18 @@ HTML = f"""<!DOCTYPE html>
   </div><!-- /#main-area -->
 
   <!-- ── Loading overlay ─────────────────────────────────────────────── -->
+  <!-- The overlay has two phrase pools: the default analyser pool (`.lm`)
+       and a decode-specific pool (`.lm-decode`) shown when the overlay's
+       `data-mode` attribute is `decode`. The selection-decode flow
+       (src/app/app-selection-decode.js) sets `data-mode="decode"` before
+       calling `_setLoading(true)`; `_setLoading(false)` clears it. CSS
+       in src/styles/core.css toggles which set is visible. -->
   <div id="loading" class="hidden">
     <div class="loading-content">
       <span class="spinner"></span>
       <div class="loading-msg">
         <span class="lm" style="--i:0">Bonking it with a stick</span>
+
         <span class="lm" style="--i:1">Dusting for fingerprints</span>
         <span class="lm" style="--i:2">Connecting the dots</span>
         <span class="lm" style="--i:3">Putting it under the microscope</span>
@@ -1452,9 +1469,48 @@ HTML = f"""<!DOCTYPE html>
         <span class="lm" style="--i:55">Pulling the thread</span>
         <span class="lm" style="--i:56">Turning over every stone</span>
         <span class="lm" style="--i:57">Recalibrating the flux capacitor</span>
+
+        <!-- Decode-selection phrase pool. Hidden by default; shown only
+             when `#loading[data-mode="decode"]` is set by the
+             selection-decode flow (src/app/app-selection-decode.js). The
+             default `.lm` pool above is then hidden by the corresponding
+             rule in src/styles/core.css. -->
+        <span class="lm-decode" style="--i:0">Throwing every key at the lock</span>
+        <span class="lm-decode" style="--i:1">Bruteforcing the XOR key</span>
+        <span class="lm-decode" style="--i:2">Trying ROT-1 through ROT-25</span>
+        <span class="lm-decode" style="--i:3">Walking the column cribs</span>
+        <span class="lm-decode" style="--i:4">Peeling Base64 off Base64</span>
+        <span class="lm-decode" style="--i:5">Reversing reversed reverses</span>
+        <span class="lm-decode" style="--i:6">Sniffing for hidden separators</span>
+        <span class="lm-decode" style="--i:7">Stripping interleaved nulls</span>
+        <span class="lm-decode" style="--i:8">Unwrapping safe-link wrappers</span>
+        <span class="lm-decode" style="--i:9">Rebuilding the char-array</span>
+        <span class="lm-decode" style="--i:10">Inflating zlib payloads</span>
+        <span class="lm-decode" style="--i:11">Dechunking the hex escapes</span>
+        <span class="lm-decode" style="--i:12">Concatenating the fragments</span>
+        <span class="lm-decode" style="--i:13">Defanging the IOCs</span>
+        <span class="lm-decode" style="--i:14">Cycling Caesar shifts</span>
+        <span class="lm-decode" style="--i:15">Splitting on every delimiter</span>
+        <span class="lm-decode" style="--i:16">Comparing key-length 2, 3, 4</span>
+        <span class="lm-decode" style="--i:17">Scoring against the dictionary</span>
+        <span class="lm-decode" style="--i:18">Looking for the magic word</span>
+        <span class="lm-decode" style="--i:19">Asking the cipher to confess</span>
+        <span class="lm-decode" style="--i:20">Recursing one layer deeper</span>
+        <span class="lm-decode" style="--i:21">Chaining decode pipelines</span>
+        <span class="lm-decode" style="--i:22">Pulling at every loose thread</span>
+        <span class="lm-decode" style="--i:23">Hunting for plaintext</span>
+        <span class="lm-decode" style="--i:24">Reading between the bytes</span>
+        <span class="lm-decode" style="--i:25">Spotting the powershell</span>
+        <span class="lm-decode" style="--i:26">Catching the IEX in the act</span>
+        <span class="lm-decode" style="--i:27">Holding it under UV</span>
+        <span class="lm-decode" style="--i:28">Comparing every shift</span>
+        <span class="lm-decode" style="--i:29">Trying the obvious passwords</span>
+        <span class="lm-decode" style="--i:30">Brute-forcing politely</span>
+        <span class="lm-decode" style="--i:31">Decoding all the way down</span>
       </div>
     </div>
   </div>
+
 
   <!-- ── Toast ───────────────────────────────────────────────────────── -->
   <div id="toast" class="hidden"></div>

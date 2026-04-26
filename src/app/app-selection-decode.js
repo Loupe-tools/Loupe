@@ -23,11 +23,22 @@
 // receive the chip — getSelection() in the host frame returns the empty
 // range for child-frame selections by design.
 //
-// Aggressive mode: the synthetic file is loaded with the
-// `_aggressiveDecode` context flag, which `app-load.js` threads into the
-// `EncodedContentDetector` constructor (`{ aggressive: true }`) so finder
-// thresholds drop. The analyst has explicitly opted in to noise — they
-// highlighted the region.
+// Bruteforce ("kitchen sink") mode: the synthetic file is loaded with
+// BOTH `_aggressiveDecode` and `_bruteforceDecode` context flags, which
+// `app-load.js` threads into the `EncodedContentDetector` constructor
+// (`{ aggressive: true, bruteforce: true }`). On top of aggressive's
+// lowered thresholds, bruteforce mode bypasses every whitelist filter
+// (PEM / data: / MIME / hash / GUID / base32-context), drops the
+// exec-keyword plausibility gates on synthetic finders, extends ROT13
+// to ROT-1…ROT-25 over every quoted literal, runs single-byte XOR
+// unconditionally + adds 2/3/4-byte repeating-key crib analysis, and
+// raises the per-type cap (50 → 200) and recursion depth (4 → 6). The
+// analyst has explicitly highlighted a region — they want every avenue
+// of decode/decryption/deobfuscation thrown at the bytes.
+//
+// We also stamp `document.getElementById('loading').dataset.mode =
+// 'decode'` so `core.css` swaps the timeline-flavoured loading phrases
+// for the decode-flavoured pool while the kitchen-sink scan runs.
 //
 // Persistence: `loupe_deobf_selection_enabled` ("0" | "1", default "1").
 // See the persistence-keys table in CONTRIBUTING.md.
@@ -76,10 +87,13 @@ extendApp({
 
         const range = sel.getRangeAt(0);
         const txt = sel.toString();
-        // Lower bound — short selections are almost never encoded payloads
-        // and would just produce empty deobfuscation cards. The pipeline
-        // itself bails on anything below ~6–32 chars depending on technique.
-        if (!txt || txt.length < 8) { this._hideDecodeChip(); return; }
+        // Lower bound — kitchen-sink decode is happy with very short
+        // selections (a 4-char Base64 like `aGk=` decodes to "hi"; a
+        // ROT-N `Khoor` is 5 chars). Anything below 3 is almost certainly
+        // a stray click. The pipeline's own per-finder minimums apply on
+        // top of this in normal mode, but bruteforce mode lowers them
+        // too — so we trust the analyst's selection here.
+        if (!txt || txt.length < 3) { this._hideDecodeChip(); return; }
 
         // Anchor must live inside one of the supported viewer surfaces.
         // We check both endpoints because a selection that starts inside a
@@ -175,16 +189,18 @@ extendApp({
    * Read the current selection, build a synthetic .txt File from its UTF-8
    * bytes, and dispatch through `openInnerFile` so the analyser pipeline
    * runs end-to-end against just the highlighted region. The
-   * `_aggressiveDecode` context flag is read by `app-load.js` and threaded
-   * into the `EncodedContentDetector` constructor so secondary finders use
-   * lower thresholds. Falls back silently if the selection has been
-   * cleared between chip-show and chip-click.
+   * `_aggressiveDecode` AND `_bruteforceDecode` context flags are read by
+   * `app-load.js` and threaded into the `EncodedContentDetector`
+   * constructor so it runs in kitchen-sink mode against the highlighted
+   * bytes — every finder, lowered thresholds, every whitelist filter
+   * bypassed, multi-byte XOR + crib analysis enabled. Falls back silently
+   * if the selection has been cleared between chip-show and chip-click.
    */
   _decodeCurrentSelection() {
     const sel = window.getSelection && window.getSelection();
     if (!sel || sel.isCollapsed) return;
     const txt = sel.toString();
-    if (!txt || txt.length < 8) return;
+    if (!txt || txt.length < 3) return;
 
     // UTF-8 encode — we want byte semantics in the analyser, not UTF-16.
     let bytes;
@@ -196,10 +212,21 @@ extendApp({
     const blob = new Blob([bytes], { type: 'text/plain' });
     const synFile = new File([blob], synName, { type: 'text/plain' });
 
+    // Repurpose the loading overlay's phrase pool: stamp `data-mode="decode"`
+    // before openInnerFile fires the loading spinner. `core.css` has a
+    // dedicated `#loading[data-mode="decode"] .loading-msg` rule that swaps
+    // the timeline-flavoured 58-phrase pool for the decode-flavoured set.
+    // `_setLoading(false)` (in app-ui.js) clears the attribute on hide.
+    try {
+      const overlay = document.getElementById('loading');
+      if (overlay) overlay.dataset.mode = 'decode';
+    } catch (_) { /* DOM might not be ready in test harness — best-effort */ }
+
     try {
       this.openInnerFile(synFile, null, {
         parentName,
         _aggressiveDecode: true,
+        _bruteforceDecode: true,
         returnFocus: { section: 'deobfuscation' },
       });
     } catch (err) {

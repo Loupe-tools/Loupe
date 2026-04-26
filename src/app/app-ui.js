@@ -1012,16 +1012,32 @@ extendApp({
   _setLoading(on) {
     const el = document.getElementById('loading');
     if (on) {
-      const spans = el.querySelectorAll('.loading-msg .lm');
+      // Pick the active phrase pool. The selection-decode flow
+      // (`src/app/app-selection-decode.js`) sets
+      // `el.dataset.mode = 'decode'` before calling `_setLoading(true)`
+      // so the kitchen-sink decode run shows decode-themed phrases
+      // instead of the generic analyser pool. CSS in core.css hides
+      // the unused pool. We shuffle whichever pool is active so the
+      // phrase order on each load is fresh.
+      const sel = el.dataset.mode === 'decode'
+        ? '.loading-msg .lm-decode'
+        : '.loading-msg .lm';
+      const spans = el.querySelectorAll(sel);
       const indices = Array.from({length: spans.length}, (_, i) => i);
       for (let i = indices.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         const tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
       }
       spans.forEach((s, i) => s.style.setProperty('--i', indices[i]));
+    } else {
+      // Clear the mode flag so the next `_setLoading(true)` falls back
+      // to the default analyser phrase pool. Without this the decode
+      // pool would stay armed across the next file load.
+      try { delete el.dataset.mode; } catch (_) { el.dataset.mode = ''; }
     }
     el.classList.toggle('hidden', !on);
   },
+
 
   _toast(msg, type = 'info') {
     const t = document.getElementById('toast'); t.textContent = msg;

@@ -389,6 +389,8 @@ extendApp({
         // from an earlier selection-decode click.
         const aggressive = !!this._pendingAggressiveDecode;
         this._pendingAggressiveDecode = false;
+        const bruteforce = !!this._pendingBruteforceDecode;
+        this._pendingBruteforceDecode = false;
         try {
           const out = await WorkerManager.runEncoded(
             buffer.slice(0),
@@ -397,6 +399,7 @@ extendApp({
               fileType: ext,
               mimeAttachments: this.findings._mimeAttachments || null,
               aggressive,
+              bruteforce,
             }
           );
           encodedFindings = out.findings || [];
@@ -415,7 +418,7 @@ extendApp({
             // diagnostic for devs.
             this._reportNonFatal('encoded-worker-fallback', workerErr, { silent: true });
           }
-          const detector = new EncodedContentDetector({ aggressive });
+          const detector = new EncodedContentDetector({ aggressive, bruteforce });
           encodedFindings = await detector.scan(
             analysisText,
             new Uint8Array(buffer),
@@ -1225,6 +1228,17 @@ extendApp({
     // block below to keep state out of every other code path.
     if (opts._aggressiveDecode) {
       this._pendingAggressiveDecode = true;
+    }
+    // Bruteforce ("kitchen sink") mode — implies aggressive. Set by
+    // the "Decode selection" chip ONLY. Threads `bruteforce: true`
+    // into `EncodedContentDetector`, which raises depth (4 → 6),
+    // raises per-type cap (50 → 200), bypasses every whitelist
+    // filter, drops exec-keyword plausibility gates, runs ROT-1…
+    // ROT-25 on quoted literals, and flips on multi-byte XOR + crib
+    // analysis. Same single-shot lifetime as the aggressive flag.
+    if (opts._bruteforceDecode) {
+      this._pendingBruteforceDecode = true;
+      this._pendingAggressiveDecode = true;  // implies aggressive
     }
     this._loadFile(file, parentBuf || null);
   },

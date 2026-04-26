@@ -14,6 +14,14 @@
 
 Object.assign(EncodedContentDetector.prototype, {
   _decodeCandidate(candidate) {
+    // Interleaved-separator candidates carry their stripped collapsed
+    // string as `_collapsed`; the type label varies (`Interleaved
+    // Separator (\\x00)`, `Interleaved Separator (.)`, etc.) so we
+    // can't match it as a single switch case — handle it as a prefix.
+    if (typeof candidate.type === 'string'
+        && candidate.type.startsWith('Interleaved Separator')) {
+      return this._decodeInterleavedSeparator(candidate);
+    }
     switch (candidate.type) {
       case 'Base64': return this._decodeBase64(candidate.raw);
       case 'Hex':
@@ -28,6 +36,9 @@ Object.assign(EncodedContentDetector.prototype, {
       case 'Script.Encode': return this._decodeScriptEncoded(candidate.raw);
       case 'Hex (space-delimited)': return this._decodeSpaceDelimitedHex(candidate.raw);
       case 'ROT13': return this._decodeRot13(candidate.raw);
+      // Generic ROT-N (bruteforce mode emits ROT-1..ROT-25 candidates over
+      // every quoted literal in the selection — see encoding-finders.js).
+      case 'ROT-N': return this._decodeRotN(candidate.raw, candidate._shift || 13);
       case 'Split-Join': return this._decodeSplitJoin(candidate.raw, candidate._separator);
       case 'JS Hex Escape': return this._decodeJsHexEscape(candidate.raw);
       // Reverse-string, string-concat, and spaced-token finders all
@@ -209,6 +220,26 @@ Object.assign(EncodedContentDetector.prototype, {
       const decoded = str.replace(/[a-zA-Z]/g, c => {
         const base = c <= 'Z' ? 65 : 97;
         return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
+      });
+      return new TextEncoder().encode(decoded);
+    } catch (_) { return null; }
+  },
+
+  /**
+   * Generic Caesar / ROT-N shift for arbitrary `shift` 1..25. Used by
+   * the bruteforce path in `_findRot13Candidates` which emits one
+   * candidate per non-zero shift over every quoted literal in the
+   * selection. The shift is stored on the candidate as `_shift`; if it
+   * is missing we fall back to ROT13 so this method is also a safe
+   * superset of `_decodeRot13`.
+   */
+  _decodeRotN(str, shift) {
+    try {
+      const n = ((shift % 26) + 26) % 26;
+      if (n === 0) return null;
+      const decoded = str.replace(/[a-zA-Z]/g, c => {
+        const base = c <= 'Z' ? 65 : 97;
+        return String.fromCharCode(((c.charCodeAt(0) - base + n) % 26) + base);
       });
       return new TextEncoder().encode(decoded);
     } catch (_) { return null; }

@@ -157,4 +157,115 @@ Object.assign(EncodedContentDetector.prototype, {
     );
     return /(\^\s*\$?[a-zA-Z_]\w*|\bxor\b|-bxor\b|\bbxor\b|\^\s*0x[0-9a-fA-F]+|\^\s*\d+)/i.test(region);
   },
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Multi-byte repeating-key XOR (kitchen-sink / bruteforce mode only).
+  //
+  // Tries every key of length L = 2, 3, 4 by independently brute-forcing
+  // each column (the standard "single-byte XOR per column" trick used in
+  // every CryptoPals walkthrough). Crib analysis: the recovered candidate
+  // must contain at least one well-known executor / shell crib token
+  // ('powershell', 'iex', 'cmd', 'http', 'eval', 'exec', 'invoke',
+  // 'console', 'fromCharCode', 'shell') AFTER decoding — otherwise
+  // statistical wins on random-looking text would carpet the analyst with
+  // false positives.
+  //
+  // Capped at 16 KiB scoring window, key length ≤ 4. The whole search
+  // space is at most 4 × 256 × 16 KiB = 16M byte ops — single-digit ms
+  // even on a budget laptop. Returns the same `{key, bytes, score}` shape
+  // as the single-byte path so the call site is uniform; `key` is encoded
+  // as `0x<hex…>` of all key bytes joined.
+  // ──────────────────────────────────────────────────────────────────────
+  _tryXorBruteforceMulti(bytes) {
+    if (!bytes || bytes.length < 24) return null;
+
+    const SAMPLE = bytes.length > 16 * 1024 ? bytes.subarray(0, 16 * 1024) : bytes;
+
+    // Score one byte against a candidate key — a stripped-down version of
+    // the per-byte logic in `_tryXorBruteforce` so we can fold a column
+    // independently.
+    const _scoreByte = (b) => {
+      if (b >= 0x41 && b <= 0x5A) return 4;            // A-Z
+      if (b >= 0x61 && b <= 0x7A) return 4;            // a-z
+      if (b >= 0x30 && b <= 0x39) return 2;            // 0-9
+      if (b === 0x20)             return 1;            // space
+      if (b >= 0x21 && b <= 0x2F) return 1;            // punct
+      if (b >= 0x3A && b <= 0x40) return 1;
+      if (b >= 0x5B && b <= 0x60) return 1;
+      if (b >= 0x7B && b <= 0x7E) return 1;
+      if (b === 0x09 || b === 0x0A || b === 0x0D) return 0;
+      if (b < 0x20 || b === 0x7F) return -4;           // control byte
+      return 0;                                         // high bytes — neutral
+    };
+
+    const _bestKeyForColumn = (column) => {
+      let bestKey = -1;
+      let bestScore = -Infinity;
+      for (let key = 0; key <= 255; key++) {
+        let score = 0;
+        for (let i = 0; i < column.length; i++) {
+          score += _scoreByte(column[i] ^ key);
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestKey = key;
+        }
+      }
+      return { key: bestKey, score: bestScore };
+    };
+
+    const _materialise = (keyBytes) => {
+      const out = new Uint8Array(bytes.length);
+      const L = keyBytes.length;
+      for (let i = 0; i < bytes.length; i++) {
+        out[i] = bytes[i] ^ keyBytes[i % L];
+      }
+      return out;
+    };
+
+    const _looksLikeCleartext = (txt) => {
+      if (!txt || txt.length < 8) return false;
+      // Crib analysis — the recovered cleartext must mention a real
+      // executor / shell / web-fetch identifier. Bare "lots of letters"
+      // doesn't qualify — at this width the column-independent solver
+      // happily wins on random data.
+      return /(powershell|iex|invoke[- ]?expression|cmd\.exe|cmd\b|http|https|eval|exec|shell|fromCharCode|console\.log|FromBase64|Download|Get-Item|Start-Process|System\.|Runtime\.)/i.test(txt);
+    };
+
+    let best = null;
+    for (let L = 2; L <= 4; L++) {
+      // Build L columns and find the best key byte for each.
+      const keyBytes = new Uint8Array(L);
+      let totalScore = 0;
+      for (let col = 0; col < L; col++) {
+        const colLen = Math.floor((SAMPLE.length - col + L - 1) / L);
+        const column = new Uint8Array(colLen);
+        for (let i = 0; i < colLen; i++) column[i] = SAMPLE[col + i * L];
+        const { key, score } = _bestKeyForColumn(column);
+        keyBytes[col] = key;
+        totalScore += score;
+      }
+      if (totalScore <= 0) continue;
+      const cleartext = _materialise(keyBytes);
+      const txt = this._tryDecodeUTF8(cleartext);
+      if (!_looksLikeCleartext(txt)) continue;
+      // Score normalised per byte so longer keys don't artificially win.
+      const norm = totalScore / SAMPLE.length;
+      if (!best || norm > best.norm) {
+        let keyHex = '';
+        for (let i = 0; i < L; i++) {
+          keyHex += keyBytes[i].toString(16).toUpperCase().padStart(2, '0');
+        }
+        best = {
+          key: '0x' + keyHex,           // string, distinct from single-byte numeric `key`
+          bytes: cleartext,
+          score: totalScore,
+          norm,
+          keyLength: L,
+        };
+      }
+    }
+
+    return best;
+  },
 });
