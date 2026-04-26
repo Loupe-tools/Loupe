@@ -45,8 +45,8 @@
 //                      line-ending convention even when a renderer's
 //                      `textContent` fallback path leaks CRLF.
 //      • `buffer`    — the original file `ArrayBuffer`. Canonical handle
-//                      replacing the legacy `app._fileBuffer` instance
-//                      stash.
+//                      consumed by `app-yara.js`, copy-analysis, and
+//                      every downstream sweep that needs the raw bytes.
 //      • `binary`    — `{ format, parsed }` when a binary renderer
 //                      stamped it (PE / ELF / Mach-O); `null` otherwise.
 //      • `yaraBuffer`— optional augmented buffer (SVG/HTML/Plist/Scpt

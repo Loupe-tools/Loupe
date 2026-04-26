@@ -63,9 +63,9 @@
 //   { event: 'error', message: string }
 //
 // The buffer is **transferred** (caller loses access). The host's `_loadFile`
-// keeps `this._fileBuffer` alive for the rest of the analyser pipeline, so
-// `runEncoded()` passes a `buffer.slice(0)` copy — one memcpy of the file
-// bytes is cheap relative to the scan.
+// keeps `app.currentResult.buffer` alive for the rest of the analyser
+// pipeline, so `runEncoded()` passes a `buffer.slice(0)` copy — one memcpy
+// of the file bytes is cheap relative to the scan.
 //
 // Buffer ownership / `_rawBytes`
 // ------------------------------
@@ -143,7 +143,8 @@ self.onmessage = async function (ev) {
     // points at the worker's `rawBytes`, which is about to be discarded
     // when the worker terminates; transferring it would also detach the
     // host's freshly-spawned buffer copy. The host re-stamps `_rawBytes`
-    // on compressed findings using its own retained `_fileBuffer`.
+    // on compressed findings using its own retained
+    // `app.currentResult.buffer`.
     const out = new Array(findings ? findings.length : 0);
     for (let i = 0; i < out.length; i++) {
       const f = findings[i];

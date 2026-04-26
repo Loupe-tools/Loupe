@@ -174,7 +174,7 @@ flowchart TD
     %% Renderer side-effects
     RD --> SE1[Build DOM container]
     RD --> SE2["Mutate app.findings:<br/>{ risk, externalRefs[],<br/>interestingStrings[],<br/>metadata, ... }"]
-    RD --> SE3[Stamp app._fileBuffer<br/>app._yaraBuffer<br/>app._binaryParsed]
+    RD --> SE3["Optionally stamp<br/>app.currentResult.yaraBuffer<br/>app.currentResult.binary"]
     RD --> SE4[Set container._rawText<br/>(must be LF-normalised)]
     RD --> SE5["pushIOC(findings, {type:IOC.X, value, severity})"]
 
@@ -239,8 +239,8 @@ in [Renderer Contract](#renderer-contract) and [IOC Push Checklist](#ioc-push-ch
 |---|---|---|---|
 | 1 | required | Build a DOM container and return it (or `{ docEl }`) | `_rendererDispatch` mounts it under `#page-container` |
 | 2 | required | Mutate `app.findings` (`risk`, `externalRefs[]`, `interestingStrings[]`, `metadata`, …) | Sidebar render |
-| 3 | sometimes | Stamp `app._fileBuffer`, `app._yaraBuffer` (legacy aliases — `app.currentResult.{buffer,yaraBuffer}` is the canonical home) | Auto-YARA prefers `_yaraBuffer`, else `_fileBuffer` |
-| 4 | binary only | Stamp `app._binaryParsed`, `app._binaryFormat` (legacy aliases — `app.currentResult.binary.{parsed,format}` is the canonical home) | Copy-Analysis + verdict band |
+| 3 | sometimes | Write `app.currentResult.yaraBuffer` when augmenting (SVG / HTML / Plist / Scpt) | Auto-YARA prefers it over `app.currentResult.buffer` |
+| 4 | binary only | Write `app.currentResult.binary = { format, parsed }` (PE / ELF / Mach-O) | Copy-Analysis + verdict band |
 | 5 | required | Set `container._rawText` (LF-normalised) | Click-to-focus string search |
 | 6 | required | Use `pushIOC()` and `IOC.*` constants — never bare strings | Sidebar IOC filter |
 | 7 | optional | Call `mirrorMetadataIOCs()` to surface metadata as clickable IOCs | File Info → IOCs |
@@ -762,17 +762,15 @@ subtly misbehave.
   (`src/constants.js`). Use `EVTX_COLUMNS.EVENT_ID` etc. instead of bare
   `'Event ID'` strings when doing `indexOf` look-ups or building the
   column array in `evtx-renderer.js` and `src/app/timeline/timeline-view.js`.
-- **Don't write `app._fileBuffer` / `app._yaraBuffer` / `app._binaryFormat` /
-  `app._binaryParsed` directly when you have access to `currentResult`.**
-  The four legacy fields are deprecation aliases — `Object.defineProperty`
-  setters in `src/app/app-core.js` route every write to its canonical slot
-  on `app.currentResult.{buffer,yaraBuffer,binary.format,binary.parsed}`,
-  and reads emit a one-shot `console.warn`. Renderers can keep stamping
-  the legacy fields for now (the aliases keep things consistent across
-  the migration); new code in app-shell modules (sidebar, copy-analysis,
-  YARA, exporters) should read from `app.currentResult.*` directly so the
-  per-session deprecation warning isn't tripped. The aliases are scheduled
-  for removal once every read site has migrated.
+- **`app.currentResult` is the canonical per-load state object.**
+  `RenderRoute.run` allocates `app.currentResult = { docEl, findings,
+  rawText, buffer, binary: { format, parsed } | null, yaraBuffer, navTitle,
+  analyzer, dispatchId }` *before* invoking the renderer handler so every
+  per-renderer stamp (`this.currentResult.binary = { format, parsed }`,
+  `this.currentResult.yaraBuffer = …`) has a live write target. Read
+  sites — auto-YARA, copy-analysis, the sidebar, the exporters,
+  `_isRawCopyable`, the encoded-content drill-down — all consume
+  `app.currentResult.*`. There are no other shadow fields.
 - **Renderers must pass `scripts/check_renderer_contract.py`.** The
   contract enforcer narrows the tree-wide build gates (risk pre-stamp /
   bare-string IOC `type:` / `_rawText` LF) to `src/renderers/` and
@@ -788,8 +786,8 @@ subtly misbehave.
 - **Hot-path renderers must finish within `PARSER_LIMITS.RENDERER_TIMEOUT_MS`
   (30 s).** `_loadFile` wraps every per-id handler in `_rendererDispatch`
   with `ParserWatchdog.run(fn, { timeout, name })`; on timeout it resets
-  `findings` / `_binaryParsed` / `_yaraBuffer`, falls back to
-  `PlainTextRenderer`, and pushes an `IOC.INFO` row pointing the analyst
+  `findings` / `currentResult.binary` / `currentResult.yaraBuffer`, falls
+  back to `PlainTextRenderer`, and pushes an `IOC.INFO` row pointing the analyst
   at the manual YARA tab. Renderers should keep a single deterministic
   parse pass under that budget — if a format genuinely needs more (e.g.
   full-document re-decompression of a multi-hundred-MB OOXML), gate the
@@ -923,9 +921,12 @@ subtly misbehave.
   not a full ASN.1 walker. It confirms the `PKCX` magic, scans for the
   relevant OIDs, and extracts signer CN / O for comparison against the
   manifest's `Publisher` DN.
-- **SVG / HTML `_yaraBuffer`** is an augmented representation (e.g.
-  decoded Base64 payloads) used for YARA scanning only. Never
-  contaminate Copy / Save with it.
+- **SVG / HTML augmented YARA buffer** is an augmented representation
+  (e.g. decoded Base64 payloads) used for YARA scanning only. The
+  renderer writes the augmented bytes to `findings.augmentedBuffer`;
+  `app-load.js` hoists that onto `currentResult.yaraBuffer` so auto-YARA
+  scans the augmented surface while Copy / Save still serve the raw
+  file bytes.
 - **`ImageRenderer` decodes TIFFs twice via `UTIF`** — once in `render()`
   for pixels, once in `analyzeForSecurity()` for IFD tag mining.
 - **`QrDecoder` is the shared quishing entry point.** Any renderer that
@@ -1284,17 +1285,18 @@ subtly misbehave.
     every native-binary renderer calls for the categorised strings Tier-C
     card (mutexes / pipes / PDB paths / home paths / registry keys /
     Rust panics). CSS lives under `.bin-strings-cats`.
-  - **`App` stash — `this._binaryParsed` + `this._binaryFormat`.** The
+  - **`currentResult.binary` stash — `{ format, parsed }`.** The
     Copy-Analysis ("⚡ Summarize") path and the sidebar's Binary Metadata
-    + MITRE sections need the same `{parsed, format}` pair the main-pane
+    + MITRE sections need the same `{format, parsed}` pair the main-pane
     triage band was drawn from, but neither has a pointer to the
     renderer. `app-load.js`'s pe / elf / macho dispatchers therefore
-    stash `this._binaryParsed = r._parsed || null; this._binaryFormat =
-    'pe' | 'elf' | 'macho';` after the renderer returns, and
-    `_clearFile()` clears both back to `null` on file close so the next
-    load — which may be any format — never sees stale parsed headers.
-    Consumers guard with `if (this._binaryFormat && typeof BinaryVerdict
-    !== 'undefined')` before calling into the module family.
+    stamp `this.currentResult.binary = { format: 'pe' | 'elf' | 'macho',
+    parsed: r._parsed || null }` after the renderer returns; `RenderRoute.run`
+    re-allocates `currentResult` on every load so the next file — which
+    may be any format — starts with `binary: null` and never sees stale
+    parsed headers. Consumers guard with `if (this.currentResult &&
+    this.currentResult.binary && typeof BinaryVerdict !== 'undefined')`
+    before calling into the module family.
   - **Renderer contract addition — `_parsed` / `_findings` stash on the
     result object.** `PeRenderer.render` / `ElfRenderer.render` /
     `MachoRenderer.render` now attach the fully-parsed structure to
@@ -1873,42 +1875,26 @@ because it is also the fallback target.
    longer misalign click-to-focus offsets), and stamps `app.currentResult`
    for downstream consumers. New renderers should still mutate
    `app.findings` directly — migrating to a return-value-driven
-   `findings` happens in a follow-up cleanup. The `app.currentResult`
-   object stamped by `RenderRoute.run` is intentionally not consumed yet
-   (sidebar / copy-analysis / auto-YARA still read the legacy
-   `_fileBuffer` / `_binaryParsed` / `_latestIOCs` fields); a follow-up
-   cuts read sites over.
+   `findings` happens in a follow-up cleanup.
 
-2. **Required `app.*` writes.** Mirroring the architectural side-effect table:
+2. **Required `app.*` writes.** `RenderRoute.run` stamps
+   `app.currentResult = { docEl, findings, rawText, buffer, binary, yaraBuffer,
+   navTitle, analyzer, dispatchId }` before the renderer handler runs, so the
+   table below describes write targets that already exist on the live
+   `currentResult` skeleton.
 
    | Field | When | Read by |
    |---|---|---|
    | `app.findings` | always | sidebar render, copy-analysis, exporters |
-| `app._fileBuffer` | always | auto-YARA fallback, copy-analysis |
-| `app._yaraBuffer` | when augmenting (e.g. SVG/HTML inject decoded payload) | auto-YARA prefers this over `_fileBuffer` |
-| `app._binaryParsed`, `app._binaryFormat` | binary renderers only (PE / ELF / Mach-O) | verdict band, copy-analysis |
-| `container._rawText` | every text-backed renderer | click-to-focus string search |
+   | `app.currentResult.yaraBuffer` | when augmenting (e.g. SVG / HTML inject decoded payload) | auto-YARA prefers it over `app.currentResult.buffer` |
+   | `app.currentResult.binary = { format, parsed }` | binary renderers only (PE / ELF / Mach-O) | verdict band, copy-analysis |
+   | `container._rawText` | every text-backed renderer | click-to-focus string search |
 
-   **`app.currentResult` is the canonical home, and the four
-   `app._fileBuffer` / `app._yaraBuffer` / `app._binaryFormat` /
-   `app._binaryParsed` fields are deprecation aliases.** `RenderRoute.run`
-   (`src/render-route.js`) allocates `app.currentResult = { buffer, binary:
-   { format, parsed }, yaraBuffer, iocs }` *before* invoking the renderer, so
-   every legacy write you do (`this._fileBuffer = buffer; this._binaryFormat
-   = 'pe'; this._binaryParsed = peStruct;`) is silently routed through
-   `Object.defineProperty` setters in `src/app/app-core.js` to its
-   canonical slot on `currentResult`. **Reads** of any of the four legacy
-   fields emit a one-shot `console.warn('[loupe] D4: app._fileBuffer is
-   deprecated; use app.currentResult.buffer')` — the surviving read sites
-   in `app-yara.js`, `app-ui.js` exporters, `app-core.js` `_isRawCopyable`
-   gate, `app-settings.js` Summary builder, and `app-sidebar.js`
-   encoded-content drill-down still work but trigger one warning per field
-   per session as the migration proceeds. New renderers should write the
-   legacy fields the same way for now (the aliases keep things consistent
-   and the cutover happens in a follow-up session); migrating renderer
-   write sites to assign `app.currentResult.{buffer,binary,yaraBuffer}`
-   directly is **deferred**, after which the aliases
-   are removed.
+   `app.currentResult.buffer` is filled by `RenderRoute.run` from the
+   `ArrayBuffer` argument — renderers never write it. Auto-YARA, the
+   sidebar, copy-analysis, the exporters, and the encoded-content
+   drill-down all read directly from `app.currentResult.*`; there are no
+   shadow fields.
 
 3. **`container._rawText` must be LF-normalised — wrap the RHS in `lfNormalize(...)`.**
    Click-to-focus offsets misalign past the first CR otherwise — this is
@@ -1952,7 +1938,7 @@ To participate in sidebar click-to-highlight (the yellow/blue `<mark>` cycling u
 |---|---|---|
 | `container._rawText` | `string` | The normalised source text backing the view. Used by `app-sidebar.js::_findIOCMatches()` and `_highlightMatchesInline()` to locate every occurrence of an IOC value and by the encoded-content scanner to compute line numbers. Line endings must be normalised to `\n` so offsets line up with the rendered `.plaintext-table` rows. |
 | `container._showSourcePane()` | `function` | Invoked before highlighting on renderers that have a Preview/Source toggle (e.g. HTML, SVG, URL). Must synchronously (or via a short `setTimeout(…, 0)`) expose the source pane so a subsequent `scrollIntoView()` on a `<mark>` lands on a visible element. Optional. |
-| `container._yaraBuffer` | `Uint8Array` | Optional. When set, the YARA engine scans this buffer instead of the raw file bytes. Used by SVG/HTML to include an augmented representation (e.g. decoded Base64 payloads) without contaminating Copy/Save. |
+| `findings.augmentedBuffer` | `ArrayBuffer` | Optional. When the renderer's `analyzeForSecurity()` attaches an augmented buffer (e.g. SVG / HTML / Plist / AppleScript / npm decoded payloads), `app-load.js` hoists it onto `app.currentResult.yaraBuffer` so auto-YARA scans the augmented surface while Copy / Save still serve the raw file bytes. |
 
 If the renderer emits a `.plaintext-table` (one `<tr>` per line with a `.plaintext-code` cell per line) the sidebar automatically gets character-level match highlighting, line-background cycling, and the 5-second auto-clear behaviour for free. Renderers without a plaintext surface fall back to a best-effort TreeWalker highlight on the first match found anywhere in the DOM.
 
@@ -2112,8 +2098,8 @@ the known follow-ups.
 | `msg-renderer` | — | ✓ | ✓ | ✓ (attachments) | ✓ |
 | `onenote-renderer` | — | ✓ | ◐ (FileDataStoreObject only) | ✓ (FileDataStoreObject blobs) | ◐ no `mirrorMetadataIOCs`; ◐ snapshot-only async (inflate continuation) |
 | `image-renderer` | — | ✓ (EXIF / chunks / QR) | — (no text plane) | — | ◐ snapshot-only async (QR decode continuation — cutover pending) |
-| `svg-renderer` | — | — (XML walker covers it) | ✓ (source toggle) | — | ◐ uses augmented `_yaraBuffer` via `findings.augmentedBuffer` — verify alignment with the `currentResult` cutover |
-| `html-renderer` | — | — | ✓ (source toggle) | — | ◐ same `findings.augmentedBuffer` path as SVG |
+| `svg-renderer` | — | — (XML walker covers it) | ✓ (source toggle) | — | ✓ (uses `findings.augmentedBuffer` → `currentResult.yaraBuffer`) |
+| `html-renderer` | — | — | ✓ (source toggle) | — | ✓ (same `findings.augmentedBuffer` path as SVG) |
 | `xlsx-renderer` | ✗ (OOXML triage absent) | ✗ (no `EncodedContentDetector` over decoded sheet text) | ◐ (per-sheet / VBA cards) | ✓ (VBA, embeds) | ◐ no `mirrorMetadataIOCs` |
 | `doc-renderer` | ✗ (OLE2 triage absent) | ✗ | ◐ (per-stream cards) | ✓ (VBA streams) | ◐ no `pushIOC` adoption visible; ◐ no `mirrorMetadataIOCs` |
 | `pptx-renderer` | ✗ (OOXML triage absent) | ✗ | ◐ (per-slide cards) | ◐ (delegates to xlsx pipeline) | ◐ no `pushIOC` / no `mirrorMetadataIOCs` |
