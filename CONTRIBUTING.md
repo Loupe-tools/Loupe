@@ -764,7 +764,7 @@ subtly misbehave.
   constructor, the static recognition tables (`MAGIC_BYTES`,
   `TEXT_SIGNATURES`, `HIGH_CONFIDENCE_B64`), the `static
   _propagateInnerFindings` helper, the `async scan()` orchestrator,
-  the recursion driver `_processCandidate`, and `lazyDecode`. Ten
+  the recursion driver `_processCandidate`, and `lazyDecode`. Eleven
   helper modules under `src/decoders/` each attach instance methods
   via `Object.assign(EncodedContentDetector.prototype, {...})`, with
   one static (`EncodedContentDetector.unwrapSafeLink`) carried by
@@ -790,6 +790,7 @@ subtly misbehave.
   | `src/decoders/encoding-decoders.js` | `_decodeCandidate` switch + per-encoding decoders (`_decodeJsHexEscape` for `\xHH` runs; trivial passthrough for Reversed / String Concat / Spaced Tokens / Comment-Stripped) + `_decodeScriptEncoded` | Per-encoding decode routines, including the MS Script Encoder cipher tables. |
   | `src/decoders/cmd-obfuscation.js` | `_findCommandObfuscationCandidates`, `_processCommandObfuscation` | CMD caret / concat / envvar de-obfuscation **and** PowerShell concat / replace / backtick / format / reverse de-obfuscation. |
   | `src/decoders/xor-bruteforce.js` | `_tryXorBruteforce`, `_hasXorContext` | Single-byte XOR cipher recovery. Brute-forces all 255 keys against decoded Char-Array / Base64 / Hex bytes when the surrounding source mentions an XOR operator (`^`, `bxor`, `-bxor`); a clear winner (top-key score > 1.5× 2nd-place) becomes a synthetic `XOR (key 0xNN)` inner finding emitted from `_processCandidate`. Caps work at 64 KiB with dual-window head/tail sampling beyond that. |
+  | `src/decoders/ps-mini-evaluator.js` | `_findPsVariableResolutionCandidates` + 11 `_ps*` helpers | One-pass PowerShell mini-interpreter that resolves `&(<expr>) <args>` invocations whose `<expr>` depends on prior variable / hashtable / `$env:` assignments. Emits `cmd-obfuscation` candidates flowing through `_processCommandObfuscation` so severity, IOC extraction, and dangerous-keyword scoring are reused. Supports string / integer-array / flat-hashtable / `$env:` assignments, `[i]` / `.k` / `$env:Y` accessors, `+` concat, `-split` / `-join`, single-quoted verbatim and double-quoted with `$var` / `$env:Y` interpolation. Caps: 200 statements, 400-char RHS, 1024-char paren search, `maxCandidatesPerType` candidates. Internal exception → empty-list return so a pathological input degrades coverage rather than hanging the worker. |
 
 
   When adding a new encoding family: pick the helper file whose

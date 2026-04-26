@@ -201,6 +201,7 @@ class EncodedContentDetector {
     const spacedTokenCandidates  = _runFinder(this._findSpacedTokenCandidates);
     const commentObfCandidates   = _runFinder(this._findCommentObfuscationCandidates);
     const cmdObfCandidates       = _runFinder(this._findCommandObfuscationCandidates);
+    const psVarResCandidates     = _runFinder(this._findPsVariableResolutionCandidates);
 
     // Surface a single info-level finding so the analyst knows the
     // secondary scan ran in degraded mode. Without this, an oversize
@@ -301,6 +302,10 @@ class EncodedContentDetector {
       if (result) findings.push(result);
     }
     for (const cand of cmdObfCandidates) {
+      const result = await this._processCommandObfuscation(cand);
+      if (result) findings.push(result);
+    }
+    for (const cand of psVarResCandidates) {
       const result = await this._processCommandObfuscation(cand);
       if (result) findings.push(result);
     }

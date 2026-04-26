@@ -209,6 +209,10 @@ _DETECTOR_FILES = [
     'src/decoders/encoding-finders.js',
     'src/decoders/encoding-decoders.js',
     'src/decoders/cmd-obfuscation.js',
+    # ps-mini-evaluator.js depends on cmd-obfuscation.js (it emits
+    # `cmd-obfuscation` candidates that flow through
+    # `_processCommandObfuscation`). See PLAN.md → D3.
+    'src/decoders/ps-mini-evaluator.js',
 ]
 
 
