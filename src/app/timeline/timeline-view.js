@@ -479,7 +479,17 @@ class TimelineView {
     this._cardWidths = TimelineView._loadCardWidthsFor(this._fileKey);
     this._cardOrder = TimelineView._loadCardOrderFor(this._fileKey);
     this._pinnedCols = TimelineView._loadPinnedColsFor(this._fileKey);
+    // Entities-section parity with Top values: pinned types + drag-reorder
+    // saved per-file under their own keys so they don't collide with
+    // `pinnedCols` / `cardOrder` (which key on column names — entity cards
+    // key on IOC type identifiers like `IOC.USERNAME`).
+    this._pinnedEntities = TimelineView._loadEntPinnedFor(this._fileKey);
+    this._entOrder = TimelineView._loadEntOrderFor(this._fileKey);
+    // Detections "Group by ATT&CK tactic" toggle — global, not per-file
+    // (analysts who turn it on once tend to want it on every file).
+    this._detectionsGroup = TimelineView._loadDetectionsGroup();
     this._pendingCtrlSelect = null; // { colIdx, values: Set, rows: [] }
+
 
     // Load any persisted regex extractors for this file.
     const persistedRegex = TimelineView._loadRegexExtractsFor(this._fileKey);
@@ -675,6 +685,42 @@ class TimelineView {
     if (cols && cols.length) all[fileKey] = cols;
     else delete all[fileKey];
     safeStorage.setJSON(TIMELINE_KEYS.PINNED_COLS, all);
+  }
+  // Entities-section state — mirrors the `_loadPinnedColsFor` /
+  // `_loadCardOrderFor` shapes but keys on the IOC-type identifier instead
+  // of a column name. Stored under the dedicated ENT_PINNED / ENT_ORDER
+  // namespaces so the Top-values column state stays uncoupled.
+  static _loadEntPinnedFor(fileKey) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.ENT_PINNED, null);
+    const arr = all && all[fileKey];
+    return Array.isArray(arr) ? arr : [];
+  }
+  static _saveEntPinnedFor(fileKey, types) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.ENT_PINNED, {}) || {};
+    if (types && types.length) all[fileKey] = types;
+    else delete all[fileKey];
+    safeStorage.setJSON(TIMELINE_KEYS.ENT_PINNED, all);
+  }
+  static _loadEntOrderFor(fileKey) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.ENT_ORDER, null);
+    const arr = all && all[fileKey];
+    return Array.isArray(arr) ? arr : null;
+  }
+  static _saveEntOrderFor(fileKey, order) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.ENT_ORDER, {}) || {};
+    if (order && order.length) all[fileKey] = order;
+    else delete all[fileKey];
+    safeStorage.setJSON(TIMELINE_KEYS.ENT_ORDER, all);
+  }
+  // Global "group Detections by ATT&CK tactic" toggle. Cross-file because
+  // analysts who turn it on once tend to want it on for every EVTX they
+  // open. Boolean stored as 0/1.
+  static _loadDetectionsGroup() {
+    const raw = safeStorage.get(TIMELINE_KEYS.DETECTIONS_GROUP);
+    return raw === '1';
+  }
+  static _saveDetectionsGroup(on) {
+    safeStorage.set(TIMELINE_KEYS.DETECTIONS_GROUP, on ? '1' : '0');
   }
   static _loadRegexExtractsFor(fileKey) {
     const all = safeStorage.getJSON(TIMELINE_KEYS.REGEX_EXTRACTS, null);
@@ -3451,36 +3497,25 @@ class TimelineView {
     } : null;
     const detailAugment = (evtxEidCol >= 0) ? (dataIdx, colIdx, value, ctx) => {
       if (colIdx !== evtxEidCol) return;
-      const rec = evtxLookupRec(dataIdx);
-      if (!rec) return;
       const valEl = ctx && ctx.valEl;
       if (!valEl) return;
-      try { valEl.title = Reg.formatTooltip(rec); } catch (_) { /* ignore */ }
-      // Summary pill — short analyst-friendly label.
-      if (rec.summary) {
-        const pill = document.createElement('span');
-        pill.className = 'tl-evtx-eid-pill';
-        pill.textContent = rec.summary;
-        if (rec.category) pill.title = `${rec.category} · ${rec.name || ''}`.trim();
-        valEl.appendChild(pill);
-      }
-      // MITRE pill — compact list of technique IDs; tooltip carries the
-      // canonical names pulled from `window.MITRE.lookup`.
-      if (Array.isArray(rec.mitre) && rec.mitre.length) {
-        const mpill = document.createElement('span');
-        mpill.className = 'tl-evtx-mitre-pill';
-        mpill.textContent = 'ATT&CK ' + rec.mitre.join(' · ');
-        const MT = (typeof window !== 'undefined' && window.MITRE) ? window.MITRE : null;
-        if (MT) {
-          const lines = rec.mitre.map(tid => {
-            const info = MT.lookup(tid);
-            return info ? `${tid} — ${info.name || ''}` : tid;
-          });
-          mpill.title = lines.join('\n');
-        }
-        valEl.appendChild(mpill);
-      }
+      // Resolve the row's eid + channel and emit pills via the shared
+      // helper so the drawer / Top-values card / Detections table all
+      // render identical chips. Drawer additionally promotes the
+      // tooltip onto `valEl` itself.
+      const row = rowsConcat[dataIdx];
+      if (!row) return;
+      const eid = row[evtxEidCol];
+      if (!eid) return;
+      const ch = evtxChannelCol >= 0 ? row[evtxChannelCol] : '';
+      try {
+        const rec = Reg.lookup(eid, ch);
+        if (rec) valEl.title = Reg.formatTooltip(rec);
+      } catch (_) { /* ignore */ }
+      const frag = this._evtxEidPillsFor(eid, ch);
+      if (frag.childNodes.length) valEl.appendChild(frag);
     } : null;
+
 
     const existing = (role === 'main' ? this._grid : null);
     if (!existing) {
@@ -3745,6 +3780,14 @@ class TimelineView {
     host.innerHTML = '';
     let rowHeight = 22;
     const cols = this.columns;
+    // EVTX-only: identify the Event-ID column index so the renderer
+    // below can append a `.tl-evtx-eid-pill` (Microsoft summary) +
+    // optional `.tl-evtx-mitre-pill` (ATT&CK) to each top-values row.
+    // Resolves to -1 on CSV / TSV / SQLite — pill rendering is skipped.
+    const tlEvtxEidCol = (this._evtxFindings && this._baseColumns)
+      ? this._baseColumns.indexOf(EVTX_COLUMNS.EVENT_ID)
+      : -1;
+
 
     // Build column-index iteration order: if a saved drag-order exists,
     // honour it; columns absent from the saved array (new columns added
@@ -3933,6 +3976,14 @@ class TimelineView {
             <span class="tl-col-bar" style="${barStyle}"></span>
             ${swatchHtml}<span class="tl-col-val" title="${_tlEsc(val)}">${_tlEsc(val === '' ? '(empty)' : val)}</span>
             <span class="tl-col-count">${count.toLocaleString()}</span>`;
+          // EVTX-only: append Microsoft summary + ATT&CK pills to each
+          // value row in the Event-ID Top-values card so analysts can
+          // read the meaning without opening the drawer.  `tlEvtxEidCol`
+          // is -1 for non-EVTX schemas, suppressing the lookup.
+          if (c === tlEvtxEidCol && val !== '' && this._evtxEidPillsFor) {
+            const pillFrag = this._evtxEidPillsFor(val, '');
+            if (pillFrag && pillFrag.childNodes.length) row.appendChild(pillFrag);
+          }
           sizer.appendChild(row);
         }
       };

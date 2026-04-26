@@ -16128,6 +16128,171 @@ body.dark .grid-cell.tl-stack-text-35 {
   border-radius: 6px;
 }
 
+/* ── Severity summary strip ────────────────────────────────────────────
+   Row of severity-coloured count pills + "Group by ATT&CK tactic" toggle
+   above the detection table. Built by `_renderDetections` once per
+   render. Pills are clickable — they sort the table by severity desc /
+   asc. The right-side group-by toggle persists state via
+   `_loadDetectionsGroup` / `_saveDetectionsGroup` (loupe_timeline_detections_group). */
+.timeline-view .tl-detections-summary-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 6px 4px 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.timeline-view .tl-detections-summary-counts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.timeline-view .tl-detections-summary-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, transform .1s ease;
+  background: rgba(148, 163, 184, .14);
+  border: 1px solid rgba(148, 163, 184, .25);
+  color: var(--text-muted);
+}
+
+.timeline-view .tl-detections-summary-pill:hover {
+  transform: translateY(-1px);
+}
+
+.timeline-view .tl-detections-summary-pill-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.timeline-view .tl-detections-summary-pill-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.timeline-view .tl-detections-summary-pill.tl-det-sev-critical {
+  background: rgba(168, 85, 247, .14);
+  border-color: rgba(168, 85, 247, .35);
+  color: #7c3aed;
+}
+
+.timeline-view .tl-detections-summary-pill.tl-det-sev-high {
+  background: rgb(var(--risk-high-rgb) / .14);
+  border-color: rgb(var(--risk-high-rgb) / .35);
+  color: var(--risk-high);
+}
+
+.timeline-view .tl-detections-summary-pill.tl-det-sev-medium {
+  background: rgba(251, 191, 36, .15);
+  border-color: rgba(251, 191, 36, .35);
+  color: #b45309;
+}
+
+.timeline-view .tl-detections-summary-pill.tl-det-sev-low {
+  background: rgba(16, 185, 129, .14);
+  border-color: rgba(16, 185, 129, .35);
+  color: var(--risk-low);
+}
+
+.timeline-view .tl-detections-summary-pill.tl-det-sev-info {
+  background: rgb(var(--accent-rgb) / .14);
+  border-color: rgb(var(--accent-rgb) / .35);
+  color: var(--accent);
+}
+
+body.dark .timeline-view .tl-detections-summary-pill.tl-det-sev-critical {
+  color: #c084fc;
+}
+
+body.dark .timeline-view .tl-detections-summary-pill.tl-det-sev-medium {
+  color: var(--risk-med);
+}
+
+.timeline-view .tl-detections-summary-stat {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+.timeline-view .tl-detections-summary-tools {
+  flex: 0 0 auto;
+}
+
+.timeline-view .tl-detections-group-btn {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.timeline-view .tl-detections-group-btn-active {
+  background: rgb(var(--accent-rgb) / .14) !important;
+  border-color: rgb(var(--accent-rgb) / .35) !important;
+  color: var(--accent) !important;
+}
+
+/* ── Tactic-grouped sub-tables ─────────────────────────────────────────
+   When the analyst toggles the group-by-tactic button, detections are
+   bucketed by their primary MITRE ATT&CK tactic and rendered as one
+   `<table>` per bucket. Each bucket is wrapped in a titled
+   `.tl-detections-tactic-group` block. */
+.timeline-view .tl-detections-tactic-group {
+  margin-bottom: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel-bg);
+}
+
+.timeline-view .tl-detections-tactic-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--panel-bg-section);
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+}
+
+.timeline-view .tl-detections-tactic-name {
+  font-weight: 700;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.timeline-view .tl-detections-tactic-stat {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Sortable column headers — chevron arrows are emitted inline by
+   `_buildDetectionsTable`, so no `::after` here. Cursor + hover bg only. */
+.timeline-view .tl-det-sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: background .12s ease;
+}
+
+.timeline-view .tl-det-sortable:hover {
+  background: rgb(var(--accent-rgb) / .08);
+}
+
 /* Detections table — severity · description · event id · hit count. */
 .timeline-view .tl-detections-table {
   width: 100%;
@@ -16273,65 +16438,59 @@ body.dark .timeline-view .tl-det-row.tl-det-sev-medium .tl-det-sev-badge {
 .timeline-view .tl-entity-group {
   position: relative;
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--panel-bg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 180px;
+  max-height: 520px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
 }
 
-.timeline-view .tl-entity-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 6px 10px;
-  background: var(--panel-bg-section);
-  border-bottom: 1px solid var(--hairline);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.timeline-view .tl-entity-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.timeline-view .tl-entity-count {
-  flex: 0 0 auto;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-faint);
-}
+/* `.tl-entity-head` deliberately co-exists on the same element as
+   `.tl-col-head` (see `_renderEntities` in `timeline-detections.js`).
+   The col-head rules carry the centred-title layout, hover-revealed
+   action cluster, draggable cursor, and pinned/drag-source modifiers;
+   this selector is reserved for any entity-specific tweaks. Kept as
+   an empty hook intentionally — adding overrides here will fight the
+   col-head styling and break parity with the Top-values cards. */
+.timeline-view .tl-entity-head { /* intentionally empty — see comment above */ }
 
 .timeline-view .tl-entity-list {
-  max-height: 220px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 2px 0;
 }
 
 .timeline-view .tl-entity-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: background .12s ease;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .timeline-view .tl-entity-row:hover {
   background: rgb(var(--accent-rgb) / .08);
 }
 
+.timeline-view .tl-entity-row:hover .tl-col-bar {
+  background: rgb(var(--accent-rgb) / .16);
+}
+
 .timeline-view .tl-entity-val {
+  position: relative;
+  z-index: 1;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -16343,10 +16502,12 @@ body.dark .timeline-view .tl-det-row.tl-det-sev-medium .tl-det-sev-badge {
 }
 
 .timeline-view .tl-entity-hits {
+  position: relative;
+  z-index: 1;
   flex: 0 0 auto;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 /* ---------- Timeline: EVTX Event-ID annotation pills ---------- */

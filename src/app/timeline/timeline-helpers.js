@@ -31,6 +31,17 @@ const TIMELINE_KEYS = Object.freeze({
   CARD_ORDER: 'loupe_timeline_card_order',
   PINNED_COLS: 'loupe_timeline_pinned_cols',
   AUTOEXTRACT_NUDGED_HARD: 'loupe_timeline_autoextract_nudged_hard',
+  // Entities-section parity with Top values (per-file persistence). The
+  // entity card head was promoted from a fixed type-label to a Top-values-
+  // style head with pin / copy / sort-cycle / search affordances; these
+  // two keys persist the per-file pinned-types ordering and the analyst's
+  // chosen group order, mirroring `PINNED_COLS` / `CARD_ORDER` semantics.
+  ENT_PINNED: 'loupe_timeline_entity_pinned',
+  ENT_ORDER: 'loupe_timeline_entity_order',
+  // ATT&CK group-by toggle for the Detections section. Boolean stored
+  // globally (not per-file) — analysts who turn it on once typically want
+  // it on for every EVTX they open.
+  DETECTIONS_GROUP: 'loupe_timeline_detections_group',
 });
 
 

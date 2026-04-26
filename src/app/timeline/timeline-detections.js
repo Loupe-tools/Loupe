@@ -18,8 +18,99 @@
 // Loads AFTER timeline-view.js (which declares `class TimelineView`).
 // ════════════════════════════════════════════════════════════════════════════
 
+// Display labels for IOC entity types — kept module-private so the
+// Entities-section render can show "👤 Users" / "🌐 IPs" / etc. instead
+// of the raw IOC.* string. Keys are the IOC.* constants from
+// `src/constants.js`. New IOC types fall back to the raw type id.
+const _TL_ENTITY_LABELS = {
+  [IOC.USERNAME]: '👤 Users',
+  [IOC.HOSTNAME]: '🖥 Hosts',
+  [IOC.IP]: '🌐 IPs',
+  [IOC.DOMAIN]: '🌐 Domains',
+  [IOC.URL]: '🔗 URLs',
+  [IOC.EMAIL]: '✉ Emails',
+  [IOC.PROCESS]: '⚙ Processes',
+  [IOC.COMMAND_LINE]: '📟 Command lines',
+  [IOC.FILE_PATH]: '📄 File paths',
+  [IOC.UNC_PATH]: '📂 UNC paths',
+  [IOC.REGISTRY_KEY]: '🗝 Registry keys',
+  [IOC.HASH]: '🔑 Hashes',
+};
+
+// Stable ordering for entity types — most useful pivots first. Types not
+// in this list get appended (in insertion order) at the end.
+const _TL_ENTITY_ORDER = [
+  IOC.USERNAME, IOC.HOSTNAME, IOC.IP, IOC.DOMAIN, IOC.URL,
+  IOC.EMAIL, IOC.PROCESS, IOC.COMMAND_LINE, IOC.FILE_PATH,
+  IOC.UNC_PATH, IOC.REGISTRY_KEY, IOC.HASH,
+];
+
 Object.assign(TimelineView.prototype, {
 
+  // ── EVTX Event-ID + ATT&CK pill renderer ─────────────────────────────
+  // Shared by the GridViewer drawer's `detailAugment` callback (in
+  // `_renderGridInto`), the Top-Values Event-ID card row injector (in
+  // `_paintColumnCards`), and the Detections-table row builder (below).
+  // Returns a `DocumentFragment` containing zero, one, or two `<span>`
+  // pills — `.tl-evtx-eid-pill` (Microsoft summary) and
+  // `.tl-evtx-mitre-pill` (compact ATT&CK technique list with full names
+  // in the `title`).
+  //
+  // `eid` may be a string or number. `channel` is optional — when
+  // omitted the registry falls back to the bare-id key (which covers
+  // most Security IDs). Returns an empty fragment for non-EVTX files,
+  // unknown event IDs, or when the EvtxEventIds module isn't loaded.
+  _evtxEidPillsFor(eid, channel) {
+    const frag = document.createDocumentFragment();
+    if (!this._evtxFindings) return frag;
+    if (eid == null || eid === '') return frag;
+    const Reg = (typeof window !== 'undefined' && window.EvtxEventIds) || null;
+    if (!Reg) return frag;
+    let rec = null;
+    try { rec = Reg.lookup(eid, channel || ''); } catch (_) { rec = null; }
+    if (!rec) return frag;
+    if (rec.summary) {
+      const pill = document.createElement('span');
+      pill.className = 'tl-evtx-eid-pill';
+      pill.textContent = rec.summary;
+      try {
+        // Multi-line tooltip via `formatTooltip`, falling back to a
+        // simple "category · name" join when the helper isn't present.
+        if (typeof Reg.formatTooltip === 'function') pill.title = Reg.formatTooltip(rec);
+        else if (rec.category) pill.title = `${rec.category} · ${rec.name || ''}`.trim();
+      } catch (_) { /* ignore */ }
+      frag.appendChild(pill);
+    }
+    if (Array.isArray(rec.mitre) && rec.mitre.length) {
+      const mpill = document.createElement('span');
+      mpill.className = 'tl-evtx-mitre-pill';
+      mpill.textContent = 'ATT&CK ' + rec.mitre.join(' · ');
+      const MT = (typeof window !== 'undefined' && window.MITRE) ? window.MITRE : null;
+      if (MT) {
+        const lines = rec.mitre.map(tid => {
+          let info = null;
+          try { info = MT.lookup(tid); } catch (_) { /* ignore */ }
+          return info ? `${tid} — ${info.name || ''}` : tid;
+        });
+        mpill.title = lines.join('\n');
+      }
+      frag.appendChild(mpill);
+    }
+    return frag;
+  },
+
+  // ── Detections section renderer ─────────────────────────────────────
+  // EVTX-only. Renders Sigma-style `IOC.PATTERN` hits from
+  // `_evtxFindings.externalRefs` as a sortable, severity-stratified
+  // table with MITRE technique pills, channel/category context, an
+  // optional "Group by ATT&CK tactic" toggle, and a per-row right-click
+  // context menu (Filter Event ID / Mark suspicious / open in MS docs
+  // or attack.mitre.org).
+  //
+  // Layout:
+  //   [severity summary strip]   ← 5 colour-coded counts + "Group by tactic" toggle
+  //   [sortable headers]         ← click to cycle asc/desc on any column
+  //   [body rows OR tactic groups]
   _renderDetections() {
     const sec = this._els.detectionsSection;
     const body = this._els.detectionsBody;
@@ -37,7 +128,6 @@ Object.assign(TimelineView.prototype, {
     // Force-expand the Detections section whenever it has content — analysts
     // glance at this section first on EVTX so a previously-collapsed state
     // carried over from a different file shouldn't hide the Sigma hits.
-    // Also persist the uncollapsed state so it survives the next rebuild.
     if (sec.wrapper.classList.contains('collapsed')) {
       sec.wrapper.classList.remove('collapsed');
       this._sections.detections = false;
@@ -45,70 +135,464 @@ Object.assign(TimelineView.prototype, {
     }
 
     const sevRank = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+    const Reg = (typeof window !== 'undefined' && window.EvtxEventIds) || null;
+    const MT = (typeof window !== 'undefined' && window.MITRE) ? window.MITRE : null;
 
-    refs.sort((a, b) => {
-      const sa = sevRank[a.severity] || 0, sb = sevRank[b.severity] || 0;
-      if (sa !== sb) return sb - sa;
-      return (b.count || 0) - (a.count || 0);
+    // Resolve column indices for click-to-filter pivots.
+    const eventIdCol = this._baseColumns ? this._baseColumns.indexOf(EVTX_COLUMNS.EVENT_ID) : -1;
+    const channelCol = this._baseColumns ? this._baseColumns.indexOf(EVTX_COLUMNS.CHANNEL) : -1;
+
+    // Pre-decorate every detection row with the registry lookup +
+    // primary tactic so sort / group / render passes don't re-hit the
+    // EvtxEventIds map per row.
+    const decorated = refs.map(r => {
+      const eid = r.eventId == null ? '' : String(r.eventId);
+      const raw = String(r.url || '');
+      // The raw `url` field holds "<description> (N match(es))" — strip the
+      // trailing count suffix; we show it in its own column.
+      const desc = raw.replace(/\s*\((\d+)\s+match(?:es)?\)\s*$/i, '');
+      let rec = null;
+      if (Reg && eid) { try { rec = Reg.lookup(eid, ''); } catch (_) { rec = null; } }
+      const mitre = rec && Array.isArray(rec.mitre) ? rec.mitre : [];
+      let primaryTactic = '';
+      if (mitre.length && MT && typeof MT.primaryTactic === 'function') {
+        try { primaryTactic = MT.primaryTactic(mitre) || ''; } catch (_) { /* ignore */ }
+      }
+      // Fallback: pick the first technique's tactic from the lookup table.
+      if (!primaryTactic && mitre.length && MT) {
+        for (const tid of mitre) {
+          try {
+            const info = MT.lookup(tid);
+            if (info && info.tactic) { primaryTactic = info.tactic; break; }
+          } catch (_) { /* ignore */ }
+        }
+      }
+      return {
+        ref: r,
+        eid,
+        desc,
+        severity: r.severity || 'info',
+        sevRank: sevRank[r.severity] || 0,
+        count: r.count || 0,
+        rec,
+        category: rec && rec.category ? rec.category : '',
+        channel: rec && rec.channel ? rec.channel : '',
+        mitre,
+        primaryTactic,
+      };
     });
 
-    // Event ID column index for EVTX (matches `fromEvtx` schema).
-    const eventIdCol = this._baseColumns.indexOf(EVTX_COLUMNS.EVENT_ID);
+    // Severity tally for the summary strip (uses every detection,
+    // regardless of grouping / sort state).
+    const sevTally = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    for (const d of decorated) {
+      if (sevTally[d.severity] != null) sevTally[d.severity]++;
+      else sevTally.info++;
+    }
+    const totalDistinct = decorated.length;
+    const totalHits = decorated.reduce((a, d) => a + (d.count || 0), 0);
 
+    // ── Header strip ────────────────────────────────────────────────
     body.innerHTML = '';
+    const strip = document.createElement('div');
+    strip.className = 'tl-detections-summary-strip';
+    const sevOrder = ['critical', 'high', 'medium', 'low', 'info'];
+    const sevLabels = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' };
+    const stripLeft = document.createElement('div');
+    stripLeft.className = 'tl-detections-summary-counts';
+    for (const sev of sevOrder) {
+      const n = sevTally[sev] || 0;
+      if (!n) continue;
+      const pill = document.createElement('span');
+      pill.className = 'tl-detections-summary-pill tl-det-sev-' + sev;
+      pill.innerHTML = `<span class="tl-detections-summary-pill-label">${sevLabels[sev]}</span><span class="tl-detections-summary-pill-count">${n.toLocaleString()}</span>`;
+      pill.title = `Click to filter to ${sevLabels[sev]} severity rows`;
+      pill.addEventListener('click', () => {
+        // Toggle sort to severity; this is the simplest "show me this
+        // tier first" UX without inventing a separate filter state.
+        if (this._detectionsSort && this._detectionsSort.col === 'severity'
+          && this._detectionsSort.dir === 'desc') {
+          this._detectionsSort = { col: 'severity', dir: 'asc' };
+        } else {
+          this._detectionsSort = { col: 'severity', dir: 'desc' };
+        }
+        this._renderDetections();
+      });
+      stripLeft.appendChild(pill);
+    }
+    const stripStat = document.createElement('span');
+    stripStat.className = 'tl-detections-summary-stat';
+    stripStat.textContent = `${totalDistinct.toLocaleString()} detection${totalDistinct === 1 ? '' : 's'} · ${totalHits.toLocaleString()} hit${totalHits === 1 ? '' : 's'}`;
+    stripLeft.appendChild(stripStat);
+    strip.appendChild(stripLeft);
+
+    // Group-by-ATT&CK-tactic toggle (right side of strip).
+    const stripRight = document.createElement('div');
+    stripRight.className = 'tl-detections-summary-tools';
+    const groupBtn = document.createElement('button');
+    groupBtn.type = 'button';
+    groupBtn.className = 'tl-tb-btn tl-detections-group-btn';
+    if (this._detectionsGroup) groupBtn.classList.add('tl-detections-group-btn-active');
+    groupBtn.textContent = this._detectionsGroup ? '▾ Grouped by ATT&CK tactic' : '▸ Group by ATT&CK tactic';
+    groupBtn.title = 'Toggle grouping detections by primary MITRE ATT&CK tactic';
+    groupBtn.addEventListener('click', () => {
+      this._detectionsGroup = !this._detectionsGroup;
+      TimelineView._saveDetectionsGroup(this._detectionsGroup);
+      this._renderDetections();
+    });
+    stripRight.appendChild(groupBtn);
+    strip.appendChild(stripRight);
+    body.appendChild(strip);
+
+    // ── Sort + render ────────────────────────────────────────────────
+    const sort = this._detectionsSort || { col: 'severity', dir: 'desc' };
+    const sortRows = (rows) => {
+      const dir = sort.dir === 'asc' ? 1 : -1;
+      const col = sort.col;
+      rows.sort((a, b) => {
+        let cmp = 0;
+        switch (col) {
+          case 'severity': cmp = a.sevRank - b.sevRank; break;
+          case 'eid':
+            cmp = (parseInt(a.eid, 10) || 0) - (parseInt(b.eid, 10) || 0);
+            break;
+          case 'desc': cmp = String(a.desc).localeCompare(String(b.desc)); break;
+          case 'count': cmp = a.count - b.count; break;
+          case 'channel': cmp = String(a.channel).localeCompare(String(b.channel)); break;
+          case 'tactic': cmp = String(a.primaryTactic).localeCompare(String(b.primaryTactic)); break;
+          default: cmp = a.sevRank - b.sevRank;
+        }
+        if (cmp === 0) {
+          // Stable secondary order: severity desc, then count desc.
+          cmp = (a.sevRank - b.sevRank);
+          if (cmp === 0) cmp = (a.count - b.count);
+          return -cmp;
+        }
+        return cmp * dir;
+      });
+    };
+
+    if (this._detectionsGroup) {
+      // Bucket detections by primary tactic; render one sub-table per
+      // bucket. Detections without a resolvable tactic land in
+      // "Unmapped".
+      const buckets = new Map();
+      for (const d of decorated) {
+        const key = d.primaryTactic || '__unmapped__';
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(d);
+      }
+      // Sort tactic groups: highest-severity first, then count desc.
+      const tacticOrder = Array.from(buckets.keys()).sort((a, b) => {
+        const ar = buckets.get(a).reduce((m, d) => Math.max(m, d.sevRank), 0);
+        const br = buckets.get(b).reduce((m, d) => Math.max(m, d.sevRank), 0);
+        if (ar !== br) return br - ar;
+        const ac = buckets.get(a).reduce((s, d) => s + d.count, 0);
+        const bc = buckets.get(b).reduce((s, d) => s + d.count, 0);
+        return bc - ac;
+      });
+      for (const key of tacticOrder) {
+        const rows = buckets.get(key);
+        sortRows(rows);
+        const grp = document.createElement('div');
+        grp.className = 'tl-detections-tactic-group';
+        const head = document.createElement('header');
+        head.className = 'tl-detections-tactic-head';
+        const label = (key === '__unmapped__') ? '— Unmapped —' : key;
+        const sum = rows.reduce((s, d) => s + d.count, 0);
+        head.innerHTML = `<span class="tl-detections-tactic-name">${_tlEsc(label)}</span>
+          <span class="tl-detections-tactic-stat">${rows.length} det. · ${sum.toLocaleString()} hit${sum === 1 ? '' : 's'}</span>`;
+        grp.appendChild(head);
+        grp.appendChild(this._buildDetectionsTable(rows, sort, eventIdCol, channelCol));
+        body.appendChild(grp);
+      }
+    } else {
+      sortRows(decorated);
+      body.appendChild(this._buildDetectionsTable(decorated, sort, eventIdCol, channelCol));
+    }
+  },
+
+  // Construct one detections `<table>` for the given (already-sorted)
+  // row array. Factored out of `_renderDetections` so the
+  // group-by-tactic mode can re-use it per bucket.
+  _buildDetectionsTable(rows, sort, eventIdCol, channelCol) {
     const tbl = document.createElement('table');
     tbl.className = 'tl-detections-table';
+
+    // Sortable headers — click to cycle asc/desc on the same column,
+    // or switch to a new column (default desc on click).
+    const arrowFor = (col) => sort && sort.col === col
+      ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : '';
     tbl.innerHTML = `
       <thead><tr>
-        <th class="tl-det-sev">Severity</th>
-        <th class="tl-det-desc">Detection</th>
-        <th class="tl-det-eid">Event ID</th>
-        <th class="tl-det-count">Hits</th>
+        <th class="tl-det-sev tl-det-sortable" data-sort="severity">Severity${arrowFor('severity')}</th>
+        <th class="tl-det-eid tl-det-sortable" data-sort="eid">Event${arrowFor('eid')}</th>
+        <th class="tl-det-desc tl-det-sortable" data-sort="desc">Detection${arrowFor('desc')}</th>
+        <th class="tl-det-channel tl-det-sortable" data-sort="channel">Channel${arrowFor('channel')}</th>
+        <th class="tl-det-mitre tl-det-sortable" data-sort="tactic">ATT&amp;CK${arrowFor('tactic')}</th>
+        <th class="tl-det-count tl-det-sortable" data-sort="count">Hits${arrowFor('count')}</th>
       </tr></thead>
       <tbody></tbody>`;
+    tbl.querySelectorAll('th.tl-det-sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.sort;
+        const cur = this._detectionsSort || { col: 'severity', dir: 'desc' };
+        if (cur.col === col) {
+          this._detectionsSort = { col, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
+        } else {
+          // Default direction differs by column kind: numeric / severity
+          // descend first (biggest hits), text columns ascend.
+          const desc = (col === 'severity' || col === 'count' || col === 'eid');
+          this._detectionsSort = { col, dir: desc ? 'desc' : 'asc' };
+        }
+        this._renderDetections();
+      });
+    });
+
     const tb = tbl.querySelector('tbody');
-    for (const r of refs) {
+    for (const d of rows) {
       const tr = document.createElement('tr');
-      tr.className = 'tl-det-row tl-det-sev-' + (r.severity || 'info');
-      const eid = r.eventId == null ? '' : String(r.eventId);
-      // The raw `url` field holds "<description> (N match(es))" — strip the
-      // trailing count suffix for display since we show it in its own column.
-      const raw = String(r.url || '');
-      const desc = raw.replace(/\s*\((\d+)\s+match(?:es)?\)\s*$/i, '');
-      const cnt = r.count != null ? r.count : '';
-      tr.innerHTML = `
-        <td class="tl-det-sev"><span class="tl-det-sev-badge">${_tlEsc((r.severity || 'info').toUpperCase())}</span></td>
-        <td class="tl-det-desc" title="${_tlEsc(desc)}">${_tlEsc(desc)}</td>
-        <td class="tl-det-eid">${_tlEsc(eid)}</td>
-        <td class="tl-det-count">${cnt === '' ? '' : Number(cnt).toLocaleString()}</td>`;
-      if (eid && eventIdCol >= 0) {
+      tr.className = 'tl-det-row tl-det-sev-' + d.severity;
+
+      // Severity cell — same vocabulary as the analyser sidebar.
+      const sevTd = document.createElement('td');
+      sevTd.className = 'tl-det-sev';
+      sevTd.innerHTML = `<span class="tl-det-sev-badge">${_tlEsc(d.severity.toUpperCase())}</span>`;
+      tr.appendChild(sevTd);
+
+      // Event ID cell — value plus the registry summary pill so analysts
+      // can read the meaning without opening the drawer.
+      const eidTd = document.createElement('td');
+      eidTd.className = 'tl-det-eid';
+      eidTd.innerHTML = `<span class="tl-det-eid-val">${_tlEsc(d.eid)}</span>`;
+      // Append the EID summary pill (no MITRE pill — that gets its own column).
+      if (d.rec && d.rec.summary) {
+        const pill = document.createElement('span');
+        pill.className = 'tl-evtx-eid-pill';
+        pill.textContent = d.rec.summary;
+        try {
+          const Reg = (typeof window !== 'undefined' && window.EvtxEventIds) || null;
+          if (Reg && typeof Reg.formatTooltip === 'function') pill.title = Reg.formatTooltip(d.rec);
+        } catch (_) { /* ignore */ }
+        eidTd.appendChild(pill);
+      }
+      tr.appendChild(eidTd);
+
+      // Description cell.
+      const descTd = document.createElement('td');
+      descTd.className = 'tl-det-desc';
+      descTd.title = d.desc;
+      descTd.textContent = d.desc;
+      tr.appendChild(descTd);
+
+      // Channel + category cell.
+      const chTd = document.createElement('td');
+      chTd.className = 'tl-det-channel';
+      if (d.channel || d.category) {
+        const chSpan = document.createElement('span');
+        chSpan.className = 'tl-det-channel-name';
+        chSpan.textContent = d.channel || '';
+        chTd.appendChild(chSpan);
+        if (d.category) {
+          const catSpan = document.createElement('span');
+          catSpan.className = 'tl-det-channel-cat';
+          catSpan.textContent = d.category;
+          chTd.appendChild(catSpan);
+        }
+      }
+      tr.appendChild(chTd);
+
+      // MITRE technique pills cell — primary tactic on a chip, then
+      // each technique on its own pill (clicking the pill opens the
+      // attack.mitre.org page in a new tab).
+      const mTd = document.createElement('td');
+      mTd.className = 'tl-det-mitre';
+      if (d.primaryTactic) {
+        const tacticPill = document.createElement('span');
+        tacticPill.className = 'tl-det-tactic-pill';
+        tacticPill.textContent = d.primaryTactic;
+        mTd.appendChild(tacticPill);
+      }
+      if (d.mitre.length) {
+        const MT = (typeof window !== 'undefined' && window.MITRE) ? window.MITRE : null;
+        for (const tid of d.mitre) {
+          const a = document.createElement('a');
+          a.className = 'tl-det-tech-pill';
+          a.textContent = tid;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          if (MT) {
+            try {
+              const info = MT.lookup(tid);
+              a.title = info && info.name ? `${tid} — ${info.name}` : tid;
+              a.href = (typeof MT.urlFor === 'function' && MT.urlFor(tid))
+                || (info && info.url) || `https://attack.mitre.org/techniques/${tid}/`;
+            } catch (_) {
+              a.href = `https://attack.mitre.org/techniques/${tid}/`;
+              a.title = tid;
+            }
+          } else {
+            a.href = `https://attack.mitre.org/techniques/${tid}/`;
+            a.title = tid;
+          }
+          // Stop click bubbling so the row-level pivot handler doesn't
+          // also fire when the analyst opens the technique URL.
+          a.addEventListener('click', (e) => e.stopPropagation());
+          mTd.appendChild(a);
+        }
+      }
+      tr.appendChild(mTd);
+
+      // Hit-count cell.
+      const cntTd = document.createElement('td');
+      cntTd.className = 'tl-det-count';
+      cntTd.textContent = d.count ? d.count.toLocaleString() : '';
+      tr.appendChild(cntTd);
+
+      // Click on the row body (anywhere except the technique pills) →
+      // filter the grid to this Event ID. Ctrl/Meta-click stacks the
+      // filter on top of the existing query.
+      if (d.eid && eventIdCol >= 0) {
         tr.classList.add('tl-det-row-clickable');
-        tr.title = `Filter Event ID = ${eid} (Ctrl/⌘-click to add to current query)`;
+        tr.title = `Filter Event ID = ${d.eid} (Ctrl/⌘-click to add to current query · right-click for more)`;
         tr.addEventListener('click', (ev) => {
-          // Default: clear the whole query first so the detection stands
-          // alone — otherwise a surviving `contains` / `NOT` / other-column
-          // chip would keep filtering the result set to nothing. Ctrl/Meta
-          // is an opt-out for analysts who want to stack detections
-          // additively on top of an existing query.
+          if (ev.target.closest('a')) return;   // technique-pill anchors handle themselves
           const additive = ev.ctrlKey || ev.metaKey;
           if (!additive) this._queryCommitClauses([]);
-          this._addOrToggleChip(eventIdCol, eid, { op: 'eq' });
+          this._addOrToggleChip(eventIdCol, d.eid, { op: 'eq' });
+        });
+        // Right-click → context menu (Filter Event ID / Mark suspicious /
+        // open MS docs / open ATT&CK tactic).
+        tr.addEventListener('contextmenu', (ev) => {
+          if (ev.target.closest('a')) return;
+          ev.preventDefault();
+          this._openDetectionContextMenu(ev, d, eventIdCol, channelCol);
         });
       }
       tb.appendChild(tr);
     }
-    body.appendChild(tbl);
+    return tbl;
+  },
+
+  // Right-click context menu for a Detections-table row. Mirrors the
+  // shape of `_openRowContextMenu` so the visual treatment is consistent.
+  _openDetectionContextMenu(e, d, eventIdCol, channelCol) {
+    this._closePopover();
+    const menu = document.createElement('div');
+    menu.className = 'tl-popover tl-rowmenu';
+
+    const items = [];
+    if (eventIdCol >= 0 && d.eid) {
+      items.push({
+        label: `🔎 Filter to Event ID ${d.eid}`,
+        act: () => {
+          this._queryCommitClauses([]);
+          this._addOrToggleChip(eventIdCol, d.eid, { op: 'eq' });
+        },
+      });
+      items.push({
+        label: `＋ Add Event ID ${d.eid} to current query`,
+        act: () => this._addOrToggleChip(eventIdCol, d.eid, { op: 'eq' }),
+      });
+    }
+    if (channelCol >= 0 && d.channel) {
+      items.push({
+        label: `🔎 Filter to channel "${this._ellipsis(d.channel, 40)}"`,
+        act: () => this._addOrToggleChip(channelCol, d.channel, { op: 'eq' }),
+      });
+    }
+    if (d.eid) {
+      items.push({
+        label: `🚩 Mark Event ID ${d.eid} suspicious`,
+        act: () => {
+          if (eventIdCol < 0) return;
+          this._addOrToggleChip(eventIdCol, d.eid, { op: 'sus' });
+        },
+      });
+    }
+    items.push({ sep: true });
+    items.push({
+      label: `Copy detection name`,
+      act: () => this._copyToClipboard(d.desc),
+    });
+
+    // External-link section. CSP `default-src 'none'` doesn't block
+    // top-level user-initiated navigation, so opening a learn.microsoft.com
+    // or attack.mitre.org URL via window.open works fine.
+    const ext = [];
+    // MS Learn auditing-event docs for Security-channel events.
+    if (d.eid && d.channel && /security/i.test(d.channel)) {
+      ext.push({
+        label: `🔗 Open Microsoft docs (event ${d.eid})`,
+        url: `https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-${d.eid}`,
+      });
+    }
+    // ATT&CK technique URLs.
+    if (d.mitre.length) {
+      const MT = (typeof window !== 'undefined' && window.MITRE) ? window.MITRE : null;
+      for (const tid of d.mitre) {
+        let url = `https://attack.mitre.org/techniques/${tid}/`;
+        let name = tid;
+        if (MT) {
+          try {
+            const info = MT.lookup(tid);
+            if (typeof MT.urlFor === 'function') {
+              const u = MT.urlFor(tid);
+              if (u) url = u;
+            } else if (info && info.url) {
+              url = info.url;
+            }
+            if (info && info.name) name = `${tid} — ${info.name}`;
+          } catch (_) { /* ignore */ }
+        }
+        ext.push({ label: `🔗 ATT&CK ${name}`, url });
+      }
+    }
+    if (ext.length) {
+      items.push({ sep: true });
+      for (const x of ext) {
+        items.push({
+          label: x.label,
+          act: () => {
+            // `window.open` is fine under CSP `default-src 'none'`
+            // because it triggers a top-level browsing context
+            // (handled outside the document's CSP).
+            try { window.open(x.url, '_blank', 'noopener,noreferrer'); } catch (_) { /* ignore */ }
+          },
+        });
+      }
+    }
+
+    for (const it of items) {
+      if (it.sep) {
+        const sep = document.createElement('div');
+        sep.className = 'tl-popover-sep';
+        menu.appendChild(sep);
+      } else {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tl-popover-item';
+        b.textContent = it.label;
+        b.addEventListener('click', () => { try { it.act(); } finally { this._closePopover(); } });
+        menu.appendChild(b);
+      }
+    }
+    this._positionFloating(menu, e.clientX, e.clientY);
+    document.body.appendChild(menu);
+    this._openPopover = menu;
   },
 
   // ── Entities (EVTX IOCs) ────────────────────────────────────────────────
   // Collects non-PATTERN / non-INFO IOCs from EVTX `externalRefs` (users,
   // hosts, hashes, processes, IPs, URLs, UNC paths, file paths, command
-  // lines, registry keys, domains, emails). Results are grouped by type,
-  // deduplicated (and capped) for display, and each row offers a
-  // click-to-filter pivot against the best matching column. CSV / TSV are
-  // intentionally skipped — scanning every cell with URL + hostname
-  // regexes was an O(rows × cols) drag on large logs, and the analyser's
-  // sidebar already surfaces the same IOCs via the rawText path.
+  // lines, registry keys, domains, emails). Results are grouped by IOC
+  // type and rendered as Top-Values-style cards (pin / copy-visible /
+  // sort-cycle / debounced search / drag-to-reorder), each capped at 100
+  // values. Click-to-filter pivots route through `_pivotOnEntity`. CSV /
+  // TSV are intentionally skipped — scanning every cell with URL +
+  // hostname regexes was an O(rows × cols) drag on large logs, and the
+  // analyser's sidebar already surfaces the same IOCs via the rawText
+  // path.
   _renderEntities() {
     const sec = this._els.entitiesSection;
     const body = this._els.entitiesBody;
@@ -128,75 +612,255 @@ Object.assign(TimelineView.prototype, {
     sec.wrapper.classList.remove('hidden');
 
     body.innerHTML = '';
-    // Stable display order — most useful pivots first.
-    const order = [
-      IOC.USERNAME, IOC.HOSTNAME, IOC.IP, IOC.DOMAIN, IOC.URL,
-      IOC.EMAIL, IOC.PROCESS, IOC.COMMAND_LINE, IOC.FILE_PATH,
-      IOC.UNC_PATH, IOC.REGISTRY_KEY, IOC.HASH,
-    ];
-    const typeLabels = {
-      [IOC.USERNAME]: '👤 Users',
-      [IOC.HOSTNAME]: '🖥 Hosts',
-      [IOC.IP]: '🌐 IPs',
-      [IOC.DOMAIN]: '🌐 Domains',
-      [IOC.URL]: '🔗 URLs',
-      [IOC.EMAIL]: '✉ Emails',
-      [IOC.PROCESS]: '⚙ Processes',
-      [IOC.COMMAND_LINE]: '📟 Command lines',
-      [IOC.FILE_PATH]: '📄 File paths',
-      [IOC.UNC_PATH]: '📂 UNC paths',
-      [IOC.REGISTRY_KEY]: '🗝 Registry keys',
-      [IOC.HASH]: '🔑 Hashes',
-    };
 
-    const ordered = order.filter(t => groups.has(t));
-    for (const t of groups.keys()) if (!ordered.includes(t)) ordered.push(t);
+    // Resolve display order: persisted drag-order first (filtered to
+    // types still present), then any types missing from the persisted
+    // order in the canonical default order, then any still-unseen IOC
+    // types in insertion order.
+    const present = new Set(groups.keys());
+    const ordered = [];
+    const seen = new Set();
+    if (this._entOrder && this._entOrder.length) {
+      for (const t of this._entOrder) {
+        if (present.has(t) && !seen.has(t)) { ordered.push(t); seen.add(t); }
+      }
+    }
+    for (const t of _TL_ENTITY_ORDER) {
+      if (present.has(t) && !seen.has(t)) { ordered.push(t); seen.add(t); }
+    }
+    for (const t of groups.keys()) {
+      if (!seen.has(t)) { ordered.push(t); seen.add(t); }
+    }
+
+    // Move pinned types to the front while preserving relative order
+    // among pinned and unpinned groups.
+    if (this._pinnedEntities && this._pinnedEntities.length) {
+      const pinnedSet = new Set(this._pinnedEntities);
+      const pinned = ordered.filter(t => pinnedSet.has(t));
+      const rest = ordered.filter(t => !pinnedSet.has(t));
+      ordered.length = 0;
+      for (const t of pinned) ordered.push(t);
+      for (const t of rest) ordered.push(t);
+    }
 
     const wrap = document.createElement('div');
     wrap.className = 'tl-entities-wrap';
+
+    const sortLabels = { 'count-desc': '# ↓', 'count-asc': '# ↑', 'az': 'A→Z', 'za': 'Z→A' };
+
     for (const t of ordered) {
       const entries = groups.get(t);
       if (!entries || !entries.length) continue;
-      const grp = document.createElement('div');
-      grp.className = 'tl-entity-group tl-entity-group-' + String(t).toLowerCase();
 
-      // Restore persisted span for this entity card.
+      const card = document.createElement('div');
+      card.className = 'tl-entity-group tl-entity-group-' + String(t).toLowerCase();
+      card.dataset.entType = String(t);
+
       const entKey = 'entity:' + String(t);
       const savedSpan = this._cardSpanFor(entKey);
-      if (savedSpan > 1) grp.style.gridColumn = `span ${savedSpan}`;
+      if (savedSpan > 1) card.style.gridColumn = `span ${savedSpan}`;
 
+      const isPinned = !!(this._pinnedEntities && this._pinnedEntities.indexOf(t) !== -1);
+      if (isPinned) card.classList.add('tl-col-card-pinned');
+
+      const typeLabel = _TL_ENTITY_LABELS[t] || String(t);
+
+      // Card head — mirrors `.tl-col-head` from `_paintColumnCards` so
+      // the existing CSS (centred name, hover-revealed action cluster,
+      // pinned / drag-source modifiers) applies unchanged.
       const head = document.createElement('div');
-      head.className = 'tl-entity-head';
-      head.innerHTML = `<span class="tl-entity-title">${_tlEsc(typeLabels[t] || t)}</span>
-        <span class="tl-entity-count">${entries.length.toLocaleString()}</span>`;
-      grp.appendChild(head);
+      head.className = 'tl-col-head tl-entity-head';
+      head.innerHTML = `
+        <div class="tl-col-head-actions">
+          <button class="tl-col-pin${isPinned ? ' tl-col-pin-active' : ''}" type="button" title="${isPinned ? 'Unpin entity card' : 'Pin entity card to top-left'}">📌</button>
+          <button class="tl-col-copy" type="button" title="Copy visible values to clipboard">📋</button>
+          <button class="tl-col-sort" type="button" title="Cycle sort (count ↓ → count ↑ → A→Z → Z→A · Alt-click to reset)" data-mode="count-desc">${sortLabels['count-desc']}</button>
+        </div>
+        <div class="tl-col-head-title">
+          <span class="tl-col-name" title="${_tlEsc(typeLabel)} · Drag header to reorder">${_tlEsc(typeLabel)}</span>
+          <span class="tl-col-sub" title="distinct values">${entries.length.toLocaleString()} unique</span>
+        </div>
+      `;
+      card.appendChild(head);
 
+      // Per-card debounced search — filters the visible values without
+      // mutating any global state.
+      const searchRow = document.createElement('div');
+      searchRow.className = 'tl-col-search-wrap';
+      searchRow.innerHTML = `<input type="text" class="tl-col-search" placeholder="filter values…" spellcheck="false" autocomplete="off">`;
+      card.appendChild(searchRow);
+      const searchInput = searchRow.querySelector('.tl-col-search');
+
+      // Body list — kept simple (no virtualization) since
+      // `_collectEntities` caps at 100 rows per type.
       const list = document.createElement('div');
       list.className = 'tl-entity-list';
-      for (const e of entries) {
-        const row = document.createElement('div');
-        row.className = 'tl-entity-row';
-        row.title = `Filter rows containing "${e.value}"`;
-        row.innerHTML = `
-          <span class="tl-entity-val">${_tlEsc(e.value)}</span>
-          <span class="tl-entity-hits">${e.count ? e.count.toLocaleString() : ''}</span>`;
-        row.addEventListener('click', () => this._pivotOnEntity(t, e.value));
-        list.appendChild(row);
-      }
-      grp.appendChild(list);
+      card.appendChild(list);
 
-      // Resize handles — left and right edges
+      // Local sort + filter state, mirroring `_paintColumnCards`.
+      let displayValues = entries;
+      const applySortAndFilter = () => {
+        const mode = card._sortMode || 'count-desc';
+        const q = (card._searchText || '').toLowerCase();
+        let arr = entries;
+        if (q) arr = arr.filter(e => String(e.value).toLowerCase().includes(q));
+        if (mode !== 'count-desc') {
+          arr = arr.slice();
+          if (mode === 'count-asc') arr.sort((a, b) => a.count - b.count);
+          else if (mode === 'az') arr.sort((a, b) => String(a.value).localeCompare(String(b.value)));
+          else if (mode === 'za') arr.sort((a, b) => String(b.value).localeCompare(String(a.value)));
+        }
+        displayValues = arr;
+      };
+      const renderList = () => {
+        list.innerHTML = '';
+        if (!displayValues.length) {
+          const empty = document.createElement('div');
+          empty.className = 'tl-col-empty';
+          empty.textContent = card._searchText ? 'No matches' : '—';
+          list.appendChild(empty);
+          return;
+        }
+        const topVal = entries[0] && entries[0].count ? entries[0].count : 1;
+        for (const e of displayValues) {
+          const row = document.createElement('div');
+          row.className = 'tl-entity-row';
+          row.title = `Filter rows containing "${e.value}"`;
+          const pct = topVal > 0 ? Math.max(2, Math.round((e.count / topVal) * 100)) : 0;
+          row.innerHTML = `
+            <span class="tl-col-bar" style="width:${pct}%"></span>
+            <span class="tl-entity-val">${_tlEsc(e.value)}</span>
+            <span class="tl-entity-hits">${e.count ? e.count.toLocaleString() : ''}</span>`;
+          row.addEventListener('click', () => this._pivotOnEntity(t, e.value));
+          list.appendChild(row);
+        }
+      };
+      applySortAndFilter();
+      renderList();
+
+      // Sort-cycle button.
+      const sortBtn = head.querySelector('.tl-col-sort');
+      sortBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const order = ['count-desc', 'count-asc', 'az', 'za'];
+        if (ev.altKey) {
+          card._sortMode = 'count-desc';
+        } else {
+          const cur = card._sortMode || 'count-desc';
+          const ix = order.indexOf(cur);
+          card._sortMode = order[(ix + 1) % order.length];
+        }
+        sortBtn.dataset.mode = card._sortMode;
+        sortBtn.textContent = sortLabels[card._sortMode];
+        applySortAndFilter();
+        renderList();
+      });
+
+      // Pin button — keyed by the IOC type identifier, persisted via
+      // `_loadEntPinnedFor` / `_saveEntPinnedFor`.
+      head.querySelector('.tl-col-pin').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const arr = this._pinnedEntities || (this._pinnedEntities = []);
+        const idx = arr.indexOf(t);
+        if (idx >= 0) arr.splice(idx, 1);
+        else arr.push(t);
+        TimelineView._saveEntPinnedFor(this._fileKey, arr);
+        this._scheduleRender(['entities']);
+      });
+
+      // Copy-visible-values button — copies the post-filter, post-sort
+      // value list as newline-separated text.
+      head.querySelector('.tl-col-copy').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const txt = displayValues.map(e => String(e.value == null ? '' : e.value)).join('\n');
+        this._copyToClipboard(txt);
+        if (this._app && typeof this._app._toast === 'function') {
+          this._app._toast(`Copied ${displayValues.length.toLocaleString()} value${displayValues.length === 1 ? '' : 's'} from "${typeLabel}"`, 'info');
+        }
+      });
+
+      // Per-card search — debounced, Esc clears.
+      let searchTimer = 0;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          card._searchText = searchInput.value;
+          applySortAndFilter();
+          renderList();
+        }, 80);
+      });
+      searchInput.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape' && searchInput.value) {
+          ev.preventDefault();
+          searchInput.value = '';
+          card._searchText = '';
+          applySortAndFilter();
+          renderList();
+        }
+      });
+
+      // Drag-to-reorder via the head — mirrors the column-card flow in
+      // `_paintColumnCards`. Drop position commits a new persisted
+      // entity order via `_loadEntOrderFor` / `_saveEntOrderFor`.
+      head.draggable = true;
+      head.addEventListener('dragstart', (ev) => {
+        if (ev.target.closest('button')) { ev.preventDefault(); return; }
+        card.classList.add('tl-col-drag-source');
+        document.body.classList.add('tl-col-dragging');
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', String(t));
+      });
+      head.addEventListener('dragend', () => {
+        card.classList.remove('tl-col-drag-source');
+        document.body.classList.remove('tl-col-dragging');
+        wrap.querySelectorAll('.tl-col-drag-over-before,.tl-col-drag-over-after').forEach(
+          el => el.classList.remove('tl-col-drag-over-before', 'tl-col-drag-over-after')
+        );
+      });
+      card.addEventListener('dragover', (ev) => {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        const rect = card.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        card.classList.toggle('tl-col-drag-over-before', ev.clientX < midX);
+        card.classList.toggle('tl-col-drag-over-after', ev.clientX >= midX);
+      });
+      card.addEventListener('dragleave', () => {
+        card.classList.remove('tl-col-drag-over-before', 'tl-col-drag-over-after');
+      });
+      card.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        card.classList.remove('tl-col-drag-over-before', 'tl-col-drag-over-after');
+        const srcType = ev.dataTransfer.getData('text/plain');
+        if (!srcType || srcType === String(t)) return;
+        const srcCard = [...wrap.children].find(el => el.dataset.entType === srcType);
+        if (!srcCard) return;
+        const rect = card.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        if (ev.clientX < midX) wrap.insertBefore(srcCard, card);
+        else wrap.insertBefore(srcCard, card.nextSibling);
+        // Read the new order off the DOM and persist.
+        const order = [];
+        for (const el of wrap.children) {
+          if (el.dataset && el.dataset.entType) order.push(el.dataset.entType);
+        }
+        this._entOrder = order;
+        TimelineView._saveEntOrderFor(this._fileKey, order);
+      });
+
+      // Resize handles — left and right edges (entity cards reuse the
+      // column-card `_installCardResize` path with `entityMinW: 260`).
       const rR = document.createElement('div');
       rR.className = 'tl-col-resize';
-      grp.appendChild(rR);
-      rR.addEventListener('pointerdown', (ev) => this._installCardResize(ev, grp, entKey, 'right'));
+      card.appendChild(rR);
+      rR.addEventListener('pointerdown', (ev) => this._installCardResize(ev, card, entKey, 'right'));
 
       const rL = document.createElement('div');
       rL.className = 'tl-col-resize-left';
-      grp.appendChild(rL);
-      rL.addEventListener('pointerdown', (ev) => this._installCardResize(ev, grp, entKey, 'left'));
+      card.appendChild(rL);
+      rL.addEventListener('pointerdown', (ev) => this._installCardResize(ev, card, entKey, 'left'));
 
-      wrap.appendChild(grp);
+      wrap.appendChild(card);
     }
     body.appendChild(wrap);
   },

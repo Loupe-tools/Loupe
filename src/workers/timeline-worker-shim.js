@@ -58,6 +58,18 @@ const IOC = new Proxy({}, { get: (_t, p) => String(p) });
 function escalateRisk() { /* no-op in worker */ }
 function pushIOC() { /* no-op in worker */ }
 function lfNormalize(s) { return typeof s === 'string' ? s.replace(/\r\n?/g, '\n') : s; }
+// `throwIfAborted` is the render-epoch / watchdog poll site added in
+// `src/constants.js`. `EvtxRenderer._parse` and `_parseAsync` (and other
+// renderer sources we may pull into the worker bundle) call it at the top
+// of every outer parse loop. The worker has no main-thread
+// `ParserWatchdog._activeSignal` slot to consult and never needs to bail
+// for supersession (the host calls `WorkerManager.cancelTimeline()` to
+// terminate us instead), so the contractual no-op here is correct. Must
+// be defined or the very first chunk-loop iteration throws
+// `ReferenceError`, which the worker swallows into a zero-row result —
+// the host's zero-row escape hatch then drops the file into the regular
+// analyser pipeline, defeating the "EVTX always opens in Timeline" rule.
+function throwIfAborted() { /* no-op in worker */ }
 
 // ── EVTX event-id table stub ────────────────────────────────────────────────
 //
