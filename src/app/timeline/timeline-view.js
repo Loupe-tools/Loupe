@@ -1942,6 +1942,24 @@ class TimelineView {
 
     const list = document.createElement('div');
     list.className = 'tl-autoextract-nudge__list';
+
+    // Header row — shares the same `__row` grid template so every label
+    // sits directly above its matching data cell. The trailing empty
+    // <span> preserves the 6-track grid (kind | col | path | rate |
+    // sample | add) so the "Add" buttons in data rows stay aligned.
+    const head = document.createElement('div');
+    head.className = 'tl-autoextract-nudge__row tl-autoextract-nudge__row--head';
+    head.setAttribute('role', 'row');
+    head.innerHTML = `
+      <span class="tl-autoextract-nudge__kind tl-autoextract-nudge__kind--head">Type</span>
+      <span class="tl-autoextract-nudge__col">Column</span>
+      <span class="tl-autoextract-nudge__path">Path</span>
+      <span class="tl-autoextract-nudge__rate" title="Match rate in sample">Match</span>
+      <span class="tl-autoextract-nudge__sample">Sample</span>
+      <span aria-hidden="true"></span>
+    `;
+    list.appendChild(head);
+
     const applyOne = (p) => {
       const before = this._extractedCols.length;
       if (p.kind === 'json-url' || p.kind === 'json-host' || p.kind === 'json-leaf') {

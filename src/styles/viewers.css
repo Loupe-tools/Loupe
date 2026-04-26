@@ -13209,17 +13209,48 @@ body.dark .timeline-view .tl-autoextract-nudge {
   opacity: .7;
 }
 
+/* The list owns the 6-track column template so every row resolves
+   against the *same* grid, not its own per-row grid. Without this,
+   each row was an independent grid container and `max-content` /
+   `1fr` resolved per-row — variable kind-pill widths
+   (URL / HOSTNAME / URL HOST / URL PATH / URL QUERY / FIELD) and
+   variable rate widths (9% vs 100%) pushed the header's
+   Path / Match / Sample labels out of alignment with the data
+   cells underneath them.
+
+   Track sizing notes:
+     - kind pill: `minmax(76px, max-content)` is wide enough for the
+       longest pill label.
+     - rate: `minmax(4ch, max-content)` fits both `100%` data and the
+       "Match" header label; right-aligned so 9% / 100% share a
+       trailing edge.
+     - path is intentionally narrower (`1fr`) than sample (`3fr`) —
+       most paths are short (often `(whole cell)`) while sample
+       values are the analyst-useful payload that benefits from the
+       extra slack.
+     - `column-gap: 12px` is the visual gutter between every column,
+       particularly the rate↔sample edge where a right-aligned
+       `100%` would otherwise abut a left-aligned sample value. */
 .timeline-view .tl-autoextract-nudge__list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: grid;
+  grid-template-columns:
+    minmax(76px, max-content)
+    minmax(0, 1fr)
+    minmax(0, 1fr)
+    minmax(4ch, max-content)
+    minmax(0, 3fr)
+    auto;
+  row-gap: 3px;
+  column-gap: 12px;
 }
 
+/* Each row is a subgrid spanning all 6 parent tracks, so the header
+   row and every data row share identical column geometry. */
 .timeline-view .tl-autoextract-nudge__row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 2fr) auto minmax(0, 2fr) auto;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   align-items: center;
-  gap: 8px;
   padding: 3px 4px;
   border-radius: 4px;
 }
@@ -13232,6 +13263,53 @@ body.dark .timeline-view .tl-autoextract-nudge {
   opacity: .55;
 }
 
+/* Header row — labels each column above the data rows. Inherits the
+   `__row` grid template so columns line up exactly with the data
+   rows (which keeps the variable kind-pill / rate widths pinned via
+   `minmax(76px, max-content)` and `3.5ch`). The trailing empty span
+   in the markup keeps the 6-track grid intact so the data-row "Add"
+   buttons stay aligned. */
+.timeline-view .tl-autoextract-nudge__row--head {
+  padding-top: 0;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted, currentColor);
+  opacity: .65;
+}
+
+.timeline-view .tl-autoextract-nudge__row--head:hover {
+  background: transparent;
+}
+
+/* Strip the kind-pill background on the header so "Type" reads as
+   a flat label, not a coloured pill. The track width is still
+   pinned to `minmax(76px, max-content)` so URL / HOSTNAME / URL HOST
+   pills stack vertically below it. */
+.timeline-view .tl-autoextract-nudge__kind--head {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  letter-spacing: inherit;
+}
+
+/* Override the per-cell mono-font / opacity / font-size of the data
+   cells inside the header so all six labels share the same uniform
+   muted look. Without this, the header's "Path" / "Sample" cells
+   would render in monospace and "Match" at 10px, fighting the
+   header's own typography. */
+.timeline-view .tl-autoextract-nudge__row--head .tl-autoextract-nudge__path,
+.timeline-view .tl-autoextract-nudge__row--head .tl-autoextract-nudge__sample,
+.timeline-view .tl-autoextract-nudge__row--head .tl-autoextract-nudge__rate {
+  opacity: 1;
+  font-family: inherit;
+  font-size: inherit;
+}
+
 .timeline-view .tl-autoextract-nudge__kind {
   font-size: 10px;
   padding: 1px 6px;
@@ -13242,6 +13320,9 @@ body.dark .timeline-view .tl-autoextract-nudge {
   white-space: nowrap;
   text-transform: uppercase;
   letter-spacing: .3px;
+  /* Pin the pill to the start of its (wider, fixed-width) grid track so
+     short labels like "URL" don't drift toward the row centre. */
+  justify-self: start;
 }
 
 .timeline-view .tl-autoextract-nudge__kind[data-kind="json-url"],
@@ -13280,6 +13361,9 @@ body.dark .timeline-view .tl-autoextract-nudge {
   font-variant-numeric: tabular-nums;
   opacity: .7;
   font-size: 10px;
+  /* Right-align so 9% and 100% share the same trailing edge and the
+     sample column always starts at the same x across rows. */
+  text-align: right;
 }
 
 .timeline-view .tl-autoextract-nudge__sample {
