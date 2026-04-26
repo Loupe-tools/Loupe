@@ -198,6 +198,11 @@ _DETECTOR_FILES = [
     'src/decoders/safelinks.js',
     'src/decoders/whitelist.js',
     'src/decoders/entropy.js',
+    # xor-bruteforce.js depends on entropy.js (`_tryDecodeUTF8`,
+    # `_shannonEntropyBytes`) and is consumed from `_processCandidate`
+    # to emit a synthetic XOR-cleartext inner finding when the surrounding
+    # source mentions an XOR operator. See PLAN.md → D1.
+    'src/decoders/xor-bruteforce.js',
     'src/decoders/ioc-extract.js',
     'src/decoders/base64-hex.js',
     'src/decoders/zlib.js',
@@ -205,6 +210,7 @@ _DETECTOR_FILES = [
     'src/decoders/encoding-decoders.js',
     'src/decoders/cmd-obfuscation.js',
 ]
+
 
 # ── Three-group JS load order (Tier 3 reorder) ───────────────────────────────
 # The bundle is emitted as **three** separate `<script>` blocks (instead of

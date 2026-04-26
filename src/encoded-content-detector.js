@@ -23,6 +23,8 @@
 //   encoding-decoders.js  — _decodeCandidate switch + the above decoders
 //   cmd-obfuscation.js    — _findCommandObfuscationCandidates /
 //                           _processCommandObfuscation (CMD + PowerShell)
+//   xor-bruteforce.js     — _tryXorBruteforce (single-byte XOR cipher
+//                           recovery) + _hasXorContext (call-site gate)
 //
 // `scripts/build.py` concatenates these files in the JS_FILES order so the
 // class declaration appears before any helper module attaches. The same
@@ -130,7 +132,15 @@ class EncodedContentDetector {
   async scan(textContent, rawBytes, context = {}) {
     const findings = [];
 
+    // Stash the source text on `this` so `_processCandidate` can run the
+    // XOR-context check (`_hasXorContext`) against the surrounding ±200
+    // chars when a Char-Array / Base64 / Hex decode produces high-entropy
+    // bytes. The synthetic XOR finding is emitted from inside
+    // `_processCandidate`. See PLAN.md → D1 / src/decoders/xor-bruteforce.js.
+    this._scanText = (typeof textContent === 'string') ? textContent : '';
+
     // ── Primary finders: tight patterns, always run. ────────────────────
+
     // Base64 / Hex / Base32 / compressed-blob finders use anchored
     // patterns where match cost is dominated by decode-and-classify
     // (already capped via `maxCandidatesPerType`).
@@ -447,8 +457,102 @@ class EncodedContentDetector {
     // Determine severity
     let severity = this._assessSeverity(classification, iocs, decoded);
 
+    // ── Synthetic XOR-cleartext inner finding (PLAN.md → D1) ─────────────
+    // If the decoded bytes look gibberish (high entropy, no classification,
+    // not valid UTF-8 text) AND the surrounding source mentions an XOR
+    // operator, brute-force a single-byte XOR key. A clear winner becomes a
+    // synthetic inner finding labelled `XOR (key 0xNN)` so the analyst sees
+    // the recovered cleartext + the discovered key. The XOR finder fires
+    // only when:
+    //   • we have a `_tryXorBruteforce` helper attached (defensive guard
+    //     so the bundle still works if the prototype mixin order changes), and
+    //   • the candidate is one of the carriers known to wrap XOR'd bytes
+    //     (Char-Array, Base64, Hex, Hex-escape, PS byte array), and
+    //   • the surrounding source matches the XOR-context regex within
+    //     ±200 chars.
+    // The bruteforce itself caps the work at 64 KiB with dual-window
+    // sampling beyond that — see src/decoders/xor-bruteforce.js.
+    let syntheticXorFinding = null;
+    if (typeof this._tryXorBruteforce === 'function' && decoded && decoded.length >= 24) {
+      const xorCarriers = new Set([
+        'Char Array', 'Base64', 'Hex', 'Hex (escaped)', 'Hex (PS byte array)',
+      ]);
+      const cleartextLooksLikeText =
+        !!classification.type ||
+        (this._isValidUTF8(decoded) && /[A-Za-z]{4,}/.test(this._tryDecodeUTF8(decoded) || ''));
+      // Only attempt XOR if the primary decode produced gibberish — text
+      // that already classifies (script, document, etc.) is not the
+      // post-XOR product.
+      if (xorCarriers.has(candidate.type) && !cleartextLooksLikeText) {
+        const scanText = this._scanText || '';
+        const ctxOK = scanText && this._hasXorContext(scanText, candidate.offset, candidate.raw);
+        if (ctxOK) {
+          let xorResult = null;
+          try {
+            xorResult = this._tryXorBruteforce(decoded);
+          } catch (_) { xorResult = null; }
+          if (xorResult && xorResult.bytes && xorResult.bytes.length > 0) {
+            const xorBytes = xorResult.bytes;
+            const xorKey   = xorResult.key;
+            const keyHex   = '0x' + xorKey.toString(16).toUpperCase().padStart(2, '0');
+            const xorClass = this._classify(xorBytes);
+            const xorEntropy = this._shannonEntropyBytes(xorBytes);
+            const xorIocs = this._extractIOCsFromDecoded(xorBytes);
+            const xorSev = this._assessSeverity(xorClass, xorIocs, xorBytes);
+            const xorExt = xorClass.ext || (this._isValidUTF8(xorBytes) ? '.txt' : '.bin');
+            const xorChain = [`XOR (key ${keyHex})`];
+            if (xorClass.type) xorChain.push(xorClass.type);
+            else if (this._isValidUTF8(xorBytes)) xorChain.push('text');
+            else xorChain.push('binary data');
+
+            // Recursively scan the XOR cleartext for further layers
+            // (e.g. the canonical block-14 case is Base64 → XOR → "iex
+            // Write-Output Hello World" — the recursion picks up CMD-obf
+            // / variable / IOC findings inside the cleartext).
+            let xorInner = [];
+            if (depth < this.maxRecursionDepth && xorBytes.length > 32) {
+              const xorText = this._tryDecodeUTF8(xorBytes);
+              if (xorText && xorText.length > 32) {
+                const innerDet = new EncodedContentDetector({
+                  maxRecursionDepth: this.maxRecursionDepth,
+                  maxCandidatesPerType: this.maxCandidatesPerType,
+                  aggressive: this._aggressive,
+                });
+                xorInner = await innerDet.scan(xorText, xorBytes, { fileType: '' });
+                for (const f of xorInner) {
+                  f.chain = [...xorChain, ...f.chain];
+                  f.depth = (f.depth || 0) + 1;
+                }
+              }
+            }
+
+            syntheticXorFinding = {
+              type: 'encoded-content',
+              severity: xorSev,
+              encoding: `XOR (key ${keyHex})`,
+              offset: candidate.offset,
+              length: candidate.length,
+              decodedSize: xorBytes.length,
+              decodedBytes: xorBytes,
+              chain: xorChain,
+              classification: xorClass,
+              entropy: xorEntropy,
+              hint: `Single-byte XOR cipher (key ${keyHex}) — bruteforced cleartext`,
+              iocs: xorIocs,
+              innerFindings: xorInner,
+              autoDecoded: true,
+              canLoad: !!(xorClass.type || this._isValidUTF8(xorBytes)),
+              ext: xorExt,
+              snippet: '',
+            };
+          }
+        }
+      }
+    }
+
     // Recursive scan: check if decoded content contains more encoding layers
     let innerFindings = [];
+
     if (depth < this.maxRecursionDepth && decoded.length > 32) {
       const decodedText = this._tryDecodeUTF8(decoded);
       if (decodedText && decodedText.length > 32) {
@@ -470,6 +574,14 @@ class EncodedContentDetector {
     // so it appears as the primary "deeper layer" for the sidebar's "All the way" button
     if (syntheticDecompFinding) {
       innerFindings.unshift(syntheticDecompFinding);
+    }
+
+    // Same treatment for the synthetic XOR-cleartext finding (PLAN.md → D1).
+    // Prepended AFTER the decompressed finding so a Base64 → zlib → XOR
+    // chain still surfaces the decompressed layer first; the XOR layer
+    // is the one the analyst clicks "All the way" on.
+    if (syntheticXorFinding) {
+      innerFindings.unshift(syntheticXorFinding);
     }
 
     // Propagate severity and IOCs from inner findings — if nested content is

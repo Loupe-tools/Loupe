@@ -40,7 +40,17 @@ Object.assign(EncodedContentDetector.prototype, {
       case 'String Concat':
       case 'Spaced Tokens':
         try { return new TextEncoder().encode(candidate.raw); } catch (_) { return null; }
+      // XOR candidates are SYNTHETIC — emitted from inside
+      // `_processCandidate` after a Char-Array / Base64 / Hex decode hits
+      // the XOR-context heuristic and `_tryXorBruteforce` finds a clear
+      // winner. The bruteforced cleartext rides on the candidate as
+      // `_xorBytes`; this case simply returns it so the regular
+      // classification / IOC-extraction / recursion path can run on the
+      // post-XOR cleartext. See PLAN.md → D1 and src/decoders/xor-bruteforce.js.
+      case 'XOR':
+        return candidate._xorBytes || null;
       default: return null;
+
     }
   },
 

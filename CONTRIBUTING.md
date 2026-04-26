@@ -764,7 +764,7 @@ subtly misbehave.
   constructor, the static recognition tables (`MAGIC_BYTES`,
   `TEXT_SIGNATURES`, `HIGH_CONFIDENCE_B64`), the `static
   _propagateInnerFindings` helper, the `async scan()` orchestrator,
-  the recursion driver `_processCandidate`, and `lazyDecode`. Nine
+  the recursion driver `_processCandidate`, and `lazyDecode`. Ten
   helper modules under `src/decoders/` each attach instance methods
   via `Object.assign(EncodedContentDetector.prototype, {...})`, with
   one static (`EncodedContentDetector.unwrapSafeLink`) carried by
@@ -789,10 +789,11 @@ subtly misbehave.
   | `src/decoders/encoding-finders.js` | URL-enc / HTML-ent / Unicode-esc / JS `\xHH` hex-escape / Char-Array (8 flavours) / Octal / Script.Encode / space-hex / ROT13 / Split-Join / reverse-string (JS / PowerShell / Python `reversed()`) / Spaced Tokens / literal string-concat finders | Per-encoding candidate scanners. The reverse-string, Spaced Tokens, and string-concat finders pre-transform the candidate at find time so their decoders are trivial UTF-8 passes — the recursion driver re-feeds the result through the full finder set so nested layers (`'tt' + 'p://' + reverse('moc.lave')` →`http://eval.com`) collapse one ply per `_processCandidate` round. Every finder honours `this._aggressive`: when set, minimum-length / minimum-distinct-character thresholds are lowered so analyst-selected snippets surface single-line obfuscations the bulk scanner deliberately ignores. |
   | `src/decoders/encoding-decoders.js` | `_decodeCandidate` switch + per-encoding decoders (`_decodeJsHexEscape` for `\xHH` runs; trivial passthrough for Reversed / String Concat / Spaced Tokens) + `_decodeScriptEncoded` | Per-encoding decode routines, including the MS Script Encoder cipher tables. |
   | `src/decoders/cmd-obfuscation.js` | `_findCommandObfuscationCandidates`, `_processCommandObfuscation` | CMD caret / concat / envvar de-obfuscation **and** PowerShell concat / replace / backtick / format / reverse de-obfuscation. |
+  | `src/decoders/xor-bruteforce.js` | `_tryXorBruteforce`, `_hasXorContext` | Single-byte XOR cipher recovery. Brute-forces all 255 keys against decoded Char-Array / Base64 / Hex bytes when the surrounding source mentions an XOR operator (`^`, `bxor`, `-bxor`); a clear winner (top-key score > 1.5× 2nd-place) becomes a synthetic `XOR (key 0xNN)` inner finding emitted from `_processCandidate`. Caps work at 64 KiB with dual-window head/tail sampling beyond that. |
 
 
   When adding a new encoding family: pick the helper file whose
-  responsibility matches (or add a tenth file under `src/decoders/`
+  responsibility matches (or add a new file under `src/decoders/`
   and append it to `_DETECTOR_FILES`), keep new methods on the
   prototype via the existing `Object.assign(...)` block at the bottom
   of the file, never re-declare the class, and never depend on the
