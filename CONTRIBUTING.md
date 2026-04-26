@@ -703,7 +703,13 @@ subtly misbehave.
   active query/window/sus state into a Markdown brief sized to the
   user's `_getSummaryCharBudget()` target;
   `timeline-drawer.js` for the JSON-leaf and
-  extracted-column prototype mixin; and `timeline-router.js` for the
+  extracted-column prototype mixin; `timeline-wheel.js` for the
+  outer-host wheel-continuation handler — once the user is mid-scroll on
+  `.tl-host`, wheels arriving on a nested scroller (GridViewer, top-value
+  card, drawer, sus table, pivot) are redirected back to the host for
+  ~250 ms so a single wheel gesture reaches the pivot table without
+  hunting for non-scrolling pixels (modifier keys and horizontal-only
+  wheels pass through); and `timeline-router.js` for the
   `App.prototype` mixin that owns `_timelineTryHandle` /
   `_loadFileInTimeline` / `_buildTimelineViewFromWorker` /
   `_clearTimelineFile`). The directory loads immediately after
