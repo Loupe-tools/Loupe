@@ -582,10 +582,16 @@ class OsascriptRenderer {
         const matchedLabels = new Set();
         let highCount = 0, criticalCount = 0, mediumCount = 0;
 
+        // INVARIANT — synchronous-only loop. The `APPLESCRIPT_SUSPICIOUS`
+        // table is a shared static; we reset `p.re.lastIndex = 0` and iterate
+        // the canonical instance instead of cloning via
+        // `new RegExp(p.re.source, p.re.flags)` (saves ~10 KB allocation per
+        // scan across the full pattern table). This is safe ONLY while the
+        // loop body is fully synchronous — adding an `await` here would let
+        // a second concurrent `analyzeForSecurity()` reset `lastIndex` mid-
+        // iteration and corrupt our walk. If you ever make this async,
+        // restore the per-scan clone for every `g`-flagged pattern.
         for (const p of OsascriptRenderer.APPLESCRIPT_SUSPICIOUS) {
-            // Reset shared regex's lastIndex instead of cloning via
-            // `new RegExp(p.re.source, p.re.flags)` — the clone allocates
-            // ~10 KB per scan across the full pattern table for no benefit.
             p.re.lastIndex = 0;
             const re = p.re;
             const matches = [];
@@ -615,6 +621,9 @@ class OsascriptRenderer {
         }
 
         /* ── Scan JXA-specific patterns ──────────────────────────── */
+        // Same synchronous-only invariant as the APPLESCRIPT_SUSPICIOUS
+        // loop above — see that comment block before adding any `await`
+        // inside this body.
         if (type === 'jxa') {
             for (const p of OsascriptRenderer.JXA_SUSPICIOUS) {
                 p.re.lastIndex = 0;

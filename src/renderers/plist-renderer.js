@@ -978,10 +978,16 @@ class PlistRenderer {
     const matchedLabels = new Set();
     let criticalCount = 0, highCount = 0, mediumCount = 0;
 
+    // INVARIANT — synchronous-only loop. The `SUSPICIOUS_PATTERNS` table is
+    // a shared static; we reset `p.re.lastIndex = 0` and iterate the
+    // canonical instance instead of cloning via
+    // `new RegExp(p.re.source, p.re.flags)` (saves ~10 KB allocation per
+    // scan across the full pattern table). This is safe ONLY while the
+    // loop body is fully synchronous — adding an `await` here would let a
+    // second concurrent `analyzeForSecurity()` reset `lastIndex` mid-
+    // iteration and corrupt our walk. If you ever make this async, restore
+    // the per-scan clone for every `g`-flagged pattern.
     for (const p of PlistRenderer.SUSPICIOUS_PATTERNS) {
-      // Reset shared regex's lastIndex instead of cloning via
-      // `new RegExp(p.re.source, p.re.flags)` — the pattern is shared
-      // across all plist scans so cloning is wasted work.
       p.re.lastIndex = 0;
       const re = p.re;
       const matches = [];
