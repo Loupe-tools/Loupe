@@ -21,7 +21,13 @@ Object.assign(EncodedContentDetector.prototype, {
     // surfacing. Bypass both — every plausible Base64 / hex run gets
     // a chance to decode. Aggressive mode (`_aggressive` only, set
     // implicitly when bruteforce is on) is a softer relaxation.
-    const minLen = this._bruteforce ? 4 : (this._aggressive ? 16 : 40);
+    // Default-mode floor raised 40→64 to clear the cliff above webpack
+    // chunk hashes / source-map keys / asset cache busters that crowd
+    // 40-50 char range. High-confidence prefix matches (TVqQ MZ etc.)
+    // and PowerShell -EncodedCommand context still trigger at the lower
+    // 40-char gate further down via the high-conf re-match — see
+    // `_decodeAt40` fallback below.
+    const minLen = this._bruteforce ? 4 : (this._aggressive ? 16 : 64);
     if (!text || text.length < minLen) return [];
     const candidates = [];
 
@@ -76,11 +82,24 @@ Object.assign(EncodedContentDetector.prototype, {
         const inQuotes = (prevChar === '"' || prevChar === "'") && (afterEnd === '"' || afterEnd === "'");
         if (!inQuotes) {
           // Also try speculative decode — if decoded content is printable text
-          // (e.g. hex digits, another base64 layer), it's real encoded content
+          // (e.g. hex digits, another base64 layer), it's real encoded content.
+          // Tightened: in default mode require either an exec-intent keyword
+          // hit or that the speculatively-decoded text is itself another
+          // long encoded run (≥20 chars of hex / Base64 / Base32). Stops
+          // compound IDs that decode to other compound IDs from sneaking
+          // through the printable-only gate.
           const specDec = this._decodeBase64(raw);
           const specText = specDec && this._tryDecodeUTF8(specDec);
-          const looksTextual = specText && specText.length > 16 &&
+          const isPrintable = specText && specText.length > 16 &&
             /^[\x20-\x7E\r\n\t]{16,}$/.test(specText.substring(0, Math.min(64, specText.length)));
+          let looksTextual = isPrintable;
+          if (looksTextual && !this._aggressive && !this._bruteforce) {
+            const stricter = _EXEC_INTENT_RE.test(specText)
+              || /[A-Za-z0-9+\/]{20,}={0,2}/.test(specText)
+              || /[0-9a-fA-F]{20,}/.test(specText)
+              || /[A-Z2-7]{20,}={0,6}/.test(specText);
+            looksTextual = stricter;
+          }
           if (!looksTextual) continue;
         }
       }
@@ -105,9 +124,15 @@ Object.assign(EncodedContentDetector.prototype, {
   _findHexCandidates(text, context) {
     // Bruteforce mode lowers the floor to 6 hex chars (3 bytes) and
     // skips the GUID / hash-length whitelist filters. Aggressive mode
-    // halves the default 32-char gate for selection-driven decode of
+    // halves the default 48-char gate for selection-driven decode of
     // medium-length runs.
-    const minLen = this._bruteforce ? 6 : (this._aggressive ? 16 : 32);
+    //
+    // Default-mode floor raised 32→48 because 32-hex (16 bytes) is the
+    // size of a wide range of benign identifiers (MD5, IPv6, color
+    // runs concatenated). 48 hex digits / 24 bytes is past the noisy
+    // band. High-conf MZ/shellcode prefixes still bypass the
+    // post-match plausibility gate below.
+    const minLen = this._bruteforce ? 6 : (this._aggressive ? 16 : 48);
     if (!text || text.length < minLen) return [];
     const candidates = [];
 
@@ -139,6 +164,41 @@ Object.assign(EncodedContentDetector.prototype, {
       // must allow that. Bruteforce mode skips the entropy gate for
       // the same reason as Base64.
       if (!isHighConf && !this._bruteforce && (entropy < 2.5 || entropy > 4.2)) continue;
+
+      // Default-mode plausibility gate: hex finds without any of (high-
+      // conf prefix, XOR context, exec-intent vocabulary in surrounding
+      // ±200 chars, OR decoded bytes that look like printable text) are
+      // overwhelmingly noise (cert fingerprints, hashes, identifier-like
+      // runs that snuck past the GUID/hash whitelist). The "decoded
+      // looks textual" branch is the recursion escape-hatch — a hex-
+      // encoded URL inside Base64 has no surrounding exec context but
+      // its bytes ARE printable ASCII and should still be picked up.
+      // Aggressive (selection-driven) and bruteforce modes skip this.
+      if (!isHighConf && !this._bruteforce && !this._aggressive) {
+        const winStart = Math.max(0, offset - 200);
+        const winEnd   = Math.min(text.length, offset + raw.length + 200);
+        const window   = text.substring(winStart, winEnd);
+        const ctxXor = (typeof this._hasXorContext === 'function')
+          && this._hasXorContext(text, offset, raw);
+        const ctxExec = _EXEC_INTENT_RE.test(window);
+        let decodedTextual = false;
+        if (!ctxXor && !ctxExec) {
+          // Cheap speculative decode: if the bytes are predominantly
+          // printable ASCII, the hex is likely a real text payload.
+          try {
+            const dec = this._decodeHex(raw);
+            if (dec && dec.length >= 6) {
+              let printable = 0;
+              for (const b of dec) {
+                if (b >= 0x20 && b <= 0x7E) printable++;
+                else if (b === 0x09 || b === 0x0A || b === 0x0D) printable++;
+              }
+              if (printable >= dec.length * 0.85) decodedTextual = true;
+            }
+          } catch (_) { /* decode failed → treat as not textual */ }
+        }
+        if (!ctxXor && !ctxExec && !decodedTextual) continue;
+      }
 
       candidates.push({
         type: 'Hex',

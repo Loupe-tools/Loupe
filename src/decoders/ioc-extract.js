@@ -30,9 +30,28 @@ Object.assign(EncodedContentDetector.prototype, {
       iocs.push(entry);
     };
 
-    // Process URLs with SafeLink unwrapping
+    // Process URLs with SafeLink unwrapping.
+    // FP-suppression: gibberish post-XOR / post-Hex output occasionally
+    // contains the substring `http://` followed by random bytes, which
+    // the URL regex cheerfully matches. Sanity-check the hostname:
+    //   • must contain a dot (no `http://abc/...` w/o domain);
+    //   • must NOT start with `0x` (hex-decode artefact);
+    //   • bracketed IPv6 form must be properly closed.
     for (const m of text.matchAll(/https?:\/\/[^\s"'<>()\[\]{}\u0000-\u001F]{6,}/g)) {
       const url = (m[0] || '').trim().replace(/[.,;:!?)\]>]+$/, '');
+      // Extract hostname portion for sanity check.
+      const hostMatch = url.match(/^https?:\/\/([^\/\s?#]+)/i);
+      if (!hostMatch) continue;
+      const host = hostMatch[1];
+      // IPv6 in bracket form: must be correctly bracketed.
+      if (host.startsWith('[')) {
+        if (!host.includes(']')) continue;
+      } else {
+        // Non-IPv6: must contain a literal dot in the hostname.
+        if (!host.includes('.')) continue;
+        // Hex-decode artefact: hostnames don't start with `0x`.
+        if (/^0x/i.test(host)) continue;
+      }
       const unwrapped = EncodedContentDetector.unwrapSafeLink(url);
       if (unwrapped) {
         // Add wrapper URL at info level

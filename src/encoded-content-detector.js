@@ -32,6 +32,26 @@
 // `WorkerManager.runEncoded()` (see `_encoded_worker_bundle_src` in build.py).
 // ════════════════════════════════════════════════════════════════════════════
 
+// ── Shared FP-suppression constants ─────────────────────────────────────────
+// `_EXEC_INTENT_RE` and `_RETAIN_CLASSIFICATIONS` drive both the per-finder
+// plausibility gates and the centralized post-scan `_pruneFindings()` pass.
+// Keeping them at module scope means the per-finder modules (attached via
+// Object.assign onto `EncodedContentDetector.prototype`) can reference them
+// directly without an extra `this.` indirection.
+//
+// `_EXEC_INTENT_RE` matches the execution-intent vocabulary that almost
+// every real malicious decoded payload contains (LOLBin names, PowerShell
+// cmdlets, http(s):// URLs). A finding without IOCs that ALSO doesn't match
+// this regex is overwhelmingly noise — the canonical example is the bash
+// help-text interleaved-separator FP class (47 findings, zero exec hits).
+//
+// `_RETAIN_CLASSIFICATIONS` lists decoded-content classifications that are
+// always worth surfacing even without an IOC or exec-keyword match (PE/ELF
+// payloads, scripts, archives, encrypted/packed blobs in XOR contexts).
+const _EXEC_INTENT_RE = /\b(eval|exec|invoke|iex|powershell|pwsh|cmd\.exe|wscript|cscript|mshta|regsvr32|rundll32|certutil|bitsadmin|schtasks|wmic|finger|tftp|curl|nltest|installutil|msbuild|downloadstring|downloadfile|frombase64string|new-object|start-process|shellexecute|invoke-expression|invoke-webrequest|set-executionpolicy|encodedcommand|fromcharcode)\b|https?:\/\//i;
+
+const _RETAIN_CLASSIFICATIONS = /pe executable|elf|mach-o|hta|powershell|vbscript|shell script|jscript|wsf|ole|pdf|rtf|java class|zip archive|rar archive|7-zip|gzip|zlib|deobfuscated command|encrypted\/packed/i;
+
 class EncodedContentDetector {
 
   constructor(opts = {}) {
@@ -354,7 +374,95 @@ class EncodedContentDetector {
       if (result) findings.push(result);
     }
 
+    // ── FP-suppression post-scan filter (PLAN: strict-default mode) ─────
+    // In bruteforce / kitchen-sink mode the analyst has explicitly
+    // selected a region they suspect is encoded — they want EVERY hit
+    // including noisy ones, so the prune pass is skipped there. In all
+    // other modes (default + aggressive), drop findings without IOCs,
+    // recognized executable/script classifications, or exec-intent
+    // keywords in their decoded text. See `_pruneFindings` for the full
+    // retention predicate.
+    if (!this._bruteforce) {
+      return this._pruneFindings(findings);
+    }
+
     return findings;
+  }
+
+  // ── FP-suppression post-scan filter ──────────────────────────────────────
+  // Recursively walk the findings tree (top-level + every `innerFindings`
+  // subtree) and drop any finding that doesn't satisfy at least one
+  // retention rule:
+  //   1. severity is `high` or `critical` (e.g. detected PE payload)
+  //   2. has at least one extracted IOC (URL / IP / domain)
+  //   3. classification matches `_RETAIN_CLASSIFICATIONS` (PE/ELF/script/
+  //      archive/encrypted-packed)
+  //   4. cmd-obfuscation finding whose deobfuscated text matches
+  //      `SENSITIVE_CMD_KEYWORDS` (powershell, cmd, regsvr32, certutil…)
+  //   5. decoded text matches `_EXEC_INTENT_RE` (LOLBin / cmdlet / URL
+  //      vocabulary)
+  //   6. has at least one surviving inner-finding child after recursive
+  //      prune (so an intermediate carrier whose subtree contains a real
+  //      hit is retained as the chain anchor)
+  //
+  // Children are pruned BEFORE the parent so rule 6 sees the post-prune
+  // subtree. The `finder-budget` info stub is always retained — it's a
+  // diagnostic breadcrumb, not a noise finding.
+  _pruneFindings(findings) {
+    if (!Array.isArray(findings) || findings.length === 0) return findings;
+    const kept = [];
+    for (const f of findings) {
+      if (!f || typeof f !== 'object') continue;
+      // Always retain the secondary-scan diagnostic stub.
+      if (f.encoding === 'finder-budget') {
+        kept.push(f);
+        continue;
+      }
+      // Prune children first.
+      if (Array.isArray(f.innerFindings) && f.innerFindings.length > 0) {
+        f.innerFindings = this._pruneFindings(f.innerFindings);
+      }
+      if (this._shouldRetainFinding(f)) {
+        kept.push(f);
+      }
+    }
+    return kept;
+  }
+
+  _shouldRetainFinding(f) {
+    // Rule 1: high/critical severity always survives.
+    if (f.severity === 'high' || f.severity === 'critical') return true;
+    // Rule 2: any IOC.
+    if (Array.isArray(f.iocs) && f.iocs.length > 0) return true;
+    // Rule 3: recognized classification.
+    const ctype = f.classification && f.classification.type;
+    if (ctype && _RETAIN_CLASSIFICATIONS.test(ctype)) return true;
+    // Rule 4: cmd-obfuscation with sensitive cmd keywords in deobfuscated text.
+    if (f.encoding === 'cmd-obfuscation') {
+      const deob = (f.deobfuscated || f.decodedText || '');
+      // SENSITIVE_CMD_KEYWORDS lives in cmd-obfuscation.js as a module
+      // const; use _EXEC_INTENT_RE here as a superset that always covers
+      // it (powershell, cmd.exe, regsvr32, certutil, mshta, etc.).
+      if (deob && _EXEC_INTENT_RE.test(deob)) return true;
+    }
+    // Rule 5: exec-intent keyword in any text representation of the
+    // decoded payload. Try: explicit deobfuscated text, decoded UTF-8
+    // bytes, and the chain string (covers the "PowerShell" / "Mach-O"
+    // chain entries).
+    const texts = [];
+    if (f.deobfuscated) texts.push(f.deobfuscated);
+    if (f.decodedText) texts.push(f.decodedText);
+    if (f.decodedBytes && typeof this._tryDecodeUTF8 === 'function') {
+      const t = this._tryDecodeUTF8(f.decodedBytes);
+      if (t) texts.push(t);
+    }
+    if (Array.isArray(f.chain)) texts.push(f.chain.join(' '));
+    for (const t of texts) {
+      if (t && _EXEC_INTENT_RE.test(t)) return true;
+    }
+    // Rule 6: surviving inner-finding child.
+    if (Array.isArray(f.innerFindings) && f.innerFindings.length > 0) return true;
+    return false;
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -481,6 +589,25 @@ class EncodedContentDetector {
     // If still high-entropy binary (>7.5), flag but don't recurse
     const finalEntropy = this._shannonEntropyBytes(decoded);
     if (finalEntropy > 7.5 && !classification.type) {
+      // FP-suppression: a generic "Encrypted/Packed Data" emission on
+      // every high-entropy decode produces overwhelming noise on benign
+      // hex finds (random IDs, UUIDs, cert fingerprints, hashes) and on
+      // any compressed/encrypted blob that happens to land inside a B64
+      // run. Only emit when:
+      //   • bruteforce (kitchen-sink) mode — analyst opted in to noise;
+      //   • surrounding source has XOR context (`_hasXorContext`) — the
+      //     payload is plausibly the input to an XOR cipher; OR
+      //   • the candidate carrier is one of the known XOR-wrapper types
+      //     (Char Array / Hex (PS byte array)) — the packer family that
+      //     typically wraps a high-entropy XOR payload as a byte array.
+      const xorWrapperCarriers = new Set(['Char Array', 'Hex (PS byte array)']);
+      const isXorWrapper = xorWrapperCarriers.has(candidate.type);
+      const scanText = this._scanText || '';
+      const ctxXor = scanText && typeof this._hasXorContext === 'function'
+        && this._hasXorContext(scanText, candidate.offset, candidate.raw);
+      if (!this._bruteforce && !isXorWrapper && !ctxXor) {
+        return null;
+      }
       return {
         type: 'encoded-content',
         severity: 'medium',

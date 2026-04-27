@@ -51,18 +51,31 @@ Object.assign(EncodedContentDetector.prototype, {
     if (text.length < minLen) return [];
 
     const candidates = [];
-    const _execKw = /(eval|iex|invoke|powershell|cmd|http|shell|fromcharcode|downloadstring|invoke-expression|new-object|writeline|wscript|console|alert|require|import|exec|system)/i;
 
+    // Tightened plausibility gate (default mode):
+    //   • collapsed run must be ≥ 6 printable ASCII chars
+    //   • collapsed run must contain ≥ 6 ASCII letters AND match
+    //     `_EXEC_INTENT_RE` (LOLBin / cmdlet / URL vocabulary).
+    // The previous `≥ 3 letters OR exec` gate fired 47 FPs on a single
+    // benign bash binary (man-page-style help text in `.rodata` whose
+    // multi-space column padding looked like a periodic stride-3/4
+    // separator). Aggressive mode keeps the looser OR gate; bruteforce
+    // mode bypasses everything.
     const _looksPlausible = (collapsed) => {
       if (this._bruteforce) return true;
       if (!collapsed || collapsed.length < 6) return false;
       // Must be mostly printable ASCII.
       const printable = (collapsed.match(/[\x20-\x7E]/g) || []).length;
       if (printable < collapsed.length * 0.85) return false;
-      // ≥ 3 letters OR an exec keyword.
       const letters = (collapsed.match(/[A-Za-z]/g) || []).length;
-      if (letters >= 3) return true;
-      return _execKw.test(collapsed);
+      if (this._aggressive) {
+        // Aggressive: ≥ 3 letters OR exec keyword (legacy behaviour).
+        if (letters >= 3) return true;
+        return _EXEC_INTENT_RE.test(collapsed);
+      }
+      // Default mode: ≥ 6 letters AND exec keyword.
+      if (letters < 6) return false;
+      return _EXEC_INTENT_RE.test(collapsed);
     };
 
     // ── Pass 1: single-character separator at fixed stride ──────────
@@ -195,7 +208,10 @@ Object.assign(EncodedContentDetector.prototype, {
           }
           pos += 1; // consume the real char so next iteration sees lit
         }
-        if (runs >= 3 && _looksPlausible(collapsed)) {
+        // Default-mode floor raised 3→5 runs (≥5 real chars decoded);
+        // shorter runs are pure noise without the exec-keyword AND-gate.
+        const minRuns = this._bruteforce ? 3 : (this._aggressive ? 3 : 5);
+        if (runs >= minRuns && _looksPlausible(collapsed)) {
           const end = pos;
           const start = realStart;
           const raw = text.substring(start, end);

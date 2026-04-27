@@ -43,8 +43,13 @@ Object.assign(EncodedContentDetector.prototype, {
   _findUrlEncodedCandidates(text, context) {
     if (!text || text.length < 30) return [];
     const candidates = [];
-    // Match 10+ consecutive %XX sequences (may have non-encoded chars between)
-    const re = /(?:%[0-9a-fA-F]{2}){10,}/g;
+    // Match 12+ consecutive %XX sequences (may have non-encoded chars between).
+    // Default-mode floor raised 10→12 — short %XX runs in URL query strings
+    // fire FPs on benign log files. Bruteforce/aggressive paths keep the
+    // existing 10-min via the lower-floor regex.
+    const minSeq = this._aggressive ? 10 : 12;
+    /* safeRegex: builtin */
+    const re = new RegExp(`(?:%[0-9a-fA-F]{2}){${minSeq},}`, 'g');
     let m;
     while ((m = re.exec(text)) !== null) {
       throwIfAborted();
@@ -54,6 +59,14 @@ Object.assign(EncodedContentDetector.prototype, {
       // Skip if inside a URL that's already a normal parameter
       const lookback = text.substring(Math.max(0, offset - 10), offset);
       if (/[?&=]$/.test(lookback)) continue;
+      // Reject when the run is preceded by a recognised URL prefix within
+      // 100 chars — those are almost always normal query strings, not
+      // URL-encoded payloads. Aggressive/bruteforce paths skip this.
+      if (!this._aggressive) {
+        const ctxStart = Math.max(0, offset - 100);
+        const ctx = text.substring(ctxStart, offset);
+        if (/:\/\//.test(ctx)) continue;
+      }
       candidates.push({
         type: 'URL Encoding',
         raw,
@@ -75,8 +88,14 @@ Object.assign(EncodedContentDetector.prototype, {
   _findHtmlEntityCandidates(text, context) {
     if (!text || text.length < 30) return [];
     const candidates = [];
-    // Decimal entities: &#NNN; sequences
-    const decRe = /(?:&#\d{1,5};){8,}/g;
+    // Default-mode floors raised: decimal 8→12, hex 8→10. Heavy
+    // template files (Vue / Jinja / Handlebars) full of `&#39;`
+    // apostrophe escapes routinely cleared the 8-entity gate.
+    // Aggressive / bruteforce paths keep the looser threshold.
+    const decMin = this._aggressive ? 8 : 12;
+    const hexMin = this._aggressive ? 8 : 10;
+    /* safeRegex: builtin */
+    const decRe = new RegExp(`(?:&#\\d{1,5};){${decMin},}`, 'g');
     let m;
     while ((m = decRe.exec(text)) !== null) {
       throwIfAborted();
@@ -94,7 +113,8 @@ Object.assign(EncodedContentDetector.prototype, {
       });
     }
     // Hex entities: &#xHH; sequences
-    const hexRe = /(?:&#x[0-9a-fA-F]{1,4};){8,}/g;
+    /* safeRegex: builtin */
+    const hexRe = new RegExp(`(?:&#x[0-9a-fA-F]{1,4};){${hexMin},}`, 'g');
     while ((m = hexRe.exec(text)) !== null) {
       throwIfAborted();
       if (candidates.length >= this.maxCandidatesPerType) break;
@@ -119,7 +139,11 @@ Object.assign(EncodedContentDetector.prototype, {
   _findUnicodeEscapeCandidates(text, context) {
     if (!text || text.length < 40) return [];
     const candidates = [];
-    const re = /(?:\\u[0-9a-fA-F]{4}){8,}/g;
+    // Default-mode floor raised 8→12. JSON i18n bundles commonly have
+    // long runs of `\uNNNN` escapes for CJK strings — 8 is too low.
+    const minRun = this._aggressive ? 8 : 12;
+    /* safeRegex: builtin */
+    const re = new RegExp(`(?:\\\\u[0-9a-fA-F]{4}){${minRun},}`, 'g');
     let m;
     while ((m = re.exec(text)) !== null) {
       throwIfAborted();
@@ -153,9 +177,13 @@ Object.assign(EncodedContentDetector.prototype, {
       throwIfAborted();
       if (candidates.length >= this.maxCandidatesPerType) break;
       const nums = m[1].split(',').map(s => parseInt(s.trim(), 10));
-      // Verify most values are in printable ASCII range
+      // Verify most values are in printable ASCII range. Default-mode
+      // ratio raised 60%→80% — RGB pixel arrays / image lookup tables
+      // routinely cleared the 60% gate (most pixel values land in 32-126
+      // anyway). Aggressive/bruteforce keep 60%.
       const printable = nums.filter(n => n >= 32 && n <= 126).length;
-      if (printable < nums.length * 0.6) continue;
+      const ratio = this._aggressive ? 0.6 : 0.8;
+      if (printable < nums.length * ratio) continue;
       candidates.push({
         type: 'Char Array',
         raw: m[1],
@@ -230,7 +258,8 @@ Object.assign(EncodedContentDetector.prototype, {
       if (candidates.length >= this.maxCandidatesPerType) break;
       const nums = m[1].split(',').map(s => parseInt(s.trim(), 10));
       const printable = nums.filter(n => n >= 32 && n <= 126).length;
-      if (printable < nums.length * 0.6) continue;
+      const psRatio = this._aggressive ? 0.6 : 0.8;
+      if (printable < nums.length * psRatio) continue;
       candidates.push({
         type: 'Char Array',
         raw: m[1],
@@ -335,8 +364,12 @@ Object.assign(EncodedContentDetector.prototype, {
   _findOctalEscapeCandidates(text, context) {
     if (!text || text.length < 24) return [];
     const candidates = [];
+    // Default-mode floor raised 8→12. Shell-color escape sequences and
+    // regex character-class fragments commonly cleared the 8-escape gate.
+    const minRun = this._aggressive ? 8 : 12;
     // Octal: \NNN where NNN is 1-3 octal digits, no 'x' or 'u' after backslash
-    const re = /(?:\\[0-3]?[0-7]{2}){8,}/g;
+    /* safeRegex: builtin */
+    const re = new RegExp(`(?:\\\\[0-3]?[0-7]{2}){${minRun},}`, 'g');
     let m;
     while ((m = re.exec(text)) !== null) {
       throwIfAborted();
@@ -578,7 +611,11 @@ Object.assign(EncodedContentDetector.prototype, {
   _findJsHexEscapeCandidates(text, context) {
     if (!text || text.length < 12) return [];
     const candidates = [];
-    const minRun = this._aggressive ? 2 : 4;
+    // Default-mode floor raised 4→8. Two-byte escapes (`\x1b[31m` ANSI
+    // colour sequences, `\x00\x01` framing bytes) routinely cleared the
+    // 4-escape gate. Aggressive (selection-decode) keeps 2 so analyst-
+    // selected short obfuscated property accesses still trigger.
+    const minRun = this._bruteforce ? 2 : (this._aggressive ? 4 : 8);
     /* safeRegex: builtin */
     const re = new RegExp(`(?:\\\\x[0-9a-fA-F]{2}){${minRun},}`, 'g');
     let m;
@@ -657,9 +694,18 @@ Object.assign(EncodedContentDetector.prototype, {
       // ASCII, no NULs) AND either contain an exec keyword OR look like
       // a Base64 / hex blob the recursion can pick up.
       if (!/^[\x20-\x7E]{8,}$/.test(reversed)) continue;
-      const looksExec = /(eval|exec|invoke|iex|console|alert|powershell|cmd\.exe|http|shell|write|import|require|fromCharCode)/i.test(reversed);
-      const looksB64  = /^[A-Za-z0-9+\/=_\-]{20,}$/.test(reversed);
-      const looksHex  = /^[0-9a-fA-F]{20,}$/.test(reversed);
+      // Tightened: use the shared `_EXEC_INTENT_RE` (drops the loose
+      // `console|alert|...` set that fired on benign log lines) AND
+      // raise the B64/hex shortcut threshold to ≥40 chars in default
+      // mode so short reversed identifiers don't auto-emit.
+      const looksExec = _EXEC_INTENT_RE.test(reversed);
+      const minBlob   = this._aggressive ? 20 : 40;
+      /* safeRegex: builtin */
+      const blobB64Re = new RegExp(`^[A-Za-z0-9+\\/=_\\-]{${minBlob},}$`);
+      /* safeRegex: builtin */
+      const blobHexRe = new RegExp(`^[0-9a-fA-F]{${minBlob},}$`);
+      const looksB64  = blobB64Re.test(reversed);
+      const looksHex  = blobHexRe.test(reversed);
       if (!(looksExec || looksB64 || looksHex)) continue;
 
       candidates.push({
@@ -721,17 +767,16 @@ Object.assign(EncodedContentDetector.prototype, {
       // recursion can pick up.
       if (assembled.length < 6) continue;
       if (!/^[\x20-\x7E]{6,}$/.test(assembled)) continue;
-      // Plausibility regex includes Python wrapper-side keywords (`print`,
-      // `raise`, `os.system`) so chains like `exec("pri" + "nt" +
-      // "('Hello, World!')")` — where the assembled fragments form
-      // `print('Hello, World!')` — pass the gate. Without `print`, the
-      // assembled side is rejected and the chain is silently dropped.
-      const looksExec = /(eval|exec|invoke|iex|console|alert|powershell|cmd\.exe|http|shell|write|import|require|fromCharCode|Output|Download|print|raise|os\.system|subprocess|popen)/i.test(assembled);
+      // Default-mode tightening: require the assembled string match the
+      // shared `_EXEC_INTENT_RE` (drops Python `print`/`raise` short-
+      // circuits and the looksB64/looksHex shortcuts that fired on
+      // ordinary URL-builder concats). Aggressive mode keeps the looser
+      // any-printable gate. Bruteforce mode skips the check entirely.
+      const looksExec = _EXEC_INTENT_RE.test(assembled);
       const looksB64  = /^[A-Za-z0-9+\/=_\-]{20,}$/.test(assembled);
       const looksHex  = /^[0-9a-fA-F]{20,}$/.test(assembled);
-      // In normal mode require one of the strong signals; in aggressive
-      // mode (selection-decode) accept any printable assembly.
-      if (!this._aggressive && !(looksExec || looksB64 || looksHex)) continue;
+      if (!this._bruteforce && !this._aggressive && !looksExec) continue;
+      if (this._aggressive && !this._bruteforce && !(looksExec || looksB64 || looksHex)) continue;
 
       candidates.push({
         type: 'String Concat',
@@ -784,7 +829,9 @@ Object.assign(EncodedContentDetector.prototype, {
     // finder budget.
     const lines = text.split(/\r?\n/);
     let cursor = 0;
-    const minTokens = this._aggressive ? 8 : 16;
+    // Default-mode floor raised 16→20. Tabular numeric data and
+    // ASCII-art tables routinely cleared the 16-token gate.
+    const minTokens = this._aggressive ? 8 : 20;
 
     for (let li = 0; li < lines.length; li++) {
       // Cancellation poll inside the per-line loop so a multi-MB plaintext
@@ -855,8 +902,11 @@ Object.assign(EncodedContentDetector.prototype, {
       // the keyword set used elsewhere (string-concat / reversed) so a
       // benign spaced phrase like "T h i s   i s   a   t e s t"
       // doesn't generate a finding.
-      const looksCmd = /(write-output|write-host|invoke|iex|powershell|cmd\.exe|console|eval|exec|http:|https:|shell|net\.webclient|frombase64string|downloadstring|downloadfile|new-object|start-process)/i.test(collapsed);
-      if (!this._aggressive && !looksCmd) continue;
+      // Tightened: the `_aggressive` bypass is dropped — even selection-
+      // driven decode requires a cmd-keyword hit on a spaced-token line.
+      // Only bruteforce ("Decode selection") skips this gate.
+      const looksCmd = _EXEC_INTENT_RE.test(collapsed);
+      if (!this._bruteforce && !looksCmd) continue;
 
       // Offset = start of the line plus its leading-whitespace run, so
       // the sidebar's source-anchor click lands on the first encoded
@@ -941,8 +991,10 @@ Object.assign(EncodedContentDetector.prototype, {
       // Plausibility — gate on execution-intent keywords. Without this
       // the finder false-positives on legitimate JSDoc-heavy method
       // chains (`fooClient /* @returns Foo */ . /* see #42 */ get(...)`).
-      const looksExec = /(console|alert|eval|exec|invoke|iex|fetch|XMLHttpRequest|WScript|Shell\.Application|document|window|new\s+Function)/i.test(stripped);
-      if (!this._aggressive && !looksExec) continue;
+      // Tightened: the `_aggressive` bypass is removed — only bruteforce
+      // mode (kitchen-sink "Decode selection") skips this gate.
+      const looksExec = _EXEC_INTENT_RE.test(stripped);
+      if (!this._bruteforce && !looksExec) continue;
       candidates.push({
         type: 'Comment-Stripped',
         raw: stripped,                  // store the ALREADY-STRIPPED text

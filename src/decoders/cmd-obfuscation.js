@@ -172,7 +172,13 @@ Object.assign(EncodedContentDetector.prototype, {
       // is a strong nested-parse signal regardless of the decoded word.
       const doublePairs = (raw.match(/\^\^/g) || []).length;
       const isNested = doublePairs >= 1;
-      const passesGate = SENSITIVE_CMD_KEYWORDS.test(deobfuscated) || doublePairs >= 2;
+      // Tightened: the structural-only path now requires both ≥3 double-
+      // pairs AND a non-trivial deobfuscated length (≥5 chars). The
+      // previous `doublePairs >= 2` shortcut accepted short noise like
+      // `^^a^^b` from log-format strings. Sensitive-cmd-keyword path is
+      // unchanged — that's the high-confidence trigger.
+      const passesGate = SENSITIVE_CMD_KEYWORDS.test(deobfuscated)
+        || (doublePairs >= 3 && deobfuscated.length >= 5);
       if (!passesGate) continue;
       candidates.push({
         type: 'cmd-obfuscation',
@@ -479,16 +485,20 @@ Object.assign(EncodedContentDetector.prototype, {
       if (cleaned.length < 3) continue;
 
       let technique;
-      // Tokens worth tiering on: `%X%` lookups whose value we either had
-      // or didn't have. If neither category appeared (the inner command
-      // was already plaintext) treat as Full — there was nothing to
-      // resolve and we still extracted the inner payload.
+      // Tightened: the structural-only tier (zero env-vars resolved) is
+      // dropped — pure-placeholder renderings are noise without a single
+      // KNOWN_ENV_VAR match to anchor confidence. Real ClickFix payloads
+      // always resolve at least %COMSPEC% / %SystemRoot%, so the Partial
+      // tier still catches the canonical case. Bruteforce mode keeps the
+      // structural emission for analyst escape-hatch use.
       if (unresolvedCount === 0) {
         technique = 'CMD for /f Indirect Execution';
       } else if (resolvedCount > 0) {
         technique = 'CMD for /f Indirect Execution (partial)';
-      } else {
+      } else if (this._bruteforce) {
         technique = 'CMD for /f Indirect Execution (structural)';
+      } else {
+        continue;
       }
 
       // `do call %A` / `do %A` where the body re-references the
@@ -565,12 +575,18 @@ Object.assign(EncodedContentDetector.prototype, {
         );
 
         let technique;
+        // Tightened: structural-only tier dropped (see for /f branch
+        // above). A line with zero resolved env-var slots can't be
+        // distinguished from random `%X:~Y,Z%`-shaped strings in non-CMD
+        // contexts. Bruteforce keeps the structural emission.
         if (unresolvedCount === 0) {
           technique = 'CMD Env Var Substring';
         } else if (resolvedCount > 0) {
           technique = 'CMD Env Var Substring (partial)';
-        } else {
+        } else if (this._bruteforce) {
           technique = 'CMD Env Var Substring (structural)';
+        } else {
+          continue;
         }
 
         // Sanity floor: the decoded line still has to be substantive
@@ -657,13 +673,26 @@ Object.assign(EncodedContentDetector.prototype, {
     }
 
     // ── PowerShell string concatenation: ('Down'+'loadStr'+'ing') ──
+    // Tightened: the joined result must either match SENSITIVE_CMD_KEYWORDS
+    // OR contain a typed-character mix (letters + non-alpha) so simple
+    // literal-only joins like ('a'+'b'+'c') don't fire unless they form
+    // a real command. Bruteforce mode keeps the looser any-length gate.
+    const _psConcatPlausible = (joined) => {
+      if (this._bruteforce) return joined.length >= 4;
+      if (joined.length < 4) return false;
+      if (SENSITIVE_CMD_KEYWORDS.test(joined)) return true;
+      // Mixed alpha + non-alpha shape — common in path / URL / cmdline
+      // assemblies; pure-alpha joined tokens (e.g. concatenated words
+      // in localised strings) drop unless they hit the keyword list.
+      return /[A-Za-z]/.test(joined) && /[^A-Za-z0-9]/.test(joined) && joined.length >= 6;
+    };
     const psConcat = /\(\s*'[^']{1,40}'\s*(?:\+\s*'[^']{1,40}'\s*){2,}\)/g;
     while ((m = psConcat.exec(text)) !== null) {
       throwIfAborted();
       if (candidates.length >= this.maxCandidatesPerType) break;
       const parts = [...m[0].matchAll(/'([^']*)'/g)].map(p => p[1]);
       const joined = parts.join('');
-      if (joined.length < 4) continue;
+      if (!_psConcatPlausible(joined)) continue;
       candidates.push({
         type: 'cmd-obfuscation',
         technique: 'PowerShell String Concatenation',
@@ -680,7 +709,7 @@ Object.assign(EncodedContentDetector.prototype, {
       if (candidates.length >= this.maxCandidatesPerType) break;
       const parts = [...m[0].matchAll(/"([^"]*)"/g)].map(p => p[1]);
       const joined = parts.join('');
-      if (joined.length < 4) continue;
+      if (!_psConcatPlausible(joined)) continue;
       candidates.push({
         type: 'cmd-obfuscation',
         technique: 'PowerShell String Concatenation',
@@ -701,7 +730,12 @@ Object.assign(EncodedContentDetector.prototype, {
       for (const rep of replacements) {
         result = result.split(rep[1]).join(rep[2]);
       }
+      // Tightened: the post-replace string must match `_EXEC_INTENT_RE`
+      // — a generic 3+-char output of an unrelated `.replace()` chain
+      // (e.g. an HTML sanitiser pipeline) is otherwise indistinguishable
+      // from a real obfuscated payload. Bruteforce skips this gate.
       if (result.length < 3 || result === m[0]) continue;
+      if (!this._bruteforce && !_EXEC_INTENT_RE.test(result)) continue;
       candidates.push({
         type: 'cmd-obfuscation',
         technique: 'PowerShell -replace Chain',
@@ -765,7 +799,12 @@ Object.assign(EncodedContentDetector.prototype, {
         /* safeRegex: builtin */
         result = result.replace(new RegExp('\\{' + i + '\\}', 'g'), argValues[i]);
       }
+      // Tightened: post-format string must match `_EXEC_INTENT_RE` to
+      // distinguish a real obfuscated cmdline from generic format-string
+      // output (logging templates, error formatters, etc.). Bruteforce
+      // skips this gate.
       if (result.length < 3 || result === template) continue;
+      if (!this._bruteforce && !_EXEC_INTENT_RE.test(result)) continue;
       candidates.push({
         type: 'cmd-obfuscation',
         technique: 'PowerShell Format Operator (-f)',
