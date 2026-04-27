@@ -1449,19 +1449,15 @@ class X509Renderer {
    */
   /**
    * Strip trailing DER tag/length bytes that sometimes leak into URIs
-   * decoded from ASN.1 IA5String fields.  The most common artifact is
-   * 0x30 (SEQUENCE, ASCII '0') followed by one or two length / tag
-   * bytes that happen to be printable ASCII.  Require a non-digit
-   * immediately before the spurious '0' so that legitimate paths
-   * ending in multi-digit numbers (e.g. /file20) are never shortened.
-   * The trailing `{1,3}` quantifier requires at least one non-alnum
-   * byte after the `0` tag so URLs ending in `<non-digit>0` (e.g.
-   * `/v1.0`) are preserved — DER tails always carry a length byte.
+   * decoded from ASN.1 IA5String fields. Delegates to the shared
+   * `stripDerTail` helper in `constants.js` so the regex stays in
+   * lockstep with the PE-strings extractor and the app-load URL
+   * processor — see that file for the full rationale.
    * @param {string} s  The raw decoded URI string
    * @returns {string}  The cleaned URI
    */
   static _cleanDerUri(s) {
-    return s.replace(/([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/, '$1');
+    return stripDerTail(s);
   }
 
   static parseCertificatesFromCMS(cmsBytes) {

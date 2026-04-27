@@ -3528,16 +3528,11 @@ class PeRenderer {
       const URL_CAP = 50, UNC_CAP = 20;
       // DER SEQUENCE tag (0x30 = ASCII '0') and following length/tag bytes
       // frequently fuse onto URLs extracted from binary string dumps.
-      // Clean each match before dedup and before the cert-URL prefix guard.
-      // The trailing `[^a-zA-Z0-9]{1,3}` requires at least one non-alnum
-      // byte after the `0` tag — DER tails always carry the 0x82/0x83/0x84
-      // length-of-length byte (or further structural bytes) before the
-      // string terminator, so the `{1,N}` floor is safe and prevents the
-      // regex from over-stripping legitimate URL paths that legitimately
-      // end in `<non-digit>0` (e.g. `…/v1.0`, `…/foo0`).
-      const _derJunkRx = /([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/;
+      // `stripDerTail` (constants.js) is the shared cleaner — see there
+      // for the full rationale and the `{1,3}` floor that keeps URLs
+      // ending in `<non-digit>0` (e.g. `…/v1.0`, `…/foo0`) intact.
       const urlMatches = [...new Set(
-        [...allStrings.matchAll(_urlRx)].map(m => m[0].replace(_derJunkRx, '$1')),
+        [...allStrings.matchAll(_urlRx)].map(m => stripDerTail(m[0])),
       )];
       for (const url of urlMatches.slice(0, URL_CAP)) {
         // Skip URLs that match a cert URL already pushed from parsed

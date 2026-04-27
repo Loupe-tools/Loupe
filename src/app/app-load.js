@@ -1993,9 +1993,12 @@ extendApp({
       return true;
     };
 
-    // Helper to process a URL — checks for SafeLink wrappers and adds both
+    // Helper to process a URL — checks for SafeLink wrappers and adds both.
+    // Trailing-punctuation strip first (consumer-facing junk like `).`, `;`),
+    // then DER tail-junk strip via the shared `stripDerTail` (constants.js)
+    // so this stays in lockstep with the PE / X.509 callers.
     const processUrl = (rawUrl, baseSeverity, matchOffset, matchLength) => {
-      const url = (rawUrl || '').trim().replace(/[.,;:!?)\]>]+$/, '').replace(/([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/, '$1');
+      const url = stripDerTail((rawUrl || '').trim().replace(/[.,;:!?)\]>]+$/, ''));
       if (!url || url.length < 6) return;
 
       const unwrapped = EncodedContentDetector.unwrapSafeLink(url);
@@ -2080,8 +2083,11 @@ extendApp({
       if (_isReservedIp(parts)) continue;                // drop private / loopback / reserved
       const port = m[1] ? Number(m[1]) : null;
       if (port !== null && (port < 1 || port > 65535)) continue;
-      // Version-string suppression — `<4 digits` rejects `6.0.0.0`-style
-      // build literals while preserving public DNS IPs (`8.8.8.8` etc.).
+      // Version-string suppression — `<4 digits` rejects truncated /
+      // fragmentary dotted patterns the regex lets through. Single-digit-
+      // octet quads like `6.0.0.0` are preserved as collateral; the
+      // threshold is calibrated to keep public DNS resolvers (`8.8.8.8`,
+      // `1.1.1.1`, …). See `looksLikeIpVersionString` in constants.js.
       // Skip the filter entirely when a port is attached: a port suffix is
       // strong evidence the value is a network endpoint, not a version.
       if (port === null && looksLikeIpVersionString(ipPart)) continue;

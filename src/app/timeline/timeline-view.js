@@ -555,6 +555,25 @@ class TimelineView {
     if (this._onDocScroll) window.removeEventListener('scroll', this._onDocScroll, true);
     if (this._onDocKeyUp) document.removeEventListener('keyup', this._onDocKeyUp, true);
     this._onDocClick = this._onDocKey = this._onDocScroll = this._onDocKeyUp = null;
+
+    // Reset drag-state flags + strip any document-level cursor classes the
+    // active drag installed on <body>. If destroy interrupts a live drag,
+    // the pointerup/onUp handler is on a `handle` element that's GC'd with
+    // `_root` below — it never fires, leaving `_cursorDragging` /
+    // `_windowDragging` true on the dead view (cosmetic) AND a stuck
+    // `ns-resize` cursor / `tl-chart-resizing` class on <body> that
+    // outlives the timeline pane (visible to the user).
+    this._cursorDragging = false;
+    this._windowDragging = false;
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove(
+        'tl-chart-resizing',
+        'tl-col-resizing',
+        'tl-col-dragging',
+        'tl-splitter-dragging',
+      );
+    }
+
     this._grid = null;
     this._resizeObs = null;
     this._els = {};

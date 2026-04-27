@@ -265,13 +265,28 @@ const EVTX_COLUMN_ORDER = Object.freeze([
 // ── IP / version-string heuristics ────────────────────────────────────────────
 // Several IOC extractors (app-load.js text scan, eml/plist/osascript renderers)
 // scrape dotted-quad patterns from arbitrary text and need to decide whether a
-// match is a real IPv4 endpoint or an incidental version literal like "6.0.0.0".
-// The heuristic: real-world IPv4 addresses with at least one multi-digit octet
-// have ≥ 4 total digits (`8.8.8.8` is the smallest legitimate public IP), while
-// version strings cluster around 3-or-fewer total digits (`1.0.0.0`, `6.0.0.0`,
-// `0.0.0.0`). The `< 4` threshold suppresses the common version literals while
-// preserving small public DNS IPs (`8.8.8.8` Google, `1.1.1.1` Cloudflare,
-// `9.9.9.9` Quad9, `8.8.4.4`).
+// match is a real IPv4 endpoint or an incidental version-like literal that
+// happens to satisfy the dotted-quad regex.
+//
+// Heuristic: count the digit characters in the candidate (dots stripped) and
+// reject anything with `< 4` digits. The threshold is deliberately permissive
+// to keep small public DNS resolvers — `8.8.8.8`, `1.1.1.1`, `9.9.9.9`,
+// `8.8.4.4` all have exactly 4 digits and survive — so single-digit-octet
+// version literals like `1.0.0.0` / `2.0.0.0` (also 4 digits) ARE preserved
+// as well. That trade-off is intentional: an earlier `< 5` threshold filtered
+// the DNS resolvers and got reverted; cluttering the IOC list with the
+// occasional version literal is the lesser evil.
+//
+// The filter actually catches truncated / fragmentary dotted patterns the
+// caller's regex sometimes lets through with fewer than 4 digits in total
+// (e.g. trailing `.0.0` fragments or `1.0.` style cuts) and the pure-zero
+// ipv4 wildcards that have to be padded — anything genuinely 4+ digits is
+// preserved.
+//
+// Examples (assuming the caller's dotted-quad regex matched):
+//   • Filtered (< 4 digits):    `1.0.0`,  `0.0.0`,  `1.1.1`
+//   • Preserved (≥ 4 digits):   `8.8.8.8`, `1.1.1.1`, `9.9.9.9`, `8.8.4.4`,
+//                                `127.0.0.1`, `1.0.0.0` (collateral keep)
 //
 // Centralised here so the four extractors that share this guard cannot drift
 // independently — earlier copy-paste replication briefly used `< 5` which
@@ -282,6 +297,27 @@ const EVTX_COLUMN_ORDER = Object.freeze([
 function looksLikeIpVersionString(ipPart) {
   if (!ipPart) return false;
   return String(ipPart).replace(/\D/g, '').length < 4;
+}
+
+// ── DER tail-junk stripper ────────────────────────────────────────────────────
+// URLs scraped from binary string dumps and ASN.1 IA5String fields frequently
+// have one or two structural DER bytes fused onto the tail. The most common
+// artefact is `0x30` (SEQUENCE tag, ASCII '0') followed by a length byte
+// (0x82 / 0x83 / 0x84 — length-of-length) and possibly a further tag byte,
+// some of which happen to be printable ASCII and so survive the printable-
+// string extractor.
+//
+// Pattern: a non-digit immediately before a stray `0` (so `…/file20` /
+// `…/v1.0` are preserved), 0–2 trailing digit chars, then ≥1 non-alnum
+// terminator. The `{1,3}` floor on the trailing junk is load-bearing —
+// without it, URLs ending in `<non-digit>0` were being chopped at the `0`.
+//
+// Centralised here so the three callers (PE strings extractor, X.509
+// IA5String cleaner, app-load.js URL processor) cannot drift independently
+// — a recent commit had to touch all three identical regexes in lockstep.
+const DER_TAIL_RX = /([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/;
+function stripDerTail(s) {
+  return typeof s === 'string' ? s.replace(DER_TAIL_RX, '$1') : s;
 }
 
 // ── XML namespace constants ───────────────────────────────────────────────────

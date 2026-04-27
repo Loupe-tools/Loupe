@@ -181,6 +181,10 @@ class VirtualTextView {
     root.tabIndex  = 0;
     root._isVirtual      = true;
     root._lineToFirstRow = this.lineToFirstRow;
+    // Read post-`_buildRowMap` state, NOT constructor input: wrap mode
+    // forces `chunkSize=0` / `hasLongLine=false` inside `_buildRowMap`
+    // so `app-sidebar-focus.js` takes the simple 1-row-per-line branch.
+    // Don't reorder the constructor calls without preserving that.
     root._chunkSize      = this.chunkSize;
     root._hasLongLine    = this.hasLongLine;
     root._rawText        = lfNormalize(this.rawText);
@@ -450,7 +454,7 @@ class VirtualTextView {
     this._forceFullRender();
 
     if (spec.scroll === 'never' || spec.focusRow == null) return null;
-    if (spec.scroll === 'ifNotInView' && this._isMarkInView(this._matchHighlight.markClass)) {
+    if (spec.scroll === 'ifNotInView' && this._isAnyMatchRowInView()) {
       return null;
     }
     return this.scrollToRow(spec.focusRow, /* focusMatchIdx */ spec.focusMatchIdx);
@@ -462,13 +466,47 @@ class VirtualTextView {
     this._forceFullRender();
   }
 
-  _isMarkInView(markClass) {
-    const marks = this._sizer.querySelectorAll('mark.' + markClass);
-    if (!marks.length) return false;
-    const vh = window.innerHeight || document.documentElement.clientHeight;
-    for (const m of marks) {
-      const r = m.getBoundingClientRect();
-      if (r.bottom > 0 && r.top < vh && r.width > 0 && r.height > 0) return true;
+  // Decide whether *any* row carrying a current-highlight match is inside
+  // the scroll viewport. Read off JS state, NOT the DOM:
+  //
+  //   • `setMatchHighlights` only schedules an rAF render via
+  //     `_forceFullRender`, so at the moment this runs the live DOM still
+  //     reflects the previous render's marks. A DOM query would happily
+  //     report stale marks from an earlier IOC click as "in view" and
+  //     wrongly suppress the scroll-to-focus on the new click.
+  //   • Non-wrap rows are absolute-positioned at `rowIdx * ROW_HEIGHT`
+  //     (the renderer's invariant #1 — see the file prologue), so the
+  //     row-band intersection with the viewport is exact arithmetic.
+  //   • In wrap mode rows are `position:static` and their pixel position
+  //     is layout-driven, so we can't compute it from the row index;
+  //     fall through to a bounding-rect probe against the scroll
+  //     container's rect (NOT the window — the plaintext view is often
+  //     a flex child smaller than the viewport).
+  _isAnyMatchRowInView() {
+    const mh = this._matchHighlight;
+    if (!mh || !mh.matchesByRow || !mh.matchesByRow.size) return false;
+
+    if (this.wrap) {
+      const rootRect = this._root.getBoundingClientRect();
+      for (const rowIdx of mh.matchesByRow.keys()) {
+        const row = this.getRowEl(rowIdx);
+        if (!row) continue;
+        const r = row.getBoundingClientRect();
+        if (r.bottom > rootRect.top && r.top < rootRect.bottom &&
+            r.right  > rootRect.left && r.left < rootRect.right) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    const rh        = VirtualTextView.ROW_HEIGHT;
+    const scrollTop = this._root.scrollTop;
+    const scrollBot = scrollTop + (this._root.clientHeight || 0);
+    for (const rowIdx of mh.matchesByRow.keys()) {
+      const top = rowIdx * rh;
+      const bot = top + rh;
+      if (bot > scrollTop && top < scrollBot) return true;
     }
     return false;
   }
