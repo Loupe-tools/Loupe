@@ -1347,6 +1347,11 @@ extendApp({
     }
 
     const buf = cr.yaraBuffer || cr.buffer;
+    // `formatTag` is the host-detected file format (`dispatchId` from
+    // `RendererRegistry.detect()`, or a script-language sniff for
+    // plaintext). Threaded into both worker and sync paths so rule
+    // conditions can use `is_*` predicates and `meta: applies_to` gates.
+    const formatTag = (cr && typeof cr.formatTag === 'string') ? cr.formatTag : null;
     const wm  = window.WorkerManager;
     const useWorker = !!(wm && wm.workersAvailable && wm.workersAvailable());
 
@@ -1391,7 +1396,10 @@ extendApp({
       setTimeout(() => {
         try {
           const scanErrors = [];
-          const results = YaraEngine.scan(buf, rules, { errors: scanErrors });
+          const results = YaraEngine.scan(buf, rules, {
+            errors: scanErrors,
+            context: { formatTag },
+          });
           onSuccess(results, scanErrors);
         } catch (e) {
           this._yaraScanInProgress = false;
@@ -1409,7 +1417,7 @@ extendApp({
       let copy;
       try { copy = buf.slice(0); } catch (_) { copy = null; }
       if (copy) {
-        wm.runYara(copy, source).then((out) => {
+        wm.runYara(copy, source, { formatTag }).then((out) => {
           onSuccess((out && out.results) || [], (out && out.scanErrors) || []);
         }).catch((err) => {
           if (err && err.message === 'workers-unavailable') { runSync(); return; }
@@ -1676,6 +1684,11 @@ extendApp({
     const buf = cr.yaraBuffer || cr.buffer;
     if (!buf) return;
 
+    // `formatTag` (Loupe-detected file format) drives `is_*` predicates
+    // and `meta: applies_to` short-circuits in the engine. Captured here
+    // and threaded into both worker and sync paths.
+    const formatTag = (typeof cr.formatTag === 'string') ? cr.formatTag : null;
+
     const wm = window.WorkerManager;
     const useWorker = !!(wm && wm.workersAvailable && wm.workersAvailable());
 
@@ -1700,7 +1713,7 @@ extendApp({
           const fileName = (this._fileMeta && this._fileMeta.name) || '';
           this._renderSidebar(fileName, null);
         }
-        wm.runYara(copy, source).then((out) => {
+        wm.runYara(copy, source, { formatTag }).then((out) => {
           this._yaraScanInProgress = false;
           const results = (out && out.results) || [];
           this._yaraResults = results;
@@ -1711,7 +1724,7 @@ extendApp({
           if (err && err.message === 'workers-unavailable') {
             // Late veto — `_autoYaraScanSync` will own the in-progress
             // flag from this point onwards.
-            this._autoYaraScanSync(buf, source);
+            this._autoYaraScanSync(buf, source, formatTag);
             return;
           }
           // A newer file load (or `_loadFile`'s entry-point cancel) has
@@ -1732,15 +1745,19 @@ extendApp({
     }
 
     // ── Synchronous fallback path ──────────────────────────────────────────
-    this._autoYaraScanSync(buf, source);
+    this._autoYaraScanSync(buf, source, formatTag);
   },
 
   /** Synchronous main-thread fallback for `_autoYaraScan`. Used when
    *  `Worker(blob:)` is unavailable (e.g. Firefox `file://`) or the buffer
    *  copy for the worker transfer fails. The
    *  `SYNC_YARA_FALLBACK_MAX_BYTES` cap is enforced **only here** — see
-   *  `src/constants.js` for the rationale. */
-  _autoYaraScanSync(buf, source) {
+   *  `src/constants.js` for the rationale.
+   *
+   *  `formatTag` is forwarded into `YaraEngine.scan(..., {context})` so
+   *  format-aware rule features (`is_*`, `meta: applies_to`) work
+   *  identically to the worker path. */
+  _autoYaraScanSync(buf, source, formatTag) {
     const size = (buf && buf.byteLength) || 0;
     if (size > PARSER_LIMITS.SYNC_YARA_FALLBACK_MAX_BYTES) {
       // Size-cap skip is a terminal branch — clear any in-progress flag
@@ -1780,7 +1797,9 @@ extendApp({
         }
         return;
       }
-      const results = YaraEngine.scan(buf, rules);
+      const results = YaraEngine.scan(buf, rules, {
+        context: { formatTag: formatTag || null },
+      });
       this._yaraScanInProgress = false;
       this._yaraResults = results;
       // `_updateSidebarWithYara` re-renders the sidebar; no separate call.

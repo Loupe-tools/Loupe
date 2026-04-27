@@ -168,6 +168,7 @@ rule Standalone_HTML_Suspicious_Elements
         severity    = "info"
         category    = "execution"
         mitre       = "T1059.007"
+        applies_to  = "html, hta, svg, plaintext"
 
     strings:
         $script_tag     = /<script[\s>]/ nocase
@@ -188,6 +189,7 @@ rule Standalone_HTML_Credential_Indicators
         severity    = "medium"
         category    = "credential-access"
         mitre       = "T1056.003"
+        applies_to  = "html, hta, svg, plaintext"
 
     strings:
         $password_input = /type\s*=\s*["']?password/ nocase
@@ -207,6 +209,7 @@ rule Standalone_HTML_Code_Execution
         severity    = "medium"
         category    = "execution"
         mitre       = "T1059.007"
+        applies_to  = "html, hta, svg, plaintext"
 
     strings:
         $eval_call      = /eval\s*\(/ nocase
@@ -229,6 +232,7 @@ rule Standalone_HTA_VBScript_Indicators
         severity    = "medium"
         category    = "execution"
         mitre       = "T1059.005"
+        applies_to  = "hta, vbs, html, plaintext"
 
     strings:
         $hta_tag        = /<HTA:APPLICATION[^>]*>/ nocase
@@ -255,6 +259,7 @@ rule Standalone_WSF_Script_Indicators
         severity    = "medium"
         category    = "execution"
         mitre       = "T1059"
+        applies_to  = "wsf, plaintext"
 
     strings:
         $wsf_job       = /<job\b/ nocase
@@ -280,6 +285,7 @@ rule Standalone_RTF_OLE_Keywords
         severity    = "high"
         category    = "initial-access"
         mitre       = "T1204.002"
+        applies_to  = "rtf"
 
     strings:
         $rtf        = "{\\rtf"
@@ -293,7 +299,7 @@ rule Standalone_RTF_OLE_Keywords
         $objclass   = "\\objclass"
 
     condition:
-        $rtf and any of ($objdata, $objocx, $objemb, $objautlink, $objhtml, $objlink, $objupdate, $objclass)
+        $rtf at 0 and any of ($objdata, $objocx, $objemb, $objautlink, $objhtml, $objlink, $objupdate, $objclass)
 }
 
 rule Standalone_RTF_Exploit_Patterns
@@ -303,6 +309,7 @@ rule Standalone_RTF_Exploit_Patterns
         severity    = "high"
         category    = "initial-access"
         mitre       = "T1203"
+        applies_to  = "rtf"
 
     strings:
         $rtf           = "{\\rtf"
@@ -316,7 +323,7 @@ rule Standalone_RTF_Exploit_Patterns
         $include_field = /\\field\s*\{[^}]*\\fldinst\s+[^}]*INCLUDETEXT/ nocase
 
     condition:
-        $rtf and any of ($equation_obj, $equation3, $eq3_clsid, $datafield, $ddeauto_rtf, $ddeauto_field, $import_field, $include_field)
+        $rtf at 0 and any of ($equation_obj, $equation3, $eq3_clsid, $datafield, $ddeauto_rtf, $ddeauto_field, $import_field, $include_field)
 }
 
 rule Standalone_RTF_Obfuscation
@@ -326,6 +333,7 @@ rule Standalone_RTF_Obfuscation
         severity    = "medium"
         category    = "defense-evasion"
         mitre       = "T1027"
+        applies_to  = "rtf"
 
     strings:
         $rtf           = "{\\rtf"
@@ -333,7 +341,7 @@ rule Standalone_RTF_Obfuscation
         $bin_payload   = /\\bin\d{4,}/
 
     condition:
-        $rtf and ($obfusc_header or $bin_payload)
+        $rtf at 0 and ($obfusc_header or $bin_payload)
 }
 
 rule Standalone_LNK_Argument_Patterns
@@ -343,6 +351,7 @@ rule Standalone_LNK_Argument_Patterns
         severity    = "high"
         category    = "execution"
         mitre       = "T1204.002"
+        applies_to  = "lnk, ps1, bat, plaintext"
 
     strings:
         $enc_flag     = /-e(nc(odedcommand)?)\b/ nocase
@@ -364,9 +373,9 @@ rule Encoded_Base64_PE_Header
         mitre       = "T1027"
 
     strings:
-        $b64_mz1 = "TVqQ" ascii
-        $b64_mz2 = "TVpQ" ascii
-        $b64_mz3 = "TVro" ascii
+        $b64_mz1 = /TVqQ[A-Za-z0-9+\/]{40,}/ ascii
+        $b64_mz2 = /TVpQ[A-Za-z0-9+\/]{40,}/ ascii
+        $b64_mz3 = /TVro[A-Za-z0-9+\/]{40,}/ ascii
 
     condition:
         any of them
@@ -381,7 +390,7 @@ rule Encoded_Base64_Gzip
         mitre       = "T1027"
 
     strings:
-        $b64_gz = "H4sI" ascii
+        $b64_gz = /H4sI[A-Za-z0-9+\/]{40,}/ ascii
 
     condition:
         $b64_gz
@@ -396,7 +405,7 @@ rule Encoded_Base64_OLE_Document
         mitre       = "T1027"
 
     strings:
-        $b64_ole = "0M8R" ascii
+        $b64_ole = /0M8R[A-Za-z0-9+\/]{40,}/ ascii
 
     condition:
         $b64_ole
@@ -411,7 +420,7 @@ rule Encoded_Base64_PDF
         mitre       = "T1027"
 
     strings:
-        $b64_pdf = "JVBE" ascii
+        $b64_pdf = /JVBE[A-Za-z0-9+\/]{40,}/ ascii
 
     condition:
         $b64_pdf
@@ -426,7 +435,7 @@ rule Encoded_Base64_ZIP
         mitre       = "T1027"
 
     strings:
-        $b64_zip = "UEsD" ascii
+        $b64_zip = /UEsD[A-Za-z0-9+\/]{40,}/ ascii
 
     condition:
         $b64_zip

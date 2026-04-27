@@ -361,7 +361,7 @@ rule Office_OLE_Embedded_Object
         $d = { D0 CF 11 E0 A1 B1 1A E1 }
 
     condition:
-        $d and any of ($a, $b, $c)
+        not ($d at 0) and any of ($a, $b, $c)
 }
 
 rule Office_Remote_Template_Injection
@@ -394,10 +394,10 @@ rule Office_External_OLE_Link
     strings:
         $a = "oleObject" nocase
         $b = "External" nocase
-        $c = "http" nocase
+        $c = /https?:\/\/[^"\s<]{4,}/
 
     condition:
-        uint32(0) == 0x04034B50 and all of them
+        uint32(0) == 0x04034B50 and $a and $b and $c
 }
 
 rule Office_Follina_MSDT
@@ -569,7 +569,7 @@ rule AddIn_XLL_File
         $c = "xlAutoAdd" nocase
 
     condition:
-        $mz and any of ($a, $b, $c)
+        $mz at 0 and any of ($a, $b, $c)
 }
 
 rule PPAM_PPTM_AddIn

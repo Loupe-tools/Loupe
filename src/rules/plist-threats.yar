@@ -130,7 +130,7 @@ rule plist_dyld_insert_libraries
 {
     meta:
         description = "DYLD_INSERT_LIBRARIES in plist — dynamic library injection into all child processes"
-        severity    = "critical"
+        severity    = "medium"
         category    = "privilege-escalation"
         mitre       = "T1574.006"
     strings:

@@ -20,9 +20,17 @@
 //
 // postMessage protocol
 // --------------------
-//   in:  { buffer: ArrayBuffer (transferred), source: string }
+//   in:  { buffer: ArrayBuffer (transferred), source: string,
+//          formatTag?: string }   // Loupe-detected file format
 //   out: { event: 'done',  results: [...], parseMs: N, scanMs: N }
 //        { event: 'error', message: string }
+//
+// `formatTag` is the value `RendererRegistry.detect()` produced for the
+// file (`pe`, `lnk`, `rtf`, `svg`, …) — see `src/render-route.js`. It is
+// forwarded into `YaraEngine.scan(..., { context: { formatTag } })` so
+// rule conditions can use `is_*` predicates and `meta: applies_to`. When
+// absent (legacy callers) the engine treats `is_*` as false and skips
+// any rule with `applies_to`.
 //
 // The buffer is **transferred** (caller loses access). Callers that need
 // the bytes again — every site does, since the load pipeline keeps
@@ -49,6 +57,7 @@ self.onmessage = function (ev) {
   const msg = ev && ev.data ? ev.data : {};
   const buffer = msg.buffer;
   const source = msg.source || '';
+  const formatTag = (typeof msg.formatTag === 'string') ? msg.formatTag : null;
 
   try {
     if (typeof YaraEngine === 'undefined') {
@@ -73,7 +82,10 @@ self.onmessage = function (ev) {
     }
 
     const scanErrors = [];
-    const results = YaraEngine.scan(buffer, rules, { errors: scanErrors });
+    const results = YaraEngine.scan(buffer, rules, {
+      errors: scanErrors,
+      context: { formatTag },
+    });
     const t2 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
     self.postMessage({

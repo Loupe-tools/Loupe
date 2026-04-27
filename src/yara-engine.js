@@ -4,9 +4,180 @@
 // Supports: text strings, hex strings, regex strings, nocase/wide/ascii,
 //           conditions: any/all of them/set, $var at N, $var in (lo..hi),
 //           N of ($prefix*), uint8/16/32, int8/16/32, filesize, #var, and/or/not
+//
+// Format-aware predicates (Loupe extension)
+// -----------------------------------------
+// The host (`src/render-route.js`) passes a `formatTag` string into
+// `YaraEngine.scan(buffer, rules, { context: { formatTag } })`. The tag is
+// usually the same as `RendererRegistry.detect()`'s `dispatchId` ("pe", "lnk",
+// "rtf", "svg", "plist", etc.) but for files Loupe routes to `plaintext` it
+// can be a script-language hint produced by `RendererRegistry._sniffScriptKind`
+// ("ps1", "bash", "bat", "vbs", "js", "py", "perl"). Rules consume it two ways:
+//
+//   1. `is_*` boolean keywords inside `condition:`. The full keyword set is
+//      `YaraEngine.FORMAT_PREDICATES` below; each maps to a list of allowed
+//      `formatTag` values. `is_office`, `is_zip_container`, `is_script` etc.
+//      are group aliases. The expression evaluator treats `is_*` as a value-
+//      producing terminal so `not is_pe`, `is_pe and 2 of them`, and any
+//      boolean composition just work.
+//
+//   2. `meta: applies_to = "..."` (comma- or whitespace-separated). When
+//      present the entire rule is short-circuited unless the current
+//      `formatTag` matches one of the listed tags or group aliases. The
+//      string-match phase is also skipped, so unrelated rules cost ~zero on
+//      mismatched files. Absent `applies_to` ⇒ legacy behaviour (rule always
+//      runs).
+//
+// Backward compatibility: callers that pass no `context` (or `formatTag` is
+// undefined) get the historical behaviour — `is_*` evaluates to `false` and
+// rules with `applies_to` are skipped (safe default; nothing in the legacy
+// corpus uses either feature). The Loupe in-app pipeline always supplies
+// `formatTag` from `app.currentResult.formatTag`.
 // ════════════════════════════════════════════════════════════════════════════
 
 class YaraEngine {
+
+  /**
+   * Format predicate map. Keys are `is_*` keywords usable in a rule's
+   * `condition:`; values are the `formatTag` strings that satisfy them.
+   * `meta: applies_to` accepts the same keys (treated as group aliases) **or**
+   * any individual `formatTag` string from this table.
+   *
+   * The host computes `formatTag` from `RendererRegistry.detect()`'s
+   * `dispatchId` (and, for plaintext, `_sniffScriptKind`). When extending
+   * either side, keep them in lockstep — `_validateAppliesTo` warns on
+   * unknown tokens so typos surface in the editor's validate pass.
+   */
+  static FORMAT_PREDICATES = Object.freeze({
+    // ── Binaries ────────────────────────────────────────────────────────
+    is_pe:              ['pe'],
+    is_elf:             ['elf'],
+    is_macho:           ['macho'],
+    is_native_binary:   ['pe', 'elf', 'macho'],
+
+    // ── Documents / Office ──────────────────────────────────────────────
+    is_pdf:             ['pdf'],
+    is_rtf:             ['rtf'],
+    is_office_legacy:   ['doc', 'xls', 'ppt', 'msg', 'msi'],
+    is_office_ooxml:    ['docx', 'xlsx', 'pptx'],
+    is_office_odf:      ['odt', 'ods', 'odp'],
+    is_office:          ['doc', 'xls', 'ppt', 'msg', 'msi',
+                         'docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'],
+    is_onenote:         ['onenote'],
+
+    // ── Web / markup ────────────────────────────────────────────────────
+    is_svg:             ['svg'],
+    is_html:            ['html', 'hta'],
+    is_hta:             ['hta'],
+    is_xml_like:        ['svg', 'html', 'hta', 'plist', 'wsf', 'clickonce'],
+
+    // ── Containers / archives ───────────────────────────────────────────
+    is_zip_plain:       ['zip'],
+    is_zip_container:   ['zip', 'docx', 'xlsx', 'pptx', 'msix', 'browserext',
+                         'jar', 'odt', 'ods', 'odp', 'npm'],
+    is_archive:         ['zip', 'rar', 'sevenz', 'cab', 'iso', 'dmg', 'pkg'],
+    is_jar:             ['jar'],
+    is_msi:             ['msi'],
+    is_msix:            ['msix'],
+    is_browserext:      ['browserext'],
+    is_npm:             ['npm'],
+    is_cab:             ['cab'],
+    is_rar:             ['rar'],
+    is_sevenz:          ['sevenz'],
+    is_iso:             ['iso'],
+    is_dmg:             ['dmg'],
+    is_pkg:             ['pkg'],
+
+    // ── Windows shell / shortcuts ───────────────────────────────────────
+    is_lnk:             ['lnk'],
+    is_url_shortcut:    ['url'],
+    is_reg:             ['reg'],
+    is_inf:             ['inf'],
+    is_iqyslk:          ['iqyslk'],
+
+    // ── macOS / Apple ───────────────────────────────────────────────────
+    is_plist:           ['plist'],
+    is_osascript:       ['scpt'],
+    is_apple_format:    ['plist', 'scpt', 'macho', 'pkg', 'dmg'],
+
+    // ── Scripts (sniffed plaintext subtypes + named-script formats) ─────
+    is_powershell:      ['ps1'],
+    is_bash:            ['bash'],
+    is_bat:             ['bat'],
+    is_vbs:             ['vbs'],
+    is_javascript:      ['js'],
+    is_python:          ['py'],
+    is_perl:            ['perl'],
+    is_wsf:             ['wsf'],
+    is_clickonce:       ['clickonce'],
+    is_script:          ['ps1', 'bash', 'bat', 'vbs', 'js', 'py', 'perl',
+                         'scpt', 'wsf', 'hta', 'inf'],
+
+    // ── Email / certs / DBs ─────────────────────────────────────────────
+    is_eml:             ['eml'],
+    is_msg:             ['msg'],
+    is_email:           ['eml', 'msg'],
+    is_pgp:             ['pgp'],
+    is_x509:            ['x509'],
+    is_sqlite:          ['sqlite'],
+    is_evtx:            ['evtx'],
+    is_image:           ['image'],
+
+    // ── Plaintext / catch-alls ──────────────────────────────────────────
+    is_plaintext:       ['plaintext'],
+  });
+
+  /**
+   * All `formatTag` values that the host can produce, derived from the
+   * union of FORMAT_PREDICATES values. Used for `applies_to` validation.
+   */
+  static get _KNOWN_FORMAT_TAGS() {
+    if (this.__knownTags) return this.__knownTags;
+    const set = new Set();
+    for (const list of Object.values(this.FORMAT_PREDICATES)) {
+      for (const tag of list) set.add(tag);
+    }
+    return (this.__knownTags = set);
+  }
+
+  /**
+   * Resolve a single `applies_to` token to the list of tags it accepts.
+   * Accepts both group aliases (the `is_*` key with the `is_` prefix
+   * optional, e.g. "office" or "is_office") and individual tags ("pe").
+   * Returns an empty array for unknown tokens (caller decides whether to
+   * warn / skip).
+   */
+  static _resolveAppliesToToken(token) {
+    if (!token) return [];
+    const lower = String(token).trim().toLowerCase();
+    if (!lower) return [];
+    const withPrefix = lower.startsWith('is_') ? lower : 'is_' + lower;
+    if (this.FORMAT_PREDICATES[withPrefix]) {
+      return this.FORMAT_PREDICATES[withPrefix];
+    }
+    if (this._KNOWN_FORMAT_TAGS.has(lower)) return [lower];
+    return [];
+  }
+
+  /**
+   * `meta.applies_to` short-circuit gate. Returns true when the rule
+   * should be evaluated against `formatTag`, false when the rule should
+   * be skipped entirely. Tokens are split on commas / whitespace.
+   *
+   * Behaviour with a missing/empty `formatTag`: the rule is skipped (the
+   * safe default — `applies_to` declares "I only apply when context says
+   * so", and absence of context is not "so").
+   */
+  static _matchesAppliesTo(appliesTo, formatTag) {
+    if (!appliesTo) return true;
+    if (!formatTag) return false;
+    const tags = String(appliesTo).split(/[,\s]+/).filter(Boolean);
+    for (const tok of tags) {
+      const allowed = YaraEngine._resolveAppliesToToken(tok);
+      if (allowed.includes(formatTag)) return true;
+    }
+    return false;
+  }
 
   /**
    * Parse YARA rule source text into an array of rule objects.
@@ -213,6 +384,37 @@ class YaraEngine {
       }
     }
 
+    // ── Format-predicate validation (Loupe extension) ────────────────────
+    // Warn (not error) on:
+    //   • `is_*` keywords in `condition:` that aren't in FORMAT_PREDICATES
+    //   • `meta: applies_to` tokens that match neither a group alias nor a
+    //     known formatTag.
+    // Both are warnings rather than errors so a rule using a future
+    // predicate name (added in a later Loupe release) still loads.
+    if (cond) {
+      const isRx = /\bis_\w+/gi;
+      const seen = new Set();
+      let im;
+      while ((im = isRx.exec(cond)) !== null) {
+        const key = im[0].toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!YaraEngine.FORMAT_PREDICATES[key]) {
+          warnings.push(p + 'unknown format predicate "' + im[0] +
+            '" \u2014 see YaraEngine.FORMAT_PREDICATES');
+        }
+      }
+    }
+    if (rule.meta && rule.meta.applies_to) {
+      const tokens = String(rule.meta.applies_to).split(/[,\s]+/).filter(Boolean);
+      for (const tok of tokens) {
+        if (!YaraEngine._resolveAppliesToToken(tok).length) {
+          warnings.push(p + 'unknown applies_to value "' + tok +
+            '" \u2014 see YaraEngine.FORMAT_PREDICATES');
+        }
+      }
+    }
+
     // ── Hex pattern token validation ─────────────────────────────────────
     for (const s of rule.strings) {
       if (s.type === 'hex') {
@@ -253,16 +455,23 @@ class YaraEngine {
   /**
    * Scan a buffer against parsed YARA rules.
    *
-   * The optional fourth `opts` arg is a diagnostics sink — when present, any
-   * per-string failure (invalid regex, iteration cap, wall-clock cap) is
-   * appended to `opts.errors` as
-   * `{ ruleName, stringId, reason: 'invalid-regex'|'iter-cap'|'time-cap', message }`.
-   * Callers that pass three args (the legacy shape) get the historical
-   * silent-skip behaviour, since `_findString` no-ops on a missing sink.
+   * The optional fourth `opts` arg supports two fields:
+   *
+   *   • `opts.errors` — diagnostics sink. Any per-string failure (invalid
+   *     regex, iteration cap, wall-clock cap) is appended as
+   *     `{ ruleName, stringId, reason: 'invalid-regex'|'iter-cap'|'time-cap', message }`.
+   *     Callers that omit this get the historical silent-skip behaviour.
+   *
+   *   • `opts.context.formatTag` — Loupe's authoritative file-format
+   *     identifier (see the FORMAT_PREDICATES doc block at the top of this
+   *     file). Used to evaluate `is_*` predicates inside `condition:` and
+   *     to short-circuit rules whose `meta: applies_to` doesn't include
+   *     this tag. When omitted, `is_*` returns false and any rule with
+   *     `applies_to` is skipped.
    *
    * @param {ArrayBuffer|Uint8Array} buffer  File content
    * @param {object[]} rules  Parsed rule objects from parseRules()
-   * @param {object?}  opts   Optional `{ errors: [] }` diagnostics sink.
+   * @param {object?}  opts   Optional `{ errors?: [], context?: { formatTag } }`.
    * @returns {{ ruleName: string, tags: string, meta: object, condition: string, matches: { id: string, value: string, matches: {offset: number, length: number}[] }[] }[]}
    */
   static scan(buffer, rules, opts) {
@@ -276,9 +485,20 @@ class YaraEngine {
     const text = textChunks.join('');
 
     const errorSink = (opts && Array.isArray(opts.errors)) ? opts.errors : null;
+    const ctx = (opts && opts.context) ? opts.context : null;
+    const formatTag = (ctx && typeof ctx.formatTag === 'string') ? ctx.formatTag : null;
 
     const results = [];
     for (const rule of rules) {
+      // ── meta: applies_to short-circuit ──────────────────────────────
+      // Rules tagged with an `applies_to` meta value are skipped entirely
+      // (string-matching included) when the current `formatTag` isn't one
+      // of the listed formats. Skipped rules don't contribute to results
+      // and don't pay the latin-1 string-search cost.
+      if (rule.meta && rule.meta.applies_to) {
+        if (!YaraEngine._matchesAppliesTo(rule.meta.applies_to, formatTag)) continue;
+      }
+
       const stringMatches = {};
       // Evaluate each string definition
       for (const strDef of rule.strings) {
@@ -288,7 +508,7 @@ class YaraEngine {
       }
 
       // Evaluate condition
-      const condResult = YaraEngine._evalCondition(rule.condition, stringMatches, rule.strings, bytes);
+      const condResult = YaraEngine._evalCondition(rule.condition, stringMatches, rule.strings, bytes, ctx);
       if (condResult) {
         const matchDetails = [];
         for (const strDef of rule.strings) {
@@ -552,7 +772,7 @@ class YaraEngine {
 
   // ── Internal: Evaluate condition expression ───────────────────────────────
 
-  static _evalCondition(condition, stringMatches, stringDefs, bytes) {
+  static _evalCondition(condition, stringMatches, stringDefs, bytes, ctx) {
     const cond = condition.trim().toLowerCase();
 
     // Fast-path: "any of them"
@@ -587,7 +807,7 @@ class YaraEngine {
     }
 
     // Complex boolean: full expression parser
-    return YaraEngine._evalBoolCondition(condition, stringMatches, stringDefs, bytes);
+    return YaraEngine._evalBoolCondition(condition, stringMatches, stringDefs, bytes, ctx);
   }
 
   // ── Internal: Full YARA condition expression evaluator ─────────────────────
@@ -596,15 +816,23 @@ class YaraEngine {
   //   any/all of (set), uint8/16/32(N), int8/16/32(N), filesize,
   //   boolean and/or/not, comparison operators ==  !=  >  <  >=  <=
 
-  static _evalBoolCondition(condition, stringMatches, stringDefs, bytes) {
+  static _evalBoolCondition(condition, stringMatches, stringDefs, bytes, ctx) {
     // Normalise string-match keys to lowercase for consistent lookup
     const sm = {};
     for (const key of Object.keys(stringMatches)) sm[key.toLowerCase()] = stringMatches[key];
     const allIds = stringDefs.map(s => s.id.toLowerCase());
 
+    // Loupe extension — `is_*` format predicates resolve against the
+    // host-supplied `ctx.formatTag`. Missing `formatTag` ⇒ all `is_*`
+    // evaluate to false (no false positives without context).
+    const formatTag = (ctx && typeof ctx.formatTag === 'string') ? ctx.formatTag : null;
+
     // ── Tokenise ────────────────────────────────────────────────────────────
+    // The `is_\w+` alternative is checked AFTER the binary keywords so that
+    // existing identifiers like `int8`/`uint16`/`filesize` still match their
+    // dedicated branches (none of which start with `is_`).
     const tokens = [];
-    const rx = /(\$[\w*]+|#\w+|uint(?:8|16|32)|int(?:8|16|32)|0x[0-9a-fA-F]+|\d+|!=|==|>=|<=|>|<|\.\.|and|or|not|at|of|in|them|any|all|filesize|true|false|[(),])/gi;
+    const rx = /(\$[\w*]+|#\w+|uint(?:8|16|32)|int(?:8|16|32)|0x[0-9a-fA-F]+|\d+|!=|==|>=|<=|>|<|\.\.|and|or|not|at|of|in|them|any|all|filesize|true|false|is_\w+|[(),])/gi;
     let tm;
     while ((tm = rx.exec(condition)) !== null) tokens.push(tm[1]);
 
@@ -754,6 +982,17 @@ class YaraEngine {
       if (tl === 'filesize') {
         next();
         return bytes ? bytes.length : 0;
+      }
+
+      // ── Format predicates: is_pe, is_zip_container, is_office, … ───────
+      // Loupe extension. The keyword is matched against
+      // `YaraEngine.FORMAT_PREDICATES`; unknown `is_*` keywords evaluate
+      // to false (validation surfaces the typo as a warning).
+      if (tl && tl.startsWith('is_')) {
+        next();
+        const allowed = YaraEngine.FORMAT_PREDICATES[tl];
+        if (!allowed) return false;
+        return formatTag ? allowed.includes(formatTag) : false;
       }
 
       // Unknown token — skip

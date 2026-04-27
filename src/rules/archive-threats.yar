@@ -168,6 +168,7 @@ rule RAR_Archive_Header
         severity    = "info"
         category    = "file-type"
         mitre       = "T1566.001"
+        applies_to  = "rar"
 
     strings:
         $rar4 = { 52 61 72 21 1A 07 00 }
@@ -184,6 +185,7 @@ rule SevenZip_Archive_Header
         severity    = "info"
         category    = "file-type"
         mitre       = "T1566.001"
+        applies_to  = "sevenz"
 
     strings:
         $magic = { 37 7A BC AF 27 1C }
@@ -225,6 +227,7 @@ rule ISO_IMG_Disk_Image
         severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1553.005"
+        applies_to  = "iso"
 
     strings:
         $iso = "CD001" ascii

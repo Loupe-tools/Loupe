@@ -35,7 +35,7 @@ rule Credential_Dumping_Commands
 {
     meta:
         description = "File references credential dumping tools or techniques (procdump+lsass, comsvcs MiniDump, ntdsutil)"
-        severity    = "critical"
+        severity    = "high"
         category    = "credential-access"
         mitre       = "T1003"
 
@@ -55,8 +55,8 @@ rule Credential_Dumping_Commands
 rule Exfil_Telegram_Bot_API
 {
     meta:
-        description = "File references Telegram Bot API — common exfiltration and C2 channel"
-        severity    = "high"
+        description = "References to Telegram Bot API for data exfiltration or C2"
+        severity    = "medium"
         category    = "exfiltration"
         mitre       = "T1567"
 
@@ -106,8 +106,8 @@ rule Exfil_Slack_Webhook
 rule SSH_Private_Key_Reference
 {
     meta:
-        description = "File contains or references SSH/PGP private key material"
-        severity    = "critical"
+        description = "Reference to SSH private key file or content"
+        severity    = "medium"
         category    = "credential-access"
         mitre       = "T1552.004"
 
@@ -127,8 +127,8 @@ rule SSH_Private_Key_Reference
 rule Exfil_Pastebin_Reference
 {
     meta:
-        description = "File references paste services or ephemeral file-sharing — dead-drop exfiltration"
-        severity    = "medium"
+        description = "References to Pastebin or paste-site URLs (commonly used for malware staging)"
+        severity    = "info"
         category    = "exfiltration"
         mitre       = "T1567.002"
 

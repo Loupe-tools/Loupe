@@ -132,6 +132,193 @@ YARA_CATEGORIES = {
     'src/rules/npm-threats.yar': 'npm',
 }
 
+# ── File-level `applies_to` injection ──────────────────────────────────────
+#
+# `YaraEngine` (src/yara-engine.js) supports `meta: applies_to = "..."` per-rule
+# gates that short-circuit a rule when the host-detected file format
+# (`formatTag`, computed in `render-route.js`) doesn't match. Rule files where
+# every rule applies to the same format register a single value here and the
+# build script auto-injects `applies_to = "<value>"` into each rule's meta
+# block at concatenation time. This avoids 50+ duplicated meta lines across
+# files like `plist-threats.yar` / `jar-threats.yar` / `osascript-threats.yar`
+# without violating the no-`//`-comments-in-.yar constraint (the injection
+# happens in build.py — the source files stay comment-free).
+#
+# Per-rule override: if a rule already declares its own `applies_to` value the
+# injection is a no-op for that rule. Rules with no `meta:` block at all get a
+# fresh `meta:` block prepended with the `applies_to` line.
+#
+# Empty by default. Populated as rule-migration PRs land for each format-bound
+# file. Group aliases (`office`, `office_ooxml`, `script`, etc.) are accepted
+# — see `YaraEngine.FORMAT_PREDICATES`.
+YARA_APPLIES_TO = {
+    # Native binaries — every rule is anchored on the format magic. Engine-
+    # level gating skips them entirely on unrelated content.
+    'src/rules/pe-threats.yar':              'pe',
+    'src/rules/file-analysis.yar':           'pe',
+    'src/rules/elf-threats.yar':             'elf',
+    'src/rules/macho-threats.yar':           'macho',
+    # Format-bound document/manifest/script files. Each rule's strings are
+    # specific to the named format but lacked an anchored magic-byte gate;
+    # `applies_to` provides that gate at the engine level.
+    'src/rules/jar-threats.yar':             'jar',
+    'src/rules/svg-threats.yar':             'svg',
+    'src/rules/plist-threats.yar':           'plist',
+    'src/rules/osascript-threats.yar':       'scpt',
+    'src/rules/clickonce-threats.yar':       'clickonce',
+    'src/rules/msix-threats.yar':            'msix',
+    'src/rules/browserext-threats.yar':      'browserext',
+    'src/rules/npm-threats.yar':             'npm',
+    # Mixed files — the file-level value covers the majority case; the
+    # exceptional rules carry their own `applies_to` in source which the
+    # injector treats as a no-op (already-set ⇒ skip).
+    'src/rules/macos-installer-threats.yar': 'dmg',     # PKG_Xar_Archive overrides to "pkg"
+    'src/rules/archive-threats.yar':         'zip_plain', # RAR/7z/ISO rules override
+}
+
+
+# Inject `applies_to = "<value>"` into every rule body in `raw` that doesn't
+# already declare its own. Pure source transformation — deterministic for any
+# given (raw, value) pair. No regex backtracking pathologies (uses iterative
+# brace-balance scanning). Rules without a `meta:` block get one inserted as
+# the first section (before `strings:` / `condition:`).
+def _inject_applies_to(raw: str, value: str) -> str:
+    if not value:
+        return raw
+    out = []
+    pos = 0
+    n = len(raw)
+    # Match `rule <name> [: tags] {` exactly the way the engine does. We
+    # walk each rule block by brace balance because the rule body itself
+    # contains `{ … }` for hex strings — a naive regex would mis-end at
+    # the first `}`.
+    import re
+    rule_hdr = re.compile(r'\brule\s+\w+\s*(?::\s*[\w\s]+)?\s*\{', re.MULTILINE)
+    for m in rule_hdr.finditer(raw):
+        # Emit text up to and including the opening `{`.
+        out.append(raw[pos:m.end()])
+        # Find the matching `}` by brace balance, skipping over string
+        # literals (where braces are data, not structure). Hex-pattern
+        # braces (`{ AA BB CC }`) are part of `= { … }` assignments — they
+        # legitimately balance because the YARA grammar always pairs them.
+        depth = 1
+        i = m.end()
+        in_str = False
+        in_regex = False
+        while i < n and depth > 0:
+            ch = raw[i]
+            if in_str:
+                if ch == '\\' and i + 1 < n:
+                    i += 2
+                    continue
+                if ch == '"':
+                    in_str = False
+            elif in_regex:
+                if ch == '\\' and i + 1 < n:
+                    i += 2
+                    continue
+                if ch == '/':
+                    in_regex = False
+            else:
+                if ch == '"':
+                    in_str = True
+                elif ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                elif ch == '/' and i + 1 < n and raw[i + 1] not in ('/', '*'):
+                    # Only treat `/` as a regex delimiter when it follows
+                    # an `=` (string assignment) — anything else (e.g. a
+                    # division-like token in a YARA condition) doesn't
+                    # exist in this engine's grammar.
+                    j = i - 1
+                    while j >= 0 and raw[j] in (' ', '\t'):
+                        j -= 1
+                    if j >= 0 and raw[j] == '=':
+                        in_regex = True
+            i += 1
+        if depth != 0:
+            # Malformed rule block — bail and emit the rest unmodified.
+            out.append(raw[m.end():])
+            return ''.join(out)
+        body = raw[m.end():i]
+        body = _inject_applies_to_into_body(body, value)
+        out.append(body)
+        out.append('}')
+        pos = i + 1
+    out.append(raw[pos:])
+    return ''.join(out)
+
+
+def _inject_applies_to_into_body(body: str, value: str) -> str:
+    """Insert `applies_to = "<value>"` into a single rule's body. Skips the
+    rule if it already declares its own applies_to. Adds a meta: block when
+    none exists. Used by `_inject_applies_to`.
+
+    The inserted line's indent matches the surrounding meta block (some rule
+    files use 4-space indent, most use 8-space) and the line is placed
+    immediately after the last meta entry — any trailing blank line in the
+    meta block is preserved between applies_to and strings:/condition:, so
+    house style is unchanged."""
+    import re
+    # Already has applies_to anywhere in the body — leave the rule alone.
+    if re.search(r'\bapplies_to\s*=\s*"', body):
+        return body
+    meta_match = re.search(r'(\bmeta\s*:)([\s\S]*?)(?=\bstrings\s*:|\bcondition\s*:|$)',
+                           body, re.IGNORECASE)
+    if not meta_match:
+        # No meta block — synthesise one as the first section. The opening
+        # newline keeps us off whatever whitespace the rule body started
+        # with.
+        return f'\n    meta:\n        applies_to = "{value}"\n' + body
+    meta_kw = meta_match.group(1)
+    meta_inner = meta_match.group(2)
+    # Detect the indent used by the first existing meta entry — fall back
+    # to 8 spaces when the meta block is empty. Also detect the `=` column
+    # used by surrounding entries so applies_to lines up visually.
+    indent = '        '
+    eq_col = None  # column index where `=` should land (None ⇒ 1 space pad)
+    for ln in meta_inner.splitlines():
+        stripped = ln.lstrip(' \t')
+        if stripped:
+            cur_indent = ln[:len(ln) - len(stripped)]
+            if eq_col is None:
+                indent = cur_indent
+            # Track the column where `=` itself sits on any meta entry;
+            # this is the column the source file aligns to.
+            if '=' in stripped:
+                col = len(cur_indent) + stripped.index('=')
+                if eq_col is None or col > eq_col:
+                    eq_col = col
+    if eq_col is not None:
+        pad_len = max(1, eq_col - len(indent) - len('applies_to'))
+    else:
+        pad_len = 1
+    line = f'{indent}applies_to{" " * pad_len}= "{value}"\n'
+    # Split the meta block into the last non-blank line and any trailing
+    # whitespace-only suffix (typically a blank line + indented spaces
+    # leading to `strings:`). Insert applies_to after the content, before
+    # the trailing whitespace, so the file's house style is preserved.
+    m_tail = re.search(r'\n([ \t]*(?:\n[ \t]*)*)$', meta_inner)
+    if m_tail:
+        head = meta_inner[:m_tail.start()] + '\n'
+        tail = m_tail.group(0)[1:]  # drop the leading \n we kept on `head`
+        new_meta = meta_kw + head + line + tail
+    else:
+        new_meta = meta_kw + meta_inner + line
+    return body[:meta_match.start()] + new_meta + body[meta_match.end():]
+
+
+_missing_applies_to = [f for f in YARA_APPLIES_TO if f not in YARA_FILES]
+if _missing_applies_to:
+    raise SystemExit(
+        'YARA_APPLIES_TO references files not in YARA_FILES: '
+        + ', '.join(_missing_applies_to)
+    )
+
+
 # H8 — Category-marker robustness.
 #
 # The pre-H8 marker was a `// @category: <NAME>` line comment matched
@@ -175,6 +362,11 @@ for f in YARA_FILES:
             'this token in any string, identifier, or (forbidden)'
             ' comment — see scripts/build.py:_YARA_CATEGORY_SENTINEL.'
         )
+    # Optional file-level `applies_to` injection. Pure source rewrite;
+    # deterministic for a given (raw, value) input pair.
+    applies_to_val = YARA_APPLIES_TO.get(f)
+    if applies_to_val:
+        raw = _inject_applies_to(raw, applies_to_val)
     yar_parts.append(f'/*! @loupe-category: {cat} */')
     yar_parts.append(raw)
 yar_rules = '\n'.join(yar_parts)

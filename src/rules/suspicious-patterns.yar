@@ -10,7 +10,7 @@ rule Embedded_PE_Header
         $mz = { 4D 5A 90 00 }
 
     condition:
-        $mz
+        not ($mz at 0) and $mz
 }
 
 rule Suspicious_COM_Hijack_CLSID
@@ -29,47 +29,6 @@ rule Suspicious_COM_Hijack_CLSID
 
     condition:
         ($inproc or $treatAs) and $clsid_generic
-}
-
-rule General_XOR_Decode_Loop
-{
-    meta:
-        description = "File contains XOR decoding patterns — common payload deobfuscation"
-        severity    = "medium"
-        category    = "defense-evasion"
-        mitre       = "T1140"
-
-    strings:
-        $a     = "xor" nocase fullword
-        $b     = "fromCharCode" nocase
-        $c     = "charCodeAt" nocase
-        $d     = "Chr(" nocase
-
-    condition:
-        $a and any of ($b, $c, $d)
-}
-
-rule General_Base64_With_Execution
-{
-    meta:
-        description = "File decodes base64 and passes result to execution function"
-        severity    = "high"
-        category    = "execution"
-        mitre       = "T1059"
-
-    strings:
-        $b64_1 = "base64" nocase
-        $b64_2 = "FromBase64String" nocase
-        $b64_3 = "atob(" nocase
-        $exec1 = "eval(" nocase
-        $exec2 = "Invoke-Expression" nocase
-        $exec3 = "iex " nocase
-        $exec4 = "Execute(" nocase
-        $exec5 = "ExecuteGlobal(" nocase
-        $exec6 = "Function(" nocase
-
-    condition:
-        any of ($b64_1, $b64_2, $b64_3) and any of ($exec1, $exec2, $exec3, $exec4, $exec5, $exec6)
 }
 
 rule General_Hex_Encoded_Shellcode
@@ -100,7 +59,7 @@ rule Embedded_ZIP_In_Non_Archive
         $pk = { 50 4B 03 04 }
 
     condition:
-        #pk > 1
+        not ($pk at 0) and #pk > 0
 }
 
 rule Embedded_Compressed_Stream
@@ -167,20 +126,4 @@ rule OLE10Native_Embedded_Executable
 
     condition:
         $ole and $native and any of ($exe, $cmd, $bat, $scr, $pif, $ps1)
-}
-
-rule Suspicious_Null_Byte_Padding
-{
-    meta:
-        description = "File contains suspicious null byte padding patterns — payload alignment or evasion"
-        severity    = "medium"
-        category    = "defense-evasion"
-        mitre       = "T1027"
-
-    strings:
-        $nop_sled = { 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 90 }
-        $null_pad = { 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 }
-
-    condition:
-        $nop_sled or (#null_pad > 10)
 }

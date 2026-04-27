@@ -382,12 +382,27 @@ window.WorkerManager = (function () {
    *  `_watchdogTimeout=true` on timeout, or with the worker's reported
    *  error otherwise.
    *  @param {ArrayBuffer} buffer  bytes to scan; will be transferred
-   *  @param {string} source       YARA rule source (parseRules input) */
-  function runYara(buffer, source) {
+   *  @param {string} source       YARA rule source (parseRules input)
+   *  @param {object} [opts]       optional: `{ formatTag: string }` —
+   *                                Loupe's detected file format (the
+   *                                `dispatchId` produced by
+   *                                `RendererRegistry.detect()`, or a
+   *                                script-language sniff for plaintext).
+   *                                Forwarded to the worker so rule
+   *                                conditions can evaluate `is_*`
+   *                                predicates and `meta: applies_to`
+   *                                gates. Omit on legacy callers — the
+   *                                engine treats absence safely (no
+   *                                `is_*` matches; `applies_to` rules
+   *                                skip). */
+  function runYara(buffer, source, opts) {
+    const formatTag = (opts && typeof opts.formatTag === 'string') ? opts.formatTag : null;
+    const payload = { buffer, source };
+    if (formatTag) payload.formatTag = formatTag;
     return _runWorkerJob({
       channel:   'yara',
       bundleSrc: typeof __YARA_WORKER_BUNDLE_SRC !== 'undefined' ? __YARA_WORKER_BUNDLE_SRC : '',
-      payload:   { buffer, source },
+      payload,
       transfers: [buffer],
       decodeDone: (m) => ({
         results:    m.results    || [],

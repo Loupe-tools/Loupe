@@ -69,7 +69,7 @@ rule osascript_keychain_theft
 {
     meta:
         description = "AppleScript accessing macOS Keychain credentials via security CLI"
-        severity    = "critical"
+        severity    = "high"
         category    = "credential-theft"
         mitre       = "T1555.001"
     strings:
@@ -86,7 +86,7 @@ rule osascript_browser_credential_theft
 {
     meta:
         description = "AppleScript targeting browser credential or cookie stores"
-        severity    = "critical"
+        severity    = "medium"
         category    = "credential-theft"
         mitre       = "T1539"
     strings:

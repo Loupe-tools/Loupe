@@ -1116,6 +1116,144 @@ class RendererRegistry {
   }
 
   /**
+   * Script-language sniff for files Loupe routes to PlainTextRenderer.
+   *
+   * Returns one of `'ps1' | 'bash' | 'bat' | 'vbs' | 'js' | 'py' | 'perl'`
+   * when the head of the buffer matches *two independent* indicators for
+   * that language (one indicator is too noisy — `function` appears in a
+   * lot of non-JS docs, `param(` appears in C-family code). Returns
+   * `null` when the buffer is binary, empty, or doesn't look like one of
+   * the supported script languages — caller treats `null` as "leave
+   * `formatTag` as plaintext".
+   *
+   * This is a Loupe extension layered ON TOP of the renderer dispatch:
+   * it does not change which renderer paints the file (PlainText), only
+   * the `formatTag` consumed by `YaraEngine`'s `is_*` predicates and
+   * `meta: applies_to` gates. See `src/yara-engine.js` for the contract.
+   *
+   * Conservative on purpose — false-tagging a benign Markdown as `bash`
+   * would resurrect the false-positive class the audit flagged. When
+   * scores tie or both binary indicators trip, return `null` and let
+   * the rules see plain `plaintext`.
+   *
+   * @param {object} ctx  RendererRegistry.makeContext output
+   * @returns {string|null}
+   */
+  static _sniffScriptKind(ctx) {
+    const head = ctx && ctx.head4k;
+    if (!head || head.length < 8) return null;
+
+    // Bail on binary content — > 1 % control bytes in the head means
+    // we're not looking at source.
+    const nonPrintable = (head.match(/[\x00-\x08\x0E-\x1F]/g) || []).length;
+    if (nonPrintable / head.length >= 0.01) return null;
+
+    // Trim a UTF-8 BOM if present so shebang detection works.
+    const h = head.charCodeAt(0) === 0xFEFF ? head.slice(1) : head;
+    const headLower = h.toLowerCase();
+
+    // ── Shebang fast-path ───────────────────────────────────────────────
+    // Shebangs are a single, unambiguous signal — one indicator suffices.
+    const sb = h.match(/^#!\s*\S*\/(?:env\s+)?(\S+)/);
+    if (sb) {
+      const cmd = sb[1].toLowerCase();
+      if (/^(?:pwsh|powershell)$/.test(cmd)) return 'ps1';
+      if (/^(?:sh|bash|zsh|dash|ksh|ash)$/.test(cmd)) return 'bash';
+      if (/^python\d?$/.test(cmd)) return 'py';
+      if (cmd === 'node' || cmd === 'nodejs' || cmd === 'deno') return 'js';
+      if (cmd === 'perl') return 'perl';
+      if (cmd === 'osascript') return null; // routed to scpt by registry
+    }
+
+    // ── Score-based detection (need ≥2 indicators per language) ─────────
+    // Each language has a cheap regex bag; the highest-scoring language
+    // with a score ≥ 2 wins. Ties resolve to `null` (ambiguous → don't
+    // tag).
+    const scores = { ps1: 0, bash: 0, bat: 0, vbs: 0, js: 0, py: 0, perl: 0 };
+
+    // PowerShell — strong markers: `<#`/`#>` block comments,
+    // `[CmdletBinding()]`, `param(` paired with `[Parameter`, well-known
+    // verb-noun cmdlets, `Set-StrictMode`.
+    if (/<#[\s\S]*?#>/.test(h)) scores.ps1 += 2;
+    if (/\bSet-StrictMode\b/i.test(h)) scores.ps1 += 2;
+    if (/\[CmdletBinding\s*\(/i.test(h)) scores.ps1 += 2;
+    if (/\bparam\s*\(\s*\[/i.test(h)) scores.ps1 += 1;
+    if (/\b(?:Get|Set|New|Remove|Invoke|Start|Stop|Test|Add|Out|Write|Read|Import|Export|Select|Where|ForEach)-[A-Z]\w+/.test(h)) scores.ps1 += 1;
+    if (/\$(?:PSScriptRoot|PSCommandPath|MyInvocation|ErrorActionPreference|VerbosePreference)\b/i.test(h)) scores.ps1 += 2;
+
+    // Bash / POSIX shell — `set -e`/`set -u`, `function name() {`,
+    // `$1`/`$@` parameters, common builtins, `[[ … ]]`.
+    if (/^\s*set\s+-[eu]+\b/m.test(h)) scores.bash += 2;
+    if (/\bfunction\s+\w+\s*\(\s*\)\s*\{/.test(h)) scores.bash += 2;
+    if (/\b(?:if|while|for)\s+\[\[?[^\n]+\]\]?\s*;\s*then\b/.test(h)) scores.bash += 2;
+    if (/\$\{?(?:[1-9]|@|\*|#|\?)\}?/.test(h)) scores.bash += 1;
+    if (/\b(?:echo|read|export|local|readonly|declare|trap|source)\b\s/.test(h)) scores.bash += 1;
+    if (/\$\([^)]+\)|`[^`]+`/.test(h)) scores.bash += 1;
+
+    // Windows BAT/CMD — `@echo off`, `goto :label`, `%~dp0`,
+    // `setlocal enabledelayedexpansion`, `%var%`, `:label` lines.
+    if (/^\s*@echo\s+(?:off|on)\b/im.test(h)) scores.bat += 2;
+    if (/\bsetlocal\b/i.test(h)) scores.bat += 2;
+    if (/%~[dpnxfsa01-9]+\d*/i.test(h)) scores.bat += 2;
+    if (/\bgoto\s+:?\w+/i.test(h)) scores.bat += 1;
+    if (/^\s*:\w+\s*$/m.test(h)) scores.bat += 1;
+    if (/%\w+%/.test(h) && /\b(?:set|if|for|call)\b/i.test(h)) scores.bat += 1;
+
+    // VBScript — `Option Explicit`, `Set obj = CreateObject(`,
+    // `Sub … End Sub`, `Function … End Function`, `Wscript.`/`MsgBox`.
+    if (/^\s*Option\s+Explicit\b/im.test(h)) scores.vbs += 2;
+    if (/\bSet\s+\w+\s*=\s*CreateObject\s*\(/i.test(h)) scores.vbs += 2;
+    if (/\bDim\s+\w+(?:\s*,\s*\w+)*\s*$/im.test(h)) scores.vbs += 1;
+    if (/\b(?:Sub|Function)\s+\w+[\s\S]{0,400}?\bEnd\s+(?:Sub|Function)\b/i.test(h)) scores.vbs += 2;
+    if (/\b(?:WScript|Wscript)\.(?:Echo|Quit|CreateObject|Sleep|Shell|Arguments)\b/.test(h)) scores.vbs += 2;
+    if (/\bOn\s+Error\s+Resume\s+Next\b/i.test(h)) scores.vbs += 2;
+
+    // JavaScript / Node — `require(`, `module.exports`, `import … from`,
+    // arrow `=>` paired with `const/let`, `=>`/`async function`, JSDoc.
+    if (/\brequire\s*\(\s*['"]/.test(h)) scores.js += 2;
+    if (/\bmodule\.exports\b|\bexports\.\w+\s*=/.test(h)) scores.js += 2;
+    if (/\bimport\s+[^\n;]+\s+from\s+['"]/.test(h)) scores.js += 2;
+    if (/\bexport\s+(?:default\s+)?(?:function|class|const|let|var)\b/.test(h)) scores.js += 2;
+    if (/\b(?:const|let)\s+\w+\s*=\s*(?:\([^)]*\)|\w+)\s*=>/.test(h)) scores.js += 1;
+    if (/\basync\s+function\s+\w+/.test(h)) scores.js += 1;
+
+    // Python — `def name(`, `import x`/`from x import`, `if __name__`,
+    // common `print(...)` (3.x) with a `def`, decorator `@\w+`.
+    if (/^\s*def\s+\w+\s*\(/m.test(h)) scores.py += 2;
+    if (/^\s*(?:from\s+\w[\w.]*\s+import\b|import\s+\w[\w.,\s]*$)/m.test(h)) scores.py += 2;
+    if (/\bif\s+__name__\s*==\s*['"]__main__['"]\s*:/.test(h)) scores.py += 2;
+    if (/^\s*@\w[\w.]*(?:\s*\([^)]*\))?\s*$/m.test(h)) scores.py += 1;
+    if (/^\s*class\s+\w+\s*(?:\([^)]*\))?\s*:/m.test(h)) scores.py += 1;
+
+    // Perl — `use strict`, `my $`/`our @`, sigil-heavy variables,
+    // `package Foo;`, `sub name {`.
+    if (/\buse\s+(?:strict|warnings|utf8)\b/.test(h)) scores.perl += 2;
+    if (/\b(?:my|our|local)\s+[\$@%]\w+/.test(h)) scores.perl += 2;
+    if (/^\s*package\s+\w[\w:]*\s*;/m.test(h)) scores.perl += 2;
+    if (/\bsub\s+\w+\s*\{/.test(h)) scores.perl += 1;
+
+    // Penalty: `<html`, `<svg`, `<?xml`, JSON-style heads — these are
+    // markup and shouldn't be tagged as scripts even if some incidental
+    // signal hits.
+    if (/^\s*<\?xml\b/i.test(headLower) || /^\s*<!doctype\s/i.test(headLower)
+        || /^\s*<(?:html|svg)\b/i.test(headLower)) {
+      // Strong negative — wipe all script scores. Markup is markup.
+      for (const k of Object.keys(scores)) scores[k] = 0;
+    }
+
+    // Pick the winner — must score ≥2 and beat the runner-up by ≥1
+    // (otherwise it's ambiguous; safer to leave as plaintext).
+    let bestKind = null, bestScore = 0, runnerUp = 0;
+    for (const k of Object.keys(scores)) {
+      if (scores[k] > bestScore) { runnerUp = bestScore; bestScore = scores[k]; bestKind = k; }
+      else if (scores[k] > runnerUp) { runnerUp = scores[k]; }
+    }
+    if (bestScore < 2) return null;
+    if (bestScore - runnerUp < 1) return null;
+    return bestKind;
+  }
+
+  /**
    * Parse the ZIP End-of-Central-Directory + central directory to
    * extract the list of entry filenames. Returns a Set<string> or
    * null on malformed archives. Does NOT decompress anything.

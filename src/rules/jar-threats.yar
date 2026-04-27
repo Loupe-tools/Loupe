@@ -43,7 +43,7 @@ rule Java_Deserialization_Gadgets {
 rule Java_JNDI_Injection {
     meta:
         description = "JNDI injection / Log4Shell style attack patterns"
-        severity = "critical"
+        severity = "medium"
         category = "initial-access"
         mitre = "T1190"
     strings:
@@ -252,7 +252,7 @@ rule Java_Obfuscation_ZKM {
         $z2 = "zelix" ascii nocase
         $z3 = "KlassMaster" ascii
     condition:
-        any of them
+        any of ($z2, $z3)
 }
 
 rule Java_Security_Manager_Bypass {

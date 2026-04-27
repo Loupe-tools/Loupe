@@ -556,14 +556,14 @@ rule IQY_Web_Query_File
         severity    = "critical"
         category    = "execution"
         mitre       = "T1559.002"
+        applies_to  = "iqyslk"
 
     strings:
-        $a = "WEB" nocase
+        $a = /^WEB\r?\n/
         $b = "http" nocase
-        $c = "1"
 
     condition:
-        $a at 0 and $b
+        $a and $b
 }
 
 rule SLK_Symbolic_Link_File
@@ -573,6 +573,7 @@ rule SLK_Symbolic_Link_File
         severity    = "high"
         category    = "execution"
         mitre       = "T1204.002"
+        applies_to  = "iqyslk"
 
     strings:
         $a = "ID;P" nocase
@@ -760,15 +761,16 @@ rule RTF_ObjUpdate_AutoExec
         severity    = "critical"
         category    = "execution"
         mitre       = "T1203"
+        applies_to  = "rtf"
 
     strings:
-        $rtf       = "{\\rtf" nocase
+        $rtf       = "{\\rtf"
         $object    = "\\object" nocase
         $objdata   = "\\objdata" nocase
         $objupdate = "\\objupdate" nocase
 
     condition:
-        $rtf and $object and $objdata and $objupdate
+        $rtf at 0 and $object and $objdata and $objupdate
 }
 
 rule RTF_ObjClass_Exploit
@@ -778,9 +780,10 @@ rule RTF_ObjClass_Exploit
         severity    = "critical"
         category    = "execution"
         mitre       = "T1203"
+        applies_to  = "rtf"
 
     strings:
-        $rtf      = "{\\rtf" nocase
+        $rtf      = "{\\rtf"
         $objclass = "\\objclass" nocase
         $eq3      = "Equation.3" nocase
         $eq4      = "Equation.DSMT4" nocase
@@ -790,7 +793,7 @@ rule RTF_ObjClass_Exploit
         $html2    = "MSForms.HTMLFile" nocase
 
     condition:
-        $rtf and $objclass and ($eq3 or $eq4 or $ole2link or $package or $html1 or $html2)
+        $rtf at 0 and $objclass and ($eq3 or $eq4 or $ole2link or $package or $html1 or $html2)
 }
 
 rule OOXML_External_Template
@@ -842,12 +845,13 @@ rule RTF_Nested_Objects
         severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1027"
+        applies_to  = "rtf"
 
     strings:
-        $rtf    = "{\\rtf" nocase
+        $rtf    = "{\\rtf"
         $obj    = "{\\object" nocase
         $nested = "{\\rtf1" nocase
 
     condition:
-        $rtf and (#obj > 2 or #nested > 1)
+        $rtf at 0 and (#obj > 2 or #nested > 1)
 }

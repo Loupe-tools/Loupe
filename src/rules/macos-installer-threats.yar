@@ -4,6 +4,7 @@ rule PKG_Xar_Archive {
         category    = "suspicious"
         mitre       = "T1546"
         severity    = "info"
+        applies_to  = "pkg"
     strings:
         $xar = { 78 61 72 21 }
     condition:

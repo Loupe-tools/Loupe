@@ -48,6 +48,7 @@ rule HTA_Any_Presence
         severity    = "medium"
         category    = "execution"
         mitre       = "T1218.005"
+        applies_to  = "hta"
 
     strings:
         $a = "<HTA:APPLICATION" nocase
@@ -151,9 +152,10 @@ rule LNK_Suspicious_CommandLine
         severity    = "critical"
         category    = "execution"
         mitre       = "T1204.002"
+        applies_to  = "lnk"
 
     strings:
-        $lnk = { 4C 00 00 00 }
+        $lnk = { 4C 00 00 00 01 14 02 00 }
         $a = "cmd" nocase wide
         $b = "powershell" nocase wide
         $c = "mshta" nocase wide
@@ -166,7 +168,7 @@ rule LNK_Suspicious_CommandLine
         $j = "msiexec" nocase wide
 
     condition:
-        $lnk and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j)
+        $lnk at 0 and any of ($a, $b, $c, $d, $e, $f, $g, $h, $i, $j)
 }
 
 rule LNK_Double_Extension
@@ -176,9 +178,10 @@ rule LNK_Double_Extension
         severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1036.007"
+        applies_to  = "lnk"
 
     strings:
-        $lnk = { 4C 00 00 00 }
+        $lnk = { 4C 00 00 00 01 14 02 00 }
         $a = ".pdf.lnk" nocase wide
         $b = ".doc.lnk" nocase wide
         $c = ".xlsx.lnk" nocase wide
@@ -187,7 +190,7 @@ rule LNK_Double_Extension
         $f = ".txt.lnk" nocase wide
 
     condition:
-        $lnk and any of ($a, $b, $c, $d, $e, $f)
+        $lnk at 0 and any of ($a, $b, $c, $d, $e, $f)
 }
 
 rule LNK_Extended_LOLBins
@@ -197,6 +200,7 @@ rule LNK_Extended_LOLBins
         severity    = "critical"
         category    = "defense-evasion"
         mitre       = "T1218"
+        applies_to  = "lnk"
 
     strings:
         $lnk = { 4C 00 00 00 01 14 02 00 }
@@ -222,6 +226,7 @@ rule LNK_Script_Target
         severity    = "critical"
         category    = "execution"
         mitre       = "T1204.002"
+        applies_to  = "lnk"
 
     strings:
         $lnk = { 4C 00 00 00 01 14 02 00 }
@@ -246,9 +251,10 @@ rule LNK_Environment_Variable_Abuse
         severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1027"
+        applies_to  = "lnk"
 
     strings:
-        $lnk = { 4C 00 00 00 }
+        $lnk = { 4C 00 00 00 01 14 02 00 }
         $a = "%APPDATA%" nocase wide
         $b = "%TEMP%" nocase wide
         $c = "%USERPROFILE%" nocase wide
@@ -257,7 +263,7 @@ rule LNK_Environment_Variable_Abuse
         $f = "%SYSTEMROOT%" nocase wide
 
     condition:
-        $lnk and any of ($a, $b, $c, $d, $e, $f)
+        $lnk at 0 and any of ($a, $b, $c, $d, $e, $f)
 }
 
 rule WSF_MultiEngine_Script
@@ -301,6 +307,7 @@ rule MSI_Installer_Suspicious
         severity    = "high"
         category    = "execution"
         mitre       = "T1218.007"
+        applies_to  = "msi"
 
     strings:
         $ole = { D0 CF 11 E0 A1 B1 1A E1 }
@@ -309,7 +316,7 @@ rule MSI_Installer_Suspicious
         $c = "CustomAction" wide
 
     condition:
-        $ole and any of ($a, $b, $c)
+        $ole at 0 and any of ($a, $b, $c)
 }
 
 rule MSIX_APPX_Installer
@@ -319,6 +326,7 @@ rule MSIX_APPX_Installer
         severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1218"
+        applies_to  = "msix"
 
     strings:
         $pk = { 50 4B 03 04 }
@@ -327,7 +335,7 @@ rule MSIX_APPX_Installer
         $c = "AppxSignature" nocase
 
     condition:
-        $pk and any of ($a, $b, $c)
+        $pk at 0 and any of ($a, $b, $c)
 }
 
 rule CMSTP_INF_Bypass
@@ -575,12 +583,12 @@ rule Info_Email_Bulk_Precedence
         severity    = "info"
         category    = "phishing"
         mitre       = ""
+        applies_to  = "eml, msg"
 
     strings:
         $a = "Precedence: bulk" nocase
         $b = "Precedence: junk" nocase
         $c = "Precedence: list" nocase
-        $d = "X-Mailer:" nocase
 
     condition:
         any of ($a, $b, $c)
@@ -656,6 +664,7 @@ rule Info_Image_Only_HTML_Email
         severity    = "info"
         category    = "phishing"
         mitre       = "T1566.002"
+        applies_to  = "eml, html, hta"
 
     strings:
         $html  = "<html" nocase
@@ -663,7 +672,6 @@ rule Info_Image_Only_HTML_Email
         $img2  = "background-image" nocase
         $no_p  = "<p" nocase
         $no_span = "<span" nocase
-        $no_div_text = "<div" nocase
 
     condition:
         $html and ($img1 or $img2) and not $no_p and not $no_span
@@ -1231,46 +1239,6 @@ rule Info_Data_URI_Scheme
         any of them
 }
 
-rule Info_Cobalt_Strike_Indicators
-{
-    meta:
-        description = "File contains strings associated with Cobalt Strike beacons"
-        severity    = "info"
-        category    = "command-and-control"
-        mitre       = "T1071.001"
-
-    strings:
-        $a = "beacon.dll" nocase
-        $b = "beacon.exe" nocase
-        $c = "%COMSPEC%" nocase
-        $d = "IEX (New-Object Net.Webclient).DownloadString" nocase
-        $e = "/submit.php?" nocase
-        $f = "pipe\\msse-" nocase
-
-    condition:
-        2 of them
-}
-
-rule Info_Metasploit_Indicators
-{
-    meta:
-        description = "File contains strings commonly seen in Metasploit payloads"
-        severity    = "info"
-        category    = "execution"
-        mitre       = "T1059"
-
-    strings:
-        $a = "meterpreter" nocase
-        $b = "metasploit" nocase
-        $c = "reverse_tcp" nocase
-        $d = "reverse_http" nocase
-        $e = "shell_bind_tcp" nocase
-        $f = "windows/exec" nocase
-
-    condition:
-        any of them
-}
-
 rule Info_Macro_Builder_Artifacts
 {
     meta:
@@ -1285,25 +1253,6 @@ rule Info_Macro_Builder_Artifacts
         $c = "Unicorn" nocase
         $d = "LuckyStrike" nocase
         $e = "macro_reverse" nocase
-
-    condition:
-        any of them
-}
-
-rule Info_Mimikatz_Reference
-{
-    meta:
-        description = "File contains references to Mimikatz credential harvesting tool"
-        severity    = "info"
-        category    = "credential-access"
-        mitre       = "T1003.001"
-
-    strings:
-        $a = "mimikatz" nocase
-        $b = "sekurlsa" nocase
-        $c = "kerberos::list" nocase
-        $d = "lsadump" nocase
-        $e = "gentilkiwi" nocase
 
     condition:
         any of them
@@ -2225,6 +2174,7 @@ rule MSI_Embedded_PE
         severity    = "critical"
         category    = "execution"
         mitre       = "T1218.007"
+        applies_to  = "msi"
 
     strings:
         $ole = { D0 CF 11 E0 A1 B1 1A E1 }

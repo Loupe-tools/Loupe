@@ -135,6 +135,7 @@ const RenderRoute = {
       navTitle: '',
       analyzer: null,
       dispatchId: null,
+      formatTag: null,        // YARA `is_*` / `applies_to` host hint
     };
   },
 
@@ -432,8 +433,27 @@ const RenderRoute = {
         navTitle: file.name,
         analyzer: null,
         dispatchId: dispatchId,
+        formatTag: dispatchId,
         _superseded: true,
       };
+    }
+
+    // ── Format tag for YARA's `is_*` / `applies_to` features ────────
+    // `formatTag` mirrors `dispatchId` for everything except `plaintext`,
+    // where we run a lightweight script-language sniff so rules can
+    // discriminate PowerShell / Bash / BAT / VBS / JS / Python / Perl
+    // sources without re-implementing detection in YARA hex patterns.
+    // The tag is consumed by `YaraEngine.scan(..., {context:{formatTag}})`
+    // — it does NOT affect renderer dispatch (the file is still painted
+    // by PlainTextRenderer). See `src/yara-engine.js`'s FORMAT_PREDICATES
+    // doc block for the rule-author contract.
+    let formatTag = dispatchId;
+    if (dispatchId === 'plaintext'
+        && typeof RendererRegistry._sniffScriptKind === 'function') {
+      try {
+        const kind = RendererRegistry._sniffScriptKind(rctx);
+        if (kind) formatTag = kind;
+      } catch (_) { /* sniff is best-effort — fall back to plaintext */ }
     }
 
     // Fill in the remaining fields of the in-flight currentResult. The
@@ -446,6 +466,7 @@ const RenderRoute = {
     result.navTitle = file.name;
     result.analyzer = analyzer;
     result.dispatchId = dispatchId;
+    result.formatTag = formatTag;
 
     return result;
   },
