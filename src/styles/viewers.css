@@ -385,6 +385,29 @@ body.dark .xlsx-cap-notice {
   overflow: hidden;
 }
 
+/*
+ * Anchor #page-container to the full viewer width when the catch-all
+ * plaintext / hex viewer is mounted. Without this rule, #page-container
+ * (display: flex; align-items: center; no explicit width) shrink-wraps
+ * to its widest child — fine for the legacy `<table.plaintext-table>`
+ * because it self-constrains via `table-layout: fixed; width: 100%`,
+ * but the virtualised viewer's sizer is intentionally as wide as the
+ * widest line × 1ch, which would push the whole app off-screen.
+ * Anchoring at this layer lets `width: 100%` on `.plaintext-view`
+ * resolve against the viewer width and the `.plaintext-virtual` scroll
+ * container clips horizontal overflow internally.
+ */
+#page-container:has(.plaintext-view),
+#page-container:has(.hex-view) {
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
+  box-sizing: border-box;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .csv-view {
   width: auto;
   max-width: 100%;
@@ -1916,6 +1939,180 @@ body.dark .plaintext-code {
   color: #888;
   font-style: italic;
   text-align: center;
+}
+
+/*
+ * ── Virtualised plaintext view (PlainTextRenderer + VirtualTextView) ──
+ *
+ * Replaces the `<table.plaintext-table>` "every-row-in-DOM" path for the
+ * catch-all PlainTextRenderer. Rows are absolute-positioned inside a
+ * fixed-height sizer so the browser only has to paint the visible window
+ * regardless of how many lines the file has. Sidebar drag no longer
+ * forces an O(N) row reflow because:
+ *   • `.plaintext-virtual-row { white-space: pre }` — row height is
+ *     invariant under width changes (no soft-wrap = no row remeasure).
+ *   • `position: absolute` + the parent's `position: relative` sizer —
+ *     each row paints in its own layer, sibling rows stay untouched.
+ *
+ * Legacy `.plaintext-table` selectors above are kept verbatim so the
+ * dozen other renderers that still emit a static line-numbered table
+ * (html / svg / hta / npm / msix / clickonce / browserext / inf / reg /
+ * rtf / wsf / iqy-slk / plist / url / pe / osascript) keep working
+ * identically — only PlainTextRenderer migrated in this PR.
+ */
+.plaintext-virtual {
+  font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  position: relative;
+  /* Critical: prevents the giant sizer width inside from leaking up the
+     flex layout and pushing #page-container off-screen. The legacy
+     .plaintext-table self-constrains via `table-layout: fixed`; the
+     virtual variant relies on overflow + min-width: 0 instead. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.plaintext-virtual-sizer {
+  position: relative;
+  /* Width is set inline by VirtualTextView based on the widest row.
+     `min-width: 100%` keeps row-band tints (yara / ioc / enc) covering
+     the viewport when the content is narrower than the scroll
+     container. */
+  min-width: 100%;
+}
+
+.plaintext-row {
+  position: absolute;
+  left: 0;
+  /* Rows are as wide as the sizer (which is sized to the widest row),
+     not the viewport — otherwise the scroll container has no
+     horizontal extent and long lines clip invisibly. */
+  width: 100%;
+  height: var(--ptv-row-h, 21px);
+  display: flex;
+  align-items: flex-start;
+  contain: layout style;
+}
+
+.plaintext-row:hover {
+  background: rgba(0, 120, 215, .06);
+}
+
+body.dark .plaintext-row:hover {
+  background: rgb(var(--accent-rgb) / .04);
+}
+
+.plaintext-virtual .plaintext-ln {
+  flex: 0 0 auto;
+  width: var(--ptv-gutter-w, 5ch);
+  padding: 0 12px 0 10px;
+  color: #aaa;
+  user-select: none;
+  -webkit-user-select: none;
+  border-right: 1px solid #e8e8e8;
+  text-align: right;
+  white-space: nowrap;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+body.dark .plaintext-virtual .plaintext-ln {
+  color: var(--text-faint);
+  border-right-color: var(--hairline);
+}
+
+/*
+ * Critical: `white-space: pre` (NOT `pre-wrap`). A 1 px sidebar drag
+ * therefore cannot change row height — long rows extend past the
+ * viewport horizontally and the scroll container provides a horizontal
+ * scrollbar. This is the structural fix for the 0.1 FPS sidebar drag
+ * regression on large minified-JS files; horizontal scroll is the
+ * standard editor pattern (VS Code / Sublime / etc.) for non-wrapped
+ * code.
+ */
+.plaintext-virtual .plaintext-code {
+  flex: 1 1 auto;
+  padding: 0 14px;
+  white-space: pre;
+  color: #333;
+}
+
+body.dark .plaintext-virtual .plaintext-code {
+  color: var(--text);
+}
+
+/*
+ * Highlight class twins for the virtual rows. The legacy table-based
+ * selectors live in `core.css` (`.plaintext-table tr.enc-highlight-line`,
+ * `.yara-line-highlight`, `.ioc-highlight-line`); here we mirror the
+ * same backgrounds onto `.plaintext-row` so the row-band tints render
+ * correctly. The colours are sourced from CSS custom properties already
+ * in use by the legacy selectors so dark-mode and theme overlays carry
+ * through automatically.
+ */
+.plaintext-row.enc-highlight-line {
+  background: rgba(99, 102, 241, .12);
+}
+
+body.dark .plaintext-row.enc-highlight-line {
+  background: rgba(99, 102, 241, .22);
+}
+
+.plaintext-row.enc-highlight-flash {
+  animation: enc-flash 2s ease-out;
+}
+
+.plaintext-row.yara-line-highlight {
+  background: rgba(0, 120, 215, .15);
+}
+
+body.dark .plaintext-row.yara-line-highlight {
+  background: rgba(80, 160, 255, .18);
+}
+
+.plaintext-row.ioc-highlight-line {
+  background: rgba(255, 213, 0, .22);
+}
+
+body.dark .plaintext-row.ioc-highlight-line {
+  background: rgba(255, 213, 0, .14);
+}
+
+/* ── Wrap mode ──────────────────────────────────────────────────────────
+ * When the user toggles `Wrap: On` in the plaintext info bar,
+ * `VirtualTextView` adds `.is-wrapping` to the root and renders every
+ * row into normal flow rather than absolute-positioning a small
+ * window. This forfeits virtualisation — sidebar-resize FPS is bounded
+ * only by `WRAP_MAX_TEXT_BYTES` (512 KB) / `WRAP_MAX_LINES` (10 000)
+ * gates in `PlainTextRenderer`.
+ *
+ * `!important` is load-bearing because the virtualised path writes
+ * inline `style.width` / `style.height` on `.plaintext-virtual-sizer`
+ * and inline `style.top` on `.plaintext-row`. Switching modes via a
+ * class without `!important` would couple the JS to the CSS more
+ * tightly (forcing every wrap-toggle to clear inline styles); keying
+ * off the class cleanly inverts that.
+ */
+.plaintext-virtual.is-wrapping .plaintext-virtual-sizer {
+  width: 100% !important;
+  height: auto !important;
+}
+.plaintext-virtual.is-wrapping .plaintext-row {
+  position: static;
+  width: 100%;
+  height: auto;
+  min-height: var(--ptv-row-h, 21px);
+}
+.plaintext-virtual.is-wrapping .plaintext-ln {
+  align-self: stretch;
+}
+.plaintext-virtual.is-wrapping .plaintext-code {
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 /* ── Hex dump ──────────────────────────────────────────────────────────── */

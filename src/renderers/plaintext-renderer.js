@@ -161,6 +161,17 @@ class PlainTextRenderer {
   // Storage key for the syntax-highlight on/off toggle.
   static HIGHLIGHT_PREF_KEY = 'loupe_plaintext_highlight';
 
+  // ── Word-wrap toggle gating ─────────────────────────────────────────────
+  // Wrap mode renders every row into the live DOM with `white-space:
+  // pre-wrap`, forfeiting the `VirtualTextView` virtualisation that keeps
+  // sidebar-resize at native FPS on giant minified files. To keep the
+  // all-rows-in-DOM cost bounded we hide the Wrap toggle (and force wrap
+  // off) on files that exceed either of these thresholds. Sibling of
+  // `HIGHLIGHT_SIZE_LIMIT` / `LONG_LINE_THRESHOLD` above.
+  static WRAP_PREF_KEY      = 'loupe_plaintext_wrap';
+  static WRAP_MAX_TEXT_BYTES = 512 * 1024;
+  static WRAP_MAX_LINES     = 10_000;
+
   // ── Preference accessors ────────────────────────────────────────────────
 
   /** Read the user's syntax-highlight preference (default: on). */
@@ -172,6 +183,17 @@ class PlainTextRenderer {
   /** Persist the user's syntax-highlight preference. */
   static _writeHighlightPref(enabled) {
     safeStorage.set(PlainTextRenderer.HIGHLIGHT_PREF_KEY, enabled ? 'on' : 'off');
+  }
+
+  /** Read the user's word-wrap preference (default: on). */
+  static _readWrapPref() {
+    const v = safeStorage.get(PlainTextRenderer.WRAP_PREF_KEY);
+    return v !== 'off';
+  }
+
+  /** Persist the user's word-wrap preference. */
+  static _writeWrapPref(enabled) {
+    safeStorage.set(PlainTextRenderer.WRAP_PREF_KEY, enabled ? 'on' : 'off');
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -200,6 +222,17 @@ class PlainTextRenderer {
     // we duplicate the computation here so the info bar can decide
     // whether to render the control at all.)
     const highlightPossible = this._canHighlight(decodedText);
+
+    // Wrap mode renders every row in the live DOM (no virtualisation),
+    // so we gate it on raw byte size + logical line count to keep the
+    // cost bounded. `bytes.length` is the raw decoded byte size — using
+    // it (rather than `decodedText.length`) avoids accidentally
+    // promoting a UTF-16 file (which decodes ~2× shorter as a JS string)
+    // into wrap mode when its on-disk size already exceeds the cap.
+    const lineCountForWrap = (decodedText.match(/\n/g) || []).length + 1;
+    const wrapPossible = isTextByDefault &&
+                         bytes.length    <= PlainTextRenderer.WRAP_MAX_TEXT_BYTES &&
+                         lineCountForWrap <= PlainTextRenderer.WRAP_MAX_LINES;
 
     // ── Info bar with toggle + encoding selector ──────────────────────
     const info = document.createElement('div');
@@ -241,6 +274,30 @@ class PlainTextRenderer {
       highlightEnabled = false;
     }
 
+    // Word-wrap toggle (persisted). Only rendered when the file is
+    // small enough that putting every row in the DOM is bounded —
+    // larger files keep the virtualised, no-wrap experience to
+    // preserve native sidebar-drag FPS.
+    let wrapEnabled = PlainTextRenderer._readWrapPref();
+    let wrapLabel = null;
+    let wrapBtn = null;
+    if (wrapPossible) {
+      wrapLabel = document.createElement('label');
+      wrapLabel.className = 'plaintext-enc-label';
+      wrapLabel.textContent = 'Wrap:';
+      info.appendChild(wrapLabel);
+
+      wrapBtn = document.createElement('button');
+      wrapBtn.className = 'plaintext-toggle-btn';
+      wrapBtn.textContent = wrapEnabled ? 'On' : 'Off';
+      wrapBtn.title = 'Toggle word-wrap (persisted). Hidden for very large files where wrapping every line would re-introduce sidebar-drag lag.';
+      info.appendChild(wrapBtn);
+    } else {
+      // Force wrap off so a stale `"on"` from a prior small file
+      // doesn't leak the all-rows-in-DOM cost into a large file.
+      wrapEnabled = false;
+    }
+
 
     // Encoding selector
     const encLabel = document.createElement('label');
@@ -274,7 +331,7 @@ class PlainTextRenderer {
     contentArea.className = 'plaintext-content-area';
 
     // Build both views
-    const textPane = this._buildTextPane(decodedText, fileName, this._mimeType, highlightEnabled);
+    const textPane = this._buildTextPane(decodedText, fileName, this._mimeType, highlightEnabled, wrapEnabled);
     const hexPane = this._buildHexPane(bytes, fileName);
 
     // Show the correct one by default
@@ -306,9 +363,15 @@ class PlainTextRenderer {
     // Rebuild helper — used by both encoding change and highlight toggle
     const rebuildTextPane = () => {
       const oldTextPane = contentArea._textPane;
-      const newTextPane = this._buildTextPane(currentText, fileName, this._mimeType, highlightEnabled);
+      const newTextPane = this._buildTextPane(currentText, fileName, this._mimeType, highlightEnabled, wrapEnabled);
       newTextPane.style.display = oldTextPane.style.display;
       contentArea.replaceChild(newTextPane, oldTextPane);
+      // Tear down the old VirtualTextView so its rAFs / ResizeObserver
+      // / event listeners don't leak across rebuilds (encoding switch,
+      // syntax-highlight toggle).
+      if (oldTextPane && oldTextPane._virtualView) {
+        try { oldTextPane._virtualView.destroy(); } catch (_) { /* ignore */ }
+      }
       contentArea._textPane = newTextPane;
       detectedLang = newTextPane._detectedLang || null;
       this._updateInfoText(infoText, showingText, bytes, currentEncoding, detectedLang, newTextPane._lineCount);
@@ -329,6 +392,8 @@ class PlainTextRenderer {
       encSelect.style.display = showingText ? '' : 'none';
       if (hlLabel) hlLabel.style.display = showingText ? '' : 'none';
       if (hlBtn) hlBtn.style.display = showingText ? '' : 'none';
+      if (wrapLabel) wrapLabel.style.display = showingText ? '' : 'none';
+      if (wrapBtn) wrapBtn.style.display = showingText ? '' : 'none';
       this._updateInfoText(infoText, showingText, bytes, currentEncoding, detectedLang, contentArea._textPane._lineCount);
     });
 
@@ -350,6 +415,20 @@ class PlainTextRenderer {
         highlightEnabled = !highlightEnabled;
         PlainTextRenderer._writeHighlightPref(highlightEnabled);
         hlBtn.textContent = highlightEnabled ? 'On' : 'Off';
+        rebuildTextPane();
+      });
+    }
+
+    // ── Wrap toggle handler ──────────────────────────────────────────────
+    // Only wired when the Wrap button was actually rendered (file is
+    // small enough). `rebuildTextPane()` already destroys the old
+    // `VirtualTextView` so there are no rAF / observer leaks across
+    // wrap-mode switches.
+    if (wrapBtn) {
+      wrapBtn.addEventListener('click', () => {
+        wrapEnabled = !wrapEnabled;
+        PlainTextRenderer._writeWrapPref(wrapEnabled);
+        wrapBtn.textContent = wrapEnabled ? 'On' : 'Off';
         rebuildTextPane();
       });
     }
@@ -498,7 +577,7 @@ class PlainTextRenderer {
 
   // ── Build text pane (line-numbered view with syntax highlighting) ────────
 
-  _buildTextPane(text, fileName, mimeType, highlightEnabled) {
+  _buildTextPane(text, fileName, mimeType, highlightEnabled, wrapEnabled) {
     const lines = text.split('\n');
 
     // Detect any pathologically long line — common in minified JS, CSS, JSON.
@@ -552,113 +631,47 @@ class PlainTextRenderer {
       detectedLang = lang;
     }
 
-    const scr = document.createElement('div');
-    scr.className = 'plaintext-scroll';
+    const maxLines    = PlainTextRenderer.MAX_LINES;
+    const count       = Math.min(lines.length, maxLines);
+    const chunkSize   = PlainTextRenderer.SOFT_WRAP_CHUNK;
+    const gutterDigits = String(Math.max(1, count)).length;
 
-    const table = document.createElement('table');
-    table.className = 'plaintext-table';
+    // Build the virtual viewer. `lines` is sliced to `count` so callers
+    // like the highlight pipeline can address every visible logical line
+    // (rows beyond MAX_LINES are excluded from `_lineToFirstRow`, matching
+    // the legacy table's "… truncated" footer behaviour).
+    //
+    // Note on `wrap`: when `wrapEnabled` is true `VirtualTextView` switches
+    // into all-rows-in-DOM mode and ignores `chunkSize` / `hasLongLine`.
+    // The outer gate (`wrapPossible`) already excludes files large enough
+    // for `hasLongLine` to matter (a single 5000+ char line on a ≤512 KB
+    // file is rare); the wrap path therefore never has to soft-wrap chunks.
+    const view = new VirtualTextView({
+      lines:            count === lines.length ? lines : lines.slice(0, count),
+      highlightedLines: highlightedLines || null,
+      chunkSize,
+      hasLongLine,
+      maxLineCount:     count,
+      detectedLang,
+      lineCount:        lines.length,
+      truncationMessage: lines.length > maxLines
+        ? `… truncated (${lines.length - maxLines} more lines)`
+        : '',
+      gutterDigits,
+      // _rawText is also stamped by the outer `render()` on the wrapper
+      // (.plaintext-view), but the focus engine queries the inner view
+      // for byte-offset → row mapping so we mirror it here too.
+      rawText: text,
+      wrap:    !!wrapEnabled,
+    });
 
-    const maxLines = PlainTextRenderer.MAX_LINES;
-    const count = Math.min(lines.length, maxLines);
-    const chunkSize = PlainTextRenderer.SOFT_WRAP_CHUNK;
-
-    // Pre-size the line-number column via <colgroup>. `.plaintext-table`
-    // uses `table-layout: fixed` (load-bearing defence against multi-
-    // megabyte minified-JS lines blowing out the viewer width — see
-    // viewers.css), which resolves column widths from the first row only.
-    // Without an explicit width the gutter locks to the width of "1" in
-    // row 1, and every subsequent multi-digit line number ("10", "100",
-    // …) overflows past the gutter's `border-right`, producing a visual
-    // "1|0" glitch. Reserving `<digits>ch + padding + border` up front
-    // keeps all line numbers inside their cell.
-    const gutterDigits = String(count).length;
-    const colgroup = document.createElement('colgroup');
-    const colLn   = document.createElement('col');
-    const colCode = document.createElement('col');
-    // padding-left (10px) + padding-right (12px) + border-right (1px) = 23px
-    colLn.style.width = `calc(${gutterDigits}ch + 23px)`;
-    colgroup.appendChild(colLn);
-    colgroup.appendChild(colCode);
-    table.appendChild(colgroup);
-
-    // Logical-line → first-<tr>-index map. Soft-wrap produces multiple
-    // <tr>s per logical line, so the sidebar's YARA/IOC/encoded-content
-    // highlighter can no longer assume `rows[lineIndex]` is the right
-    // row. We stash this map on the table so app-sidebar.js can translate
-    // (logicalLine, charPos) → (rowIndex, charPosWithinChunk). When no
-    // long line is present this stays a trivial 0,1,2,… map.
-    const lineToFirstRow = new Array(count);
-
-    for (let i = 0; i < count; i++) {
-      const lineText = lines[i];
-      lineToFirstRow[i] = table.rows.length;
-      // Soft-wrap absurdly long lines into display-only chunks so the DOM
-      // doesn't have to paint a single multi-megabyte <td>. The first
-      // chunk gets the real line number; continuation chunks show a
-      // dimmed ellipsis to signal the visual wrap.
-      if (hasLongLine && lineText.length > chunkSize) {
-        const chunks = Math.ceil(lineText.length / chunkSize);
-        for (let c = 0; c < chunks; c++) {
-          const tr = document.createElement('tr');
-          const tdNum = document.createElement('td');
-          tdNum.className = 'plaintext-ln';
-          tdNum.textContent = c === 0 ? (i + 1) : '↳';
-          const tdCode = document.createElement('td');
-          tdCode.className = 'plaintext-code';
-          tdCode.textContent = lineText.substr(c * chunkSize, chunkSize);
-          tr.appendChild(tdNum);
-          tr.appendChild(tdCode);
-          table.appendChild(tr);
-        }
-        continue;
-      }
-
-      const tr = document.createElement('tr');
-      const tdNum = document.createElement('td');
-      tdNum.className = 'plaintext-ln';
-      tdNum.textContent = i + 1;
-      const tdCode = document.createElement('td');
-      tdCode.className = 'plaintext-code';
-
-      if (highlightedLines && highlightedLines[i] !== undefined) {
-        // Use highlighted HTML
-        tdCode.innerHTML = highlightedLines[i] || '';
-      } else {
-        // Plain text fallback
-        tdCode.textContent = lineText;
-      }
-
-      tr.appendChild(tdNum);
-      tr.appendChild(tdCode);
-      table.appendChild(tr);
-    }
-
-    if (lines.length > maxLines) {
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.colSpan = 2;
-      td.className = 'plaintext-truncated';
-      td.textContent = `… truncated (${lines.length - maxLines} more lines)`;
-      tr.appendChild(td);
-      table.appendChild(tr);
-    }
-
-    scr.appendChild(table);
-
-    // Stash soft-wrap map + chunk size on the <table> itself so
-    // app-sidebar.js (which finds the table via
-    // `pc.querySelector('.plaintext-table')`) can translate
-    // (logicalLineIndex, charPos) → (rowIndex, charPosWithinChunk) for
-    // YARA / IOC / encoded-content highlighting in minified-JS files.
-    table._lineToFirstRow = lineToFirstRow;
-    table._chunkSize      = chunkSize;
-    table._hasLongLine    = hasLongLine;
-
-    // Stash metadata for the info bar (avoids re-decoding the whole buffer
-    // in _updateInfoText just to recount lines).
+    // The virtualised root *is* the scroll container. Stash the
+    // info-bar metadata on it so `_updateInfoText` keeps working without
+    // touching the underlying view object.
+    const scr = view.rootEl;
     scr._detectedLang = detectedLang;
-    scr._lineCount = lines.length;
-    scr._hasLongLine = hasLongLine;
+    scr._lineCount    = lines.length;
+    scr._hasLongLine  = hasLongLine;
 
     return scr;
   }
