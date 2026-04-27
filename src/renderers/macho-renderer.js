@@ -1046,12 +1046,17 @@ class MachoRenderer {
   // ═══════════════════════════════════════════════════════════════════════
 
   _extractStrings(bytes, mo, baseOffset) {
+    // Delegate per-section to the shared helper in `constants.js`. Mach-O
+    // section offsets are structurally significant (we only want strings
+    // from __cstring / __oslogstring / __ustring etc, not relocation
+    // tables), so the per-section loop stays here. Cross-section dedup is
+    // handled by a host-side Set since each helper call has its own
+    // `seen`.
     const strings = [];
     const seen = new Set();
     const maxStrings = 10000;
     const minLen = 4;
 
-    // Extract from sections likely to contain readable content
     const stringSections = mo.sections.filter(s =>
       s.size > 0 && s.offset > 0 && s.offset + s.size <= bytes.length &&
       (s.sectname === '__cstring' || s.sectname === '__oslogstring' ||
@@ -1061,56 +1066,29 @@ class MachoRenderer {
        s.segname === '__DATA' || s.segname === '__DATA_CONST')
     );
 
-    // If no recognized sections, scan __TEXT and __DATA segments
     const scanSections = stringSections.length > 0
       ? stringSections
       : mo.sections.filter(s => s.size > 0 && s.offset > 0 && s.offset + s.size <= bytes.length);
 
     for (const sec of scanSections) {
       if (strings.length >= maxStrings) break;
-      const end = Math.min(sec.offset + sec.size, bytes.length);
-
-      // Pass 1: ASCII runs
-      let current = '';
-      for (let i = sec.offset; i < end; i++) {
-        const c = bytes[i];
-        if (c >= 0x20 && c < 0x7F) {
-          current += String.fromCharCode(c);
-        } else {
-          if (current.length >= minLen && !seen.has(current)) {
-            seen.add(current);
-            strings.push(current);
-            if (strings.length >= maxStrings) break;
-          }
-          current = '';
-        }
+      const remaining = maxStrings - strings.length;
+      const out = extractAsciiAndUtf16leStrings(bytes, {
+        start: sec.offset,
+        end: Math.min(sec.offset + sec.size, bytes.length),
+        asciiMin: minLen,
+        utf16Min: minLen,
+        cap: remaining,
+      });
+      // ASCII first, UTF-16 second — preserves original insertion order
+      // for downstream IOC / categorised-strings consumers.
+      for (const s of out.ascii) {
+        if (strings.length >= maxStrings) break;
+        if (!seen.has(s)) { seen.add(s); strings.push(s); }
       }
-      if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
-        seen.add(current);
-        strings.push(current);
-      }
-
-      // Pass 2: UTF-16LE runs — Mach-O uses __ustring for wide-char
-      // literals, and Swift / NSString resources often store UTF-16
-      // text that the ASCII pass skips entirely.
-      if (strings.length >= maxStrings) break;
-      current = '';
-      for (let i = sec.offset; i + 1 < end; i += 2) {
-        const lo = bytes[i], hi = bytes[i + 1];
-        if (hi === 0 && lo >= 0x20 && lo < 0x7F) {
-          current += String.fromCharCode(lo);
-        } else {
-          if (current.length >= minLen && !seen.has(current)) {
-            seen.add(current);
-            strings.push(current);
-            if (strings.length >= maxStrings) break;
-          }
-          current = '';
-        }
-      }
-      if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
-        seen.add(current);
-        strings.push(current);
+      for (const s of out.utf16) {
+        if (strings.length >= maxStrings) break;
+        if (!seen.has(s)) { seen.add(s); strings.push(s); }
       }
     }
 
@@ -1574,29 +1552,15 @@ class MachoRenderer {
   }
 
   // Byte-scan fallback used when no parsed Mach-O structure is available.
+  // Delegates to the shared helper for ASCII + UTF-16LE dedup.
   _rawStringScan(bytes) {
-    const strings = [];
-    const seen = new Set();
-    const minLen = 4;
-    const maxStrings = 10000;
-    const maxScan = Math.min(bytes.length, 8 * 1024 * 1024);
-    let current = '';
-    for (let i = 0; i < maxScan && strings.length < maxStrings; i++) {
-      const c = bytes[i];
-      if (c >= 0x20 && c < 0x7F) {
-        current += String.fromCharCode(c);
-      } else {
-        if (current.length >= minLen && !seen.has(current)) {
-          seen.add(current);
-          strings.push(current);
-        }
-        current = '';
-      }
-    }
-    if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
-      strings.push(current);
-    }
-    return strings;
+    const out = extractAsciiAndUtf16leStrings(bytes, {
+      end: Math.min(bytes.length, 8 * 1024 * 1024),
+      asciiMin: 4,
+      utf16Min: 4,
+      cap: 10000,
+    });
+    return out.ascii.concat(out.utf16);
   }
 
   // ═══════════════════════════════════════════════════════════════════════

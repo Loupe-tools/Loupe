@@ -1412,41 +1412,16 @@ class PeRenderer {
   // ═══════════════════════════════════════════════════════════════════════
 
   _extractStrings(bytes, minLen) {
-    const strings = { ascii: [], unicode: [] };
-    const maxStrings = 10000;
-    const maxScan = Math.min(bytes.length, 8 * 1024 * 1024); // Cap at 8MB scan
-
-    // ASCII strings
-    let current = '';
-    for (let i = 0; i < maxScan && strings.ascii.length < maxStrings; i++) {
-      const b = bytes[i];
-      if (b >= 0x20 && b < 0x7F) {
-        current += String.fromCharCode(b);
-      } else {
-        if (current.length >= minLen) strings.ascii.push(current);
-        current = '';
-      }
-    }
-    if (current.length >= minLen && strings.ascii.length < maxStrings) strings.ascii.push(current);
-
-    // Unicode (UTF-16LE) strings
-    let ucurrent = '';
-    for (let i = 0; i < maxScan - 1 && strings.unicode.length < maxStrings; i += 2) {
-      const c = bytes[i] | (bytes[i + 1] << 8);
-      if (c >= 0x20 && c < 0x7F) {
-        ucurrent += String.fromCharCode(c);
-      } else {
-        if (ucurrent.length >= minLen && !strings.ascii.includes(ucurrent)) {
-          strings.unicode.push(ucurrent);
-        }
-        ucurrent = '';
-      }
-    }
-    if (ucurrent.length >= minLen && !strings.ascii.includes(ucurrent) && strings.unicode.length < maxStrings) {
-      strings.unicode.push(ucurrent);
-    }
-
-    return strings;
+    // Delegate to the shared scanner in `constants.js` which uses a Set for
+    // dedup (previous local impl used `strings.ascii.includes(...)` per
+    // UTF-16 candidate — O(N×M), up to ~10⁸ string compares on big PEs).
+    const out = extractAsciiAndUtf16leStrings(bytes, {
+      asciiMin: minLen,
+      utf16Min: minLen,
+      cap: 10000,
+      end: 8 * 1024 * 1024,
+    });
+    return { ascii: out.ascii, unicode: out.utf16 };
   }
 
   // ═══════════════════════════════════════════════════════════════════════

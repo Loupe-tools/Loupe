@@ -944,12 +944,19 @@ class ElfRenderer {
   // ═══════════════════════════════════════════════════════════════════════
 
   _extractStrings(bytes, elf) {
+    // Delegate per-section to the shared helper in `constants.js`. The
+    // helper handles ASCII + UTF-16LE deduplication via a Set; we keep
+    // the per-section loop here because ELF section offsets are
+    // structurally significant (we only want strings from .rodata /
+    // .data / .comment / .note.* etc, not header tables or relocations).
+    // Cross-section dedup is implicit: each pass returns its own
+    // (ascii, utf16) lists, but we feed everything through a host-side
+    // Set to collapse duplicates seen across sections.
     const strings = [];
     const seen = new Set();
     const maxStrings = 20000;
     const minLen = 4;
 
-    // Extract from loadable sections that are likely to contain readable content
     const stringSections = elf.sections.filter(s =>
       s.size > 0 && s.type !== 8 /* NOBITS */ && s.offset + s.size <= bytes.length &&
       (s.name === '.rodata' || s.name === '.data' || s.name === '.comment' ||
@@ -957,56 +964,29 @@ class ElfRenderer {
        (s.isAlloc && !s.isExec && s.type === 1 /* PROGBITS */))
     );
 
-    // If no recognized sections, scan all PROGBITS with ALLOC flag
     const scanSections = stringSections.length > 0
       ? stringSections
       : elf.sections.filter(s => s.size > 0 && s.type === 1 && s.offset + s.size <= bytes.length);
 
     for (const sec of scanSections) {
       if (strings.length >= maxStrings) break;
-      const end = Math.min(sec.offset + sec.size, bytes.length);
-
-      // Pass 1: ASCII runs
-      let current = '';
-      for (let i = sec.offset; i < end; i++) {
-        const c = bytes[i];
-        if (c >= 0x20 && c < 0x7F) {
-          current += String.fromCharCode(c);
-        } else {
-          if (current.length >= minLen && !seen.has(current)) {
-            seen.add(current);
-            strings.push(current);
-            if (strings.length >= maxStrings) break;
-          }
-          current = '';
-        }
+      const remaining = maxStrings - strings.length;
+      const out = extractAsciiAndUtf16leStrings(bytes, {
+        start: sec.offset,
+        end: Math.min(sec.offset + sec.size, bytes.length),
+        asciiMin: minLen,
+        utf16Min: minLen,
+        cap: remaining,
+      });
+      // ASCII first, UTF-16 second — preserves the original insertion order
+      // contract that downstream IOC / categorised-strings consumers rely on.
+      for (const s of out.ascii) {
+        if (strings.length >= maxStrings) break;
+        if (!seen.has(s)) { seen.add(s); strings.push(s); }
       }
-      if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
-        seen.add(current);
-        strings.push(current);
-      }
-
-      // Pass 2: UTF-16LE runs — catches wide-char paths/URLs/commands that
-      // ASCII-only scanning misses (e.g. Windows-style API strings embedded
-      // in cross-compiled ELF binaries, Qt/ICU UTF-16 resource tables).
-      if (strings.length >= maxStrings) break;
-      current = '';
-      for (let i = sec.offset; i + 1 < end; i += 2) {
-        const lo = bytes[i], hi = bytes[i + 1];
-        if (hi === 0 && lo >= 0x20 && lo < 0x7F) {
-          current += String.fromCharCode(lo);
-        } else {
-          if (current.length >= minLen && !seen.has(current)) {
-            seen.add(current);
-            strings.push(current);
-            if (strings.length >= maxStrings) break;
-          }
-          current = '';
-        }
-      }
-      if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
-        seen.add(current);
-        strings.push(current);
+      for (const s of out.utf16) {
+        if (strings.length >= maxStrings) break;
+        if (!seen.has(s)) { seen.add(s); strings.push(s); }
       }
     }
 
@@ -1383,28 +1363,18 @@ class ElfRenderer {
 
   // Byte-scan fallback used when no parsed ELF structure is available.
   _rawStringScan(bytes) {
-    const strings = [];
-    const seen = new Set();
-    const minLen = 4;
-    const maxStrings = 20000;
-    const maxScan = Math.min(bytes.length, 16 * 1024 * 1024);
-    let current = '';
-    for (let i = 0; i < maxScan && strings.length < maxStrings; i++) {
-      const c = bytes[i];
-      if (c >= 0x20 && c < 0x7F) {
-        current += String.fromCharCode(c);
-      } else {
-        if (current.length >= minLen && !seen.has(current)) {
-          seen.add(current);
-          strings.push(current);
-        }
-        current = '';
-      }
-    }
-    if (current.length >= minLen && !seen.has(current) && strings.length < maxStrings) {
-      strings.push(current);
-    }
-    return strings;
+    // Generic byte-scan fallback used when no parsed ELF structure is
+    // available. Delegates to the shared helper for ASCII + UTF-16LE
+    // dedup; cap mirrors the parsed-section path.
+    const out = extractAsciiAndUtf16leStrings(bytes, {
+      end: Math.min(bytes.length, 16 * 1024 * 1024),
+      asciiMin: 4,
+      utf16Min: 4,
+      cap: 20000,
+    });
+    // Fallback view only renders ASCII; UTF-16 hits are appended after to
+    // keep them surfaced for IOC extraction without changing card layout.
+    return out.ascii.concat(out.utf16);
   }
 
 
