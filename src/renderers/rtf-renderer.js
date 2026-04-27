@@ -170,17 +170,23 @@ class RtfRenderer {
     const infoMatch = text.match(/\{\\info\b([\s\S]*?)\}/);
     if (infoMatch) {
       const info = infoMatch[1];
-      const getMeta = (kw) => {
-        const m = info.match(new RegExp(`\\{\\\\${kw}\\s+([^\\}]*)\\}`, 'i'));
-        return m ? m[1].trim() : '';
-      };
+      // Single combined scan over the `\info` group instead of 6 separate
+      // `new RegExp` calls. Extracts every `{\<kw> <value>}` entry once and
+      // looks up by keyword.
+      const meta = {};
+      const _kwRx = /\{\\(title|subject|author|operator|creatim|revtim)\s+([^}]*)\}/gi;
+      let _kwM;
+      while ((_kwM = _kwRx.exec(info)) !== null) {
+        const k = _kwM[1].toLowerCase();
+        if (!meta[k]) meta[k] = (_kwM[2] || '').trim();
+      }
       f.metadata = {
-        title: getMeta('title'),
-        subject: getMeta('subject'),
-        creator: getMeta('author'),
-        lastModifiedBy: getMeta('operator'),
-        created: getMeta('creatim'),
-        modified: getMeta('revtim'),
+        title: meta.title || '',
+        subject: meta.subject || '',
+        creator: meta.author || '',
+        lastModifiedBy: meta.operator || '',
+        created: meta.creatim || '',
+        modified: meta.revtim || '',
       };
     }
 

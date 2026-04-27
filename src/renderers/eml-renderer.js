@@ -191,14 +191,17 @@ class EmlRenderer {
       if (email.authResults) {
         f.authResults = email.authResults;
         const ar = email.authResults.toLowerCase();
-        const pick = (tag) => {
-          const m = ar.match(new RegExp('\\b' + tag + '\\s*=\\s*([a-z]+)'));
-          return m ? m[1] : '';
-        };
-        const spfV = pick('spf'), dkimV = pick('dkim'), dmarcV = pick('dmarc');
-        if (spfV) f.spf = spfV;
-        if (dkimV) f.dkim = dkimV;
-        if (dmarcV) f.dmarc = dmarcV;
+        // Single combined scan instead of three `new RegExp` calls — extracts
+        // every `<tag>=<verdict>` pair in one pass and looks up by name.
+        const verdicts = {};
+        const _arRx = /\b(spf|dkim|dmarc)\s*=\s*([a-z]+)/g;
+        let _arM;
+        while ((_arM = _arRx.exec(ar)) !== null) {
+          if (!verdicts[_arM[1]]) verdicts[_arM[1]] = _arM[2];
+        }
+        if (verdicts.spf)   f.spf = verdicts.spf;
+        if (verdicts.dkim)  f.dkim = verdicts.dkim;
+        if (verdicts.dmarc) f.dmarc = verdicts.dmarc;
       }
 
       // Attachment inventory for the Summary writer's _copyAnalysisEML helper.
@@ -551,11 +554,14 @@ class EmlRenderer {
         const ar = email.authResults.toLowerCase();
         const failOrNone = v => v === 'fail' || v === 'softfail' || v === 'none' ||
                                 v === 'neutral' || v === 'temperror' || v === 'permerror';
-        const pickV = (tag) => {
-          const m = ar.match(new RegExp('\\b' + tag + '\\s*=\\s*([a-z]+)'));
-          return m ? m[1] : '';
-        };
-        const spfV = pickV('spf'), dkimV = pickV('dkim'), dmarcV = pickV('dmarc');
+        // Single combined scan — same shape as the parser-side hoist above.
+        const verdicts = {};
+        const _arRx = /\b(spf|dkim|dmarc)\s*=\s*([a-z]+)/g;
+        let _arM;
+        while ((_arM = _arRx.exec(ar)) !== null) {
+          if (!verdicts[_arM[1]]) verdicts[_arM[1]] = _arM[2];
+        }
+        const spfV = verdicts.spf || '', dkimV = verdicts.dkim || '', dmarcV = verdicts.dmarc || '';
         authTripleFail = spfV && dkimV && dmarcV &&
           failOrNone(spfV) && failOrNone(dkimV) && failOrNone(dmarcV);
 
