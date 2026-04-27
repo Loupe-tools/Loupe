@@ -363,23 +363,19 @@ extendApp({
       const rendererIOCs = this.findings.interestingStrings || [];
       // ── IOC mass-extract: sync vs worker dispatch (Batch A) ─────
       // Files <= IOC_WORKER_THRESHOLD_BYTES (256 KB), and any file when
-      // workers are unavailable (Firefox `file://`) or the analyst has
-      // disabled the worker path via `loupe_ioc_worker_disabled`, run
-      // the synchronous shim — same byte-equivalent output as before.
-      // Above the threshold the regex sweep (URL / email / IPv4 /
-      // Windows path / UNC / Unix path / registry key / defanged variants)
-      // ships to `WorkerManager.runIocExtract` and a visible "Scanning
-      // IOCs…" placeholder row holds the slot in the sidebar until the
-      // worker resolves. Timeline-routed files never reach this code
+      // workers are unavailable (Firefox `file://`), run the synchronous
+      // shim — same byte-equivalent output as before. Above the
+      // threshold the regex sweep (URL / email / IPv4 / Windows path /
+      // UNC / Unix path / registry key / defanged variants) ships to
+      // `WorkerManager.runIocExtract` and a visible "Scanning IOCs…"
+      // placeholder row holds the slot in the sidebar until the worker
+      // resolves. Timeline-routed files never reach this code
       // (`src/app/timeline/timeline-router.js:16-24`) so the analyser-
       // bypass invariant is preserved by construction. See
       // plans/2026-04-27-loupe-perf-redos-followup-finish-v1.md (Batch A).
       const IOC_WORKER_THRESHOLD_BYTES = 262144;
-      const _iocWorkerDisabled = (typeof safeStorage !== 'undefined')
-        && safeStorage.get('loupe_ioc_worker_disabled') === '1';
       const _iocWorkerEligible =
-        !_iocWorkerDisabled
-        && analysisText.length > IOC_WORKER_THRESHOLD_BYTES
+        analysisText.length > IOC_WORKER_THRESHOLD_BYTES
         && typeof WorkerManager !== 'undefined'
         && WorkerManager.workersAvailable && WorkerManager.workersAvailable()
         && typeof WorkerManager.runIocExtract === 'function';
