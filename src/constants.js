@@ -307,17 +307,33 @@ function looksLikeIpVersionString(ipPart) {
 // some of which happen to be printable ASCII and so survive the printable-
 // string extractor.
 //
-// Pattern: a non-digit immediately before a stray `0` (so `…/file20` /
-// `…/v1.0` are preserved), 0–2 trailing digit chars, then ≥1 non-alnum
-// terminator. The `{1,3}` floor on the trailing junk is load-bearing —
-// without it, URLs ending in `<non-digit>0` were being chopped at the `0`.
+// Two complementary rules:
+//
+//  1. TERMINATED rule — a non-digit before a stray `0`, 0–2 trailing digit
+//     chars, then ≥1 non-alnum terminator. The `{1,3}` floor on the trailing
+//     junk is load-bearing: without it, URLs ending in `<non-digit>0` (e.g.
+//     `…/v1.0`, `…/foo0`) get chopped at the `0`.
+//
+//  2. TLD rule — digits hanging directly off a TLD-like dotted-letters
+//     component at end-of-string (`.com06`, `.com0`, `.crl06`, …). Needed
+//     because the printable-string extractor (`extractAsciiAndUtf16leStrings`)
+//     terminates a run at the first non-printable byte, so the captured
+//     URL ends *exactly* at the alnum DER bytes with no terminator left
+//     for rule 1 to anchor on. Concrete failures from rule 1 alone:
+//        `http://s.symcd.com06`        (Symantec OCSP, DER `30 36 …`)
+//        `http://ocsp.comodoca.com0`   (Comodo  OCSP, DER `30 82 …`)
+//     The `\.[A-Za-z]{2,}` prefix is what keeps `…/v1.0` and `…/foo0`
+//     intact: in those, the chars before the trailing digits are not a
+//     dotted letters-only component.
 //
 // Centralised here so the three callers (PE strings extractor, X.509
 // IA5String cleaner, app-load.js URL processor) cannot drift independently
 // — a recent commit had to touch all three identical regexes in lockstep.
-const DER_TAIL_RX = /([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/;
+const DER_TAIL_RX_TERMINATED = /([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/;
+const DER_TAIL_RX_TLD        = /(\.[A-Za-z]{2,})[0-9]{1,3}$/;
 function stripDerTail(s) {
-  return typeof s === 'string' ? s.replace(DER_TAIL_RX, '$1') : s;
+  if (typeof s !== 'string') return s;
+  return s.replace(DER_TAIL_RX_TERMINATED, '$1').replace(DER_TAIL_RX_TLD, '$1');
 }
 
 // ── XML namespace constants ───────────────────────────────────────────────────
