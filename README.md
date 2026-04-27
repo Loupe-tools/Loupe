@@ -18,8 +18,6 @@ No server, no uploads, no tracking — just drop a file and inspect it.
 ![100% Offline](https://img.shields.io/badge/100%25-Offline-blueviolet)
 ![Single HTML File](https://img.shields.io/badge/Single_File-HTML-orange)
 
-
-
 <p align="center">
 <img src="screenshots/hero.png" alt="Loupe interface — 100% offline static analysis" width="800">
 <br>
@@ -30,92 +28,60 @@ No server, no uploads, no tracking — just drop a file and inspect it.
 
 ## 🤔 Why Loupe?
 
-SOC analysts, MDR responders, phishing teams, and DFIR practitioners need a way to safely inspect suspicious files without uploading them to third-party services or spinning up a sandbox. Loupe runs entirely in your browser — **nothing ever leaves your machine**.
+SOC analysts, MDR responders, phishing teams, and DFIR practitioners need to inspect suspicious files **without uploading them anywhere**. Loupe runs entirely in your browser — nothing ever leaves your machine.
 
-- **Zero network access** — a strict Content-Security-Policy blocks all external fetches.
-- **Single HTML file** — no install, no dependencies, works on any OS with a modern browser.
-- **Built for scripts and documents** — PowerShell, VBS, JScript, HTA, WSF, AppleScript / JXA, shell one-liners, Office, PDF, email, and archives get deep per-format analysis; recursive decoding peels nested Base64 / hex / gzip / zlib payloads layer by layer with the full lineage on screen.
-- **Broad format coverage** — plus native binaries (PE / ELF / Mach-O), certificates, forensic artefacts (EVTX / SQLite), browser extensions, npm packages, and images.
+- **Zero network, zero install.** A strict [Content-Security-Policy](SECURITY.md#full-content-security-policy) blocks every outbound request. One HTML file, double-click to open, works on any OS.
+- **Forensics-grade depth in a triage tool.** [50+ formats](FEATURES.md#-supported-formats) — scripts, Office, PDF, email, PE/ELF/Mach-O, archives, certificates, browser extensions, npm — each with format-specific parsers, [recursive deobfuscation](FEATURES.md#-security-analysis), 500+ bundled YARA rules, and one-click STIX/MISP/clipboard export.
+- **A timeline tool too.** Drop a CSV, TSV, EVTX, or browser-history SQLite and Loupe opens the [📈 Timeline viewer](FEATURES.md#-timeline) — virtual grid for 150 K rows, scrubber + stacked-bar histogram, DSL query language, EVTX detections with MITRE ATT&CK pivots, ƒx Extract for JSON/regex columns.
+- **Verifiable supply chain.** Every release is [Sigstore-signed with SLSA v1.0 build provenance](SECURITY.md#verify-your-download), reproducible from source, and ships a CycloneDX SBOM.
 
 ---
 
 ## 🎯 When to reach for Loupe
 
-- **Abuse mailbox:** a user-reported `.eml` / `.msg` lands in the queue — headers, SPF / DKIM / DMARC verdicts, tracking-pixel hosts, and every embedded URL are inspectable without a single click firing.
-- **ClickFix / `osascript` paste:** an EDR alert surfaces an obfuscated one-liner — Base64 PowerShell, `curl … | sh`, or `osascript -e …`. Paste it straight in with `Ctrl+V` and Loupe peels every nested Base64 / hex / gzip / zlib layer with the full decode lineage on screen, surfacing the C2 URL, hashes, and file paths as one-click MISP / STIX attributes.
-- **Host triage:** drop the `.evtx` from live response to auto-flag 4688 / 4624 / 1102 / 4104, or a browser `History.sqlite` to timeline a suspected compromise. Every CSV / TSV / EVTX opens directly in the **📈 Timeline** viewer — scrubber, stacked-bar histogram, virtual grid, per-column top-value cards, Sigma-style **Detections** and **Entities** sections (EVTX) on one page.
-- **Refang & pivot:** Just paste and Loupe will convert URL Defense / Safe links and refang `hxxp://` / `1[.]2[.]3[.]4` into live IOCs you can export without leaving the tab.
-- **Airgap / compliance:** single HTML file, zero network — usable on a SCIF / classified / locked-down analyst VM where VirusTotal and Any.Run are off-limits.
-- **Detection-content authoring:** drag a candidate `.yar` file onto Loupe to validate it against a corpus of samples before promoting to the production ruleset.
+- **Abuse-mailbox triage** — drop a `.eml` or `.msg`; headers, SPF/DKIM/DMARC verdicts, tracking pixels, and every embedded URL are inspectable without a single click firing. EML / MSG anchors are [rendered inert](FEATURES.md#-user-interface) so a hostile URL can't be navigated to by accident.
+- **ClickFix / `osascript` paste** — paste an obfuscated one-liner straight in with `Ctrl+V`. Loupe peels every nested Base64 / hex / gzip / zlib / XOR layer with the [full decode lineage](FEATURES.md#-security-analysis) on screen, surfacing C2 URLs, hashes, and paths as one-click MISP / STIX attributes.
+- **Host-triage timeline** — drop the `.evtx` from live response to auto-flag 4688 / 4624 / 1102 / 4104 with MITRE ATT&CK pills and a [Detections + Entities sidebar](FEATURES.md#-timeline). Browser `History.sqlite` opens straight into the same timeline for a compromise narrative on one page.
+- **Airgap / SCIF analyst VM** — single HTML, zero network, usable where VirusTotal and Any.Run are off-limits.
+- **Detection-content authoring** — drag a candidate `.yar` onto Loupe to validate it against your sample corpus before promoting it to production.
 
 ---
 
 ## 🚀 Quick Start
 
-
 [⬇️ **Download latest loupe.html**](https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html)
 
 1. **Download** — grab `loupe.html` from the release link above, or clone the repo, run `python make.py`, and open `docs/index.html`.
-2. **Open** — double-click the file in any modern browser (Chrome, Firefox, Edge, Safari). No server needed.
-3. **Drop a file** — drag a suspicious file onto the drop zone, click **📁 Open File**, or paste with **Ctrl+V**.
-4. *(optional)* **Verify it** — every release is Sigstore-signed and reproducible. See [SECURITY.md § Verify Your Download](SECURITY.md#verify-your-download).
-5. **Inspect** — press **S** to toggle the security sidebar, **Y** for the YARA rules dialog, **?** for all shortcuts.
+2. **Open** — double-click in any modern browser (Chrome, Firefox, Edge, Safari). No server.
+3. **Drop a file** — drag onto the drop zone, click **📁 Open File**, or paste with **Ctrl+V**.
+4. *(optional)* **Verify** — every release is Sigstore-signed and reproducible. See [SECURITY.md § Verify Your Download](SECURITY.md#verify-your-download).
+5. **Inspect** — press **S** for the security sidebar, **Y** for the YARA dialog, **?** for all shortcuts.
+
+> Loupe is a **static-analysis triage tool** — it extracts, decodes, and displays file contents for human review. It does **not execute** macros, JavaScript, or embedded code. Use Loupe for initial triage and IOC extraction, then escalate to a sandbox or disassembly environment.
 
 ---
 
 ## 🛡 Supported Formats
 
-| Category | Extensions |
-|---|---|
-| **Office** | `.docx` `.docm` `.xlsx` `.xlsm` `.pptx` `.pptm` `.ods` `.doc` `.xls` `.ppt` `.odt` `.odp` `.rtf` |
-| **Documents** | `.pdf` `.one` |
-| **Email** | `.eml` `.msg` |
-| **Web** | `.html` `.htm` `.mht` `.mhtml` `.xhtml` `.svg` |
-| **Archives** | `.zip` `.gz` `.gzip` `.tar` `.tgz` `.rar` `.7z` `.cab` `.iso` `.img` |
-| **Windows** | `.lnk` `.hta` `.url` `.webloc` `.website` `.reg` `.inf` `.sct` `.msi` `.exe` `.dll` `.sys` `.scr` `.cpl` `.ocx` `.drv` `.com` `.xll` `.application` `.manifest` `.msix` `.msixbundle` `.appx` `.appxbundle` `.appinstaller` |
-| **Browser extensions** | `.crx` (Chrome / Chromium / Edge) · `.xpi` (Firefox / Thunderbird) |
-| **npm packages** | `.tgz` (npm-packed tarball) · `package.json` · `package-lock.json` / `npm-shrinkwrap.json` |
-| **Linux / IoT** | ELF binaries (`.so`, `.o`, `.elf`, extensionless) |
-| **macOS** | Mach-O binaries (`.dylib`, `.bundle`, Fat/Universal) · `.applescript` `.scpt` `.scptd` `.jxa` `.plist` · `.dmg` `.pkg` `.mpkg` |
-| **Certificates** | `.pem` `.der` `.crt` `.cer` `.p12` `.pfx` `.key` |
-| **OpenPGP** | `.pgp` `.gpg` `.asc` `.sig` |
-| **Java** | `.jar` `.war` `.ear` `.class` |
-| **Scripts** | `.wsf` `.wsc` `.wsh` `.vbs` `.ps1` `.bat` `.cmd` `.js` |
-| **Forensics** | `.evtx` `.sqlite` `.db` |
-| **Data** | `.csv` `.tsv` `.iqy` `.slk` |
-| **Images** | `.jpg` `.png` `.gif` `.bmp` `.webp` `.ico` `.tif` `.avif` |
-| **Catch-all** | *Any file* — text or hex dump view |
+Office, PDF, email, web, archives, disk images, every flavour of Windows installer (MSI / MSIX / ClickOnce), Linux ELF, macOS Mach-O / DMG / PKG / `.app`, certificates, OpenPGP, Java, browser extensions, npm packages, EVTX, SQLite, plus a hex / text catch-all for anything else. Magic-byte sniffing means an extensionless or renamed file still lands on the right renderer.
 
-Every format gets risk assessment, IOC extraction, and YARA scanning on top of the format-specific parser. Full capability reference in **[FEATURES.md](FEATURES.md)**.
+**Full reference with per-format capabilities → [FEATURES.md § Supported Formats](FEATURES.md#-supported-formats).**
 
 ---
 
-## 🔍 What It Finds
+## 🎬 Try It Yourself
 
-- **Scripts & one-liners** — PowerShell, VBS, JScript, HTA, WSF, AppleScript / JXA, and shell wrappers get syntax highlighting and are risk-scored against hundreds of dedicated YARA rules; auto-execute entry points are flagged.
-- **Recursive decoder** — Base64 / hex / gzip / zlib layers unwind in-place with every hop visible as a coloured pill, so a ClickFix blob reveals its real payload without leaving the tab.
-- **Office, PDF & email** — VBA and Excel-formula droppers decoded, OOXML external relationships surfaced, PDF `/JavaScript` / `/OpenAction` / `/Launch` / attachments extracted, `.eml` / `.msg` headers and SPF / DKIM / DMARC verdicts parsed.
-- **IOCs** — URLs, IPs, emails, hostnames, domains, file paths, UNC paths, GUIDs, key fingerprints. Defanged indicators (`hxxp://`, `1[.]2[.]3[.]4`) are refanged automatically.
-- **YARA rule engine** — 500+ default rules auto-scan every file; drop any `.yar` file onto Loupe to extend detection — rules are validated, saved locally, and rescans are instant.
-- **File hashes** — MD5, SHA-1, SHA-256 with one-click VirusTotal lookup.
-- **Native binaries** — PE / ELF / Mach-O with imports, sections, entropy, security features, and code-signature parsing for quick triage.
-- **Certificates & keys** — X.509 and OpenPGP with weak-key and expiry flagging.
-- **Recursive drill-down** — a macro inside a `.docm` inside a `.zip` inside a `.msi` — every layer gets its own full analysis with Back navigation and a breadcrumb trail.
-- **Exports** — one-click clipboard brief for tickets or LLMs, plus STIX 2.1, MISP, and IOC JSON/CSV.
-- **Timeline** — every CSV / TSV / EVTX opens in a dedicated timeliner: scrubber, stacked-bar chart, virtual grid, per-column filter chips, plus Sigma-style **Detections** and **Entities** sections for EVTX.
+Drop one of these into Loupe to see it in action — the [`examples/`](examples/) directory has many more.
 
-Six themes, a resizable sidebar, in-toolbar document search, and click-to-highlight for every IOC and YARA match.
+- [`examples/encoded-payloads/nested-double-b64-ip.txt`](examples/encoded-payloads/nested-double-b64-ip.txt) — double Base64 hiding a C2 IP
+- [`examples/email/phishing-example.eml`](examples/email/phishing-example.eml) — SPF/DKIM/DMARC failures + tracking pixel
+- [`examples/forensics/example-security.evtx`](examples/forensics/example-security.evtx) — Windows security log opens straight into the Timeline viewer (auto-flags 4688 / 4624 / 1102)
+- [`examples/pe/signed-example.dll`](examples/pe/signed-example.dll) — Authenticode-signed DLL with PE analysis + cert chain
+- [`examples/web/example-malicious.svg`](examples/web/example-malicious.svg) — script injection + `foreignObject` phishing form
 
-### Fits your workflow
-
-Every export is generated client-side — paste directly into the next tool in your pipeline:
-
-- **→ ticket / LLM:** one-shot **Summarize** copies a Markdown report to the clipboard, sized to ~16 K / 50 K / unlimited tokens.
-- **→ TIP:** STIX 2.1 bundle or MISP event JSON, with deterministic UUIDs so re-imports dedupe cleanly.
-- **→ CLI / spreadsheet:** flat JSON (jq-friendly) and RFC 4180 CSV for quick grep / pivot / triage runs.
+Full guided tour: **[FEATURES.md → Example Files](FEATURES.md#-example-files-guided-tour)**.
 
 ---
-
 
 ## 🎨 Themes
 
@@ -134,70 +100,19 @@ Six built-in themes, selectable from the **⚙ Settings** dialog — your choice
   </tr>
 </table>
 
-<details>
-<summary><sub>More screenshots — file viewer &amp; YARA dialog per theme</sub></summary>
-
-<sub><b>☀️ Light</b></sub>
-<p><img src="screenshots/light_1.png" alt="Light — file viewer 1" width="260"> <img src="screenshots/light_2.png" alt="Light — file viewer 2" width="260"> <img src="screenshots/light_yara.png" alt="Light — YARA dialog" width="260"></p>
-
-<sub><b>🌙 Dark</b></sub>
-<p><img src="screenshots/dark_1.png" alt="Dark — file viewer 1" width="260"> <img src="screenshots/dark_2.png" alt="Dark — file viewer 2" width="260"> <img src="screenshots/dark_yara.png" alt="Dark — YARA dialog" width="260"></p>
-
-<sub><b>🌑 Midnight OLED</b></sub>
-<p><img src="screenshots/midnight_1.png" alt="Midnight — file viewer 1" width="260"> <img src="screenshots/midnight_2.png" alt="Midnight — file viewer 2" width="260"> <img src="screenshots/midnight_yara.png" alt="Midnight — YARA dialog" width="260"></p>
-
-<sub><b>🌅 Solarized</b></sub>
-<p><img src="screenshots/solarized_1.png" alt="Solarized — file viewer 1" width="260"> <img src="screenshots/solarized_2.png" alt="Solarized — file viewer 2" width="260"> <img src="screenshots/solarized_yara.png" alt="Solarized — YARA dialog" width="260"></p>
-
-<sub><b>🌙 Mocha</b></sub>
-<p><img src="screenshots/mocha_1.png" alt="Mocha — file viewer 1" width="260"> <img src="screenshots/mocha_2.png" alt="Mocha — file viewer 2" width="260"> <img src="screenshots/mocha_yara.png" alt="Mocha — YARA dialog" width="260"></p>
-
-<sub><b>☕ Latte</b></sub>
-<p><img src="screenshots/latte_1.png" alt="Latte — file viewer 1" width="260"> <img src="screenshots/latte_2.png" alt="Latte — file viewer 2" width="260"> <img src="screenshots/latte_yara.png" alt="Latte — YARA dialog" width="260"></p>
-
-</details>
-
----
-
-## 🎬 Try It Yourself
-
-Drop one of these into Loupe to see it in action — the [`examples/`](examples/) directory has many more.
-
-- [`examples/encoded-payloads/nested-double-b64-ip.txt`](examples/encoded-payloads/nested-double-b64-ip.txt) — double Base64 hiding a C2 IP
-- [`examples/email/phishing-example.eml`](examples/email/phishing-example.eml) — SPF/DKIM/DMARC failures + tracking pixel
-- [`examples/windows-scripts/example.lnk`](examples/windows-scripts/example.lnk) — Shell Link with per-field IOC extraction
-- [`examples/pe/signed-example.dll`](examples/pe/signed-example.dll) — Authenticode-signed DLL with PE analysis + cert chain
-- [`examples/forensics/example-security.evtx`](examples/forensics/example-security.evtx) — Windows security event log (auto-flags 4688 / 4624 / 1102)
-- [`examples/macos-system/example.pkg`](examples/macos-system/example.pkg) — flat macOS installer with install-script flagging
-- [`examples/web/example-malicious.svg`](examples/web/example-malicious.svg) — script injection + foreignObject phishing form
-
-Full guided tour: **[FEATURES.md → Example Files](FEATURES.md#-example-files-guided-tour)**.
-
----
-
-## ⚠️ Limitations
-
-Loupe is a **static-analysis triage tool** — it extracts, decodes, and displays file contents for human review but **does not execute** macros, JavaScript, scripts, or any embedded code. It is not a replacement for dynamic-analysis sandboxes (Any.Run, Joe Sandbox) or full reverse-engineering workflows. Use Loupe for initial triage and IOC extraction, then escalate to a sandbox or disassembly environment.
-
 ---
 
 ## 🔒 Security Model
 
-- **Zero network** — strict `Content-Security-Policy` (`default-src 'none'`) blocks every outbound request. No telemetry, no CDNs, no analytics.
-- **No code execution** — no `eval`, no `new Function`, sandboxed HTML/SVG previews.
-- **Zip-bomb & timeout defences** — centralised parser limits cap nesting depth, decompressed size, entry count, and wall-clock time.
-
-Full threat model, numeric limits, and vulnerability reporting: **[SECURITY.md](SECURITY.md)**.
+Strict CSP (`default-src 'none'`), no `eval` / `new Function`, sandboxed HTML & SVG previews, centralised parser limits against zip-bombs and runaway parsers. Full threat model, numeric limits, signature-verification recipe, and vulnerability reporting → **[SECURITY.md](SECURITY.md)**.
 
 ---
 
 ## 🤝 Get Involved
 
-Loupe is open source under the [Mozilla Public License 2.0](LICENSE).
+Loupe is open source under the [Mozilla Public License 2.0](LICENSE). The codebase is vanilla JavaScript — no frameworks, no bundlers — to keep it auditable.
 
-- ⭐ **Star the repo** — helps others discover the project
-- 🐛 **Open an issue** — bug reports, feature requests, and format support suggestions
-- 🔀 **Submit a pull request** — YARA rules, new format parsers, and improvements are especially welcome
-- 📖 **See [CONTRIBUTING.md](CONTRIBUTING.md)** — build instructions, gotchas, and conventions for developers
-
-The codebase is vanilla JavaScript (no frameworks, no bundlers) to keep it auditable and easy to understand.
+- ⭐ **Star the repo** — helps others discover the project.
+- 🐛 **Open an issue** — bug reports, feature requests, format support suggestions.
+- 🔀 **Submit a pull request** — YARA rules, new format parsers, and improvements are especially welcome.
+- 📖 **See [CONTRIBUTING.md](CONTRIBUTING.md)** — build instructions, gotchas, and conventions.

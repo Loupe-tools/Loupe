@@ -48,22 +48,8 @@ A mismatch means a vendored file has been altered since its pinned release —
 treat it as a potential supply-chain incident and investigate the diff before
 building, shipping, or merging.
 
-## Upgrading a library
+## Adding or upgrading a library
 
-1. Replace the file in `vendor/` with the new upstream release.
-2. Recompute its SHA-256 with the command above.
-3. Update the matching row here (version + hash).
-4. Rebuild: `python make.py` (runs `scripts/verify_vendored.py` →
-   `scripts/build.py` → `scripts/generate_codemap.py` — the hash check
-   guards against a stale or mistyped pin before the bundle is
-   regenerated).
-5. Commit the vendor file, the `VENDORED.md` change, and the rebuilt
-   `docs/index.html` together so reviewers see one atomic supply-chain update.
-
-## Adding a new library
-
-1. Place the upstream release bytes under `vendor/<name>.js` — **do not modify**.
-2. Read and inline the file in `scripts/build.py` alongside the other vendor reads.
-3. Add a new row to the table above with version, licence, SHA-256, and
-   upstream URL. A vendor change without a `VENDORED.md` change is a broken
-   commit.
+See [CONTRIBUTING.md § Adding or Upgrading a Vendored Library](CONTRIBUTING.md#adding-or-upgrading-a-vendored-library)
+for the full recipe. The non-negotiable rule: a vendor change without a
+matching row update here (version + SHA-256) is a broken commit.
