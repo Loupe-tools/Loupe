@@ -1096,6 +1096,17 @@ class TimelineView {
     }
 
     this._colStats = null;
+    // Cancel any pending column-stats rAF — without this, the rAF
+    // started in `_scheduleRender(['columns'])` would still fire and
+    // launch a fresh O(rows × cols) async pass that the generation
+    // counter only bails *between* chunks (so one full ~50 K-row chunk
+    // is wasted per filter keystroke on million-row datasets). The
+    // rAF callback re-arms itself when the next 'columns' render is
+    // scheduled, so cancelling here just skips the wasted first chunk.
+    if (this._colStatsRaf) {
+      cancelAnimationFrame(this._colStatsRaf);
+      this._colStatsRaf = 0;
+    }
     // Bump the generation counter so any in-flight async column-stats
     // computation detects it has been superseded and bails early.
     this._colStatsGen++;
@@ -2786,6 +2797,19 @@ class TimelineView {
       e.preventDefault();
       const data = this._lastChartData;
       if (!data || !data.layout) return;
+
+      // Acquire pointer capture *before* mutating drag state. If
+      // setPointerCapture throws (rare — torn-down handle, browser quirk),
+      // pointermove events outside the 8-px handle never fire and the
+      // drag silently stalls. Bail early in that case so `dragging` /
+      // `_cursorDragging` don't get stuck on, which would otherwise
+      // disable the grid-scroll cursor anchor until the next click.
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch (_) {
+        return;
+      }
+
       dragging = true;
       this._cursorDragging = true;
       cursorEl.classList.add('dragging');
@@ -2793,7 +2817,6 @@ class TimelineView {
       const scrubCur = this._els && this._els.scrubTrack
         ? this._els.scrubTrack.querySelector('.tl-scrubber-cursor') : null;
       if (scrubCur) scrubCur.classList.add('dragging');
-      try { handle.setPointerCapture(e.pointerId); } catch (_) { /* noop */ }
 
       const onMove = (ev) => {
         if (!dragging) return;
