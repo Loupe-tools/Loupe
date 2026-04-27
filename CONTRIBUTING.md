@@ -175,7 +175,7 @@ flowchart TD
     RD --> SE1[Build DOM container]
     RD --> SE2["Mutate app.findings:<br/>{ risk, externalRefs[],<br/>interestingStrings[],<br/>metadata, ... }"]
     RD --> SE3["Optionally stamp<br/>app.currentResult.yaraBuffer<br/>app.currentResult.binary"]
-    RD --> SE4[Set container._rawText<br/>(must be LF-normalised)]
+    RD --> SE4["Set container._rawText<br/>(must be LF-normalised)"]
     RD --> SE5["pushIOC(findings, {type:IOC.X, value, severity})"]
 
     %% Mount + sidebar
