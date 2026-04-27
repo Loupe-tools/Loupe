@@ -326,6 +326,16 @@ function looksLikeIpVersionString(ipPart) {
 //     intact: in those, the chars before the trailing digits are not a
 //     dotted letters-only component.
 //
+//     CRITICAL: rule 2 is scoped to bare-host strings only — applied
+//     when the input has no `/`, `?`, or `#` after any `://` protocol.
+//     OCSP responder URLs in X.509 / PE strings always end at the host
+//     (no path); general-text URLs that happen to end in a dotted
+//     file extension (`…/song.mp3`, `…/clip.mp4`, `…/page.html5`,
+//     `…/data.utf8`) carry a path and must NOT be touched. Without
+//     this scoping, every URL ending in a 2+-letter file extension
+//     followed by 1–3 digits had its trailing digits silently
+//     stripped — see review notes #1 from the 2026-04-27 audit.
+//
 // Centralised here so the three callers (PE strings extractor, X.509
 // IA5String cleaner, app-load.js URL processor) cannot drift independently
 // — a recent commit had to touch all three identical regexes in lockstep.
@@ -333,7 +343,17 @@ const DER_TAIL_RX_TERMINATED = /([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/;
 const DER_TAIL_RX_TLD        = /(\.[A-Za-z]{2,})[0-9]{1,3}$/;
 function stripDerTail(s) {
   if (typeof s !== 'string') return s;
-  return s.replace(DER_TAIL_RX_TERMINATED, '$1').replace(DER_TAIL_RX_TLD, '$1');
+  s = s.replace(DER_TAIL_RX_TERMINATED, '$1');
+  // Bare-host scoping for the TLD rule: only fire when the string has no
+  // path/query/fragment past the protocol (or none at all for IA5String /
+  // raw hostname inputs). `_afterProto` slices off `proto://` so the test
+  // ignores the slashes that are part of the protocol separator itself.
+  const protoIdx = s.indexOf('://');
+  const afterProto = protoIdx >= 0 ? s.slice(protoIdx + 3) : s;
+  if (!/[\/?#]/.test(afterProto)) {
+    s = s.replace(DER_TAIL_RX_TLD, '$1');
+  }
+  return s;
 }
 
 // ── XML namespace constants ───────────────────────────────────────────────────
