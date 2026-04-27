@@ -19,6 +19,17 @@
 //   - loupe_nicelist_builtin_enabled  — '0' | '1' (owned by nicelist.js;
 //                                        toggled here via _NicelistUser)
 //   - loupe_nicelists_user            — JSON blob, owned by nicelist-user.js
+//   - loupe_ioc_worker_disabled       — '0' | '1'. Forces the synchronous
+//                                        in-tree IOC mass-extract path even
+//                                        on files larger than the
+//                                        IOC_WORKER_THRESHOLD_BYTES (256 KB)
+//                                        async cutover. Off by default.
+//                                        Useful for A/B benchmarking and
+//                                        for analysts on Firefox `file://`
+//                                        who want predictable single-thread
+//                                        timing without the worker probe
+//                                        round-trip. Read at the dispatch
+//                                        site in `app-load.js`.
 //
 // A one-shot migration from the legacy `loupe_summary_chars` (integer 1..10
 // step) is applied on boot: steps 1–4 → 'default', 5–8 → 'large', 9–10 →
@@ -222,6 +233,28 @@ extendApp({
       });
       phaseGrid.appendChild(tile);
     }
+
+    // ── Advanced: IOC worker toggle ────────────────────────────────────
+    // Off-thread IOC mass-extract is the default for non-timeline files
+    // larger than 256 KB (Batch A of the 2026-04-27 perf/ReDoS plan).
+    // This toggle forces the synchronous in-tree path even on large
+    // files — useful for A/B benchmarking and for analysts who want
+    // predictable single-thread timing on Firefox `file://`. Off by
+    // default. Read at the dispatch site in `app-load.js`.
+    const iocRow = document.createElement('div');
+    iocRow.className = 'settings-row';
+    const iocDisabled = safeStorage.get('loupe_ioc_worker_disabled') === '1';
+    iocRow.innerHTML = `
+      <div class="settings-row-label">Off-thread IOC scan</div>
+      <label class="settings-checkbox-row">
+        <input type="checkbox" id="settings-ioc-worker-disabled" ${iocDisabled ? '' : 'checked'}>
+        <span class="settings-checkbox-label">Run IOC mass-extract in a Web Worker on files larger than 256 KB</span>
+      </label>`;
+    body.appendChild(iocRow);
+    iocRow.querySelector('#settings-ioc-worker-disabled').addEventListener('change', (e) => {
+      // Inverted — checkbox represents "enabled", storage key represents "disabled".
+      safeStorage.set('loupe_ioc_worker_disabled', e.target.checked ? '0' : '1');
+    });
 
   },
 

@@ -29,40 +29,11 @@ function _md5(bytes) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Defanged URL/IP/email refanging — converts security-defanged IOCs to normal
+// Defanged URL/IP/email refanging — `_refangString` is defined in
+// `src/ioc-extract.js` (worker-safe global) and shared between the host IOC
+// shim, the IOC worker, and the EML / MSG renderers. Do NOT redeclare it
+// here.
 // ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Refang a defanged URL, IP, domain, or email address.
- * Common defang patterns: hxxp → http, [.] → ., [@] → @, [://] → ://
- * @param {string} str - Potentially defanged string.
- * @returns {object|null} - { original, refanged } or null if not defanged.
- */
-function _refangString(str) {
-  if (!str || typeof str !== 'string') return null;
-
-  let refanged = str;
-  let changed = false;
-
-  // Protocol: hxxp → http, hxxps → https (case-insensitive)
-  refanged = refanged.replace(/\bhxxps?/gi, m => {
-    changed = true;
-    return m.toLowerCase().replace('xx', 'tt');
-  });
-
-  // Protocol separator variants: [://], [:], [:/], etc. → ://
-  refanged = refanged.replace(/\[:\/\/\]/g, () => { changed = true; return '://'; });
-  refanged = refanged.replace(/\[:\/\]/g, () => { changed = true; return '://'; });
-  refanged = refanged.replace(/\[:\]/g, () => { changed = true; return ':'; });
-
-  // Dots: [.] → .
-  refanged = refanged.replace(/\[\.\]/g, () => { changed = true; return '.'; });
-
-  // At symbol: [@] → @
-  refanged = refanged.replace(/\[@\]/g, () => { changed = true; return '@'; });
-
-  return changed ? { original: str, refanged } : null;
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // App — file loading, hashing, interesting-string extraction
@@ -185,6 +156,19 @@ extendApp({
     // WorkerManager probe has already failed.
     if (window.WorkerManager && WorkerManager.cancelEncoded) {
       WorkerManager.cancelEncoded();
+    }
+
+    // ── IOC-extract worker cancellation ─────────────────────
+    // Same rationale as the YARA / Timeline / Encoded cancellations
+    // above — an in-flight off-thread IOC mass-extract from a previous
+    // file (kicked off by `_kickIocExtractWorker` for non-timeline files
+    // larger than IOC_WORKER_THRESHOLD_BYTES) would otherwise patch its
+    // results into the new file's findings via the resolve handler.
+    // Terminate it now so the upcoming load owns `findings.interesting-
+    // Strings` cleanly. Cheap no-op when nothing is in flight or when the
+    // WorkerManager probe has already failed.
+    if (window.WorkerManager && WorkerManager.cancelIocExtract) {
+      WorkerManager.cancelIocExtract();
     }
 
     // ── pdf.worker cancellation ───────────────────────────────────────
@@ -364,21 +348,67 @@ extendApp({
       // didn't attach `_rawText`).
       const analysisText = result.rawText;
       const rendererIOCs = this.findings.interestingStrings || [];
-      const extracted = this._extractInterestingStrings(analysisText, this.findings);
-      this.findings.interestingStrings = [...rendererIOCs, ...extracted];
-      // Stash per-type truncation info (attached as side-channel props on
-      // the returned array in _extractInterestingStrings — array spread
-      // below copies only indexed elements, so these props are lost from
-      // the flattened findings.interestingStrings list) so the sidebar
-      // can render a "Showing N of M <type>" note when extraction was
-      // capped. Only attach when something was actually dropped — keeps
-      // the property absent (not an empty map) in the common case for
-      // easy truthy checks.
-      if (extracted._droppedByType && extracted._droppedByType.size > 0) {
-        this.findings._iocTruncation = {
-          droppedByType: extracted._droppedByType,
-          totalSeenByType: extracted._totalSeenByType,
+      // ── IOC mass-extract: sync vs worker dispatch (Batch A) ─────
+      // Files <= IOC_WORKER_THRESHOLD_BYTES (256 KB), and any file when
+      // workers are unavailable (Firefox `file://`) or the analyst has
+      // disabled the worker path via `loupe_ioc_worker_disabled`, run
+      // the synchronous shim — same byte-equivalent output as before.
+      // Above the threshold the regex sweep (URL / email / IPv4 /
+      // Windows path / UNC / Unix path / registry key / defanged variants)
+      // ships to `WorkerManager.runIocExtract` and a visible "Scanning
+      // IOCs…" placeholder row holds the slot in the sidebar until the
+      // worker resolves. Timeline-routed files never reach this code
+      // (`src/app/timeline/timeline-router.js:16-24`) so the analyser-
+      // bypass invariant is preserved by construction. See
+      // plans/2026-04-27-loupe-perf-redos-followup-finish-v1.md (Batch A).
+      const IOC_WORKER_THRESHOLD_BYTES = 262144;
+      const _iocWorkerDisabled = (typeof safeStorage !== 'undefined')
+        && safeStorage.get('loupe_ioc_worker_disabled') === '1';
+      const _iocWorkerEligible =
+        !_iocWorkerDisabled
+        && analysisText.length > IOC_WORKER_THRESHOLD_BYTES
+        && typeof WorkerManager !== 'undefined'
+        && WorkerManager.workersAvailable && WorkerManager.workersAvailable()
+        && typeof WorkerManager.runIocExtract === 'function';
+      if (_iocWorkerEligible) {
+        // Async path. Insert a placeholder INFO row so the sidebar shows
+        // a "Scanning IOCs…" indicator while the worker is in flight.
+        // The placeholder carries `_iocScanPlaceholder: true` so the
+        // resolve handler can locate + remove it without touching real
+        // findings. `_kickIocExtractWorker` schedules the dispatch + the
+        // patch-and-rerender step, guarded by the render epoch so a
+        // superseding load bails silently.
+        const placeholder = {
+          type: IOC.INFO,
+          url: 'Scanning IOCs…',
+          severity: 'info',
+          note: 'Off-thread IOC scan in progress',
+          _iocScanPlaceholder: true,
         };
+        this.findings.interestingStrings = [...rendererIOCs, placeholder];
+        // Capture snapshots needed by the resolve handler. The renderer
+        // may have populated `findings.modules` (VBA sources) before this
+        // point — flatten them now so the worker sees the same input as
+        // the synchronous shim.
+        const vbaModuleSources = (this.findings.modules || []).map(m => m.source || '');
+        this._kickIocExtractWorker(analysisText, vbaModuleSources, file.name, epoch);
+      } else {
+        const extracted = this._extractInterestingStrings(analysisText, this.findings);
+        this.findings.interestingStrings = [...rendererIOCs, ...extracted];
+        // Stash per-type truncation info (attached as side-channel props on
+        // the returned array in _extractInterestingStrings — array spread
+        // below copies only indexed elements, so these props are lost from
+        // the flattened findings.interestingStrings list) so the sidebar
+        // can render a "Showing N of M <type>" note when extraction was
+        // capped. Only attach when something was actually dropped — keeps
+        // the property absent (not an empty map) in the common case for
+        // easy truthy checks.
+        if (extracted._droppedByType && extracted._droppedByType.size > 0) {
+          this.findings._iocTruncation = {
+            droppedByType: extracted._droppedByType,
+            totalSeenByType: extracted._totalSeenByType,
+          };
+        }
       }
 
       // ── Encoded content detection ───────────────────────────
@@ -1951,276 +1981,142 @@ extendApp({
 
   // ── Interesting string extraction ────────────────────────────────────────
   //
+  // Thin shim around the worker-marshalable `extractInterestingStringsCore`
+  // (src/ioc-extract.js). The pure regex-only core lives there so the same
+  // logic can run inside `src/workers/ioc-extract.worker.js` for large
+  // non-timeline files (see `_extractInterestingStringsAsync` below).
+  //
   // Per-type IOC quota: instead of a single global cap applied at return
   // time (which favoured whichever IOC class was extracted first — URLs —
   // and silently dropped everything that came after in large files like
-  // a 1000-row CSV with both a URL and an email column), we cap each
-  // `IOC.*` type independently. `_droppedByType` is exposed on the return
-  // value so the sidebar can surface a "Showing N of M <type>" note.
+  // a 1000-row CSV with both a URL and an email column), the core caps
+  // each `IOC.*` type independently. `_droppedByType` is exposed on the
+  // return value so the sidebar can surface a "Showing N of M <type>" note.
+  //
+  // **Synchronous** by design — used by the small-file path and by the
+  // workers-unavailable / async-rejection fallback. The worker-side
+  // dispatch lives in `_extractInterestingStringsAsync`.
   _extractInterestingStrings(text, findings) {
-    const seen = new Set([...(findings.externalRefs || []), ...(findings.interestingStrings || [])].map(r => r.url));
-    const results = [];
-    const PER_TYPE_CAP = 200;
-    const typeCounts = new Map();       // type -> accepted count
-    const droppedByType = new Map();    // type -> dropped count (accepted would-have-been)
-    const totalSeenByType = new Map();  // type -> total seen (accepted + dropped)
-
-    // Enhanced add function that tracks source location for click-to-highlight.
-    // Returns true if the entry was accepted, false if deduped or quota-dropped.
-    const add = (type, val, sev, note, sourceInfo) => {
-      val = (val || '').trim().replace(/[.,;:!?)\]>]+$/, '');
-      if (!val || val.length < 4 || val.length > 400 || seen.has(val)) return false;
-      seen.add(val);
-      // Per-type quota check. We still count the drop so the sidebar can
-      // tell the user extraction was truncated for this type.
-      const accepted = typeCounts.get(type) || 0;
-      totalSeenByType.set(type, (totalSeenByType.get(type) || 0) + 1);
-      if (accepted >= PER_TYPE_CAP) {
-        droppedByType.set(type, (droppedByType.get(type) || 0) + 1);
-        return false;
-      }
-      typeCounts.set(type, accepted + 1);
-      const entry = { type, url: val, severity: sev };
-      if (note) entry.note = note;
-      // Source location info for click-to-highlight functionality
-      if (sourceInfo) {
-        entry._sourceOffset = sourceInfo.offset;
-        entry._sourceLength = sourceInfo.length;
-        // For SafeLinks: store the wrapper URL text to highlight instead of extracted value
-        if (sourceInfo.highlightText) entry._highlightText = sourceInfo.highlightText;
-      }
-      results.push(entry);
-      return true;
-    };
-
-    // Helper to process a URL — checks for SafeLink wrappers and adds both.
-    // Trailing-punctuation strip first (consumer-facing junk like `).`, `;`),
-    // then DER tail-junk strip via the shared `stripDerTail` (constants.js)
-    // so this stays in lockstep with the PE / X.509 callers.
-    const processUrl = (rawUrl, baseSeverity, matchOffset, matchLength) => {
-      const url = stripDerTail((rawUrl || '').trim().replace(/[.,;:!?)\]>]+$/, ''));
-      if (!url || url.length < 6) return;
-
-      const unwrapped = EncodedContentDetector.unwrapSafeLink(url);
-      if (unwrapped) {
-        // Add the wrapper URL as info-level (with its own source location)
-        add(IOC.URL, url, 'info', `${unwrapped.provider} wrapper`, {
-          offset: matchOffset,
-          length: matchLength
-        });
-        // Add the extracted original URL with higher severity
-        // Point _highlightText to the wrapper URL so clicking highlights the wrapper
-        add(IOC.URL, unwrapped.originalUrl, 'high', `Extracted from ${unwrapped.provider}`, {
-          offset: matchOffset,
-          length: matchLength,
-          highlightText: url  // Highlight the wrapper, not the extracted URL
-        });
-        // Add any extracted emails from Microsoft SafeLinks data parameter
-        // These also point back to the wrapper URL for highlighting
-        for (const email of unwrapped.emails) {
-          add(IOC.EMAIL, email, 'medium', 'Extracted from SafeLinks', {
-            offset: matchOffset,
-            length: matchLength,
-            highlightText: url
-          });
-        }
-      } else {
-        // Regular URL — add as-is with source location
-        add(IOC.URL, url, baseSeverity, null, {
-          offset: matchOffset,
-          length: matchLength
-        });
-      }
-    };
-
-    // Scan rendered text + VBA modules
-    const sources = [text, ...(findings.modules || []).map(m => m.source || '')];
-    const full = sources.join('\n');
-
-    // Extract and process URLs (check for SafeLinks) — now with offset tracking
-    // Track URL spans so we can suppress redundant IP matches that live inside a URL
-    // (e.g. https://1.2.3.4:8080/ would otherwise surface the IP as a separate IOC).
-    const urlSpans = [];
-    for (const m of full.matchAll(/https?:\/\/[^\s"'<>()\[\]{}\u0000-\u001F]{6,}/g)) {
-      urlSpans.push([m.index, m.index + m[0].length]);
-      processUrl(m[0], 'info', m.index, m[0].length);
-    }
-    const _insideUrl = (idx) => urlSpans.some(([s, e]) => idx >= s && idx < e);
-
-    // Other IOC types — now with offset tracking
-    for (const m of full.matchAll(/\b[a-zA-Z0-9._%+\-]{2,}@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,6}\b/g)) {
-      add(IOC.EMAIL, m[0], 'info', null, { offset: m.index, length: m[0].length });
-    }
-    // IPv4 extraction — URL > Domain > IP severity tiering.
-    // Baseline is 'info' (per IOC_CANONICAL_SEVERITY). Escalate to 'medium' only when
-    // a port is attached (`1.2.3.4:8080`) — that's almost never a version number.
-    // Private / loopback / link-local / reserved / multicast / broadcast IPs are
-    // dropped entirely: they're noise in this generic text scan, and structural
-    // renderers (EVTX network events, x509 SAN, plist, etc.) keep their own medium.
-    // Anti-version lookbehind kills `v1.2.3.4`, `build 2.0.0.1`, etc.
-    const _isReservedIp = (octets) => {
-      const [a, b] = octets;
-      if (a === 0) return true;                          // 0.0.0.0/8
-      if (a === 10) return true;                         // 10/8 private
-      if (a === 127) return true;                        // loopback
-      if (a === 169 && b === 254) return true;           // link-local
-      if (a === 172 && b >= 16 && b <= 31) return true;  // 172.16/12 private
-      if (a === 192 && b === 168) return true;           // 192.168/16 private
-      if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
-      if (a >= 224) return true;                         // multicast + reserved + 255.255.255.255
-      return false;
-    };
-    const ipRe = /(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)(?::(\d{1,5}))?(?![\d.])/g;
-    for (const m of full.matchAll(ipRe)) {
-      // Suppress IPs that live inside an already-captured URL — the URL row covers it.
-      if (_insideUrl(m.index)) continue;
-      // Anti-version: skip if preceded (within ~12 chars) by v/ver/version/build/release/rev/revision/compiled.
-      const preceding = full.slice(Math.max(0, m.index - 16), m.index);
-      if (/\b(?:v|ver|version|build|release|rev|revision|compiled)\b[\s.:#=_-]*$/i.test(preceding)) continue;
-      const ipPart = m[0].split(':')[0];
-      const parts = ipPart.split('.').map(Number);
-      if (!parts.every(p => p <= 255)) continue;
-      if (_isReservedIp(parts)) continue;                // drop private / loopback / reserved
-      const port = m[1] ? Number(m[1]) : null;
-      if (port !== null && (port < 1 || port > 65535)) continue;
-      // Version-string suppression — `<4 digits` rejects truncated /
-      // fragmentary dotted patterns the regex lets through. Single-digit-
-      // octet quads like `6.0.0.0` are preserved as collateral; the
-      // threshold is calibrated to keep public DNS resolvers (`8.8.8.8`,
-      // `1.1.1.1`, …). See `looksLikeIpVersionString` in constants.js.
-      // Skip the filter entirely when a port is attached: a port suffix is
-      // strong evidence the value is a network endpoint, not a version.
-      if (port === null && looksLikeIpVersionString(ipPart)) continue;
-      const sev = port !== null ? 'medium' : 'info';
-      add(IOC.IP, m[0], sev, port !== null ? 'With port' : null, { offset: m.index, length: m[0].length });
-    }
-
-    for (const m of full.matchAll(/[A-Za-z]:\\(?:[\w\-. ]+\\)+[\w\-. ]{2,}/g)) {
-      const path = _trimPathExtGarbage(m[0]);
-      add(IOC.FILE_PATH, path, 'medium', null, { offset: m.index, length: path.length });
-    }
-    for (const m of full.matchAll(/\\\\[\w.\-]{2,}(?:\\[\w.\-]{1,})+/g)) {
-      add(IOC.UNC_PATH, m[0], 'medium', null, { offset: m.index, length: m[0].length });
-    }
-    // Unix file paths (e.g. /usr/bin/bash, /etc/passwd, /tmp/payload)
-    // Requires at least 2 path components to avoid false positives on single slashes
-    for (const m of full.matchAll(/\/(?:usr|etc|bin|sbin|tmp|var|opt|home|root|dev|proc|sys|lib|mnt|run|srv|Library|Applications|System|private)\/[\w.\-/]{2,}/g)) {
-      add(IOC.FILE_PATH, m[0], 'info', null, { offset: m.index, length: m[0].length });
-    }
-    // Windows registry keys (e.g. HKEY_LOCAL_MACHINE\SOFTWARE\..., HKLM\...)
-    for (const m of full.matchAll(/\b(?:HKEY_(?:LOCAL_MACHINE|CURRENT_USER|CLASSES_ROOT|USERS|CURRENT_CONFIG)|HK(?:LM|CU|CR|U|CC))\\[\w\-. \\]{4,}/g)) {
-      add(IOC.REGISTRY_KEY, m[0], 'medium', null, { offset: m.index, length: m[0].length });
-    }
-
-    // ── Defanged IOC extraction ──────────────────────────────────────────────
-    // Detect defanged URLs (hxxp[s][://]...[.]...), IPs (1[.]2[.]3[.]4), and emails (user[@]domain[.]com)
-    // Refang them and add to IOCs with source highlighting pointing to the defanged original
-
-    // Defanged URLs: hxxp/hxxps with optional [://] and [.] in domain
-    // Pattern matches: hxxps[://]www[.]example[.]com/path or hxxp://example[.]com
-    const defangedUrlRe = /\bhxxps?(?:\[:\/?\/?\]|:\/\/)[^\s"'<>]{4,}/gi;
-    for (const m of full.matchAll(defangedUrlRe)) {
-      const result = _refangString(m[0]);
-      if (result && result.refanged.match(/^https?:\/\//i)) {
-        // Clean trailing punctuation from refanged URL
-        const cleaned = result.refanged.replace(/[.,;:!?)\]>]+$/, '');
-        if (!seen.has(cleaned) && cleaned.length >= 10) {
-          add(IOC.URL, cleaned, 'medium', 'Refanged', {
-            offset: m.index,
-            length: m[0].length,
-            highlightText: m[0]
-          });
-        }
-      }
-    }
-
-    // Defanged domains/URLs with [.] but no hxxp prefix (e.g., www[.]evil[.]com or evil[.]com/path)
-    // Must have at least one [.] to be considered defanged
-    const defangedDomainRe = /\b[\w\-]+(?:\[\.\][\w\-]+)+(?:\/[^\s"'<>]*)?\b/g;
-    for (const m of full.matchAll(defangedDomainRe)) {
-      const result = _refangString(m[0]);
-      if (result) {
-        const cleaned = result.refanged.replace(/[.,;:!?)\]>]+$/, '');
-        // Check if it looks like a valid domain (has at least one dot and a TLD-like ending)
-        if (!seen.has(cleaned) && /^[\w\-]+\.[\w\-]+/.test(cleaned) && cleaned.length >= 4) {
-          add(IOC.URL, cleaned, 'medium', 'Refanged domain', {
-            offset: m.index,
-            length: m[0].length,
-            highlightText: m[0]
-          });
-        }
-      }
-    }
-
-    // Defanged IPs: 192[.]168[.]1[.]1
-    const defangedIpRe = /(?<![\d.])\d{1,3}\[\.\]\d{1,3}\[\.\]\d{1,3}\[\.\]\d{1,3}(?![\d.])/g;
-    for (const m of full.matchAll(defangedIpRe)) {
-      const result = _refangString(m[0]);
-      if (result) {
-        const parts = result.refanged.split('.').map(Number);
-        if (parts.length === 4 && parts.every(p => p >= 0 && p <= 255) && !result.refanged.startsWith('0.')) {
-          if (!seen.has(result.refanged)) {
-            add(IOC.IP, result.refanged, 'medium', 'Refanged', {
-              offset: m.index,
-              length: m[0].length,
-              highlightText: m[0]
-            });
-          }
-        }
-      }
-    }
-
-    // Defanged emails: user[@]domain[.]com
-    const defangedEmailRe = /\b[a-zA-Z0-9._%+\-]+\[@\][a-zA-Z0-9.\-\[\]]+\b/g;
-    for (const m of full.matchAll(defangedEmailRe)) {
-      const result = _refangString(m[0]);
-      if (result) {
-        const cleaned = result.refanged.replace(/[.,;:!?)\]>]+$/, '');
-        // Validate it looks like an email after refanging
-        if (!seen.has(cleaned) && /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(cleaned)) {
-          add(IOC.EMAIL, cleaned, 'medium', 'Refanged', {
-            offset: m.index,
-            length: m[0].length,
-            highlightText: m[0]
-          });
-        }
-      }
-    }
-
-    // VBA-specific URL scan with higher severity (also check for SafeLinks)
-    // Note: VBA modules are appended to 'full' after the main text, so offsets
-    // are relative to 'full' and will work for highlighting in combined view
-    for (const mod of (findings.modules || [])) {
-      for (const m of (mod.source || '').matchAll(/https?:\/\/[^\s"']{6,}/g)) {
-        const v = m[0].replace(/[.,;:!?)\]>]+$/, '');
-        if (!seen.has(v)) {
-          const unwrapped = EncodedContentDetector.unwrapSafeLink(v);
-          if (unwrapped) {
-            add(IOC.URL, v, 'medium', `${unwrapped.provider} wrapper (VBA)`);
-            add(IOC.URL, unwrapped.originalUrl, 'critical', `Extracted from ${unwrapped.provider} (VBA)`, {
-              highlightText: v
-            });
-            for (const email of unwrapped.emails) {
-              add(IOC.EMAIL, email, 'high', 'Extracted from SafeLinks (VBA)', {
-                highlightText: v
-              });
-            }
-          } else {
-            // Route through add() so this branch is subject to the same
-            // per-type quota and dedup logic as every other URL push.
-            // (seen.has(v) was already checked above; add() re-checks and
-            // is idempotent.)
-            add(IOC.URL, v, 'high');
-          }
-        }
-      }
-    }
-    // Return results plus the drop map so the caller can stash truncation
-    // info on `findings` for sidebar surfacing. Shape kept backward-ish:
-    // callers that still spread the return value get an array-like result.
-    results._droppedByType = droppedByType;
-    results._totalSeenByType = totalSeenByType;
+    const existingValues = [
+      ...(findings.externalRefs || []),
+      ...(findings.interestingStrings || []),
+    ].map(r => r.url);
+    const vbaModuleSources = (findings.modules || []).map(m => m.source || '');
+    const out = extractInterestingStringsCore(text, { existingValues, vbaModuleSources });
+    const results = out.findings;
+    // Re-attach side-channel maps (would otherwise be lost when the host
+    // spreads `extracted` into `findings.interestingStrings`).
+    results._droppedByType = out.droppedByType;
+    results._totalSeenByType = out.totalSeenByType;
     return results;
+  },
+
+  // ── Async IOC mass-extract dispatch (Batch A) ────────────────────────────
+  //
+  // Off-thread regex sweep for non-timeline files larger than
+  // IOC_WORKER_THRESHOLD_BYTES. Fires `WorkerManager.runIocExtract`,
+  // patches the resolved findings into `this.findings.interestingStrings`
+  // (deduped against rows already pushed by the renderer / encoded-content
+  // scan), removes the "Scanning IOCs…" placeholder, and asks the sidebar
+  // to repaint.
+  //
+  // Supersession guards (the only way this method should bail without
+  // patching findings):
+  //   • render epoch advance — a newer load owns the UI, exit silently.
+  //   • `'superseded'` rejection — `cancelIocExtract` was called for the
+  //     same reason; exit silently.
+  // For every other rejection (`'workers-unavailable'`, watchdog, worker
+  // error) the synchronous in-tree shim runs as a fallback so the analyst
+  // still sees IOCs from the file. The placeholder is always removed.
+  _kickIocExtractWorker(text, vbaModuleSources, fileName, epoch) {
+    // Track the active dispatch on the App so future calls (e.g. quick
+    // back-to-back loads) can supersede us via `cancelIocExtract`. We
+    // don't await here — the caller has already painted the placeholder
+    // and continues with renderer / encoded-content / sidebar work.
+    WorkerManager.runIocExtract(text, { vbaModuleSources }).then((out) => {
+      this._patchIocFindingsFromWorker(out, epoch);
+    }).catch((err) => {
+      // Bail silently on supersession — `cancelIocExtract` was called by
+      // a newer `_loadFile` and the placeholder will be wiped by the new
+      // load's render pass. Same posture as the encoded-content path.
+      if (err && err.message === 'superseded') return;
+      if (epoch !== this._renderEpoch) return;
+      // Worker probe failed, watchdog timeout, or worker reported error —
+      // fall back to the synchronous shim so the analyst still sees IOCs.
+      // `silent:true` keeps the IOC list clean while the breadcrumb
+      // console.warn inside `_reportNonFatal` preserves the diagnostic
+      // for devs (matches the encoded-content fallback posture).
+      if (err && err.message !== 'workers-unavailable') {
+        this._reportNonFatal('ioc-extract-worker-fallback', err, { silent: true });
+      }
+      try {
+        // Strip the placeholder before the sync shim runs so it doesn't
+        // bleed into the existingValues dedup set.
+        this._removeIocPlaceholder();
+        const extracted = this._extractInterestingStrings(text, this.findings);
+        this.findings.interestingStrings = [
+          ...(this.findings.interestingStrings || []),
+          ...extracted,
+        ];
+        if (extracted._droppedByType && extracted._droppedByType.size > 0) {
+          this.findings._iocTruncation = {
+            droppedByType: extracted._droppedByType,
+            totalSeenByType: extracted._totalSeenByType,
+          };
+        }
+        this._renderSidebar(fileName, this._currentAnalyzer || null);
+      } catch (fallbackErr) {
+        this._reportNonFatal('ioc-extract-fallback-shim', fallbackErr);
+      }
+    });
+  },
+
+  _removeIocPlaceholder() {
+    const list = this.findings.interestingStrings;
+    if (!Array.isArray(list)) return;
+    const idx = list.findIndex(r => r && r._iocScanPlaceholder);
+    if (idx >= 0) list.splice(idx, 1);
+  },
+
+  _patchIocFindingsFromWorker(out, epoch) {
+    // Render-epoch supersession guard — a newer load owns the UI, do
+    // nothing. Mirrors the QrDecoder async-snapshot pattern (see
+    // CONTRIBUTING.md → Renderer Contract).
+    if (epoch !== this._renderEpoch) return;
+    this._removeIocPlaceholder();
+    // Dedup against rows already in `findings.interestingStrings` (the
+    // renderer's own pushIOC rows captured pre-dispatch + encoded-content
+    // IOCs the post-render scan added while the worker was in flight)
+    // and against `externalRefs`. Matches the `existingValues` set the
+    // synchronous shim builds via the same union.
+    const existingValues = new Set([
+      ...((this.findings.externalRefs || []).map(r => r.url)),
+      ...((this.findings.interestingStrings || []).map(r => r.url)),
+    ]);
+    const fresh = [];
+    for (const r of (out.findings || [])) {
+      if (!r || !r.url || existingValues.has(r.url)) continue;
+      existingValues.add(r.url);
+      fresh.push(r);
+    }
+    this.findings.interestingStrings = [
+      ...(this.findings.interestingStrings || []),
+      ...fresh,
+    ];
+    if (out.droppedByType && out.droppedByType.size > 0) {
+      this.findings._iocTruncation = {
+        droppedByType: out.droppedByType,
+        totalSeenByType: out.totalSeenByType,
+      };
+    }
+    // Repaint — `_renderSidebar` snapshots a fresh findings view from
+    // `this.findings` so the patched IOC list lands in the next paint.
+    // The `_currentAnalyzer` lookup mirrors the deferred-refresh path in
+    // `App.updateFindings`.
+    this._renderSidebar(
+      (this._fileMeta && this._fileMeta.name) || '',
+      this._currentAnalyzer || null
+    );
   },
 
 });

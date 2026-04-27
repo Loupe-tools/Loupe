@@ -281,6 +281,17 @@ EARLY_JS_FILES = [
 APP_JS_FILES = [
     'src/constants.js',
 
+    # ioc-extract.js — pure regex-based IOC extraction core. Defines
+    # `extractInterestingStringsCore(text, opts)` plus the `_unwrapSafeLink`
+    # / `_refangString` worker-safe helpers. Loaded as a host module here AND
+    # concatenated into `__IOC_EXTRACT_WORKER_BUNDLE_SRC` so the worker can
+    # call the same core. Must load AFTER constants.js (uses IOC,
+    # `_trimPathExtGarbage`, `looksLikeIpVersionString`, `stripDerTail`) and
+    # BEFORE any consumer (`app-load.js` shim, EML / MSG renderers that share
+    # `_refangString`). See CONTRIBUTING.md → Worker subsystem and
+    # plans/2026-04-27-loupe-perf-redos-followup-finish-v1.md (Batch A).
+    'src/ioc-extract.js',
+
     # storage.js — single chokepoint for every `localStorage.*` access in the
     # bundle. Exposes `window.safeStorage.{get,set,remove,getJSON,setJSON,
     # keys,removeMatching}`. Pure ceremony — try/catch + JSON serialise. Must
@@ -735,6 +746,29 @@ encoded_worker_js = (
     + '`;\n'
 )
 
+# IOC mass-extract worker.
+# Bundle order matters — the shim defines the IOC table plus the host-side
+# helpers (`looksLikeIpVersionString`, `stripDerTail`, `_trimPathExtGarbage`)
+# that `src/ioc-extract.js` reads at module load. The shim AND the host
+# `src/ioc-extract.js` are mirrored into the worker bundle: the host bundle
+# already loads `src/ioc-extract.js` as a regular `JS_FILES` entry (so the
+# `_extractInterestingStrings` shim can call into the same core
+# synchronously), and the worker bundle re-includes it here. The
+# `ioc-extract.worker.js` trailer carries the `self.onmessage` dispatcher.
+#
+# `scripts/check_shim_parity.py` diffs the shim's IOC table / helper bodies
+# against `src/constants.js` so silent drift is caught at build time.
+_ioc_extract_worker_bundle_src = (
+    read('src/workers/ioc-extract-worker-shim.js') + '\n'
+    + read('src/ioc-extract.js') + '\n'
+    + read('src/workers/ioc-extract.worker.js')
+)
+ioc_extract_worker_js = (
+    'const __IOC_EXTRACT_WORKER_BUNDLE_SRC = `'
+    + _esc_for_template(_ioc_extract_worker_bundle_src)
+    + '`;\n'
+)
+
 
 # ── Tier 5 — split the App bundle into FOUR inline `<script>` blocks ─────────
 
@@ -822,6 +856,7 @@ _block_srcs[0] = (
     + yara_worker_js
     + timeline_worker_js
     + encoded_worker_js
+    + ioc_extract_worker_js
     + _block_srcs[0]
 )
 

@@ -86,9 +86,10 @@ window.WorkerManager = (function () {
   // `setTimeout`, `reject`, and captured payload reference instead of
   // letting them sit in the closure for the full timeout window.
   const _channels = {
-    yara:     { active: null, token: 0, currentJob: null },
-    timeline: { active: null, token: 0, currentJob: null },
-    encoded:  { active: null, token: 0, currentJob: null },
+    yara:       { active: null, token: 0, currentJob: null },
+    timeline:   { active: null, token: 0, currentJob: null },
+    encoded:    { active: null, token: 0, currentJob: null },
+    iocExtract: { active: null, token: 0, currentJob: null },
   };
 
   function _probe() {
@@ -474,6 +475,60 @@ window.WorkerManager = (function () {
    *  @param {object}      [options]     forwarded to the detector:
    *                                       fileType?, mimeAttachments?,
    *                                       maxRecursionDepth?, maxCandidatesPerType? */
+  /** Run an IOC mass-extract pass in a worker. Returns a Promise.
+   *  Resolves with `{ findings, droppedByType, totalSeenByType, parseMs }`
+   *  — the same triple `extractInterestingStringsCore` returns on the host
+   *  side, with `droppedByType` / `totalSeenByType` rehydrated as Maps by
+   *  this decoder (the worker postbacks them as plain `[k,v][]` arrays
+   *  because Maps don't survive structured cloning cleanly across all
+   *  browsers we target).
+   *
+   *  Rejects with `Error('workers-unavailable')` when the probe failed,
+   *  `Error('superseded')` when a newer load supersedes us,
+   *  `Error(...)` with `_watchdogTimeout=true` on timeout, or the worker's
+   *  reported error otherwise. Callers fall back to the synchronous
+   *  in-tree `_extractInterestingStrings` shim on any rejection.
+   *
+   *  Unlike the other channels this one does NOT take an ArrayBuffer —
+   *  the IOC pass operates on `_rawText` (already decoded host-side) and
+   *  a small flat `vbaModuleSources` string array. Both are passed by
+   *  structured clone; nothing is transferred. The host keeps the text
+   *  for the renderer / YARA / hashing pipeline.
+   *
+   *  This channel is intentionally **never** invoked for timeline-routed
+   *  files (CSV / TSV / EVTX / SQLite browser-history) — those routes
+   *  short-circuit `_loadFile` before the analyser block at
+   *  `src/app/app-load.js:367` and never call `_extractInterestingStrings`.
+   *  See the bypass invariant at `src/app/timeline/timeline-router.js:16-24`.
+   *
+   *  @param {string}   text                    augmented `_rawText`
+   *  @param {object}   [opts]
+   *  @param {string[]} [opts.vbaModuleSources] flattened VBA module sources
+   *  @param {boolean}  [opts.formatIsHtml]     true when the renderer
+   *                                            already extracted URLs from
+   *                                            HTML href/src attrs (caller
+   *                                            still does that on the host) */
+  function runIocExtract(text, opts) {
+    const safeOpts = opts || {};
+    return _runWorkerJob({
+      channel:   'iocExtract',
+      bundleSrc: typeof __IOC_EXTRACT_WORKER_BUNDLE_SRC !== 'undefined' ? __IOC_EXTRACT_WORKER_BUNDLE_SRC : '',
+      payload: {
+        text:             typeof text === 'string' ? text : '',
+        vbaModuleSources: Array.isArray(safeOpts.vbaModuleSources) ? safeOpts.vbaModuleSources : [],
+        formatIsHtml:     !!safeOpts.formatIsHtml,
+      },
+      transfers: [],
+      decodeDone: (m) => ({
+        findings:         m.findings || [],
+        droppedByType:    new Map(Array.isArray(m.droppedByType)    ? m.droppedByType    : []),
+        totalSeenByType:  new Map(Array.isArray(m.totalSeenByType)  ? m.totalSeenByType  : []),
+        parseMs:          m.parseMs  || 0,
+      }),
+    });
+  }
+  function cancelIocExtract() { _cancelChannel('iocExtract'); }
+
   function runEncoded(buffer, textContent, options) {
     return _runWorkerJob({
       channel:   'encoded',
@@ -508,6 +563,8 @@ window.WorkerManager = (function () {
     cancelTimeline,
     runEncoded,
     cancelEncoded,
+    runIocExtract,
+    cancelIocExtract,
     workersAvailable,
   };
 
