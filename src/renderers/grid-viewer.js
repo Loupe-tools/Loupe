@@ -1090,15 +1090,49 @@ class GridViewer {
     this._scr.addEventListener('scroll', this._boundHandlers.onScroll, { passive: true });
 
     // Filter input
-    this._boundHandlers.onFilter = () => this._applyFilter();
+    // Debounce keystroke-driven filtering: every keystroke previously fired
+    // a synchronous O(N) scan over every row, which on million-row CSV /
+    // EVTX / SQLite tables is the dominant typing-lag source. 150 ms is
+    // short enough to feel responsive but coalesces typing bursts.
+    // Small tables (<5k rows) skip the debounce so muscle-memory users
+    // still see instant updates.
+    this._filterDebounceMs = 150;
+    this._filterDebounceMin = 5000;
+    this._filterTimer = null;
+    const _runFilter = () => {
+      this._filterTimer = null;
+      this._applyFilter();
+    };
+    this._boundHandlers.onFilter = () => {
+      const big = (this.rows && this.rows.length >= this._filterDebounceMin);
+      if (this._filterTimer != null) clearTimeout(this._filterTimer);
+      if (big) {
+        this._filterTimer = setTimeout(_runFilter, this._filterDebounceMs);
+      } else {
+        this._applyFilter();
+      }
+    };
     this._filterInput.addEventListener('input', this._boundHandlers.onFilter);
     this._filterInput.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { this._filterInput.blur(); }
+      // Enter forces an immediate filter (skips debounce).
+      if (e.key === 'Enter') {
+        if (this._filterTimer != null) { clearTimeout(this._filterTimer); this._filterTimer = null; }
+        this._applyFilter();
+      }
     });
     this._clearBtn.addEventListener('click', () => {
+      if (this._filterTimer != null) { clearTimeout(this._filterTimer); this._filterTimer = null; }
       this._filterInput.value = '';
       this._applyFilter();
     });
+
+    // Kick off background pre-build of the row-search-text cache so the
+    // first filter keystroke on a million-row table doesn't pay the
+    // materialisation cost. Idempotent — re-running it skips already-built
+    // rows. EVTX / Timeline already supply this array in `setRows` and
+    // skip the work.
+    this._scheduleIdleSearchTextBuild();
 
     // Row click → drawer toggle
     this._boundHandlers.onSizerClick = (e) => {
@@ -1960,6 +1994,11 @@ class GridViewer {
       this._clearBtn.style.display = 'none';
       this._filterStatus.textContent = '';
     } else {
+      // Surface a busy hint on tables large enough for the loop to be
+      // visible. The status flips back to the row-count below; if the
+      // browser yields between sets, the user sees "Filtering…" briefly.
+      if (total >= 50000) this._filterStatus.textContent = 'Filtering…';
+      const _filterStart = (total >= 50000) ? Date.now() : 0;
       const out = [];
       for (let i = 0; i < total; i++) {
         if (query && !this._rowMatchesQuery(i, query)) continue;
@@ -1969,8 +2008,10 @@ class GridViewer {
       this.state.filteredIndices = out;
       this._clearBtn.style.display = query ? '' : 'none';
       const suffix = tw ? ' · timeline window' : '';
+      const elapsed = _filterStart ? (Date.now() - _filterStart) : 0;
+      const slow = elapsed > 250 ? ` · ${elapsed} ms` : '';
       this._filterStatus.textContent = query || tw
-        ? `${out.length.toLocaleString()} of ${total.toLocaleString()} rows${suffix}`
+        ? `${out.length.toLocaleString()} of ${total.toLocaleString()} rows${suffix}${slow}`
         : '';
     }
     this._scr.scrollTop = 0;
@@ -2000,6 +2041,42 @@ class GridViewer {
     if (!this.rowSearchText) this.rowSearchText = new Array(this.rows.length);
     this.rowSearchText[dataIdx] = joined;
     return joined.includes(needle);
+  }
+
+  // ── Idle pre-build of `rowSearchText` ────────────────────────────────────
+  // Walks `this.rows` in 5 K-row batches via `requestIdleCallback` (with a
+  // `setTimeout(_, 0)` fallback) and populates `this.rowSearchText[i]` so the
+  // first filter keystroke on a million-row table doesn't pay an O(N · avg
+  // row width) string-materialisation cost. Cancelled and re-scheduled on
+  // every `setRows`. Skipped on tables <5 K rows (the lazy fallback in
+  // `_rowMatchesQuery` is fast enough at that size).
+  _scheduleIdleSearchTextBuild() {
+    if (this._idleBuildHandle != null) {
+      const cancel = (typeof cancelIdleCallback === 'function') ? cancelIdleCallback : clearTimeout;
+      try { cancel(this._idleBuildHandle); } catch (_e) { /* ignore */ }
+      this._idleBuildHandle = null;
+    }
+    if (!this.rows || this.rows.length < 5000) return;
+    if (!this.rowSearchText) this.rowSearchText = new Array(this.rows.length);
+    let i = 0;
+    const total = this.rows.length;
+    const BATCH = 5000;
+    const schedule = (typeof requestIdleCallback === 'function')
+      ? (fn) => requestIdleCallback(fn, { timeout: 250 })
+      : (fn) => setTimeout(fn, 0);
+    const step = () => {
+      this._idleBuildHandle = null;
+      const end = Math.min(i + BATCH, total);
+      for (; i < end; i++) {
+        if (this.rowSearchText[i]) continue;
+        const row = this.rows[i];
+        this.rowSearchText[i] = row ? row.join(' ').toLowerCase() : '';
+      }
+      if (i < total) {
+        this._idleBuildHandle = schedule(step);
+      }
+    };
+    this._idleBuildHandle = schedule(step);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2157,6 +2234,12 @@ class GridViewer {
     this.rows = rows;
     this.rowSearchText = rowSearchText || this.rowSearchText;
     this.rowOffsets = rowOffsets || this.rowOffsets;
+    // Schedule a background pre-build of `rowSearchText` so the first
+    // filter keystroke doesn't pay the materialisation cost row-by-row.
+    // Skipped when the caller already supplied a populated array (EVTX,
+    // Timeline) or when the dataset is small enough that lazy caching
+    // is fast anyway.
+    this._scheduleIdleSearchTextBuild();
     this._maybeRemoveEmptyPlaceholder();
     // Re-run column-kind sniffer now that we have real rows to sample.
     this._recomputeColumnWidths();
@@ -3107,6 +3190,10 @@ class GridViewer {
    *       per-group counts (indexed by the position in `_timeStackKeys`);
    *       otherwise the legacy flat Int32Array is used. Paint dispatches
    *       on `_timeStackBuckets ? stacked-path : flat-path`. */
+  // Invariant: this method does NOT re-walk `state.filteredIndices` — it
+  // reads the same array `_applyFilter` produced and walks each index
+  // once. The filter cost is therefore paid once per filter change; bucket
+  // rebuilds on zoom / window adjust are O(rows-in-view) only.
   _rebuildBucketsForView() {
     if (!this._timeMs || !this._timeRange) {
       this._timeBuckets = null;
