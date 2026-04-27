@@ -1173,8 +1173,12 @@ class PlistRenderer {
     const ipRe = /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b/g;
     const seenIPs = new Set();
     while ((um = ipRe.exec(allText)) !== null) {
-      // Too few digits → likely version string (e.g. 6.0.0.0), not a real IP
-      if (um[0].split(':')[0].replace(/\D/g, '').length < 5) continue;
+      // Version-string suppression — see `looksLikeIpVersionString`
+      // (constants.js) for the threshold rationale. Port-bearing matches
+      // bypass the filter via the explicit colon-prefix check below.
+      const ipPart = um[0].split(':')[0];
+      const hasPort = um[0].includes(':');
+      if (!hasPort && looksLikeIpVersionString(ipPart)) continue;
       if (!seenIPs.has(um[0])) {
         seenIPs.add(um[0]);
         pushIOC(findings, {

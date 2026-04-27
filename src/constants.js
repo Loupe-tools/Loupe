@@ -262,6 +262,28 @@ const EVTX_COLUMN_ORDER = Object.freeze([
   EVTX_COLUMNS.EVENT_DATA,
 ]);
 
+// ── IP / version-string heuristics ────────────────────────────────────────────
+// Several IOC extractors (app-load.js text scan, eml/plist/osascript renderers)
+// scrape dotted-quad patterns from arbitrary text and need to decide whether a
+// match is a real IPv4 endpoint or an incidental version literal like "6.0.0.0".
+// The heuristic: real-world IPv4 addresses with at least one multi-digit octet
+// have ≥ 4 total digits (`8.8.8.8` is the smallest legitimate public IP), while
+// version strings cluster around 3-or-fewer total digits (`1.0.0.0`, `6.0.0.0`,
+// `0.0.0.0`). The `< 4` threshold suppresses the common version literals while
+// preserving small public DNS IPs (`8.8.8.8` Google, `1.1.1.1` Cloudflare,
+// `9.9.9.9` Quad9, `8.8.4.4`).
+//
+// Centralised here so the four extractors that share this guard cannot drift
+// independently — earlier copy-paste replication briefly used `< 5` which
+// incorrectly filtered out the public DNS resolvers above.
+//
+// Callers should *not* apply this filter when a port is attached: a port
+// suffix is strong evidence of a network endpoint regardless of digit count.
+function looksLikeIpVersionString(ipPart) {
+  if (!ipPart) return false;
+  return String(ipPart).replace(/\D/g, '').length < 4;
+}
+
 // ── XML namespace constants ───────────────────────────────────────────────────
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';

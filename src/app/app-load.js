@@ -93,6 +93,19 @@ extendApp({
   _setRenderResult(result) {
     this._renderEpoch = (this._renderEpoch || 0) + 1;
     this.currentResult = result;
+    // ── Sidebar highlight active-view refs ─────────────────────────────
+    // Every view transition (file clear, drill-down via openInnerFile,
+    // Timeline ↔ renderer pivot) routes through here. The two
+    // `*HighlightActiveView` fields hold a back-reference to the
+    // GridViewer that owns the live YARA / IOC highlight. After a
+    // transition the previous view is being torn down, so the ref must
+    // be cleared here to prevent `_clearYaraHighlight` /
+    // `_clearIocCsvHighlight` from poking a destroyed grid. `_clearFile`
+    // already nulls these too, but routing through this single
+    // chokepoint covers drill-down and Timeline-pivot paths that don't
+    // pass through `_clearFile`.
+    this._yaraHighlightActiveView = null;
+    this._iocCsvHighlightActiveView = null;
     return this._renderEpoch;
   },
 
@@ -1982,7 +1995,7 @@ extendApp({
 
     // Helper to process a URL — checks for SafeLink wrappers and adds both
     const processUrl = (rawUrl, baseSeverity, matchOffset, matchLength) => {
-      const url = (rawUrl || '').trim().replace(/[.,;:!?)\]>]+$/, '').replace(/([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{0,3}$/, '$1');
+      const url = (rawUrl || '').trim().replace(/[.,;:!?)\]>]+$/, '').replace(/([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/, '$1');
       if (!url || url.length < 6) return;
 
       const unwrapped = EncodedContentDetector.unwrapSafeLink(url);
@@ -2065,9 +2078,13 @@ extendApp({
       const parts = ipPart.split('.').map(Number);
       if (!parts.every(p => p <= 255)) continue;
       if (_isReservedIp(parts)) continue;                // drop private / loopback / reserved
-      if (parts.join('').length < 5) continue;            // too few digits → likely version string (e.g. 6.0.0.0)
       const port = m[1] ? Number(m[1]) : null;
       if (port !== null && (port < 1 || port > 65535)) continue;
+      // Version-string suppression — `<4 digits` rejects `6.0.0.0`-style
+      // build literals while preserving public DNS IPs (`8.8.8.8` etc.).
+      // Skip the filter entirely when a port is attached: a port suffix is
+      // strong evidence the value is a network endpoint, not a version.
+      if (port === null && looksLikeIpVersionString(ipPart)) continue;
       const sev = port !== null ? 'medium' : 'info';
       add(IOC.IP, m[0], sev, port !== null ? 'With port' : null, { offset: m.index, length: m[0].length });
     }
