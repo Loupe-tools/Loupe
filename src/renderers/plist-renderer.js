@@ -979,7 +979,11 @@ class PlistRenderer {
     let criticalCount = 0, highCount = 0, mediumCount = 0;
 
     for (const p of PlistRenderer.SUSPICIOUS_PATTERNS) {
-      const re = new RegExp(p.re.source, p.re.flags);
+      // Reset shared regex's lastIndex instead of cloning via
+      // `new RegExp(p.re.source, p.re.flags)` — the pattern is shared
+      // across all plist scans so cloning is wasted work.
+      p.re.lastIndex = 0;
+      const re = p.re;
       const matches = [];
       let m;
       while ((m = re.exec(allText)) !== null) {

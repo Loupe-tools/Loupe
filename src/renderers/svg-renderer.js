@@ -19,6 +19,21 @@ class SvgRenderer {
     'onanimationstart', 'onanimationend', 'ontransitionend'
   ];
 
+  // Module-level cache for the per-attribute lookup regex used during
+  // event-handler highlighting. Previously rebuilt via `new RegExp(...)`
+  // on every analyzeForSecurity() call; the static EVENT_ATTRS set means
+  // a Map populated on first miss is hit for every subsequent scan.
+  static _EVENT_ATTR_REGEX_CACHE = new Map();
+  static _eventAttrRegex(attr) {
+    let re = SvgRenderer._EVENT_ATTR_REGEX_CACHE.get(attr);
+    if (!re) {
+      /* safeRegex: builtin */
+      re = new RegExp('\\b' + attr + '\\s*=', 'i');
+      SvgRenderer._EVENT_ATTR_REGEX_CACHE.set(attr, re);
+    }
+    return re;
+  }
+
   // ── URL-bearing attributes in SVG ──────────────────────────────────────
   static URL_ATTRS = [
     'href', 'xlink:href', 'src', 'action', 'formaction', 'data',
@@ -453,8 +468,12 @@ class SvgRenderer {
       for (const [attr, handlers] of Object.entries(grouped)) {
         const sample = handlers[0];
         const suffix = handlers.length > 1 ? ` (+${handlers.length - 1} more)` : '';
-        // Locate the handler attribute in the raw source for precise highlight.
-        const attrRe = new RegExp('\\b' + attr + '\\s*=', 'i');
+        // Locate the handler attribute in the raw source for precise
+        // highlight. Lookup is via a module-level Map populated lazily on
+        // first use — previous code rebuilt `new RegExp(...)` per
+        // attribute on every scan; the static set of EVENT_ATTRS means
+        // the cache hits 100% after the first analyze() call.
+        const attrRe = SvgRenderer._eventAttrRegex(attr);
         const attrIdx = text.search(attrRe);
         refs.push({
           type: IOC.PATTERN,

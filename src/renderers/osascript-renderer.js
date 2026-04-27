@@ -288,6 +288,7 @@ class OsascriptRenderer {
                     w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
                 ).join('\\s+');
                 phrases.push({
+                    /* safeRegex: builtin */
                     re: new RegExp('\\b' + pattern + '\\b', 'i'),
                     cls,
                     len: p.length,
@@ -582,7 +583,11 @@ class OsascriptRenderer {
         let highCount = 0, criticalCount = 0, mediumCount = 0;
 
         for (const p of OsascriptRenderer.APPLESCRIPT_SUSPICIOUS) {
-            const re = new RegExp(p.re.source, p.re.flags);
+            // Reset shared regex's lastIndex instead of cloning via
+            // `new RegExp(p.re.source, p.re.flags)` — the clone allocates
+            // ~10 KB per scan across the full pattern table for no benefit.
+            p.re.lastIndex = 0;
+            const re = p.re;
             const matches = [];
             let m;
             while ((m = re.exec(analysisText)) !== null) {
@@ -612,7 +617,8 @@ class OsascriptRenderer {
         /* ── Scan JXA-specific patterns ──────────────────────────── */
         if (type === 'jxa') {
             for (const p of OsascriptRenderer.JXA_SUSPICIOUS) {
-                const re = new RegExp(p.re.source, p.re.flags);
+                p.re.lastIndex = 0;
+                const re = p.re;
                 const matches = [];
                 let m;
                 while ((m = re.exec(analysisText)) !== null) {
