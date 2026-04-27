@@ -504,6 +504,21 @@ window.WorkerManager = (function () {
    *  @param {string}   text                    augmented `_rawText`
    *  @param {object}   [opts]
    *  @param {string[]} [opts.vbaModuleSources] flattened VBA module sources
+   *  @param {string[]} [opts.existingValues]   pre-seeded `seen` set so the
+   *                                            worker dedupes against rows
+   *                                            already pushed by the renderer
+   *                                            (`findings.externalRefs` +
+   *                                            `findings.interestingStrings`).
+   *                                            Without this, the worker's
+   *                                            per-type drop counts and
+   *                                            `totalSeenByType` over-report
+   *                                            on files where renderer-pushed
+   *                                            URLs also appear in body text
+   *                                            — the host re-dedup catches
+   *                                            them at patch time, but the
+   *                                            "Showing N of M URL" sidebar
+   *                                            note ends up wrong. Marshalled
+   *                                            as a flat string array.
    *  @param {boolean}  [opts.formatIsHtml]     true when the renderer
    *                                            already extracted URLs from
    *                                            HTML href/src attrs (caller
@@ -516,6 +531,7 @@ window.WorkerManager = (function () {
       payload: {
         text:             typeof text === 'string' ? text : '',
         vbaModuleSources: Array.isArray(safeOpts.vbaModuleSources) ? safeOpts.vbaModuleSources : [],
+        existingValues:   Array.isArray(safeOpts.existingValues)   ? safeOpts.existingValues   : [],
         formatIsHtml:     !!safeOpts.formatIsHtml,
       },
       transfers: [],

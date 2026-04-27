@@ -171,6 +171,19 @@ extendApp({
       WorkerManager.cancelIocExtract();
     }
 
+    // ── Sidebar-paint sentinel ─────────────────────────────────────────
+    // Cleared at the start of every load so async post-render patchers
+    // (`_patchIocFindingsFromWorker`, the IOC-worker fallback shim) can
+    // tell whether the natural sidebar paint near the end of `_loadFile`
+    // has already happened. When the IOC worker resolves DURING one of the awaits
+    // earlier in `_loadFile` (encoded-content / hashPromise) the page
+    // DOM swap hasn't run yet and `_currentAnalyzer` may still hold the
+    // previous file's value — patching `findings` and skipping the
+    // re-render lets the natural paint snapshot the patched data and
+    // avoids an early stale render. Set to `true` directly after the
+    // natural `_renderSidebar(...)` call.
+    this._sidebarPainted = false;
+
     // ── pdf.worker cancellation ───────────────────────────────────────
     // pdf.js owns its own dedicated worker (`vendor/pdf.worker.js`)
     // outside the C1–C4 `WorkerManager` channels, so the cancellations
@@ -391,7 +404,18 @@ extendApp({
         // point — flatten them now so the worker sees the same input as
         // the synchronous shim.
         const vbaModuleSources = (this.findings.modules || []).map(m => m.source || '');
-        this._kickIocExtractWorker(analysisText, vbaModuleSources, file.name, epoch);
+        // `existingValues` is the host-side dedup seed: every URL the
+        // renderer pushed to `externalRefs` / `interestingStrings`
+        // (excluding the placeholder we just inserted, which has a
+        // dummy "Scanning IOCs…" string that won't collide). Without
+        // this, the worker's per-type drop counts and `totalSeenByType`
+        // over-report on files whose body text repeats renderer-pushed
+        // URLs — see review notes #5 from the 2026-04-27 audit.
+        const existingValues = [
+          ...((this.findings.externalRefs || []).map(r => r.url)),
+          ...rendererIOCs.map(r => r.url),
+        ];
+        this._kickIocExtractWorker(analysisText, vbaModuleSources, existingValues, file.name, epoch);
       } else {
         const extracted = this._extractInterestingStrings(analysisText, this.findings);
         this.findings.interestingStrings = [...rendererIOCs, ...extracted];
@@ -561,6 +585,11 @@ extendApp({
       // Await hashes and render sidebar
       this.fileHashes = await hashPromise;
       this._renderSidebar(file.name, analyzer);
+      // Sentinel for async post-render patchers — see the early reset
+      // above (`this._sidebarPainted = false;`) for the rationale. After
+      // this point, `_patchIocFindingsFromWorker` and the IOC-worker
+      // fallback shim are free to re-render directly.
+      this._sidebarPainted = true;
 
       // If the renderer decoded non-UTF-8 content (e.g. UTF-16LE PowerShell),
       // re-encode as UTF-8 for YARA scanning so text-based rules can match.
@@ -2028,13 +2057,13 @@ extendApp({
   // For every other rejection (`'workers-unavailable'`, watchdog, worker
   // error) the synchronous in-tree shim runs as a fallback so the analyst
   // still sees IOCs from the file. The placeholder is always removed.
-  _kickIocExtractWorker(text, vbaModuleSources, fileName, epoch) {
+  _kickIocExtractWorker(text, vbaModuleSources, existingValues, fileName, epoch) {
     // Track the active dispatch on the App so future calls (e.g. quick
     // back-to-back loads) can supersede us via `cancelIocExtract`. We
     // don't await here — the caller has already painted the placeholder
     // and continues with renderer / encoded-content / sidebar work.
-    WorkerManager.runIocExtract(text, { vbaModuleSources }).then((out) => {
-      this._patchIocFindingsFromWorker(out, epoch);
+    WorkerManager.runIocExtract(text, { vbaModuleSources, existingValues }).then((out) => {
+      this._patchIocFindingsFromWorker(out, epoch, fileName);
     }).catch((err) => {
       // Bail silently on supersession — `cancelIocExtract` was called by
       // a newer `_loadFile` and the placeholder will be wiped by the new
@@ -2064,7 +2093,17 @@ extendApp({
             totalSeenByType: extracted._totalSeenByType,
           };
         }
-        this._renderSidebar(fileName, this._currentAnalyzer || null);
+        // Defer the repaint until after the natural sidebar paint near
+        // the end of `_loadFile` — without this guard the fallback can
+        // race the page-DOM swap and paint the sidebar against an empty
+        // viewer (or the previous file's analyzer). See review notes #4
+        // from the 2026-04-27 audit.
+        if (this._sidebarPainted) {
+          this._renderSidebar(
+            (this._fileMeta && this._fileMeta.name) || fileName || '',
+            this._currentAnalyzer || null
+          );
+        }
       } catch (fallbackErr) {
         this._reportNonFatal('ioc-extract-fallback-shim', fallbackErr);
       }
@@ -2078,17 +2117,19 @@ extendApp({
     if (idx >= 0) list.splice(idx, 1);
   },
 
-  _patchIocFindingsFromWorker(out, epoch) {
+  _patchIocFindingsFromWorker(out, epoch, fileName) {
     // Render-epoch supersession guard — a newer load owns the UI, do
     // nothing. Mirrors the QrDecoder async-snapshot pattern (see
     // CONTRIBUTING.md → Renderer Contract).
     if (epoch !== this._renderEpoch) return;
     this._removeIocPlaceholder();
-    // Dedup against rows already in `findings.interestingStrings` (the
-    // renderer's own pushIOC rows captured pre-dispatch + encoded-content
-    // IOCs the post-render scan added while the worker was in flight)
-    // and against `externalRefs`. Matches the `existingValues` set the
-    // synchronous shim builds via the same union.
+    // Post-resolve dedup. The worker's `existingValues` seed (set at
+    // dispatch time in `_loadFile`) already covered the renderer-pushed
+    // rows; this catches IOCs added BETWEEN dispatch and resolve — the
+    // encoded-content scan (`app-load.js:414`) pushes into
+    // `findings.interestingStrings` while the worker is in flight. The
+    // `externalRefs` half of the union is for rare late renderer updates
+    // (PDF QR decode, OneNote inflate) that arrive via `updateFindings`.
     const existingValues = new Set([
       ...((this.findings.externalRefs || []).map(r => r.url)),
       ...((this.findings.interestingStrings || []).map(r => r.url)),
@@ -2109,12 +2150,21 @@ extendApp({
         totalSeenByType: out.totalSeenByType,
       };
     }
+    // Defer the repaint until after the natural sidebar paint near the
+    // end of `_loadFile`. When the worker resolves DURING one of the
+    // awaits earlier in `_loadFile` (encoded-content / hashPromise) the
+    // page DOM swap hasn't happened yet and `_currentAnalyzer` may still
+    // hold the previous file's value — the natural paint that follows
+    // will snapshot `this.findings` (which we've just mutated) and pick
+    // up the patched IOCs without an early stale render. See review
+    // notes #4 from the 2026-04-27 audit.
+    if (!this._sidebarPainted) return;
     // Repaint — `_renderSidebar` snapshots a fresh findings view from
     // `this.findings` so the patched IOC list lands in the next paint.
     // The `_currentAnalyzer` lookup mirrors the deferred-refresh path in
     // `App.updateFindings`.
     this._renderSidebar(
-      (this._fileMeta && this._fileMeta.name) || '',
+      (this._fileMeta && this._fileMeta.name) || fileName || '',
       this._currentAnalyzer || null
     );
   },
