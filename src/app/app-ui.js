@@ -779,6 +779,7 @@ extendApp({
         // Matching on the table itself — not just the wrapper — lets future
         // renderers reuse the layout without inventing new exclusions.
         e.target.closest('.plaintext-table') ||
+        e.target.closest('.plaintext-virtual') ||
         e.target.closest('.sheet-content-area') ||
         e.target.closest('.csv-scroll') ||
         e.target.closest('.evtx-scroll') ||

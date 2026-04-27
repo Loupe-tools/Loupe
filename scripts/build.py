@@ -507,6 +507,11 @@ APP_JS_FILES = [
     'src/renderers/osascript-renderer.js',
     'src/renderers/plist-renderer.js',
     'src/renderers/image-renderer.js',
+    # virtual-text-view.js — virtual-scroll line-numbered text viewer used
+    # by PlainTextRenderer. Must load BEFORE plaintext-renderer.js so the
+    # `class VirtualTextView` global is defined when the renderer's
+    # `_buildTextPane()` constructs it.
+    'src/renderers/virtual-text-view.js',
     'src/renderers/plaintext-renderer.js',
     'src/renderers/clickonce-renderer.js',
     'src/renderers/msix-renderer.js',

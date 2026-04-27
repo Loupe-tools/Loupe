@@ -45,7 +45,14 @@ extendApp({
     // ── YARA match: highlight ALL matches with click cycling ───────────────
     if (ref.type === IOC.YARA && ref._yaraMatches && ref._yaraMatches.length > 0) {
       const sourceText = containerEl && containerEl._rawText;
-      const plaintextTable = pc && pc.querySelector('.plaintext-table');
+      // Prefer the new virtualised plaintext view when present (the
+      // PlainTextRenderer migration target). Falls back to the legacy
+      // `<table.plaintext-table>` consumed by the dozen other renderers
+      // that still emit a static all-rows-in-DOM table (html / svg /
+      // hta / npm / msix / clickonce / browserext / inf / reg / rtf /
+      // wsf / iqy-slk / plist / url / pe / osascript).
+      const plaintextTable = pc && (
+        pc.querySelector('.plaintext-virtual') || pc.querySelector('.plaintext-table'));
       const matches = ref._yaraMatches;
       const totalMatches = matches.length;
 
@@ -239,7 +246,8 @@ extendApp({
     // Falls back silently when there is no source text surface available
     // (visual-only renderers like images, PDF pages, archive listings).
     const sourceText = containerEl && containerEl._rawText;
-    const plaintextTable = pc && pc.querySelector('.plaintext-table');
+    const plaintextTable = pc && (
+      pc.querySelector('.plaintext-virtual') || pc.querySelector('.plaintext-table'));
     if (plaintextTable && sourceText) {
       const iocMatches = this._findIOCMatches(ref, sourceText);
       if (iocMatches.length) {
@@ -372,6 +380,19 @@ extendApp({
   _highlightMatchesInline(table, sourceText, matches, focusIdx, forceScroll, ref, kind) {
     // Clear any existing match highlights + pending clear-timer first.
     this._clearMatchHighlight();
+
+    // ── Virtualised plaintext view (PlainTextRenderer) ──────────────────
+    // The virtual view holds decorations as JS state and reapplies them
+    // on every paint, so highlights survive scroll-away/scroll-back and
+    // the line-band tints can never get out of sync with the inline
+    // <mark>s. We compute the same per-row match map the legacy path
+    // uses, then hand it off to the view.
+    if (table && table._isVirtual && table._virtualView) {
+      this._highlightMatchesInVirtual(table, sourceText, matches, focusIdx, forceScroll, ref, kind);
+      return;
+    }
+
+    // ── Legacy `<table.plaintext-table>` path ───────────────────────────
 
     // Resolve CSS classes for this highlight kind.
     // yara → blue marks + blue line bg; ioc → yellow marks + yellow line bg.
@@ -526,6 +547,81 @@ extendApp({
   },
 
 
+  // ── Virtualised-view variant ────────────────────────────────────────────
+  //
+  // Same logical contract as `_highlightMatchesInline` but for the
+  // VirtualTextView (the `.plaintext-virtual` root produced by
+  // `PlainTextRenderer`). The view is the decoration store: we compute
+  // the per-row match map up front and hand it off, then await the
+  // view's `scrollToRow` so the focus match is materialised in the DOM
+  // before we resolve. Every subsequent re-render reapplies the marks
+  // from JS state — there is no "scroll away and lose the highlight" bug
+  // because decorations aren't pinned to live nodes.
+  _highlightMatchesInVirtual(viewRoot, sourceText, matches, focusIdx, forceScroll, ref, kind) {
+    const view           = viewRoot._virtualView;
+    const lineToFirstRow = viewRoot._lineToFirstRow || null;
+    const wrapChunkSize  = (lineToFirstRow && viewRoot._chunkSize) ? viewRoot._chunkSize : 0;
+    const rowCount       = view.rowCount;
+
+    // Translate every match into per-row entries. Same algorithm as the
+    // legacy path at `app-sidebar-focus.js:401-436` (soft-wrap split + the
+    // simple 1-row-per-line fallback) — the only difference is we drop
+    // straight into a Map<rowIdx, [...]> instead of a Map keyed by live
+    // <tr> indices.
+    const matchesByRow = new Map();
+    let focusRow = -1;
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      if (m.offset == null || !m.length) continue;
+      const before     = sourceText.substring(0, m.offset);
+      const lineIndex  = (before.match(/\n/g) || []).length;
+      const lastNl     = before.lastIndexOf('\n');
+      const charInLine = lastNl === -1 ? m.offset : m.offset - lastNl - 1;
+
+      if (lineToFirstRow && wrapChunkSize > 0) {
+        const firstRow = lineToFirstRow[lineIndex];
+        if (firstRow == null) continue;
+        let remaining = m.length;
+        let cursor    = charInLine;
+        while (remaining > 0) {
+          const rowIdx    = firstRow + Math.floor(cursor / wrapChunkSize);
+          const charInRow = cursor % wrapChunkSize;
+          if (rowIdx >= rowCount) break;
+          const take = Math.min(remaining, wrapChunkSize - charInRow);
+          let arr = matchesByRow.get(rowIdx);
+          if (!arr) { arr = []; matchesByRow.set(rowIdx, arr); }
+          arr.push({ charPos: charInRow, length: take, matchIdx: i });
+          if (i === focusIdx && focusRow < 0) focusRow = rowIdx;
+          cursor    += take;
+          remaining -= take;
+        }
+      } else {
+        if (lineIndex >= rowCount) continue;
+        let arr = matchesByRow.get(lineIndex);
+        if (!arr) { arr = []; matchesByRow.set(lineIndex, arr); }
+        arr.push({ charPos: charInLine, length: m.length, matchIdx: i });
+        if (i === focusIdx) focusRow = lineIndex;
+      }
+    }
+    if (!matchesByRow.size) return;
+
+    view.setMatchHighlights({
+      matchesByRow,
+      kind,
+      focusRow,
+      focusMatchIdx: focusIdx,
+      scroll: forceScroll ? 'force' : 'ifNotInView',
+    });
+
+    // 5-second auto-clear, twin to the legacy timer above.
+    this._matchHighlightTimer = setTimeout(() => {
+      this._clearMatchHighlight();
+      if (ref) ref._currentMatchIndex = undefined;
+      this._matchHighlightTimer = null;
+    }, 5000);
+  },
+
+
 
   // ── Highlight within syntax-highlighted HTML content ────────────────────
   //
@@ -612,6 +708,15 @@ extendApp({
 
     const pc = document.getElementById('page-container');
     if (!pc) return;
+
+    // Virtualised plaintext view — decorations live in JS state, so the
+    // clear is a single call. The view's next render drops every <mark>
+    // and the line-band classes from the materialised rows.
+    const virtualText = pc.querySelector('.plaintext-virtual');
+    if (virtualText && virtualText._virtualView) {
+      try { virtualText._virtualView.clearMatchHighlights(); }
+      catch (_) { /* defensive — view may have been destroyed */ }
+    }
 
     // Remove line-background highlights (both kinds)
     const highlightedLines = pc.querySelectorAll('.yara-line-highlight, .ioc-highlight-line');
@@ -791,6 +896,16 @@ extendApp({
     this._clearEncodedHighlight();
     const pc = document.getElementById('page-container');
     if (!pc) return;
+
+    // Prefer the virtualised plaintext view (PlainTextRenderer's new
+    // surface). Falls back to the legacy `<table.plaintext-table>` for
+    // every other renderer that hasn't been migrated yet.
+    const virtualText = pc.querySelector('.plaintext-virtual');
+    if (virtualText && virtualText._virtualView && finding._startLine) {
+      this._highlightEncodedInVirtual(virtualText, finding, flash);
+      return;
+    }
+
     const table = pc.querySelector('.plaintext-table');
     if (!table || !finding._startLine) return;
 
@@ -939,6 +1054,17 @@ extendApp({
   _clearEncodedHighlight() {
     const pc = document.getElementById('page-container');
     if (!pc) return;
+
+    // Virtualised plaintext view — clear via the JS state store. The
+    // view's next render drops every `.enc-highlight-line` row class
+    // and every inline `<mark class="enc-highlight">` from the
+    // materialised rows.
+    const virtualText = pc.querySelector('.plaintext-virtual');
+    if (virtualText && virtualText._virtualView) {
+      try { virtualText._virtualView.clearEncodedHighlight(); }
+      catch (_) { /* defensive — view may have been destroyed */ }
+    }
+
     const highlighted = pc.querySelectorAll('.enc-highlight-line');
     for (const el of highlighted) {
       el.classList.remove('enc-highlight-line', 'enc-highlight-flash');
@@ -954,6 +1080,90 @@ extendApp({
     if (marks.length) {
       pc.querySelectorAll('.plaintext-code').forEach(c => c.normalize());
     }
+  },
+
+  // ── Virtualised-view variant of _highlightEncodedInView ─────────────────
+  //
+  // Same logical contract as the legacy table path: stamp the row-band
+  // tint across [startRow..endRow] and paint inline `<mark>` slices for
+  // the byte span [finding.offset, finding.offset+finding.length). The
+  // VirtualTextView holds these as JS state so they survive re-render
+  // (scroll-away/scroll-back, sidebar resize, encoding toggle).
+  _highlightEncodedInVirtual(viewRoot, finding, flash) {
+    const view = viewRoot._virtualView;
+    const lineMap = viewRoot._lineToFirstRow || null;
+    const rowCount = view.rowCount;
+
+    // Translate logical lines → row index range.
+    let startRow, endRow;
+    if (lineMap) {
+      const s = finding._startLine - 1;
+      const e = finding._endLine - 1;
+      startRow = (s >= 0 && s < lineMap.length) ? lineMap[s] : (finding._startLine - 1);
+      if (e + 1 < lineMap.length) {
+        endRow = lineMap[e + 1] - 1;
+      } else {
+        endRow = rowCount - 1;
+      }
+    } else {
+      startRow = finding._startLine - 1;
+      endRow = finding._endLine - 1;
+    }
+    if (startRow < 0) startRow = 0;
+    if (endRow >= rowCount) endRow = rowCount - 1;
+
+    // Per-row inline-mark slices (mirrors the soft-wrap chunk math used
+    // by the YARA/IOC path above).
+    const containerEl = document.getElementById('page-container').firstElementChild;
+    const sourceText = containerEl && containerEl._rawText;
+    const slicesByRow = new Map();
+    if (sourceText && finding.offset != null && finding.length > 0) {
+      const wrapChunkSize = (lineMap && viewRoot._chunkSize) ? viewRoot._chunkSize : 0;
+      const before     = sourceText.substring(0, finding.offset);
+      const lineIndex  = (before.match(/\n/g) || []).length;
+      const lastNl     = before.lastIndexOf('\n');
+      const charInLine = lastNl === -1 ? finding.offset : finding.offset - lastNl - 1;
+
+      if (wrapChunkSize > 0 && lineMap) {
+        const firstRow = lineMap[lineIndex];
+        if (firstRow != null) {
+          let remaining = finding.length;
+          let cursor    = charInLine;
+          while (remaining > 0) {
+            const rowIdx    = firstRow + Math.floor(cursor / wrapChunkSize);
+            const charInRow = cursor % wrapChunkSize;
+            if (rowIdx >= rowCount) break;
+            const take = Math.min(remaining, wrapChunkSize - charInRow);
+            let arr = slicesByRow.get(rowIdx);
+            if (!arr) { arr = []; slicesByRow.set(rowIdx, arr); }
+            arr.push({ charPos: charInRow, length: take });
+            cursor    += take;
+            remaining -= take;
+          }
+        }
+      } else {
+        // Normal 1-row-per-line table. Cap at end of first line — the
+        // row band already covers any spillover rows.
+        const firstRow = lineIndex;
+        if (firstRow < rowCount) {
+          const nlInSpan = sourceText.indexOf('\n', finding.offset);
+          const firstLineEnd = nlInSpan === -1
+            ? finding.offset + finding.length
+            : Math.min(finding.offset + finding.length, nlInSpan);
+          const take = firstLineEnd - finding.offset;
+          if (take > 0) slicesByRow.set(firstRow, [{ charPos: charInLine, length: take }]);
+        }
+      }
+    }
+
+    view.setEncodedHighlight({
+      startRow,
+      endRow,
+      slicesByRow: slicesByRow.size ? slicesByRow : null,
+      flash: !!flash,
+      scroll: !!flash,
+      flashClearMs: flash ? 2000 : 0,
+    });
   },
 
   // ── Flash encoded content card ──────────────────────────────────────────

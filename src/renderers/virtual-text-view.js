@@ -514,8 +514,12 @@ class VirtualTextView {
    * the rAF settle so callers can position a focus mark inside it.
    * @param {number} rowIdx
    * @param {number|undefined} focusMatchIdx — when a match focus mark is
-   *   present in the row, the function will scroll it into horizontal +
-   *   vertical view via Element.scrollIntoView after the row renders.
+   *   present in the row, the function will scroll it into vertical view
+   *   via Element.scrollIntoView after the row renders. Horizontal
+   *   position is preserved when the mark is already on-screen
+   *   (`inline:'nearest'`) so click-to-focus on an IOC / YARA row never
+   *   whiplashes the viewport to scrollLeft=0 and back. The legacy SQLite
+   *   grid drawer needed the snap-to-zero; the plain-text viewer does not.
    */
   scrollToRow(rowIdx, focusMatchIdx) {
     return new Promise((resolve) => {
@@ -543,7 +547,7 @@ class VirtualTextView {
                         `mark[data-ioc-match="${focusMatchIdx}"]`;
             const mark = row.querySelector(sel);
             if (mark) {
-              try { mark.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' }); }
+              try { mark.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); }
               catch (_) { /* best-effort */ }
             }
           }
@@ -557,8 +561,17 @@ class VirtualTextView {
       const center    = Math.max(0, targetTop - (viewportH - rh) / 2);
       const distance  = Math.abs(center - this._root.scrollTop);
       const beh       = distance > viewportH * 1.5 ? 'instant' : 'smooth';
+      // Preserve the current horizontal scroll position. Snapping
+      // `left` to 0 here (legacy SQLite grid-drawer behaviour) caused a
+      // visible whiplash on long un-wrapped lines: the viewport jumped
+      // hard-left, then `mark.scrollIntoView({inline:'center'})` below
+      // animated it back to the match. Keeping scrollLeft put lets the
+      // mark's own `scrollIntoView` handle horizontal positioning in a
+      // single smooth motion (or stay still if the match is already
+      // horizontally in view).
+      const currentLeft = this._root.scrollLeft;
       try {
-        this._root.scrollTo({ top: center, left: 0, behavior: beh });
+        this._root.scrollTo({ top: center, left: currentLeft, behavior: beh });
       } catch (_) {
         this._root.scrollTop = center;
       }
@@ -576,7 +589,11 @@ class VirtualTextView {
                         `mark[data-ioc-match="${focusMatchIdx}"]`;
             const mark = row.querySelector(sel);
             if (mark) {
-              try { mark.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' }); }
+              // `inline:'nearest'` matches the legacy plaintext-table
+              // path in `_highlightMatchesInline` (app-sidebar-focus.js)
+              // — only scroll horizontally when the mark would otherwise
+              // be off-screen, never re-centre an already-visible match.
+              try { mark.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' }); }
               catch (_) { /* best-effort */ }
             }
           }

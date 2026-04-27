@@ -66,6 +66,7 @@ RENDERERS_DIR = os.path.join(BASE, 'src', 'renderers')
 HELPER_FILES = {
     'archive-tree.js',     # collapsible inner-file tree shared by archive renderers
     'grid-viewer.js',      # virtualised grid used by csv / xlsx / json renderers
+    'virtual-text-view.js',# virtual-scroll line-numbered text view used by plaintext renderer
     'ole-cfb-parser.js',   # Compound File Binary parser used by office binaries
     'protobuf-reader.js',  # protobuf wire-format reader used by clickonce et al.
 }

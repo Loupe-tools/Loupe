@@ -505,7 +505,7 @@ extendApp({
     const _pc = document.getElementById('page-container');
     const _docEl = _pc && _pc.firstElementChild;
     const _sourceText = _docEl && _docEl._rawText;
-    const _isPlaintextView = !!(_pc && _pc.querySelector('.plaintext-table'));
+    const _isPlaintextView = !!(_pc && (_pc.querySelector('.plaintext-virtual') || _pc.querySelector('.plaintext-table')));
 
     const det = document.createElement('details');
     det.className = 'sb-details';
