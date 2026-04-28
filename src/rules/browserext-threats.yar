@@ -1,9 +1,9 @@
 rule BrowserExt_Permission_NativeMessaging {
     meta:
         description = "WebExtension manifest requests nativeMessaging — content script can pipe stdio to a native host binary installed on disk"
+        severity    = "high"
         category    = "execution"
         mitre       = "T1559"
-        severity    = "high"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $p     = "\"nativeMessaging\"" ascii wide nocase
@@ -14,9 +14,9 @@ rule BrowserExt_Permission_NativeMessaging {
 rule BrowserExt_HostPermission_AllUrls {
     meta:
         description = "WebExtension claims <all_urls> or *://*/* host access — content scripts / webRequest see every site the user visits"
+        severity    = "high"
         category    = "collection"
         mitre       = "T1539"
-        severity    = "high"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $h1    = "\"<all_urls>\"" ascii wide nocase
@@ -30,9 +30,9 @@ rule BrowserExt_HostPermission_AllUrls {
 rule BrowserExt_CSP_UnsafeEval {
     meta:
         description = "WebExtension manifest relaxes content_security_policy with 'unsafe-eval' or 'unsafe-inline' — lets the extension run runtime-assembled JS"
+        severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1027"
-        severity    = "high"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $csp   = "\"content_security_policy\"" ascii wide nocase
@@ -45,9 +45,9 @@ rule BrowserExt_CSP_UnsafeEval {
 rule BrowserExt_Debugger_Management {
     meta:
         description = "WebExtension requests debugger, management, or declarativeNetRequestFeedback — can inspect / kill other extensions or attach to tabs as a debugger"
+        severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1562.001"
-        severity    = "high"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $d1    = "\"debugger\"" ascii wide nocase
@@ -60,9 +60,9 @@ rule BrowserExt_Debugger_Management {
 rule BrowserExt_ExternallyConnectable_Wide {
     meta:
         description = "WebExtension exposes an externally_connectable port to <all_urls> or *://*/* — any web page can postMessage into the extension's background"
+        severity    = "high"
         category    = "initial-access"
         mitre       = "T1189"
-        severity    = "high"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $ext   = "\"externally_connectable\"" ascii wide nocase
@@ -75,9 +75,9 @@ rule BrowserExt_ExternallyConnectable_Wide {
 rule BrowserExt_Proxy_Permission {
     meta:
         description = "WebExtension requests the proxy permission — can silently redirect every HTTP/S request through an attacker-controlled proxy"
+        severity    = "medium"
         category    = "command-and-control"
         mitre       = "T1090.002"
-        severity    = "medium"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $p     = "\"proxy\"" ascii wide nocase
@@ -88,9 +88,9 @@ rule BrowserExt_Proxy_Permission {
 rule BrowserExt_Cookies_History_Combo {
     meta:
         description = "WebExtension combines cookies / history / webRequest permissions — classic session- and browsing-history-harvesting shape"
+        severity    = "medium"
         category    = "collection"
         mitre       = "T1539"
-        severity    = "medium"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $c     = "\"cookies\"" ascii wide nocase
@@ -103,9 +103,9 @@ rule BrowserExt_Cookies_History_Combo {
 rule BrowserExt_UpdateUrl_NonStore {
     meta:
         description = "WebExtension manifest points update_url at an HTTP or non-store host — self-updates off the official Chrome Web Store / AMO channel"
+        severity    = "medium"
         category    = "persistence"
         mitre       = "T1546"
-        severity    = "medium"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $uu    = "\"update_url\"" ascii wide nocase
@@ -122,9 +122,9 @@ rule BrowserExt_UpdateUrl_NonStore {
 rule BrowserExt_LegacyXUL_Bootstrap {
     meta:
         description = "Legacy Firefox install.rdf with em:bootstrap=true — pre-WebExtension add-on with full XPCOM/chrome access"
+        severity    = "medium"
         category    = "execution"
         mitre       = "T1218"
-        severity    = "medium"
     strings:
         $rdf   = "install.rdf" ascii wide nocase
         $ns    = "em:bootstrap" ascii wide nocase
@@ -137,9 +137,9 @@ rule BrowserExt_LegacyXUL_Bootstrap {
 rule BrowserExt_WebAccessibleResources_AllUrls {
     meta:
         description = "WebExtension exposes web_accessible_resources to <all_urls> — any page can load the extension's internal scripts / HTML as a same-origin-to-extension asset"
+        severity    = "medium"
         category    = "defense-evasion"
         mitre       = "T1027"
-        severity    = "medium"
     strings:
         $mv    = "\"manifest_version\"" ascii wide nocase
         $war   = "\"web_accessible_resources\"" ascii wide nocase
@@ -152,9 +152,9 @@ rule BrowserExt_WebAccessibleResources_AllUrls {
 rule BrowserExt_NativeHost_Bridge {
     meta:
         description = "Native-messaging host manifest bundled inside the extension — path + allowed_origins ties the browser bridge directly to a local executable"
+        severity    = "high"
         category    = "execution"
         mitre       = "T1559"
-        severity    = "high"
     strings:
         $ao    = "\"allowed_origins\"" ascii wide nocase
         $path  = "\"path\"" ascii wide nocase
@@ -167,9 +167,9 @@ rule BrowserExt_NativeHost_Bridge {
 rule BrowserExt_Eval_InScript {
     meta:
         description = "Bundled extension script calls eval() / Function() / chrome.tabs.executeScript({code:…}) on attacker-controllable strings — classic obfuscated-loader shape"
+        severity    = "medium"
         category    = "defense-evasion"
         mitre       = "T1140"
-        severity    = "medium"
     strings:
         $api1  = "chrome.runtime" ascii wide nocase
         $api2  = "browser.runtime" ascii wide nocase

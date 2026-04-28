@@ -1,9 +1,9 @@
 rule PE_UPX_Packed {
     meta:
         description = "UPX packed executable"
+        severity = "medium"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "medium"
     strings:
         $upx0 = "UPX0" ascii
         $upx1 = "UPX1" ascii
@@ -16,9 +16,9 @@ rule PE_UPX_Packed {
 rule PE_Themida_Packed {
     meta:
         description = "Themida/WinLicense protected executable"
+        severity = "high"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "high"
     strings:
         $s1 = ".themida" ascii
         $s2 = ".Themida" ascii
@@ -30,9 +30,9 @@ rule PE_Themida_Packed {
 rule PE_VMProtect_Packed {
     meta:
         description = "VMProtect packed executable"
+        severity = "high"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "high"
     strings:
         $s1 = ".vmp0" ascii
         $s2 = ".vmp1" ascii
@@ -45,9 +45,9 @@ rule PE_VMProtect_Packed {
 rule PE_ASPack_Packed {
     meta:
         description = "ASPack packed executable"
+        severity = "medium"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "medium"
     strings:
         $s1 = ".aspack" ascii
         $s2 = ".adata" ascii
@@ -59,9 +59,9 @@ rule PE_ASPack_Packed {
 rule PE_MPRESS_Packed {
     meta:
         description = "MPRESS packed executable"
+        severity = "medium"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "medium"
     strings:
         $s1 = ".MPRESS1" ascii
         $s2 = ".MPRESS2" ascii
@@ -72,9 +72,9 @@ rule PE_MPRESS_Packed {
 rule PE_Enigma_Packed {
     meta:
         description = "Enigma Protector packed executable"
+        severity = "high"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "high"
     strings:
         $s1 = ".enigma1" ascii
         $s2 = ".enigma2" ascii
@@ -86,9 +86,9 @@ rule PE_Enigma_Packed {
 rule PE_PECompact_Packed {
     meta:
         description = "PECompact packed executable"
+        severity = "medium"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "medium"
     strings:
         $s1 = "PEC2" ascii
         $s2 = ".pec2" ascii
@@ -100,9 +100,9 @@ rule PE_PECompact_Packed {
 rule PE_Process_Injection_APIs {
     meta:
         description = "PE imports process injection API combination"
+        severity = "high"
         category = "suspicious_api"
         mitre       = "T1055"
-        severity = "high"
     strings:
         $alloc = "VirtualAllocEx" ascii
         $write = "WriteProcessMemory" ascii
@@ -116,9 +116,9 @@ rule PE_Process_Injection_APIs {
 rule PE_Process_Hollowing {
     meta:
         description = "PE shows signs of process hollowing technique"
+        severity = "critical"
         category = "suspicious_api"
         mitre       = "T1055.012"
-        severity = "critical"
     strings:
         $create = "CreateProcessA" ascii
         $createw = "CreateProcessW" ascii
@@ -133,9 +133,9 @@ rule PE_Process_Hollowing {
 rule PE_Anti_Debug_Techniques {
     meta:
         description = "PE uses multiple anti-debugging techniques"
+        severity = "medium"
         category = "evasion"
         mitre       = "T1497.001"
-        severity = "medium"
     strings:
         $dbg1 = "IsDebuggerPresent" ascii
         $dbg2 = "CheckRemoteDebuggerPresent" ascii
@@ -148,9 +148,9 @@ rule PE_Anti_Debug_Techniques {
 rule PE_Credential_Theft_APIs {
     meta:
         description = "PE imports credential theft APIs"
+        severity = "critical"
         category = "suspicious_api"
         mitre       = "T1003"
-        severity = "critical"
     strings:
         $cred1 = "CredEnumerate" ascii
         $cred2 = "LsaRetrievePrivateData" ascii
@@ -164,9 +164,9 @@ rule PE_Credential_Theft_APIs {
 rule PE_Ransomware_APIs {
     meta:
         description = "PE imports encryption APIs combined with file operations (ransomware indicator)"
+        severity = "critical"
         category = "suspicious_api"
         mitre       = "T1486"
-        severity = "critical"
     strings:
         $enc1 = "CryptEncrypt" ascii
         $enc2 = "BCryptEncrypt" ascii
@@ -184,9 +184,9 @@ rule PE_Ransomware_APIs {
 rule PE_Download_Capability {
     meta:
         description = "PE has download/C2 capability via URLDownloadToFile or WinHTTP"
+        severity = "high"
         category = "suspicious_api"
         mitre       = "T1105"
-        severity = "high"
     strings:
         $dl1 = "URLDownloadToFileA" ascii
         $dl2 = "URLDownloadToFileW" ascii
@@ -203,9 +203,9 @@ rule PE_Download_Capability {
 rule PE_Dynamic_API_Resolution {
     meta:
         description = "PE uses dynamic API resolution (LdrLoadDll / LdrGetProcedureAddress or multiple LoadLibrary variants alongside GetProcAddress)"
+        severity = "medium"
         category = "evasion"
         mitre       = "T1027.007"
-        severity = "medium"
     strings:
         $gpa = "GetProcAddress" ascii
         $lla = "LoadLibraryA" ascii
@@ -220,9 +220,9 @@ rule PE_Dynamic_API_Resolution {
 rule PE_Service_Persistence {
     meta:
         description = "PE creates Windows services (persistence mechanism)"
+        severity = "high"
         category = "suspicious_api"
         mitre       = "T1543.003"
-        severity = "high"
     strings:
         $cs1 = "CreateServiceA" ascii
         $cs2 = "CreateServiceW" ascii
@@ -235,9 +235,9 @@ rule PE_Service_Persistence {
 rule PE_Registry_Persistence {
     meta:
         description = "PE writes to common persistence registry keys"
+        severity = "medium"
         category = "persistence"
         mitre       = "T1547.001"
-        severity = "medium"
     strings:
         $reg1 = "RegSetValueExA" ascii
         $reg2 = "RegSetValueExW" ascii
@@ -251,9 +251,9 @@ rule PE_Registry_Persistence {
 rule PE_Suspicious_Section_Name {
     meta:
         description = "PE has unusual section names indicating modification or packing"
+        severity = "medium"
         category = "anomaly"
         mitre       = "T1027.002"
-        severity = "medium"
     strings:
         $s1 = ".rmnet" ascii
         $s2 = ".petite" ascii
@@ -267,9 +267,9 @@ rule PE_Suspicious_Section_Name {
 rule PE_Dot_NET_Assembly {
     meta:
         description = "PE is a .NET assembly (CLR executable)"
+        severity = "info"
         category = "info"
         mitre       = ""
-        severity = "info"
     strings:
         $clr1 = "_CorExeMain" ascii
         $clr2 = "_CorDllMain" ascii
@@ -282,9 +282,9 @@ rule PE_Dot_NET_Assembly {
 rule PE_AutoIT_Compiled {
     meta:
         description = "AutoIT compiled executable (common in commodity malware)"
+        severity = "high"
         category = "execution"
         mitre       = "T1059"
-        severity = "high"
     strings:
         $au3_1 = "AU3!" ascii
         $au3_2 = "AutoIt" ascii wide
@@ -297,9 +297,9 @@ rule PE_AutoIT_Compiled {
 rule PE_PyInstaller_Packed {
     meta:
         description = "PyInstaller packed Python executable"
+        severity = "medium"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "medium"
     strings:
         $py1 = "PyInstaller" ascii wide
         $py2 = "pyi_rth_" ascii
@@ -312,9 +312,9 @@ rule PE_PyInstaller_Packed {
 rule PE_NSIS_Installer {
     meta:
         description = "NSIS (Nullsoft Scriptable Install System) installer"
+        severity = "info"
         category = "info"
         mitre       = ""
-        severity = "info"
     strings:
         $nsis1 = "Nullsoft" ascii wide
         $nsis2 = "NSIS" ascii
@@ -326,9 +326,9 @@ rule PE_NSIS_Installer {
 rule PE_Embedded_PE {
     meta:
         description = "PE file contains another embedded PE file"
+        severity = "high"
         category = "defense-evasion"
         mitre       = "T1027.009"
-        severity = "high"
     strings:
         $mz = "MZ" ascii
         $pe = "PE\x00\x00" ascii
@@ -339,9 +339,9 @@ rule PE_Embedded_PE {
 rule PE_Suspicious_Strings_CnC {
     meta:
         description = "PE contains strings suggesting C2 communication"
+        severity = "high"
         category = "command-and-control"
         mitre       = "T1071"
-        severity = "high"
     strings:
         $s1 = "cmd.exe /c" ascii wide nocase
         $s2 = "powershell" ascii wide nocase
@@ -357,9 +357,9 @@ rule PE_Suspicious_Strings_CnC {
 rule PE_Cobalt_Strike_Indicators {
     meta:
         description = "PE shows indicators of Cobalt Strike beacon"
+        severity = "critical"
         category = "malware"
         mitre       = "T1071.001"
-        severity = "critical"
     strings:
         $cs1 = "%02d/%02d/%02d %02d:%02d:%02d" ascii
         $cs2 = "beacon.dll" ascii wide
@@ -374,9 +374,9 @@ rule PE_Cobalt_Strike_Indicators {
 rule PE_Mimikatz_Indicators {
     meta:
         description = "PE contains Mimikatz-related strings"
+        severity = "critical"
         category = "malware"
         mitre       = "T1003.001"
-        severity = "critical"
     strings:
         $m1 = "mimikatz" ascii wide nocase
         $m2 = "sekurlsa::" ascii wide
@@ -391,9 +391,9 @@ rule PE_Mimikatz_Indicators {
 rule PE_Metasploit_Payload {
     meta:
         description = "PE shows indicators of Metasploit payload"
+        severity = "critical"
         category = "malware"
         mitre       = "T1059"
-        severity = "critical"
     strings:
         $msf1 = "metsrv" ascii wide
         $msf2 = "meterpreter" ascii wide nocase
@@ -407,9 +407,9 @@ rule PE_Metasploit_Payload {
 rule PE_XLL_Excel_AddIn {
     meta:
         description = "Excel XLL add-in (DLL that auto-loads into Excel on open)"
+        severity = "high"
         category = "execution"
         mitre       = "T1137.006"
-        severity = "high"
     strings:
         $x1 = "xlAutoOpen" ascii
         $x2 = "xlAutoClose" ascii
@@ -425,9 +425,9 @@ rule PE_XLL_Excel_AddIn {
 rule PE_XLL_ExcelDNA_Managed {
     meta:
         description = "Excel-DNA managed-code XLL (.NET-authored Excel add-in)"
+        severity = "high"
         category = "execution"
         mitre       = "T1137.006"
-        severity = "high"
     strings:
         $x1 = "xlAutoOpen" ascii
         $dna1 = "ExcelDna" ascii wide
@@ -442,9 +442,9 @@ rule PE_XLL_ExcelDNA_Managed {
 rule PE_Compiled_AutoHotkey {
     meta:
         description = "Compiled AutoHotkey script (common in commodity malware droppers)"
+        severity = "high"
         category = "execution"
         mitre       = "T1059"
-        severity = "high"
     strings:
         $ahk1 = ">AUTOHOTKEY SCRIPT<" ascii wide
         $ahk2 = ">AHK WITH ICON<" ascii wide
@@ -460,9 +460,9 @@ rule PE_Compiled_AutoHotkey {
 rule PE_Go_Binary {
     meta:
         description = "Go-compiled PE binary (static, large, commonly abused by malware families)"
+        severity = "info"
         category = "info"
         mitre       = ""
-        severity = "info"
     strings:
         $g1 = "Go build ID:" ascii
         $g2 = "go.buildinfo" ascii
@@ -477,9 +477,9 @@ rule PE_Go_Binary {
 rule PE_Installer_InnoSetup {
     meta:
         description = "Inno Setup installer (bundles scripts and payloads; commonly abused)"
+        severity = "info"
         category = "info"
         mitre       = ""
-        severity = "info"
     strings:
         $i1 = "Inno Setup" ascii wide
         $i2 = "InnoSetupLdr" ascii

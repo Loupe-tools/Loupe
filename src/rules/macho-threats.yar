@@ -1,9 +1,9 @@
 rule MachO_Atomic_Stealer_Keychain {
   meta:
     description = "Atomic Stealer / AMOS infostealer — Keychain credential theft patterns"
+    severity    = "critical"
     category    = "malware"
     mitre       = "T1555.001"
-    severity    = "critical"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -25,9 +25,9 @@ rule MachO_Atomic_Stealer_Keychain {
 rule MachO_AMOS_Credential_Prompt {
   meta:
     description = "AMOS-style credential harvesting via osascript dialog"
+    severity    = "critical"
     category    = "malware"
     mitre       = "T1056.002"
-    severity    = "critical"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -46,9 +46,9 @@ rule MachO_AMOS_Credential_Prompt {
 rule MachO_Reverse_Shell {
   meta:
     description = "Reverse shell pattern — socket + dup2 + exec combination"
+    severity    = "critical"
     category    = "malware"
     mitre       = "T1059.004"
-    severity    = "critical"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -69,9 +69,9 @@ rule MachO_Reverse_Shell {
 rule MachO_RAT_Surveillance {
   meta:
     description = "Remote access tool — screen capture and keylogging capabilities"
+    severity    = "high"
     category    = "malware"
     mitre       = "T1113"
-    severity    = "high"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -92,9 +92,9 @@ rule MachO_RAT_Surveillance {
 rule MachO_Privilege_Escalation {
   meta:
     description = "Privilege escalation via AuthorizationExecuteWithPrivileges or osascript admin prompt"
+    severity    = "high"
     category    = "exploit"
     mitre       = "T1548.004"
-    severity    = "high"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -112,9 +112,9 @@ rule MachO_Privilege_Escalation {
 rule MachO_Persistence_LaunchAgent {
   meta:
     description = "Persistence via LaunchAgent/LaunchDaemon plist installation"
+    severity    = "high"
     category    = "persistence"
     mitre       = "T1543.001"
-    severity    = "high"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -136,9 +136,9 @@ rule MachO_Persistence_LaunchAgent {
 rule MachO_Persistence_LoginItem {
   meta:
     description = "Persistence via login items API"
+    severity    = "medium"
     category    = "persistence"
     mitre       = "T1547.015"
-    severity    = "medium"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -156,9 +156,9 @@ rule MachO_Persistence_LoginItem {
 rule MachO_Anti_Debug {
   meta:
     description = "Anti-debugging via ptrace PT_DENY_ATTACH or sysctl anti-debug"
+    severity    = "high"
     category    = "evasion"
     mitre       = "T1497.001"
-    severity    = "high"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -178,9 +178,9 @@ rule MachO_Anti_Debug {
 rule MachO_VM_Detection {
   meta:
     description = "Virtual machine detection — VMware, VirtualBox, Parallels checks"
+    severity    = "medium"
     category    = "evasion"
     mitre       = "T1497.001"
-    severity    = "medium"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -202,9 +202,9 @@ rule MachO_VM_Detection {
 rule MachO_Packed_UPX {
   meta:
     description = "UPX packed Mach-O binary"
+    severity    = "medium"
     category    = "packer"
     mitre       = "T1027.002"
-    severity    = "medium"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -220,9 +220,9 @@ rule MachO_Packed_UPX {
 rule MachO_Encrypted_Binary {
   meta:
     description = "Encrypted Mach-O binary — LC_ENCRYPTION_INFO with active encryption"
+    severity    = "high"
     category    = "packer"
     mitre       = "T1027.002"
-    severity    = "high"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -236,9 +236,9 @@ rule MachO_Encrypted_Binary {
 rule MachO_Cryptominer {
   meta:
     description = "Cryptocurrency mining indicators in Mach-O binary"
+    severity    = "high"
     category    = "cryptominer"
     mitre       = "T1496"
-    severity    = "high"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -260,9 +260,9 @@ rule MachO_Cryptominer {
 rule MachO_Dylib_Hijack {
   meta:
     description = "DYLD injection / dylib hijacking indicators"
+    severity    = "high"
     category    = "exploit"
     mitre       = "T1574.004"
-    severity    = "high"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -283,9 +283,9 @@ rule MachO_Dylib_Hijack {
 rule MachO_Camera_Microphone {
   meta:
     description = "Camera/microphone access — potential surveillance malware"
+    severity    = "high"
     category    = "malware"
     mitre       = "T1123"
-    severity    = "high"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -306,9 +306,9 @@ rule MachO_Camera_Microphone {
 rule MachO_Suspicious_Entitlements {
   meta:
     description = "Suspicious code signing entitlements that weaken security"
+    severity    = "medium"
     category    = "evasion"
     mitre       = "T1553"
-    severity    = "medium"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -326,9 +326,9 @@ rule MachO_Suspicious_Entitlements {
 rule MachO_Adware_Installer {
   meta:
     description = "Adware/bundleware installer patterns — system modification indicators"
+    severity    = "medium"
     category    = "adware"
     mitre       = "T1176"
-    severity    = "medium"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }
@@ -351,9 +351,9 @@ rule MachO_Adware_Installer {
 rule MachO_Fileless_Execution {
   meta:
     description = "Fileless Mach-O execution via NSCreateObjectFileImageFromMemory"
+    severity    = "critical"
     category    = "exploit"
     mitre       = "T1620"
-    severity    = "critical"
   strings:
     $magic1 = { CF FA ED FE }
     $magic2 = { CE FA ED FE }

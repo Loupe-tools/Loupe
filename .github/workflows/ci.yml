@@ -123,6 +123,29 @@ jobs:
         run: python scripts/verify_vendored.py
 
   # ──────────────────────────────────────────────────────────────────
+  # YARA rule linter. Enforces the house style for every file in
+  # src/rules/ — comment-free source, canonical meta-key order
+  # (description, severity, category, mitre, applies_to), no unknown
+  # meta keys, no tabs / trailing whitespace, no duplicate rule names.
+  # Runs without needing the build artefact since it operates on
+  # src/rules/*.yar directly. `python scripts/lint_yara.py --fix`
+  # autofixes the safe class of violations locally.
+  # ──────────────────────────────────────────────────────────────────
+  yara-lint:
+    name: Lint YARA rule house style
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.x'
+
+      - name: Run lint_yara.py
+        run: python scripts/lint_yara.py
+
+  # ──────────────────────────────────────────────────────────────────
   # Static HTML / source checks. These enforce the invariants that
   # make Loupe's threat model credible:
   #   - CSP meta tag is present in the built bundle
@@ -378,7 +401,7 @@ jobs:
   deploy-pages:
     name: Deploy to GitHub Pages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build, verify-vendored, static-checks, lint]
+    needs: [build, verify-vendored, static-checks, lint, yara-lint]
     runs-on: ubuntu-latest
     permissions:
       pages: write

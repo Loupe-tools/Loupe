@@ -1,9 +1,9 @@
 rule ClickOnce_AppDomainManager_Override {
     meta:
         description = "ClickOnce manifest overrides AppDomainManager — hijack/side-load vector (GhostPack / DoppelGate)"
+        severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1574.014"
-        severity    = "high"
     strings:
         $asm    = "<assembly" ascii wide nocase
         $adma   = "appDomainManagerAssembly" ascii wide nocase
@@ -16,9 +16,9 @@ rule ClickOnce_AppDomainManager_Override {
 rule ClickOnce_HTTP_Deployment {
     meta:
         description = "ClickOnce deployment manifest uses plain HTTP codebase (no TLS) — MITM/downgrade risk"
+        severity    = "medium"
         category    = "command-and-control"
         mitre       = "T1105"
-        severity    = "medium"
     strings:
         $dep    = "<deployment" ascii wide nocase
         $cb     = "codebase=\"http://" ascii wide nocase
@@ -30,9 +30,9 @@ rule ClickOnce_HTTP_Deployment {
 rule ClickOnce_FullTrust_Requested {
     meta:
         description = "ClickOnce application requests FullTrust permission set (runs unsandboxed)"
+        severity    = "high"
         category    = "privilege-escalation"
         mitre       = "T1059"
-        severity    = "high"
     strings:
         $asm   = "<assembly" ascii wide nocase
         $ts    = "<trustInfo" ascii wide nocase
@@ -46,9 +46,9 @@ rule ClickOnce_FullTrust_Requested {
 rule ClickOnce_Suspicious_Codebase_TLD {
     meta:
         description = "ClickOnce deployment codebase points to suspicious/disposable hosting (free-TLD, tunneling, paste sites)"
+        severity    = "high"
         category    = "command-and-control"
         mitre       = "T1608.001"
-        severity    = "high"
     strings:
         $dep   = "<deployment" ascii wide nocase
         $cb    = "codebase=" ascii wide nocase

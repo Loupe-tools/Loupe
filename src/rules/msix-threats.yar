@@ -1,9 +1,9 @@
 rule MSIX_Capability_RunFullTrust {
     meta:
         description = "MSIX manifest requests rescap:runFullTrust or allowElevation — package runs outside the AppContainer sandbox"
+        severity    = "high"
         category    = "privilege-escalation"
         mitre       = "T1548"
-        severity    = "high"
     strings:
         $pkg   = "<Package" ascii wide nocase
         $c1    = "Name=\"runFullTrust\"" ascii wide nocase
@@ -15,9 +15,9 @@ rule MSIX_Capability_RunFullTrust {
 rule MSIX_Capability_BroadFileSystem {
     meta:
         description = "MSIX manifest requests broad file-system or package-management capabilities"
+        severity    = "high"
         category    = "discovery"
         mitre       = "T1083"
-        severity    = "high"
     strings:
         $pkg   = "<Package" ascii wide nocase
         $c1    = "Name=\"broadFileSystemAccess\"" ascii wide nocase
@@ -31,9 +31,9 @@ rule MSIX_Capability_BroadFileSystem {
 rule MSIX_Extension_FullTrustProcess {
     meta:
         description = "MSIX manifest declares a windows.fullTrustProcess helper — spawns arbitrary binaries outside the sandbox"
+        severity    = "high"
         category    = "privilege-escalation"
         mitre       = "T1574.002"
-        severity    = "high"
     strings:
         $pkg   = "<Package" ascii wide nocase
         $ft    = "Category=\"windows.fullTrustProcess\"" ascii wide nocase
@@ -44,9 +44,9 @@ rule MSIX_Extension_FullTrustProcess {
 rule MSIX_Extension_StartupTask {
     meta:
         description = "MSIX manifest declares a windows.startupTask — program launches automatically on sign-in"
+        severity    = "medium"
         category    = "persistence"
         mitre       = "T1547.001"
-        severity    = "medium"
     strings:
         $pkg   = "<Package" ascii wide nocase
         $st    = "Category=\"windows.startupTask\"" ascii wide nocase
@@ -58,9 +58,9 @@ rule MSIX_Extension_StartupTask {
 rule MSIX_AppExecutionAlias_CommonName {
     meta:
         description = "MSIX windows.appExecutionAlias claims a common CLI name (python/curl/wget/pwsh/git) — hijacks invocations from an admin shell"
+        severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1574.009"
-        severity    = "high"
     strings:
         $pkg   = "<Package" ascii wide nocase
         $aea   = "windows.appExecutionAlias" ascii wide nocase
@@ -83,9 +83,9 @@ rule MSIX_AppExecutionAlias_CommonName {
 rule MSIX_AppInstaller_HTTP {
     meta:
         description = "App Installer file (.appinstaller) fetches MainPackage/MainBundle over plain HTTP — MITM swaps the payload on every auto-update"
+        severity    = "high"
         category    = "command-and-control"
         mitre       = "T1557.001"
-        severity    = "high"
     strings:
         $root  = "<AppInstaller" ascii wide nocase
         $mp    = "<MainPackage" ascii wide nocase
@@ -98,9 +98,9 @@ rule MSIX_AppInstaller_HTTP {
 rule MSIX_AppInstaller_Suspicious_TLD {
     meta:
         description = "App Installer Uri points to a free-TLD, tunnel, or paste host"
+        severity    = "high"
         category    = "command-and-control"
         mitre       = "T1608.001"
-        severity    = "high"
     strings:
         $root  = "<AppInstaller" ascii wide nocase
         $uri   = "Uri=" ascii wide nocase
@@ -123,9 +123,9 @@ rule MSIX_AppInstaller_Suspicious_TLD {
 rule MSIX_AppInstaller_Silent_AutoUpdate {
     meta:
         description = "App Installer configures on-launch updates with ShowPrompt=\"false\" or ForceUpdateFromAnyVersion — silent auto-update channel"
+        severity    = "medium"
         category    = "persistence"
         mitre       = "T1195"
-        severity    = "medium"
     strings:
         $root  = "<AppInstaller" ascii wide nocase
         $ol    = "<OnLaunch" ascii wide nocase
@@ -138,9 +138,9 @@ rule MSIX_AppInstaller_Silent_AutoUpdate {
 rule MSIX_Protocol_Claim_Common {
     meta:
         description = "MSIX manifest claims a common URI scheme (http/https/ftp/file/ms-appinstaller) via windows.protocol — intercepts system-wide links"
+        severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1574.010"
-        severity    = "high"
     strings:
         $pkg   = "<Package" ascii wide nocase
         $proto = "Category=\"windows.protocol\"" ascii wide nocase

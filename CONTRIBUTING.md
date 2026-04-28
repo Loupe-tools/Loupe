@@ -23,7 +23,7 @@ before opening a PR.**
 6. **Never pre-stamp `findings.risk = 'high'`.** Initialise `'low'`, escalate via `escalateRisk(findings, tier)`. Direct writes are rejected by a build gate.
 7. **`container._rawText` must be wrapped in `lfNormalize(...)`** from `src/constants.js`. Click-to-focus offsets misalign past the first CR otherwise. Build gate enforces.
 8. **User-input regex compiles must route through `safeRegex(...)`.** Every other `new RegExp(...)` site needs a `/* safeRegex: builtin */` annotation within 3 lines above. Enforced by `scripts/check_regex_safety.py`.
-9. **No comments in `.yar` files.** `scripts/build.py` injects `// @category: <name>` separators — those are the only `//` lines the in-browser engine tolerates. Use `meta:` fields for explanations.
+9. **No comments in `.yar` files; meta keys are a strict whitelist (`description`, `severity`, `category`, `mitre`, `applies_to`) in canonical order.** `scripts/build.py` injects `// @category: <name>` separators — those are the only `//` lines the in-browser engine tolerates. Enforced by `scripts/lint_yara.py` (`python make.py yara-lint`); use `python scripts/lint_yara.py --fix` to autofix safe issues.
 10. **All persistence keys use the `loupe_` prefix** and live in the [Persistence Keys](#persistence-keys) table.
 11. **Untrusted markup → `SandboxPreview.create()`** from `src/sandbox-preview.js`. Don't hand-roll `<iframe sandbox>` boilerplate.
 12. **Workers spawn through `WorkerManager`** (`src/worker-manager.js`) only. A build gate rejects any `new Worker(` outside the allow-listed spawner / worker modules.
@@ -1148,11 +1148,30 @@ sweep and needs no additional wiring.
 ## Adding a New YARA Rule
 
 1. Choose the appropriate `.yar` file under `src/rules/` by category.
-2. Add your rule; rebuild with `python scripts/build.py`.
+2. Add your rule; rebuild with `python make.py` (or `python scripts/build.py`).
 3. **Never insert comments in YARA rule files.** `scripts/build.py`
    injects `// @category: <name>` lines during concatenation — those
-   are the only `//` lines the engine tolerates.
-4. **Docs:** if the rule flags a **new class of threat** not already
+   are the only `//` lines the engine tolerates. Enforced by
+   `scripts/lint_yara.py` (runs as the `yara-lint` step in
+   `python make.py`).
+4. **Meta-key contract.** Every rule's `meta:` block uses the strict
+   whitelist below, in this order. `description` is required; the
+   rest are optional but, when present, must appear in this order
+   relative to each other. Any other key is rejected by the linter.
+
+   | Order | Key           | Required | Notes                                                              |
+   |---|-------------------|----------|--------------------------------------------------------------------|
+   | 1 | `description`     | yes      | One-line summary surfaced in the sidebar / Copy Analysis.          |
+   | 2 | `severity`        | no       | One of `info`, `low`, `medium`, `high`, `critical`.                |
+   | 3 | `category`        | no       | Free-form taxonomy tag (e.g. `defense-evasion`, `execution`).      |
+   | 4 | `mitre`           | no       | MITRE ATT&CK technique id, or `""` for "no mapping".               |
+   | 5 | `applies_to`      | no       | Engine-level format gate (see `YaraEngine.FORMAT_PREDICATES`).     |
+
+   Reach for `python scripts/lint_yara.py --fix` if you've copy-pasted
+   a rule from upstream — it normalises meta order, strips comments,
+   and trims trailing whitespace in one pass. It will *not* silently
+   drop unknown meta keys (typo guard); fix those by hand.
+5. **Docs:** if the rule flags a **new class of threat** not already
    covered, add a row to the security-analysis table in `FEATURES.md`.
    Ordinary new rules within an existing category need no doc change.
 

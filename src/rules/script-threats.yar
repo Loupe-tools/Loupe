@@ -855,7 +855,6 @@ rule Python_Exec_Base64_Obfuscation
         severity = "high"
         category = "obfuscation"
         mitre       = "T1059.006"
-        reference = "Python exec + base64 payload delivery"
         applies_to  = "py, plaintext, decoded-payload"
     strings:
         $exec_b64_1 = "exec(base64.b64decode(" nocase
@@ -879,7 +878,6 @@ rule Python_Eval_Codec_Obfuscation
         severity = "high"
         category = "obfuscation"
         mitre       = "T1059.006"
-        reference = "Python eval with codec/zlib/marshal deobfuscation"
         applies_to  = "py, plaintext, decoded-payload"
     strings:
         $eval = "eval(" nocase
@@ -903,7 +901,6 @@ rule Python_Char_Construction
         severity = "medium"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "Python chr() string building"
         applies_to  = "py, plaintext, decoded-payload"
     strings:
         $chr_chain = /chr\(\d+\)\s*\+\s*chr\(\d+\)\s*\+\s*chr\(\d+\)/
@@ -923,7 +920,6 @@ rule JS_ROT13_Cipher_Implementation
         severity = "medium"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "ROT13 character rotation in JavaScript"
         applies_to  = "js, html, hta, plaintext, decoded-payload"
     strings:
         $charcode_13 = /charCodeAt\s*\(\s*\w*\s*\)\s*[\+\-]\s*13/ nocase
@@ -944,7 +940,6 @@ rule PS_Call_Operator_Obfuscation
         severity = "high"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "PowerShell & operator with dynamic command construction"
         applies_to  = "ps1, plaintext, decoded-payload"
     strings:
         $call_concat_1 = /&\s*\(\s*['"][a-zA-Z]+['"]\s*\+\s*['"][a-zA-Z]+['"]/ nocase
@@ -963,7 +958,6 @@ rule PS_EnvVar_Payload_Execution
         severity = "high"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "PowerShell $env: variable payload + IEX execution"
         applies_to  = "ps1, plaintext, decoded-payload"
     strings:
         $env_set = /\$env:\w+\s*=\s*['"]/ nocase
@@ -985,7 +979,6 @@ rule PS_Split_Join_Reassembly
         severity = "medium"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "PowerShell -split + -join pattern for payload reassembly"
         applies_to  = "ps1, plaintext, decoded-payload"
     strings:
         $split_join_1 = /\-split\s*['"][^'"]+['"]\s*\-join\s*['"][^'"]*['"]/ nocase
@@ -1008,7 +1001,6 @@ rule PS_Hashtable_Command_Construction
         severity = "medium"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "PowerShell @{} hashtable with call operator execution"
         applies_to  = "ps1, plaintext, decoded-payload"
     strings:
         $hashtable = /\$\w+\s*=\s*@\{/ nocase
@@ -1027,7 +1019,6 @@ rule JS_Split_Join_Deobfuscation
         severity = "medium"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "JavaScript .split('x').join('') character stripping"
         applies_to  = "js, html, hta, plaintext, decoded-payload"
     strings:
         $split_join_empty = /\.split\s*\(\s*['"][^'"]+['"]\s*\)\s*\.join\s*\(\s*['"]['"]/ nocase
@@ -1048,7 +1039,6 @@ rule JS_Proxy_Function_Hiding
         severity = "medium"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "JavaScript Proxy handler wrapping suspicious invocations"
         applies_to  = "js, html, hta, plaintext, decoded-payload"
     strings:
         $proxy = "new Proxy(" nocase
@@ -1068,7 +1058,6 @@ rule JS_Bracket_Hex_Property_Execution
         severity = "high"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "window['\\x65\\x76\\x61\\x6c'] style property access"
         applies_to  = "js, html, hta, plaintext, decoded-payload"
     strings:
         $hex_bracket_1 = /\w+\s*\[\s*['"]\\x[0-9a-fA-F]{2}(\\x[0-9a-fA-F]{2})+['"]\s*\]/ nocase
@@ -1089,7 +1078,6 @@ rule Bash_Base64_Execution
         severity = "high"
         category = "obfuscation"
         mitre       = "T1059.004"
-        reference = "eval $(echo ... | base64 -d) and similar patterns"
         applies_to  = "bash, plaintext, decoded-payload"
     strings:
         $eval_b64_1 = /eval\s+\$\(\s*echo\s+[A-Za-z0-9\+\/=]+\s*\|\s*base64\s+-(d|decode)\s*\)/ nocase
@@ -1111,7 +1099,6 @@ rule Bash_Variable_Obfuscation
         severity = "medium"
         category = "obfuscation"
         mitre       = "T1027"
-        reference = "Bash ${var} abuse, IFS manipulation, and heredoc payloads"
         applies_to  = "bash, plaintext, decoded-payload"
     strings:
         $ifs_manip = /IFS\s*=\s*['"][^'"]*['"]\s*;/ nocase
@@ -1134,7 +1121,6 @@ rule Shell_Curl_Wget_Pipe_Exec
         severity = "high"
         category = "obfuscation"
         mitre       = "T1059.004"
-        reference = "curl/wget piped to bash/sh for remote code execution"
         applies_to  = "bash, plaintext, decoded-payload"
     strings:
         $curl_bash = /curl\s+[^\|]*\|\s*(ba)?sh/ nocase

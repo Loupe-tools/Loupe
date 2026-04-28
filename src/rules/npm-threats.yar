@@ -1,9 +1,9 @@
 rule Npm_Lifecycle_Hook_Download {
     meta:
         description = "npm lifecycle hook (preinstall/postinstall/install) shells out to curl or wget to fetch and run a remote payload"
+        severity    = "critical"
         category    = "execution"
         mitre       = "T1105"
-        severity    = "critical"
     strings:
         $h1    = "\"preinstall\"" ascii wide nocase
         $h2    = "\"postinstall\"" ascii wide nocase
@@ -21,9 +21,9 @@ rule Npm_Lifecycle_Hook_Download {
 rule Npm_Lifecycle_Hook_Eval_Chain {
     meta:
         description = "npm lifecycle hook composes eval / new Function / Buffer.from(…'base64') to decode and execute a runtime-assembled payload"
+        severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1027"
-        severity    = "high"
     strings:
         $h1    = "\"preinstall\"" ascii wide nocase
         $h2    = "\"postinstall\"" ascii wide nocase
@@ -42,9 +42,9 @@ rule Npm_Lifecycle_Hook_Eval_Chain {
 rule Npm_ShaiHulud_Workflow {
     meta:
         description = "Package bundles a GitHub Actions workflow named shai-hulud.yml — hallmark of the Shai-Hulud npm worm which re-publishes victim repos as public"
+        severity    = "critical"
         category    = "persistence"
         mitre       = "T1546"
-        severity    = "critical"
     strings:
         $w1    = "shai-hulud.yml" ascii wide nocase
         $w2    = "shai-hulud.yaml" ascii wide nocase
@@ -57,9 +57,9 @@ rule Npm_ShaiHulud_Workflow {
 rule Npm_ShaiHulud_Repo_Exfil {
     meta:
         description = "Package script creates a public GitHub repo named Shai-Hulud and pushes harvested secrets to it via the GitHub API"
+        severity    = "critical"
         category    = "exfiltration"
         mitre       = "T1567"
-        severity    = "critical"
     strings:
         $n1    = "Shai-Hulud" ascii wide
         $n2    = "shai-hulud" ascii wide nocase
@@ -74,9 +74,9 @@ rule Npm_ShaiHulud_Repo_Exfil {
 rule Npm_ShaiHulud_Bundle_Stealer {
     meta:
         description = "Package ships a large bundle.js that imports TruffleHog / cloud-metadata endpoints — the credential-harvesting payload shape seen in Shai-Hulud 1.0 and 2.0"
+        severity    = "critical"
         category    = "credential-access"
         mitre       = "T1552"
-        severity    = "critical"
     strings:
         $bn1   = "bundle.js" ascii wide nocase
         $bn2   = "dist/index.js" ascii wide nocase
@@ -93,9 +93,9 @@ rule Npm_ShaiHulud_Bundle_Stealer {
 rule Npm_Npmrc_Token_Exfil {
     meta:
         description = "Package script reads .npmrc / NPM_TOKEN and writes it back out over the network — classic npm-publish-token hijack for downstream supply-chain pivots"
+        severity    = "high"
         category    = "credential-access"
         mitre       = "T1552.001"
-        severity    = "high"
     strings:
         $rc1   = ".npmrc" ascii wide nocase
         $rc2   = "NPM_TOKEN" ascii wide
@@ -112,9 +112,9 @@ rule Npm_Npmrc_Token_Exfil {
 rule Npm_Env_Harvest {
     meta:
         description = "Package script enumerates process.env and POSTs it off-box — common first-stage credential-harvest pattern in malicious npm packages"
+        severity    = "high"
         category    = "credential-access"
         mitre       = "T1552.001"
-        severity    = "high"
     strings:
         $e1    = "process.env" ascii wide
         $e2    = "Object.keys(process.env)" ascii wide
@@ -136,9 +136,9 @@ rule Npm_Env_Harvest {
 rule Npm_Wallet_Scanner {
     meta:
         description = "Package script walks home-directory paths of browser wallet extensions (MetaMask, Phantom, Trust, Exodus) to lift seed vaults"
+        severity    = "critical"
         category    = "credential-access"
         mitre       = "T1555"
-        severity    = "critical"
     strings:
         $w1    = "MetaMask" ascii wide
         $w2    = "nkbihfbeogaeaoehlefnkodbefgpgknn" ascii wide nocase
@@ -158,9 +158,9 @@ rule Npm_Wallet_Scanner {
 rule Npm_Clipboard_Wallet_Swap {
     meta:
         description = "Package hooks the clipboard and rewrites BTC / ETH / SOL addresses on copy-paste — clipper shape used in npm supply-chain drops"
+        severity    = "high"
         category    = "impact"
         mitre       = "T1115"
-        severity    = "high"
     strings:
         $cb1   = "clipboardy" ascii wide nocase
         $cb2   = "clipboard-event" ascii wide nocase
@@ -175,9 +175,9 @@ rule Npm_Clipboard_Wallet_Swap {
 rule Npm_Webhook_Beacon {
     meta:
         description = "Package script beacons to Discord / Telegram / Slack webhooks or a pastebin-like relay — common low-effort exfil channel in malicious npm drops"
+        severity    = "high"
         category    = "exfiltration"
         mitre       = "T1567.002"
-        severity    = "high"
     strings:
         $d1    = "discord.com/api/webhooks" ascii wide nocase
         $d2    = "discordapp.com/api/webhooks" ascii wide nocase
@@ -196,9 +196,9 @@ rule Npm_Webhook_Beacon {
 rule Npm_Obfuscator_IO {
     meta:
         description = "Bundled script shows javascript-obfuscator.io fingerprints — array-rotate / string-array / hex-heavy identifiers typical of obfuscated npm droppers"
+        severity    = "medium"
         category    = "defense-evasion"
         mitre       = "T1027"
-        severity    = "medium"
     strings:
         $o1    = "_0x" ascii wide
         $o2    = "['push']['apply']" ascii wide
@@ -212,9 +212,9 @@ rule Npm_Obfuscator_IO {
 rule Npm_Native_Binary_Dropper {
     meta:
         description = "Package ships a raw native binary (PE / ELF / Mach-O) alongside a postinstall hook that chmod +x's it and runs it"
+        severity    = "high"
         category    = "execution"
         mitre       = "T1204.002"
-        severity    = "high"
     strings:
         $h1    = "\"postinstall\"" ascii wide nocase
         $h2    = "\"install\"" ascii wide nocase
@@ -234,9 +234,9 @@ rule Npm_Native_Binary_Dropper {
 rule Npm_Typosquat_Lookalike {
     meta:
         description = "Package name matches a known typosquat of a popular npm package (e.g. crossenv, babelcli, jquery.js, noblox.js-proxied)"
+        severity    = "medium"
         category    = "initial-access"
         mitre       = "T1195.002"
-        severity    = "medium"
     strings:
         $n1    = "\"name\": \"crossenv\"" ascii wide nocase
         $n2    = "\"name\":\"crossenv\"" ascii wide nocase
@@ -257,9 +257,9 @@ rule Npm_Typosquat_Lookalike {
 rule Npm_Bin_Shell_Wrapper {
     meta:
         description = "Package 'bin' entry points at a .sh / .bat / .cmd wrapper — installing the package drops a shell script onto the user's PATH"
+        severity    = "medium"
         category    = "persistence"
         mitre       = "T1546"
-        severity    = "medium"
     strings:
         $b      = "\"bin\"" ascii wide nocase
         $s1     = ".sh\"" ascii wide nocase
@@ -273,9 +273,9 @@ rule Npm_Bin_Shell_Wrapper {
 rule Npm_Lockfile_Nonregistry_Resolved {
     meta:
         description = "package-lock.json resolves a dependency from a non-registry URL (raw git / tarball / local path) — bypasses the public npm registry integrity gate"
+        severity    = "medium"
         category    = "supply-chain"
         mitre       = "T1195.001"
-        severity    = "medium"
     strings:
         $lv    = "\"lockfileVersion\"" ascii wide
         $r1    = "\"resolved\": \"git+" ascii wide nocase

@@ -17,9 +17,10 @@ scripts are untouched — CI and one-off usage keep working exactly as before.
 
 Usage
 -----
-    python make.py                          # run verify, build, contract, codemap (default)
+    python make.py                          # run verify, regex, parity, yara-lint, build, contract, codemap (default)
     python make.py all                      # same as default
     python make.py verify                   # just verify_vendored.py
+    python make.py yara-lint                # just lint_yara.py — `python scripts/lint_yara.py --fix` to autofix
     python make.py build                    # just build.py
     python make.py contract                 # just check_renderer_contract.py
     python make.py codemap                  # just generate_codemap.py
@@ -64,6 +65,7 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
     'verify':     ('Verify vendored SHA-256 pins', 'scripts/verify_vendored.py',     []),
     'regex':      ('Check regex safety annotations', 'scripts/check_regex_safety.py', []),
     'parity':     ('Check worker shim parity',     'scripts/check_shim_parity.py',   []),
+    'yara-lint':  ('Lint YARA rule house style',   'scripts/lint_yara.py',           []),
     'build':      ('Build docs/index.html',        'scripts/build.py',               []),
     'contract':   ('Check renderer contract',      'scripts/check_renderer_contract.py', []),
     'codemap':    ('Regenerate CODEMAP.md',        'scripts/generate_codemap.py',    []),
@@ -81,7 +83,7 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
     'test-e2e':   ('Run Playwright e2e tests',    'scripts/run_tests_e2e.py',      []),
 }
 
-DEFAULT_STEPS = ['verify', 'regex', 'parity', 'build', 'contract', 'codemap']
+DEFAULT_STEPS = ['verify', 'regex', 'parity', 'yara-lint', 'build', 'contract', 'codemap']
 # `test` is a pseudo-alias expanded by `_parse_args`. Real steps are in STEPS.
 TEST_STEPS = ['test-build', 'test-unit', 'test-e2e']
 ALL_STEPS = list(STEPS.keys())

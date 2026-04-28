@@ -1,9 +1,9 @@
 rule PKG_Xar_Archive {
     meta:
         description = "macOS flat Installer Package (xar archive) — scripts execute with root privileges during install"
+        severity    = "info"
         category    = "suspicious"
         mitre       = "T1546"
-        severity    = "info"
         applies_to  = "pkg"
     strings:
         $xar = { 78 61 72 21 }
@@ -14,9 +14,9 @@ rule PKG_Xar_Archive {
 rule DMG_UDIF_Disk_Image {
     meta:
         description = "Apple Disk Image (UDIF) — bypasses macOS Mark-of-the-Web quarantine attribute once mounted"
+        severity    = "info"
         category    = "defense-evasion"
         mitre       = "T1553.005"
-        severity    = "info"
     strings:
         $koly = { 6B 6F 6C 79 }
     condition:
@@ -26,9 +26,9 @@ rule DMG_UDIF_Disk_Image {
 rule DMG_Encrypted {
     meta:
         description = "Encrypted Apple Disk Image — contents cannot be statically inspected without the passphrase (common malware packaging)"
+        severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1027.013"
-        severity    = "high"
     strings:
         $aea      = { 41 45 41 31 }
         $encrcdsa = "encrcdsa" ascii
@@ -40,9 +40,9 @@ rule DMG_Encrypted {
 rule DMG_Contains_App_Launcher {
     meta:
         description = "DMG contains both an Applications symlink and a .app bundle — classic drag-to-install social-engineering layout used by AdLoad / AMOS / Atomic Stealer"
+        severity    = "high"
         category    = "initial-access"
         mitre       = "T1204.002"
-        severity    = "high"
     strings:
         $koly     = { 6B 6F 6C 79 }
         $apps_sym = "Applications" ascii
@@ -55,9 +55,9 @@ rule DMG_Contains_App_Launcher {
 rule DMG_Contains_Hidden_App {
     meta:
         description = "DMG contains a hidden .app bundle (leading dot) — used to obscure the real payload behind a visible decoy"
+        severity    = "high"
         category    = "defense-evasion"
         mitre       = "T1564.001"
-        severity    = "high"
     strings:
         $koly       = { 6B 6F 6C 79 }
         $hidden1    = "/.app" ascii

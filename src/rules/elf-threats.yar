@@ -1,9 +1,9 @@
 rule ELF_UPX_Packed {
     meta:
         description = "UPX packed ELF binary"
+        severity = "medium"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "medium"
     strings:
         $upx0 = "UPX!" ascii
         $upx1 = "UPX0" ascii
@@ -16,9 +16,9 @@ rule ELF_UPX_Packed {
 rule ELF_Generic_Packer {
     meta:
         description = "Possible packed/encrypted ELF binary (modified section names)"
+        severity = "medium"
         category = "packer"
         mitre       = "T1027.002"
-        severity = "medium"
     strings:
         $s1 = ".packed" ascii
         $s2 = ".crypted" ascii
@@ -32,9 +32,9 @@ rule ELF_Generic_Packer {
 rule ELF_Mirai_Strings {
     meta:
         description = "Mirai botnet variant indicators"
+        severity = "critical"
         category = "malware"
         mitre       = "T1583.005"
-        severity = "critical"
     strings:
         $s1 = "/proc/self/exe" ascii
         $s2 = "/proc/net/tcp" ascii
@@ -61,9 +61,9 @@ rule ELF_Mirai_Strings {
 rule ELF_Mirai_Config {
     meta:
         description = "Mirai botnet configuration/CNC patterns"
+        severity = "critical"
         category = "malware"
         mitre       = "T1583.005"
-        severity = "critical"
     strings:
         $cnc1 = "CNC_ADDR" ascii
         $cnc2 = "cnc_addr" ascii
@@ -84,9 +84,9 @@ rule ELF_Mirai_Config {
 rule ELF_Cryptominer_XMRig {
     meta:
         description = "XMRig cryptocurrency miner"
+        severity = "high"
         category = "cryptominer"
         mitre       = "T1496"
-        severity = "high"
     strings:
         $s1 = "xmrig" ascii nocase
         $s2 = "XMRig" ascii
@@ -106,9 +106,9 @@ rule ELF_Cryptominer_XMRig {
 rule ELF_Cryptominer_Generic {
     meta:
         description = "Generic cryptocurrency mining indicators"
+        severity = "high"
         category = "cryptominer"
         mitre       = "T1496"
-        severity = "high"
     strings:
         $pool1 = "mining.pool" ascii
         $pool2 = "pool.hashvault.pro" ascii
@@ -129,9 +129,9 @@ rule ELF_Cryptominer_Generic {
 rule ELF_ESXi_Ransomware {
     meta:
         description = "ESXi/VMware ransomware indicators"
+        severity = "critical"
         category = "ransomware"
         mitre       = "T1486"
-        severity = "critical"
     strings:
         $esxi1 = "esxcli" ascii
         $esxi2 = "vim-cmd" ascii
@@ -161,9 +161,9 @@ rule ELF_ESXi_Ransomware {
 rule ELF_Reverse_Shell {
     meta:
         description = "Reverse shell indicators"
+        severity = "high"
         category = "backdoor"
         mitre       = "T1059.004"
-        severity = "high"
     strings:
         $sh1 = "/bin/sh" ascii
         $sh2 = "/bin/bash" ascii
@@ -189,9 +189,9 @@ rule ELF_Reverse_Shell {
 rule ELF_LD_PRELOAD_Hijack {
     meta:
         description = "LD_PRELOAD library hijacking / userland rootkit"
+        severity = "high"
         category = "rootkit"
         mitre       = "T1574.006"
-        severity = "high"
     strings:
         $s1 = "LD_PRELOAD" ascii
         $s2 = "/etc/ld.so.preload" ascii
@@ -213,9 +213,9 @@ rule ELF_LD_PRELOAD_Hijack {
 rule ELF_Proc_Hiding {
     meta:
         description = "Process/file hiding via /proc manipulation"
+        severity = "high"
         category = "rootkit"
         mitre       = "T1564.001"
-        severity = "high"
     strings:
         $proc1 = "/proc/self/maps" ascii
         $proc2 = "/proc/self/status" ascii
@@ -235,9 +235,9 @@ rule ELF_Proc_Hiding {
 rule ELF_Ptrace_AntiDebug {
     meta:
         description = "Anti-debugging via ptrace"
+        severity = "medium"
         category = "evasion"
         mitre       = "T1497.001"
-        severity = "medium"
     strings:
         $s1 = "PTRACE_TRACEME" ascii
         $s2 = "ptrace" ascii
@@ -251,9 +251,9 @@ rule ELF_Ptrace_AntiDebug {
 rule ELF_Self_Deletion {
     meta:
         description = "Self-deleting binary (anti-forensics)"
+        severity = "medium"
         category = "evasion"
         mitre       = "T1070.004"
-        severity = "medium"
     strings:
         $s1 = "/proc/self/exe" ascii
         $s2 = "unlink" ascii
@@ -269,9 +269,9 @@ rule ELF_Self_Deletion {
 rule ELF_Kernel_Module_Rootkit {
     meta:
         description = "Kernel module / LKM rootkit indicators"
+        severity = "critical"
         category = "rootkit"
         mitre       = "T1547.006"
-        severity = "critical"
     strings:
         $s1 = "init_module" ascii
         $s2 = "finit_module" ascii
@@ -291,9 +291,9 @@ rule ELF_Kernel_Module_Rootkit {
 rule ELF_Credential_Access {
     meta:
         description = "Credential file access patterns"
+        severity = "high"
         category = "credential_theft"
         mitre       = "T1552.001"
-        severity = "high"
     strings:
         $s1 = "/etc/passwd" ascii
         $s2 = "/etc/shadow" ascii
@@ -312,9 +312,9 @@ rule ELF_Credential_Access {
 rule ELF_Persistence_Mechanism {
     meta:
         description = "Linux persistence mechanism indicators"
+        severity = "high"
         category = "persistence"
         mitre       = "T1053.003"
-        severity = "high"
     strings:
         $cron1 = "/etc/crontab" ascii
         $cron2 = "/var/spool/cron" ascii
@@ -337,9 +337,9 @@ rule ELF_Persistence_Mechanism {
 rule ELF_Container_Escape {
     meta:
         description = "Container escape / breakout indicators"
+        severity = "critical"
         category = "container_escape"
         mitre       = "T1611"
-        severity = "critical"
     strings:
         $s1 = "/.dockerenv" ascii
         $s2 = "/proc/1/cgroup" ascii
@@ -360,9 +360,9 @@ rule ELF_Container_Escape {
 rule ELF_Go_Binary {
     meta:
         description = "Go-compiled ELF binary (static, large, commonly abused by Linux malware families)"
+        severity = "info"
         category = "info"
         mitre       = ""
-        severity = "info"
     strings:
         $g1 = "Go build ID:" ascii
         $g2 = "go.buildinfo" ascii
@@ -377,9 +377,9 @@ rule ELF_Go_Binary {
 rule ELF_BPF_Rootkit {
     meta:
         description = "eBPF-based rootkit indicators"
+        severity = "high"
         category = "rootkit"
         mitre       = "T1014"
-        severity = "high"
     strings:
         $s1 = "bpf_probe_read" ascii
         $s2 = "bpf_map_update_elem" ascii
