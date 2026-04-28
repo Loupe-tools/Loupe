@@ -281,36 +281,34 @@ extendApp({
           && window.WorkerManager.workersAvailable && window.WorkerManager.workersAvailable()) {
         try {
           // ── Buffer ownership ──
-          // For CSV / TSV the host has no further use for the buffer
-          // (no analyzer side-channel — `_buildTimelineViewFromWorker`
-          // only reads the worker payload), so we can transfer the
-          // ORIGINAL buffer and skip the 318 MB memcpy that the legacy
-          // `buffer.slice(0)` introduced. Empirically this halves peak
-          // memory on multi-hundred-MB CSV drops. The post-worker
-          // zero-row fallback re-reads bytes via `_loadFile`'s
-          // re-fetch path so the lost main-thread reference is fine.
+          // `transferOriginal` controls only whether we hand the worker
+          // the live ArrayBuffer (zero-copy) or a `slice(0)` duplicate.
+          // It is independent of row streaming — Phase 6 promoted EVTX
+          // and SQLite to the same `rows-chunk` protocol CSV uses, so
+          // every kind streams now.
           //
-          // EVTX still needs the original buffer on the main thread for
-          // `EvtxDetector.analyzeForSecurity` (in
-          // `_buildTimelineViewFromWorker`). SQLite's zero-row escape
-          // hatch also re-reads the original buffer to drive
-          // `_loadFile`. Both keep the existing `buffer.slice(0)`
-          // duplicate.
+          // Why CSV transfers and EVTX / SQLite copy:
+          //   - CSV / TSV: the host has no further use for the buffer
+          //     post-parse (no analyzer side-channel; the zero-row
+          //     escape hatch re-reads via `_loadFile`'s re-fetch path).
+          //     Transferring saves a 318 MB memcpy on multi-hundred-MB
+          //     drops — empirically halves peak memory there.
+          //   - EVTX: main thread still needs the buffer to drive
+          //     `EvtxDetector.analyzeForSecurity` post-parse.
+          //   - SQLite: the zero-row escape hatch passes `buffer` to
+          //     `_loadFile` so the file isn't re-read from disk.
           const transferOriginal = (workerKind === 'csv');
           const transfer = transferOriginal ? buffer : buffer.slice(0);
 
-          // ── Streaming RowStore builder (CSV / TSV only) ──
+          // ── Streaming RowStore builder (every kind) ──
           // The worker emits `{event:'rows-chunk', bytes, offsets,
-          // rowCount}` every 50 000 rows. Each chunk's two ArrayBuffers
-          // ride the postMessage transfer list (zero-copy across the
-          // worker boundary), so we wrap them in typed-array views and
-          // hand them straight to `RowStoreBuilder.addChunk`. The
-          // structured-clone of the legacy `string[][]` batch — which
-          // doubled main-thread peak memory on the postback hand-off —
-          // is gone.
-          //
-          // EVTX / SQLite still hand back rows in the terminal `done`
-          // (legacy shape, migrated in a later phase).
+          // rowCount}` every `WORKER_CHUNK_ROWS` rows. Each chunk's
+          // two ArrayBuffers ride the postMessage transfer list
+          // (zero-copy across the worker boundary), so we wrap them
+          // in typed-array views and hand them straight to
+          // `RowStoreBuilder.addChunk`. The structured-clone of the
+          // legacy `string[][]` batch — which doubled main-thread peak
+          // memory on the postback hand-off — is gone for every kind.
           //
           // The builder's columns aren't known until `done` arrives
           // (the worker only emits them in the terminal payload), but
@@ -320,39 +318,37 @@ extendApp({
           // a real `RowStoreBuilder` once columns are in hand. This
           // keeps the typed-array buffers transferred-once (no extra
           // copy) and only costs an array-of-references during stream.
-          const pendingChunks = transferOriginal ? [] : null;
+          const pendingChunks = [];
           let rowsSeen = 0;
           let lastSubtitleAt = 0;
-          const onBatch = transferOriginal
-            ? (m) => {
-                if (!m || m.event !== 'rows-chunk') return;
-                // Wrap the transferred buffers as typed-array views.
-                // Buffers are detached on the worker side post-transfer,
-                // so this is a zero-copy view into the bytes we own now.
-                const rc = m.rowCount | 0;
-                if (rc <= 0) return;
-                pendingChunks.push({
-                  bytes:    new Uint8Array(m.bytes),
-                  offsets:  new Uint32Array(m.offsets),
-                  rowCount: rc,
-                });
-                rowsSeen += rc;
-                // Live progress subtitle. Throttle updates to roughly
-                // one per 100 ms via a wall-clock comparison so high-
-                // frequency chunk flushes don't churn the DOM.
-                const now = (typeof performance !== 'undefined'
-                  && performance.now) ? performance.now() : Date.now();
-                if (now - lastSubtitleAt >= 100) {
-                  lastSubtitleAt = now;
-                  try {
-                    if (typeof this._setLoadingSubtitle === 'function') {
-                      this._setLoadingSubtitle(
-                        rowsSeen.toLocaleString() + ' rows…');
-                    }
-                  } catch (_) { /* best-effort progress UI */ }
+          const onBatch = (m) => {
+            if (!m || m.event !== 'rows-chunk') return;
+            // Wrap the transferred buffers as typed-array views.
+            // Buffers are detached on the worker side post-transfer,
+            // so this is a zero-copy view into the bytes we own now.
+            const rc = m.rowCount | 0;
+            if (rc <= 0) return;
+            pendingChunks.push({
+              bytes:    new Uint8Array(m.bytes),
+              offsets:  new Uint32Array(m.offsets),
+              rowCount: rc,
+            });
+            rowsSeen += rc;
+            // Live progress subtitle. Throttle updates to roughly
+            // one per 100 ms via a wall-clock comparison so high-
+            // frequency chunk flushes don't churn the DOM.
+            const now = (typeof performance !== 'undefined'
+              && performance.now) ? performance.now() : Date.now();
+            if (now - lastSubtitleAt >= 100) {
+              lastSubtitleAt = now;
+              try {
+                if (typeof this._setLoadingSubtitle === 'function') {
+                  this._setLoadingSubtitle(
+                    rowsSeen.toLocaleString() + ' rows…');
                 }
-              }
-            : undefined;
+              } catch (_) { /* best-effort progress UI */ }
+            }
+          };
 
           // ── Per-call timeout ──
           // Default `PARSER_LIMITS.WORKER_TIMEOUT_MS` is 5 min; for
@@ -371,7 +367,7 @@ extendApp({
           const opts = (workerKind === 'csv')
             ? { explicitDelim: ext === 'tsv' ? '\t' : null,
                 onBatch, timeoutMs: sizeTimeout }
-            : { timeoutMs: sizeTimeout };
+            : { onBatch, timeoutMs: sizeTimeout };
           const msg = await window.WorkerManager.runTimeline(transfer, workerKind, opts);
           // Clear the live "N rows…" subtitle the moment the worker
           // hands back the terminal `done` — the build / mount phase
@@ -379,26 +375,22 @@ extendApp({
           // be misleading. `_setLoading(false)` clears defensively too,
           // but doing it here keeps the spinner clean during the
           // intermediate RowStore-build window below.
-          if (transferOriginal) {
-            try {
-              if (typeof this._setLoadingSubtitle === 'function') {
-                this._setLoadingSubtitle('');
-              }
-            } catch (_) { /* best-effort */ }
-          }
-          // For CSV / TSV: assemble the streamed `rows-chunk` payloads
-          // into a `RowStore` keyed by the columns the worker resolved
-          // from the header row. The terminal `msg` carries metadata
-          // only — its `rows` array is empty by contract. We splice the
-          // RowStore onto `msg.rowStore` and hand the (still-rowless)
-          // msg to `_buildTimelineViewFromWorker`, which knows about
-          // the new shape.
-          if (transferOriginal) {
+          try {
+            if (typeof this._setLoadingSubtitle === 'function') {
+              this._setLoadingSubtitle('');
+            }
+          } catch (_) { /* best-effort */ }
+          // Assemble the streamed `rows-chunk` payloads into a
+          // `RowStore` keyed by the columns the worker resolved from
+          // the header / schema. The terminal `msg` carries metadata
+          // only — its `rows` array is empty by contract. We splice
+          // the RowStore onto `msg.rowStore` and hand the (still-
+          // rowless) msg to `_buildTimelineViewFromWorker`.
+          {
             const cols = Array.isArray(msg.columns) ? msg.columns : [];
             const builder = new RowStoreBuilder(cols);
-            const chunkList = pendingChunks || [];
-            for (let i = 0; i < chunkList.length; i++) {
-              builder.addChunk(chunkList[i]);
+            for (let i = 0; i < pendingChunks.length; i++) {
+              builder.addChunk(pendingChunks[i]);
             }
             // Drop our reference to the chunk list so the typed arrays
             // are uniquely owned by the builder (and, after finalize,
@@ -406,7 +398,7 @@ extendApp({
             // — `addChunk` already takes the typed-array views by
             // reference, and `pendingChunks` will be unreachable once
             // the surrounding promise resolves.
-            chunkList.length = 0;
+            pendingChunks.length = 0;
             msg.rowStore = builder.finalize();
           }
           view = this._buildTimelineViewFromWorker(
@@ -563,16 +555,22 @@ extendApp({
   _buildTimelineViewFromWorker(file, kind, msg, originalBuffer) {
     if (!msg) return null;
     const columns = msg.columns || [];
-    // CSV / TSV: the streamed `rows-chunk` events were assembled into a
-    // `RowStore` (see `src/row-store.js`) and parked on `msg.rowStore`.
-    // Phase 3: pass the store straight to `TimelineView` — no
-    // intermediate `string[][]` materialisation. Other kinds (EVTX,
-    // SQLite browser-history) still ship `msg.rows` as a `string[][]`
-    // from the worker; the constructor wraps those via
-    // `RowStore.fromStringMatrix` and drops the original reference so
-    // the legacy array can GC before time-parsing allocates.
-    const rows = msg.rows || [];
-    const rowStore = (kind === 'csv' && msg.rowStore) ? msg.rowStore : null;
+    // Phase 6: every worker kind streams rows via `rows-chunk`. The
+    // host caller (`_loadFileInTimeline`) assembles them into a
+    // `RowStore` and parks it on `msg.rowStore`; the terminal `msg`
+    // carries metadata + (for EVTX) the `evtxEvents` analyzer side-
+    // channel only. `msg.rows` is empty by contract.
+    //
+    // Defence in depth: if `rowStore` is somehow missing (a future
+    // worker bug, or a kind we haven't migrated yet) we fall through
+    // to an empty store so downstream code sees a coherent
+    // `RowStore`-shaped object instead of `undefined` exploding inside
+    // `TimelineView`. The zero-row escape hatch in
+    // `_loadFileInTimeline` then re-routes the file to the analyser
+    // pipeline, matching the existing failure semantics.
+    const rowStore = (msg.rowStore && typeof msg.rowStore.rowCount === 'number')
+      ? msg.rowStore
+      : RowStore.empty(columns);
     if (kind === 'evtx') {
       let securityFindings = null;
       try {
@@ -582,10 +580,11 @@ extendApp({
         console.warn('[timeline] EVTX analyzeForSecurity failed (worker path):', e);
       }
       return new TimelineView({
-        file, columns, rows,
+        file, columns,
+        store: rowStore,
         formatLabel: msg.formatLabel || 'EVTX',
         truncated: !!msg.truncated,
-        originalRowCount: msg.originalRowCount || rows.length,
+        originalRowCount: msg.originalRowCount || rowStore.rowCount,
         defaultTimeColIdx: Number.isInteger(msg.defaultTimeColIdx) ? msg.defaultTimeColIdx : 0,
         defaultStackColIdx: Number.isInteger(msg.defaultStackColIdx) ? msg.defaultStackColIdx : 1,
         evtxEvents: msg.evtxEvents || [],
@@ -597,30 +596,25 @@ extendApp({
       // worker — caller's zero-row fallback re-routes to the regular
       // analyser. Only the browser-history path emits `defaultTimeColIdx`.
       const out = {
-        file, columns, rows,
+        file, columns,
+        store: rowStore,
         formatLabel: msg.formatLabel || 'SQLite',
         truncated: !!msg.truncated,
-        originalRowCount: msg.originalRowCount || rows.length,
+        originalRowCount: msg.originalRowCount || rowStore.rowCount,
       };
       if (Number.isInteger(msg.defaultTimeColIdx)) out.defaultTimeColIdx = msg.defaultTimeColIdx;
       if (Number.isInteger(msg.defaultStackColIdx)) out.defaultStackColIdx = msg.defaultStackColIdx;
       return new TimelineView(out);
     }
-    // csv / tsv — no analyzer side-channel. Hand the RowStore in
-    // directly when we have one (the worker path); fall back to the
-    // legacy `rows` shape only if the worker for some reason emitted
-    // an unstreamed `string[][]` (no current code path does, but we
-    // keep the fallback for safety and the sync-fallback factories).
-    const csvOpts = {
+    // csv / tsv — no analyzer side-channel. Pass the RowStore straight
+    // through to `TimelineView`.
+    return new TimelineView({
       file, columns,
+      store: rowStore,
       formatLabel: msg.formatLabel || (kind === 'csv' ? 'CSV' : 'TSV'),
       truncated: !!msg.truncated,
-      originalRowCount: msg.originalRowCount
-        || (rowStore ? rowStore.rowCount : rows.length),
-    };
-    if (rowStore) csvOpts.store = rowStore;
-    else csvOpts.rows = rows;
-    return new TimelineView(csvOpts);
+      originalRowCount: msg.originalRowCount || rowStore.rowCount,
+    });
   },
 
   _clearTimelineFile() {

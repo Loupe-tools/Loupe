@@ -45,7 +45,7 @@
 //      { kind: 'evtx', buffer: ArrayBuffer (transferred) }
 //      { kind: 'sqlite', buffer: ArrayBuffer (transferred) }
 //
-// out (CSV/TSV) — STREAMING:
+// out (CSV/TSV/EVTX/SQLite) — STREAMING:
 //   Zero or more intermediate packed-chunk events. Each chunk is the
 //   output of `packRowChunk(...)` (see `src/row-store.js`); both
 //   ArrayBuffers ride the postMessage transfer list (zero-copy):
@@ -54,33 +54,26 @@
 //       offsets: ArrayBuffer (transferred — Uint32Array of length
 //                              rowCount * (colCount + 1)),
 //       rowCount: number }
-//   Then exactly one terminal:
-//     { event: 'done', kind: 'csv',
-//       columns: [...], rows: [],         (always empty — rows arrive in chunks)
-//       formatLabel: 'CSV'|'TSV',
-//       truncated: boolean, originalRowCount: number,
-//       parseMs: number }
-//   The host caller must register an `onBatch(msg)` sink via
-//   `WorkerManager.runTimeline(buffer, 'csv', { onBatch })` to feed the
-//   streamed chunks into a `RowStoreBuilder`; without one the rows are
-//   silently dropped on the floor. See
+//   Then exactly one terminal `done` (one per kind):
+//     csv:    { event: 'done', kind: 'csv', columns, rows: [],
+//               formatLabel: 'CSV'|'TSV', truncated, originalRowCount,
+//               parseMs }
+//     evtx:   { event: 'done', kind: 'evtx', columns, rows: [],
+//               evtxEvents: [...],            ← analyzer side-channel
+//               formatLabel: 'EVTX', truncated, originalRowCount,
+//               defaultTimeColIdx: 0, defaultStackColIdx: 1, parseMs }
+//     sqlite: { event: 'done', kind: 'sqlite', columns, rows: [],
+//               formatLabel, browserType, truncated, originalRowCount,
+//               defaultTimeColIdx, defaultStackColIdx, parseMs }
+//   Phase 6: EVTX and SQLite were promoted from the legacy "rows
+//   shipped inside `done` as `string[][]`" shape to the streaming
+//   shape that CSV adopted in Phase 3. The terminal `done.rows` is
+//   now always `[]` for every kind — row data arrives only via
+//   `rows-chunk`. The host caller must register an `onBatch(msg)`
+//   sink via `WorkerManager.runTimeline(buffer, kind, { onBatch })`
+//   to feed the streamed chunks into a `RowStoreBuilder`; without
+//   one the rows are silently dropped on the floor. See
 //   `src/app/timeline/timeline-router.js::_loadFileInTimeline`.
-//
-// out (EVTX):
-//   { event: 'done', kind: 'evtx',
-//     columns: [...], rows: [[...], ...], evtxEvents: [...],
-//     formatLabel: 'EVTX',
-//     truncated: boolean, originalRowCount: number,
-//     defaultTimeColIdx: 0, defaultStackColIdx: 1,
-//     parseMs: number }
-//
-// out (SQLite):
-//   { event: 'done', kind: 'sqlite',
-//     columns: [...], rows: [[...], ...],
-//     formatLabel: string, browserType: 'chrome'|'firefox'|'edge'|null,
-//     truncated: boolean, originalRowCount: number,
-//     defaultTimeColIdx: number|null, defaultStackColIdx: number|null,
-//     parseMs: number }
 //
 // out (any error):
 //   { event: 'error', message: string }
@@ -114,6 +107,32 @@
 // below `CsvRenderer`, `SqliteRenderer`, and `EvtxRenderer` are all in
 // scope.
 // ════════════════════════════════════════════════════════════════════════════
+
+// Rows-per-chunk target for every streaming parse path. Matches the
+// `RowStoreBuilder` chunk-rows target so the host-side rebuild produces
+// chunk boundaries identical to what a sync `addRow`-driven build would
+// have produced. Promoted from a `_parseCsv` local in Phase 6 so the
+// EVTX and SQLite parsers can share it without forking the constant.
+const WORKER_CHUNK_ROWS = 50_000;
+
+// Pack one batch of `string[][]` rows and post a `rows-chunk` event with
+// both ArrayBuffers in the transfer list (zero-copy). `colCount` must
+// match the columns declared in the terminal `done` payload — the host
+// `RowStoreBuilder.addChunk` validates the offsets array's length
+// against `rowCount * (colCount + 1)` and throws on mismatch.
+function _postRowsChunk(rows, colCount) {
+  if (!rows.length || !colCount) return;
+  const packed = packRowChunk(rows, colCount);
+  self.postMessage(
+    {
+      event:    'rows-chunk',
+      bytes:    packed.bytes.buffer,
+      offsets:  packed.offsets.buffer,
+      rowCount: packed.rowCount,
+    },
+    [packed.bytes.buffer, packed.offsets.buffer],
+  );
+}
 
 // ── CSV / TSV parse (streaming chunk-decode + packed-chunk emit) ───────────
 //
@@ -149,7 +168,6 @@
 async function _parseCsv(buffer, explicitDelim) {
   const bytes = new Uint8Array(buffer);
   const DECODE_CHUNK = RENDER_LIMITS.DECODE_CHUNK_BYTES;
-  const BATCH_ROWS = 50_000;            // rows per `rows-chunk` postMessage
 
   const decoder = new TextDecoder('utf-8', { fatal: false });
   const r = new CsvRenderer();
@@ -184,20 +202,11 @@ async function _parseCsv(buffer, explicitDelim) {
   const flushBatch = () => {
     if (!pendingRows.length) return;
     // Defensive: a colLen of 0 means we never resolved a header (empty
-    // first row). `packRowChunk` would dutifully pack zero-cell rows,
+    // first row). `_postRowsChunk` would dutifully pack zero-cell rows,
     // discarding the data — bail instead and surface the degenerate
     // input via the empty-columns path in the terminal `done` payload.
     if (!colLen) { pendingRows = []; return; }
-    const packed = packRowChunk(pendingRows, colLen);
-    self.postMessage(
-      {
-        event:    'rows-chunk',
-        bytes:    packed.bytes.buffer,
-        offsets:  packed.offsets.buffer,
-        rowCount: packed.rowCount,
-      },
-      [packed.bytes.buffer, packed.offsets.buffer],
-    );
+    _postRowsChunk(pendingRows, colLen);
     // Drop reference to the source `string[][]` so the per-cell strings
     // can be GC'd before the next chunk's pack pass starts.
     pendingRows = [];
@@ -233,7 +242,7 @@ async function _parseCsv(buffer, explicitDelim) {
       }
       pendingRows.push(padOrTrimCells(cells));
       rowCount++;
-      if (pendingRows.length >= BATCH_ROWS) flushBatch();
+      if (pendingRows.length >= WORKER_CHUNK_ROWS) flushBatch();
     }
     return false;
   };
@@ -323,6 +332,11 @@ async function _parseCsv(buffer, explicitDelim) {
 }
 
 // ── EVTX parse (mirrors TimelineView.fromEvtx minus analyzer call) ─────────
+//
+// Phase 6: row data is now streamed via `rows-chunk` in batches of
+// `WORKER_CHUNK_ROWS`, matching the CSV path. The terminal `done`
+// payload carries metadata + the analyzer side-channel (`evtxEvents`)
+// only; its `rows: []` is empty by contract.
 async function _parseEvtx(buffer) {
   const r = new EvtxRenderer();
   let events = [];
@@ -333,20 +347,34 @@ async function _parseEvtx(buffer) {
   }
 
   const columns = [...EVTX_COLUMN_ORDER];
+  const colCount = columns.length;
   let truncated = false;
   let list = events;
   if (events.length > TIMELINE_MAX_ROWS) {
     list = events.slice(0, TIMELINE_MAX_ROWS);
     truncated = true;
   }
-  const rows = new Array(list.length);
+
+  // Stream rows in batches. We never materialise the full `string[][]`
+  // — once a batch reaches `WORKER_CHUNK_ROWS` it's packed and posted,
+  // then the array is dropped so the per-cell strings can GC before
+  // the next batch is built.
+  let pending = [];
   for (let i = 0; i < list.length; i++) {
     const ev = list[i] || {};
-    rows[i] = [
+    pending.push([
       ev.timestamp ? ev.timestamp.replace('T', ' ').replace('Z', '') : '',
       ev.eventId || '', ev.level || '', ev.provider || '',
       ev.channel || '', ev.computer || '', ev.eventData || '',
-    ];
+    ]);
+    if (pending.length >= WORKER_CHUNK_ROWS) {
+      _postRowsChunk(pending, colCount);
+      pending = [];
+    }
+  }
+  if (pending.length) {
+    _postRowsChunk(pending, colCount);
+    pending = [];
   }
 
   // Strip the per-event `rawRecord` Uint8Array before transferring — those
@@ -364,7 +392,8 @@ async function _parseEvtx(buffer) {
   }
 
   return {
-    columns, rows,
+    columns,
+    rows: [],                              // streamed via {event:'rows-chunk'}
     evtxEvents: trimmedEvents,
     formatLabel: 'EVTX',
     truncated,
@@ -375,6 +404,11 @@ async function _parseEvtx(buffer) {
 }
 
 // ── SQLite browser-history parse (mirrors TimelineView.fromSqlite) ─────────
+//
+// Phase 6: row data is now streamed via `rows-chunk` in batches of
+// `WORKER_CHUNK_ROWS`, matching the CSV / EVTX paths. The terminal
+// `done` payload carries metadata only; its `rows: []` is empty by
+// contract.
 function _parseSqlite(buffer) {
   const r = new SqliteRenderer();
   let db;
@@ -412,14 +446,24 @@ function _parseSqlite(buffer) {
     list = list.slice(0, TIMELINE_MAX_ROWS);
     truncated = true;
   }
-  const rows = new Array(list.length);
+
+  // Stream rows in batches (see `_parseEvtx` for rationale).
+  let pending = [];
   for (let i = 0; i < list.length; i++) {
     const src = list[i] || [];
     const row = new Array(colCount);
     for (let j = 0; j < colCount; j++) {
       row[j] = src[j] != null ? String(src[j]) : '';
     }
-    rows[i] = row;
+    pending.push(row);
+    if (pending.length >= WORKER_CHUNK_ROWS) {
+      _postRowsChunk(pending, colCount);
+      pending = [];
+    }
+  }
+  if (pending.length) {
+    _postRowsChunk(pending, colCount);
+    pending = [];
   }
 
   const browserLabel = db.browserType === 'firefox' ? 'Firefox' : 'Chrome';
@@ -427,7 +471,8 @@ function _parseSqlite(buffer) {
   const stackColIdx = useEvents ? 1 : null;
 
   return {
-    columns, rows,
+    columns,
+    rows: [],                              // streamed via {event:'rows-chunk'}
     formatLabel: 'SQLite \u2013 ' + browserLabel + ' History',
     browserType: db.browserType,
     truncated,
