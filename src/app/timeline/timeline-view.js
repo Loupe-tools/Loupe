@@ -558,6 +558,12 @@ class TimelineView {
     this._resizeObs = null;
     this._rafPending = false;
     this._colStatsRaf = 0;
+    // Auto-extract idle scheduler bookkeeping — populated by
+    // `_autoExtractBestEffort` when it schedules the scan + per-proposal
+    // apply ticks. Stored as `{ handle, cancel }` so `destroy()` can
+    // pair the cancel API with whichever scheduler the runtime picked
+    // (`requestIdleCallback` vs the `setTimeout` fallback for Safari).
+    this._autoExtractIdleHandle = null;
     this._pendingTasks = new Set();
     this._openPopover = null;
     this._openDialog = null;
@@ -586,6 +592,16 @@ class TimelineView {
     this._destroyed = true;
     cancelAnimationFrame(this._colStatsRaf);
     this._colStatsRaf = 0;
+    // Cancel any in-flight auto-extract idle/timeout tick. The handle
+    // record carries its own cancel fn so we don't have to remember
+    // which scheduler we picked (rIC vs setTimeout fallback). Without
+    // this, a fast tab-close mid-run would leave the callback to fire
+    // against a destroyed view → `_addRegexExtractNoRender` against a
+    // null grid host.
+    if (this._autoExtractIdleHandle) {
+      try { this._autoExtractIdleHandle.cancel(); } catch (_) { /* noop */ }
+      this._autoExtractIdleHandle = null;
+    }
     if (this._grid && typeof this._grid.destroy === 'function') {
       try { this._grid.destroy(); } catch (_) { /* noop */ }
     }
@@ -2049,6 +2065,23 @@ class TimelineView {
   // column and it stays gone on reopen. `_reset()` wipes the marker via
   // its `loupe_timeline_*` prefix scrub, so a hard reset re-runs the
   // pass.
+  //
+  // Scheduling — historically this method ran the scan + every apply
+  // synchronously after a 60 ms post-mount setTimeout. On 5M-row CSVs
+  // that became a 4-5 s LongTask cluster (12 proposals × O(rows) cell
+  // decodes through `_addJsonExtractedColNoRender` /
+  // `_addRegexExtractNoRender`) immediately after the first paint —
+  // the analyst saw the grid mount, then a long stall, then the toast,
+  // then the columns slide in. Now the scan runs in one idle tick and
+  // each proposal applies in its own subsequent idle tick. The total
+  // CPU is unchanged, but the browser gets a paint frame between
+  // proposals so the spinner stays smooth and the grid stays
+  // scrollable. `requestIdleCallback` with a `setTimeout(0)` Safari
+  // fallback mirrors `_scheduleIdleSearchTextBuild` in grid-viewer.js
+  // (same handle bookkeeping idiom). The done-marker is only written
+  // when the full pass completes (or a guarded early-exit fires) — a
+  // mid-run `destroy()` cancels the handle and leaves the marker
+  // unset so the next reopen retries.
   _autoExtractBestEffort() {
     if (this._destroyed) return;
     if (!this._els || !this._els.host) return;
@@ -2063,65 +2096,104 @@ class TimelineView {
       return;
     }
 
-    let proposals = [];
-    try { proposals = this._autoExtractScan() || []; } catch (_) {
-      TimelineView._saveAutoExtractDoneFor(this._fileKey);
-      return;
-    }
-
-    const isEvtx = this.formatLabel === 'EVTX'
-      || (this._baseColumns && this._baseColumns.indexOf(EVTX_COLUMNS.EVENT_DATA) !== -1);
-
-    const eligible = proposals.filter(p => {
-      if ((p.matchPct || 0) >= 80) return true;
-      if (isEvtx && p.kind === 'kv-field'
-        && p.fieldName && TIMELINE_FORENSIC_EVTX_FIELDS_SET.has(p.fieldName)) return true;
-      return false;
-    });
-
-    if (!eligible.length) {
-      // No candidates met the bar — set the marker so we don't re-scan
-      // every reopen of an unhelpful file.
-      TimelineView._saveAutoExtractDoneFor(this._fileKey);
-      return;
-    }
-
-    // Kind priority. URL-shaped values are typically the most
-    // investigatable, so they win over generic JSON leaves; forensic
-    // EVTX KV beats generic KV; KV beats raw json-leaf flattening.
-    const kindRank = (p) => {
-      if (p.kind === 'url-part' || p.kind === 'text-url' || p.kind === 'json-url') return 0;
-      if (p.kind === 'text-host' || p.kind === 'json-host') return 1;
-      if (p.kind === 'kv-field' && isEvtx
-        && TIMELINE_FORENSIC_EVTX_FIELDS_SET.has(p.fieldName || '')) return 2;
-      if (p.kind === 'kv-field') return 3;
-      if (p.kind === 'json-leaf') return 4;
-      return 9;
-    };
-    eligible.sort((a, b) => {
-      const ka = kindRank(a), kb = kindRank(b);
-      if (ka !== kb) return ka - kb;
-      return (b.matchPct || 0) - (a.matchPct || 0);
-    });
-
-    const MAX = 12;
-    const ranked = eligible.slice(0, MAX);
-
-    let added = 0;
-    for (const p of ranked) {
-      const before = this._extractedCols.length;
-      try { this._applyAutoProposal(p); } catch (_) { continue; }
-      if (this._extractedCols.length > before) added++;
-    }
-
-    if (added > 0) {
-      this._rebuildExtractedStateAndRender();
-      if (this._app && typeof this._app._toast === 'function') {
-        this._app._toast(`Auto-extracted ${added} field${added === 1 ? '' : 's'}`, 'info');
+    // Idle scheduler — pair the cancel API with the chosen scheduler so
+    // `destroy()` doesn't have to remember which one we used. Stored on
+    // `this._autoExtractIdleHandle` and cleared at the top of every
+    // tick so a synchronous `destroy()` inside a callback doesn't leak
+    // a stale record.
+    const useIdle = typeof window !== 'undefined'
+      && typeof window.requestIdleCallback === 'function';
+    const schedule = (fn) => {
+      if (useIdle) {
+        const handle = window.requestIdleCallback(fn, { timeout: 1000 });
+        return { cancel: () => { try { window.cancelIdleCallback(handle); } catch (_) { /* noop */ } } };
       }
-    }
+      const handle = setTimeout(fn, 0);
+      return { cancel: () => { try { clearTimeout(handle); } catch (_) { /* noop */ } } };
+    };
 
-    TimelineView._saveAutoExtractDoneFor(this._fileKey);
+    const scanStep = () => {
+      this._autoExtractIdleHandle = null;
+      if (this._destroyed) return;
+      if (!this._els || !this._els.host) return;
+
+      let proposals = [];
+      try { proposals = this._autoExtractScan() || []; } catch (_) {
+        TimelineView._saveAutoExtractDoneFor(this._fileKey);
+        return;
+      }
+
+      const isEvtx = this.formatLabel === 'EVTX'
+        || (this._baseColumns && this._baseColumns.indexOf(EVTX_COLUMNS.EVENT_DATA) !== -1);
+
+      const eligible = proposals.filter(p => {
+        if ((p.matchPct || 0) >= 80) return true;
+        if (isEvtx && p.kind === 'kv-field'
+          && p.fieldName && TIMELINE_FORENSIC_EVTX_FIELDS_SET.has(p.fieldName)) return true;
+        return false;
+      });
+
+      if (!eligible.length) {
+        // No candidates met the bar — set the marker so we don't re-scan
+        // every reopen of an unhelpful file.
+        TimelineView._saveAutoExtractDoneFor(this._fileKey);
+        return;
+      }
+
+      // Kind priority. URL-shaped values are typically the most
+      // investigatable, so they win over generic JSON leaves; forensic
+      // EVTX KV beats generic KV; KV beats raw json-leaf flattening.
+      const kindRank = (p) => {
+        if (p.kind === 'url-part' || p.kind === 'text-url' || p.kind === 'json-url') return 0;
+        if (p.kind === 'text-host' || p.kind === 'json-host') return 1;
+        if (p.kind === 'kv-field' && isEvtx
+          && TIMELINE_FORENSIC_EVTX_FIELDS_SET.has(p.fieldName || '')) return 2;
+        if (p.kind === 'kv-field') return 3;
+        if (p.kind === 'json-leaf') return 4;
+        return 9;
+      };
+      eligible.sort((a, b) => {
+        const ka = kindRank(a), kb = kindRank(b);
+        if (ka !== kb) return ka - kb;
+        return (b.matchPct || 0) - (a.matchPct || 0);
+      });
+
+      const MAX = 12;
+      const ranked = eligible.slice(0, MAX);
+      let added = 0;
+      let idx = 0;
+
+      const applyStep = () => {
+        this._autoExtractIdleHandle = null;
+        if (this._destroyed) return;
+
+        if (idx >= ranked.length) {
+          if (added > 0) {
+            this._rebuildExtractedStateAndRender();
+            if (this._app && typeof this._app._toast === 'function') {
+              this._app._toast(`Auto-extracted ${added} field${added === 1 ? '' : 's'}`, 'info');
+            }
+          }
+          TimelineView._saveAutoExtractDoneFor(this._fileKey);
+          return;
+        }
+
+        const p = ranked[idx++];
+        const before = this._extractedCols.length;
+        try { this._applyAutoProposal(p); } catch (_) { /* skip on error, keep going */ }
+        if (this._extractedCols.length > before) added++;
+
+        // Yield between proposals — each `_applyAutoProposal` is itself
+        // an O(rows) hot loop and will register as a LongTask on big
+        // files, but the browser gets a paint frame and idle-callback
+        // drain between them so the UI stays interactive.
+        this._autoExtractIdleHandle = schedule(applyStep);
+      };
+
+      this._autoExtractIdleHandle = schedule(applyStep);
+    };
+
+    this._autoExtractIdleHandle = schedule(scanStep);
   }
 
   // Apply a single proposal from `_autoExtractScan()` to the extracted-
