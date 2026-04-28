@@ -2428,11 +2428,12 @@ class TimelineView {
         this._parseAllTimestamps();
         this._dataRange = this._computeDataRange();
       }
-      // In-place clear (length = 0) so the TimelineDataset's reference
-      // to this same array stays valid. A naive `this._extractedCols
-      // = []` would replace the array reference and silently desync
-      // the dataset.
-      this._extractedCols.length = 0;
+      // Route through the dataset's mutation API — `clearExtractedCols`
+      // zero-lengths the SHARED array in place. A naive
+      // `this._extractedCols = []` would replace the reference and
+      // silently desync the dataset (the exact failure class B1d
+      // closes off).
+      this._dataset.clearExtractedCols();
       this._jsonCache.clear();
       this._persistRegexExtracts();   // writes an empty list for this file
     }

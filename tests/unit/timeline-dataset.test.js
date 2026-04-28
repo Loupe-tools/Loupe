@@ -458,6 +458,68 @@ test('timeline-detections.js resolves column indices via the store, not _baseCol
   );
 });
 
+test('every _extractedCols mutation routes through the dataset API', () => {
+  // Migration B1d: extracted-column mutations (push / splice /
+  // length = 0) are the only category of direct-slot operation
+  // where a desync HAS a real safety upside — the alternative is
+  // a future caller writing a wrong-length `values` array, which
+  // the dataset's `addExtractedCol` catches at the call site.
+  // More importantly, B1d closes off the `this._extractedCols = []`
+  // failure class: that pattern would replace the array reference
+  // and orphan the dataset's view of the column list.
+  //
+  // Source-text scan covers the two mixin files that mutate the
+  // list (timeline-drawer.js + timeline-view.js's reset path).
+  // Strip comments + string literals before searching so the
+  // explanatory comments that warn about the bad pattern don't
+  // trip the test.
+  const files = [
+    'src/app/timeline/timeline-drawer.js',
+    'src/app/timeline/timeline-view.js',
+  ];
+  for (const rel of files) {
+    const src = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+    const stripped = src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:'"])\/\/[^\n]*/g, '$1')
+      // Drop template / single / double-quoted strings — the
+      // toolbar HTML in timeline-view contains a `${...length}` read
+      // that's harmless but trips a bare regex.
+      .replace(/`[\s\S]*?`/g, '``')
+      .replace(/"[^"\n]*"/g, '""')
+      .replace(/'[^'\n]*'/g, "''");
+    // No direct push / splice / pop on `this._extractedCols`.
+    assert.doesNotMatch(
+      stripped,
+      /this\._extractedCols\.(push|splice|pop|shift|unshift)\b/,
+      rel + ' must route _extractedCols mutations through the dataset',
+    );
+    // No `this._extractedCols.length = 0` in-place clear (route
+    // through `dataset.clearExtractedCols()` instead).
+    assert.doesNotMatch(
+      stripped,
+      /this\._extractedCols\.length\s*=\s*0\b/,
+      rel + ' must use this._dataset.clearExtractedCols() (not `.length = 0`)',
+    );
+  }
+  // Special case — timeline-drawer.js MUST NOT contain
+  // `this._extractedCols = []`. The constructor in timeline-view.js
+  // is the ONE allowed assignment (it's the initial allocation
+  // wrapped by the dataset).
+  const drawerSrc = fs.readFileSync(
+    path.join(REPO_ROOT, 'src/app/timeline/timeline-drawer.js'),
+    'utf8',
+  );
+  const drawerStripped = drawerSrc
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:'"])\/\/[^\n]*/g, '$1');
+  assert.doesNotMatch(
+    drawerStripped,
+    /this\._extractedCols\s*=\s*\[\]/,
+    'timeline-drawer.js: `this._extractedCols = []` would desync the dataset — use `clearExtractedCols()`',
+  );
+});
+
 test('TimelineView delegates _cellAt / columns / _isExtractedCol to the dataset', () => {
   // Migration B1c: TimelineView's per-call helpers (_cellAt,
   // _isExtractedCol, _extractedColFor, the `columns` getter) now

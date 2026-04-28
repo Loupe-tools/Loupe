@@ -92,7 +92,12 @@ Object.assign(TimelineView.prototype, {
       const v = this._jsonPathGetWithStar(parsed, path);
       values[i] = v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
     }
-    this._extractedCols.push({
+    // Route the append through the dataset so the per-mutation
+    // invariant (`values.length === store.rowCount`) is asserted at
+    // the call site rather than only on the next read. The dataset's
+    // internal `_extractedCols` is the SAME array reference as
+    // `this._extractedCols`, so this push mutates BOTH views.
+    this._dataset.addExtractedCol({
       name, kind: (opts && opts.autoKind) ? 'auto' : 'json',
       sourceCol: colIdx, path, values,
     });
@@ -146,7 +151,13 @@ Object.assign(TimelineView.prototype, {
       }
       values[i] = out;
     }
-    this._extractedCols.push({
+    // Route through the dataset's `addExtractedCol` so the per-push
+    // invariant fires (catches a future caller that builds a
+    // wrong-length `values` array — the regex extract path
+    // pre-allocates `new Array(this.store.rowCount)`, but this
+    // assertion guards against an off-by-one in any future
+    // refactor of the loop above).
+    this._dataset.addExtractedCol({
       name: this._uniqueColName(spec.name || 'regex'),
       kind: spec.kind || 'regex',
       sourceCol: col, pattern: spec.pattern, flags: spec.flags || '', group: gp,
@@ -226,7 +237,14 @@ Object.assign(TimelineView.prototype, {
       }
     }
 
-    this._extractedCols = [];
+    // CRITICAL: must NOT do `this._extractedCols = []` — that would
+    // replace the array reference, leaving the dataset's
+    // `_extractedCols` pointing at the old populated array (the
+    // exact desync class TimelineDataset's invariant exists to
+    // prevent). `clearExtractedCols` zero-lengths the SHARED array
+    // in place so both `this._extractedCols` and the dataset's
+    // internal slot end up empty.
+    this._dataset.clearExtractedCols();
     this._persistRegexExtracts();          // writes empty list for this file
     this._rebuildExtractedStateAndRender();
     if (this._app && typeof this._app._toast === 'function') {
@@ -256,7 +274,12 @@ Object.assign(TimelineView.prototype, {
     // one; the query serialises by NAME not index, so round-trip picks
     // the correct column automatically.
     this._queryRemoveClausesForCols([colIdx]);
-    this._extractedCols.splice(colIdx - this._baseColumns.length, 1);
+    // Route the splice through the dataset so the operation acts
+    // on the canonically-owned array. `removeExtractedCol` uses
+    // `splice(extIdx, 1)` on the shared reference internally —
+    // identical semantics to the previous direct splice, but the
+    // call surface is the dataset's mutation API.
+    this._dataset.removeExtractedCol(colIdx - this._dataset.baseColCount);
     this._persistRegexExtracts();
     this._rebuildExtractedStateAndRender();
   },
