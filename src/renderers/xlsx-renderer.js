@@ -149,7 +149,7 @@ class XlsxRenderer {
       rowSearchText,
       // Spreadsheets are filter-first (analyst hunts for a SKU /
       // amount / formula). Keep the eager search-text cache.
-      searchCacheMode: 'always',
+      searchTextCache: true,
       rawText: '',
       className: 'xlsx-sheet-view csv-view',
       infoText,

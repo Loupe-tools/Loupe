@@ -373,7 +373,7 @@ class JsonRenderer {
       rowSearchText,
       // JSON tables (often arrays of objects) are filter-first; keep
       // the eager search-text cache.
-      searchCacheMode: 'always',
+      searchTextCache: true,
       rowOffsets,
       rawText,
       className: 'json-view csv-view',

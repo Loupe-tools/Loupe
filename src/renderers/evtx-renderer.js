@@ -1336,7 +1336,7 @@ class EvtxRenderer {
       // EVTX's filter bar is hidden in favour of the EID/Level/search
       // chip toolbar (`hideFilterBar: true`), but `applyFilters` still
       // runs the cached `rowSearchText` substring match — preserve it.
-      searchCacheMode: 'always',
+      searchTextCache: true,
       rawText: '',
       className: 'evtx-view csv-view',
       infoText: '',   // our stats bar replaces it

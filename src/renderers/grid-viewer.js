@@ -87,14 +87,13 @@ class GridViewer {
     // cost only when the grid filter bar is the primary entry point —
     // which is true for CSV / EVTX / SQLite / XLSX / JSON renderers
     // but NOT for the timeline (its query DSL bypasses the filter
-    // bar). `searchCacheMode` controls the policy:
-    //   • 'auto'   (default) — off (no cache, resolve on the fly)
-    //   • 'always' — build/maintain the cache eagerly + lazily
-    //   • 'never'  — explicit "no cache" (same effect as 'auto' today,
-    //                kept as an explicit signal for future tuning)
-    // Renderers that lean on the filter bar pass `searchCacheMode: 'always'`.
-    this._searchCacheMode = opts.searchCacheMode || 'auto';
-    this.rowSearchText = (this._searchCacheMode === 'always')
+    // bar). Boolean `searchTextCache` — `true` opts into the eager
+    // pre-build + lazy fill via `_scheduleIdleSearchTextBuild`, `false`
+    // (default) resolves on the fly inside `_rowMatchesQuery`. Phase
+    // 4c collapsed the previous `'auto'|'always'|'never'` tri-state
+    // since post-single-mode there were only two distinct behaviours.
+    this._searchTextCache = !!opts.searchTextCache;
+    this.rowSearchText = this._searchTextCache
       ? (opts.rowSearchText || null)
       : null;
     this.rowOffsets = opts.rowOffsets || null;
@@ -2081,18 +2080,24 @@ class GridViewer {
 
 
   _rowMatchesQuery(dataIdx, needle) {
-    if (this.rowSearchText && this.rowSearchText[dataIdx]) {
+    // `!= null` — `''` (a row of all-empty cells with zero columns)
+    // is a legitimate cached value that must short-circuit the rebuild.
+    // Truthy-check would treat it as "not yet built" and re-allocate
+    // forever on each filter pass; in tree this case is unreachable
+    // (every grid has ≥ 1 column) but the precise check is a free
+    // correctness fix.
+    if (this.rowSearchText && this.rowSearchText[dataIdx] != null) {
       return this.rowSearchText[dataIdx].includes(needle);
     }
-    // 'auto' (default) and 'never' — resolve match on the fly without
-    // caching. The timeline path takes this branch: its query DSL is
-    // primary, the filter bar is rare, and a 160 MB cache for a feature
-    // the user doesn't reach for is the wrong trade.
-    if (this._searchCacheMode !== 'always') {
+    // Cache disabled — resolve match on the fly without caching. The
+    // timeline path takes this branch: its query DSL is primary, the
+    // filter bar is rare, and a 160 MB cache for a feature the user
+    // doesn't reach for is the wrong trade.
+    if (!this._searchTextCache) {
       const row = this.store.getRow(dataIdx);
       return row.join(' ').toLowerCase().includes(needle);
     }
-    // 'always' — build on demand and cache for re-use, mirroring the
+    // Cache enabled — build on demand and cache for re-use, mirroring the
     // eager idle pre-build's policy so subsequent matches on the same
     // row are O(1).
     const row = this.store.getRow(dataIdx);
@@ -2108,15 +2113,16 @@ class GridViewer {
   // first filter keystroke on a million-row table doesn't pay an O(N · avg
   // row width) string-materialisation cost. Cancelled and re-scheduled on
   // every `setRows`. Skipped on tables <5 K rows (the lazy fallback in
-  // `_rowMatchesQuery` is fast enough at that size) and when the active
-  // `searchCacheMode` is anything other than `'always'`.
+  // `_rowMatchesQuery` is fast enough at that size) and when
+  // `searchTextCache` is false.
   //
-  // The per-cell `if (this.rowSearchText[i]) continue` check is what makes
-  // this safe to re-schedule mid-build, but it ALSO means stale entries
-  // from a previous `setRows` are silently retained — `setRows` MUST drop
-  // the cache (`this.rowSearchText = null`) when the caller doesn't supply
-  // a fresh array, otherwise filtering reads stale text from the prior
-  // dataset and silently filters the wrong rows.
+  // The per-cell `if (this.rowSearchText[i] != null) continue` check is
+  // what makes this safe to re-schedule mid-build, but it ALSO means
+  // stale entries from a previous `setRows` are silently retained —
+  // `setRows` MUST drop the cache (`this.rowSearchText = null`) when
+  // the caller doesn't supply a fresh array, otherwise filtering reads
+  // stale text from the prior dataset and silently filters the wrong
+  // rows.
   _scheduleIdleSearchTextBuild() {
     // Pair the schedule and cancel API choices so a handle scheduled via
     // `requestIdleCallback` is always cancelled via `cancelIdleCallback`
@@ -2134,10 +2140,10 @@ class GridViewer {
       this._idleBuildHandle = null;
     }
     // Cache policy gate — only build when the renderer explicitly opts in
-    // via `searchCacheMode: 'always'`. 'auto' (default) and 'never' both
-    // skip the eager build; the lazy fallback in `_rowMatchesQuery` would
-    // refuse to cache anyway.
-    if (this._searchCacheMode !== 'always') return;
+    // via `searchTextCache: true`. The default skips the eager build;
+    // the lazy fallback in `_rowMatchesQuery` would refuse to cache
+    // anyway.
+    if (!this._searchTextCache) return;
     const total = this._rowCount();
     if (total < 5000) return;
     if (!this.rowSearchText) this.rowSearchText = new Array(total);
@@ -2147,7 +2153,9 @@ class GridViewer {
       this._idleBuildHandle = null;
       const end = Math.min(i + BATCH, total);
       for (; i < end; i++) {
-        if (this.rowSearchText[i]) continue;
+        // Skip rows the lazy path already populated. `!= null` (not
+        // truthy) so a legitimately-empty cached entry isn't rebuilt.
+        if (this.rowSearchText[i] != null) continue;
         const row = this.store.getRow(i);
         this.rowSearchText[i] = row.join(' ').toLowerCase();
       }
@@ -2324,12 +2332,13 @@ class GridViewer {
     }
     this.store = store;
     // Drop the cache by default; renderers that want it (csv / sqlite /
-    // evtx / xlsx / json with `searchCacheMode: 'always'`) repopulate via
-    // the idle build below or lazily via `_rowMatchesQuery`. Without this
-    // reset the idle-rebuild's `if (this.rowSearchText[i]) continue`
-    // check would silently retain stale text from the prior dataset and
-    // filter the wrong rows. See review notes #3 from the 2026-04-27 audit.
-    this.rowSearchText = (this._searchCacheMode === 'always')
+    // evtx / xlsx / json with `searchTextCache: true`) repopulate via
+    // the idle build below or lazily via `_rowMatchesQuery`. Without
+    // this reset the idle-rebuild's `if (rowSearchText[i] != null)
+    // continue` check would silently retain stale text from the prior
+    // dataset and filter the wrong rows. See review notes #3 from the
+    // 2026-04-27 audit.
+    this.rowSearchText = this._searchTextCache
       ? (rowSearchText || null)
       : null;
     this.rowOffsets = rowOffsets || this.rowOffsets;

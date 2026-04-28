@@ -919,7 +919,7 @@ class SqliteRenderer {
       rowSearchText,
       // History grid is filter-first (analyst types a domain / fragment).
       // Keep the eager search-text cache the caller already built.
-      searchCacheMode: 'always',
+      searchTextCache: true,
       rawText,
       className: 'sqlite-grid csv-view',
       infoText,
@@ -1066,7 +1066,7 @@ class SqliteRenderer {
       rowSearchText,
       // Generic-table grid is filter-first (analyst types a fragment to
       // narrow a 10 K-row table). Keep the eager search-text cache.
-      searchCacheMode: 'always',
+      searchTextCache: true,
       rawText: '',
       // Construct WITHOUT `csv-view` — the active-tab activator adds it
       // on show and strips it on hide so only one `.csv-view` ever exists

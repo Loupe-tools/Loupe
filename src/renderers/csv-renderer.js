@@ -304,7 +304,7 @@ class CsvRenderer {
       // TSV viewing — opt the search-text cache in so a 1 M-row table's
       // first filter keystroke is O(1) per row instead of an
       // allocate-and-join-on-the-fly walk.
-      searchCacheMode: 'always',
+      searchTextCache: true,
     });
 
     // Small file — parse synchronously and hand a finished RowStore to

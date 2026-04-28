@@ -3819,28 +3819,14 @@ class TimelineView {
         const origRow = curIdx ? curIdx[virtualIdx] : origIdx[virtualIdx];
         // Determine which column was clicked. GridViewer stamps `data-col`
         // on every body cell with the REAL column index (survives hidden /
-        // pinned / reordered columns). Prefer that; fall back to positional
-        // math only if the attribute is missing on some legacy path.
-        //
-        // Positional math (`cells.indexOf(cell) - 1`) is fundamentally wrong
-        // whenever any column is hidden — GridViewer skips hidden columns in
-        // the DOM, so sibling position no longer maps to column index and
-        // the right-click menu ends up operating on the wrong column.
-        let colIdx = -1;
+        // pinned / reordered columns). Single-mode GridViewer (Phase 4c)
+        // unconditionally stamps the attribute, so the legacy positional-
+        // math fallback that previously lived here is unreachable from any
+        // in-tree caller and has been removed.
         const colAttr = cell.dataset ? cell.dataset.col : null;
-        if (colAttr != null && colAttr !== '') {
-          const n = parseInt(colAttr, 10);
-          if (Number.isFinite(n)) colIdx = n;
-        }
-        if (colIdx < 0) {
-          // Defensive fallback — only hit if a non-GridViewer row somehow
-          // landed inside the timeline grid.
-          const cells = Array.from(rowEl.querySelectorAll('.grid-cell'));
-          const cellIdx = cells.indexOf(cell);
-          if (cellIdx <= 0) return;
-          colIdx = cellIdx - 1;   // row-num is 0
-        }
-        if (colIdx < 0 || colIdx >= this.columns.length) return;
+        if (colAttr == null || colAttr === '') return;
+        const colIdx = parseInt(colAttr, 10);
+        if (!Number.isFinite(colIdx) || colIdx < 0 || colIdx >= this.columns.length) return;
         const val = this._cellAt(origRow, colIdx);
         e.preventDefault();
         this._openRowContextMenu(e, colIdx, val, { origRow });
