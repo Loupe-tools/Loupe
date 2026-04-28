@@ -126,6 +126,38 @@ test.describe('Timeline RowStore parity — EVTX + SQLite (Phase 6)', () => {
     expect(shape!.firstChunkRowCount).toBeGreaterThan(0);
     expect(shape!.totalByteLength).toBeGreaterThan(0);
 
+    // Parallel-array invariant: the EVTX-only `_evtxEvents` side-channel
+    // MUST match the RowStore's row count. `timeline-summary.js` walks
+    // `_evtxEvents[i]` in parallel with `_timeMs[i]` and
+    // `store.getRow(i)`; a length mismatch here means the factory
+    // forgot to slice events to the truncated `list.length` (the bug
+    // the sync `fromEvtx` factory used to have — see
+    // `tests/unit/timeline-evtx-parity.test.js`). The constructor now
+    // throws on a mismatch, so reaching this assertion at all proves
+    // the invariant held; we still check explicitly so a regression
+    // that softens the throw to a warning is caught here.
+    const evtxParity = await ctx.page.evaluate(() => {
+      const w = window as unknown as {
+        app?: {
+          _timelineCurrent?: {
+            store?: { rowCount: number };
+            _evtxEvents?: unknown[] | null;
+            _timeMs?: { length: number } | null;
+          };
+        };
+      };
+      const tl = w.app && w.app._timelineCurrent;
+      if (!tl) return null;
+      return {
+        rowCount: tl.store ? tl.store.rowCount : null,
+        evtxLen: Array.isArray(tl._evtxEvents) ? tl._evtxEvents.length : null,
+        timeLen: tl._timeMs ? tl._timeMs.length : null,
+      };
+    });
+    expect(evtxParity).not.toBeNull();
+    expect(evtxParity!.evtxLen).toBe(evtxParity!.rowCount);
+    expect(evtxParity!.timeLen).toBe(evtxParity!.rowCount);
+
     // Grid actually paints from the store. `.grid-row` is virtualised
     // so we assert visibility of the first row rather than a count —
     // the count() flickers when the window-renderer recycles row DOM

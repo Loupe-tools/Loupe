@@ -280,11 +280,22 @@ class TimelineView {
         ev.channel || '', ev.computer || '', ev.eventData || '',
       ]);
     }
+    // `evtxEvents` MUST be the same length as the RowStore (`list.length`),
+    // not the original `events.length`. Consumers in `timeline-summary.js`
+    // and `timeline-detections.js` walk `_evtxEvents` in parallel with
+    // `_timeMs[i]` and `store.getRow(i)`; both of those are sized to
+    // `list.length` (the truncated-to-`TIMELINE_MAX_ROWS` slice). The
+    // worker path in `timeline.worker.js::_parseEvtx` already slices
+    // `trimmedEvents` to `list.length` for the same reason; the sync path
+    // must match. Without the slice, EVTX > TIMELINE_MAX_ROWS taking the
+    // sync fallback (worker rejected, file:// Firefox) would walk past
+    // `_timeMs.length` and read `undefined` timestamps and empty rows.
     return new TimelineView({
       file, columns, store: builder.finalize(),
       formatLabel: 'EVTX', truncated, originalRowCount: events.length,
       defaultTimeColIdx: 0, defaultStackColIdx: 1,
-      evtxEvents: events, evtxFindings: securityFindings,
+      evtxEvents: list === events ? events : list,
+      evtxFindings: securityFindings,
     });
   }
 
@@ -403,7 +414,24 @@ class TimelineView {
     // findings object. Used by the Detections + Entities sections below
     // to render Sigma-rule hits, click-to-filter on Event ID, and entity
     // pivots without re-parsing the file. Both are `null` for CSV / TSV.
+    //
+    // INVARIANT: `_evtxEvents.length === store.rowCount`. Consumers in
+    // `timeline-summary.js` and `timeline-detections.js` walk
+    // `_evtxEvents[i]` in parallel with `_timeMs[i]` and
+    // `store.getRow(i)`. A length mismatch here means the sync EVTX
+    // factory (or any future caller) forgot to slice `events` to the
+    // truncated `list.length` — we'd rather throw at construction than
+    // produce per-row `undefined` reads downstream. See
+    // `fromEvtx` above and `timeline.worker.js::_parseEvtx`'s
+    // `trimmedEvents`.
     this._evtxEvents = Array.isArray(opts.evtxEvents) ? opts.evtxEvents : null;
+    if (this._evtxEvents && this._evtxEvents.length !== this.store.rowCount) {
+      throw new Error(
+        'TimelineView: evtxEvents.length (' + this._evtxEvents.length +
+        ') must equal store.rowCount (' + this.store.rowCount + '); ' +
+        'caller forgot to slice events to the truncated list.length.',
+      );
+    }
     this._evtxFindings = opts.evtxFindings && typeof opts.evtxFindings === 'object'
       ? opts.evtxFindings : null;
 
