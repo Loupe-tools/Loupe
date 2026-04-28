@@ -15,8 +15,11 @@
 //      streaming path (>2 MB files), and the off-thread timeline worker
 //      (see src/workers/timeline.worker.js + src/app/timeline/timeline-view.js).
 //   3. For files >2 MB the parse runs in cooperative chunks so the main
-//      thread stays responsive: GridViewer paints the first ~1 k rows
-//      within 200 ms and the rest streams in via `appendRows()`.
+//      thread stays responsive: parsed rows are accumulated into a
+//      `RowStoreBuilder` and the grid stays empty (with a progress bar)
+//      until parse completes, when the finished `RowStore` is handed to
+//      GridViewer in a single `setRows` call. Phase 4b traded the old
+//      progressive-paint UX for ~5× lower peak heap on 1 M-row CSVs.
 //   4. Formula-injection security analysis (CWE-1236).
 //
 // Exposes `render(text, fileName) → HTMLElement` and `analyzeForSecurity(text)`.

@@ -34,10 +34,12 @@
 //      on `requestAnimationFrame(requestAnimationFrame(…))`. No 1 s
 //      safety-timeout stall, no polyfill race with scroll events.
 //
-//   6. CHUNKED COOPERATIVE PARSE. The caller's row source can be fed in
-//      chunks via `setRows()` / `appendRows()`. The grid re-renders only
-//      the visible window, so a 50 MB CSV can paint its first 1 k rows in
-//      ~200 ms while the rest streams in without blocking the main thread.
+//   6. ONE-SHOT ROW HAND-OFF. The caller passes a finished
+//      `RowStore`-shaped container via `opts.store` (constructor) or
+//      `setRows(store, ...)`. Streaming CSV / TSV parses build the
+//      store via `RowStoreBuilder` and call `setRows` exactly once on
+//      EOF. The grid re-renders only the visible window, so even a
+//      1 M-row hand-off paints in <50 ms.
 //
 //   7. destroy() IS MANDATORY AND COMPLETE. Cancels all timers, rAFs,
 //      disconnects the ResizeObserver, empties caches, removes listeners.
@@ -65,38 +67,36 @@ class GridViewer {
    */
   constructor(opts) {
     this.columns = opts.columns || [];
-    // Phase 4: GridViewer is dual-mode for row storage:
-    //   - `opts.store`: a RowStore-shaped container exposing
-    //                   `rowCount`, `getCell(r, c)`, `getRow(r)`. Used by
-    //                   the timeline path (TimelineView wraps its
-    //                   RowStore + extracted columns + filter idx as a
-    //                   `TimelineRowView` so this class stays
-    //                   container-agnostic).
-    //   - `opts.rows` : legacy `string[][]`. Still the only path used by
-    //                   the standalone csv / sqlite / evtx / xlsx / json
-    //                   renderers (Phase 4b/c will migrate them).
-    // All cell access inside GridViewer goes through `_rowCount()` /
-    // `_rowAt(r)` / `_cellAt(r, c)` so these branches live in exactly one
-    // place — see the accessor block immediately below the constructor.
-    this.store = opts.store || null;
-    this.rows = this.store ? null : (opts.rows || []);
+    // Row container — every caller (timeline, csv, sqlite, evtx, xlsx,
+    // json) hands GridViewer a RowStore-shaped object exposing
+    // `rowCount`, `getCell(r, c)`, `getRow(r)`. The legacy `string[][]`
+    // path was retired in Phase 4c. Internally cells are read through
+    // `_rowCount()` / `_rowAt(r)` / `_cellAt(r, c)` (see the accessor
+    // block immediately below the constructor) so a future container
+    // swap only touches three lines.
+    if (!opts.store || typeof opts.store.getCell !== 'function') {
+      throw new TypeError(
+        'GridViewer: `opts.store` is required and must expose `rowCount` / `getCell` / `getRow` ' +
+        '(use `RowStore.fromStringMatrix(columns, rows)` for sync builders or `RowStore.empty(columns)` ' +
+        'for streaming construction).',
+      );
+    }
+    this.store = opts.store;
     // `rowSearchText` is the per-row pre-joined lowercase text cache used
-    // by the filter-bar substring match. In legacy mode it is populated
-    // either eagerly by the caller (EVTX) or lazily by the idle build
-    // (`_scheduleIdleSearchTextBuild`). The cache earns its ~3× memory
+    // by the filter-bar substring match. The cache earns its ~3× memory
     // cost only when the grid filter bar is the primary entry point —
     // which is true for CSV / EVTX / SQLite / XLSX / JSON renderers
     // but NOT for the timeline (its query DSL bypasses the filter
     // bar). `searchCacheMode` controls the policy:
-    //   • 'auto'   (default) — on for legacy `rows`, off for `store`
-    //   • 'always' — build/maintain the cache regardless of mode
-    //   • 'never'  — skip the cache regardless of mode
-    // Renderers that ALWAYS feed a RowStore but still want fast
-    // filter-bar matching pass `searchCacheMode: 'always'`.
+    //   • 'auto'   (default) — off (no cache, resolve on the fly)
+    //   • 'always' — build/maintain the cache eagerly + lazily
+    //   • 'never'  — explicit "no cache" (same effect as 'auto' today,
+    //                kept as an explicit signal for future tuning)
+    // Renderers that lean on the filter bar pass `searchCacheMode: 'always'`.
     this._searchCacheMode = opts.searchCacheMode || 'auto';
-    this.rowSearchText = (this.store && this._searchCacheMode !== 'always')
-      ? null
-      : (opts.rowSearchText || null);
+    this.rowSearchText = (this._searchCacheMode === 'always')
+      ? (opts.rowSearchText || null)
+      : null;
     this.rowOffsets = opts.rowOffsets || null;
     this.rawText = opts.rawText || '';
     this._rootClass = opts.className || 'csv-view';
@@ -344,26 +344,22 @@ class GridViewer {
 
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  ROW ACCESSORS — single source of truth for the legacy `string[][]` ↔
-  //  `RowStore`-shaped store branching. Hot loops should call these once and
-  //  cache the result locally to dodge the per-iteration property load.
+  //  ROW ACCESSORS — single source of truth for cell access. Hot loops should
+  //  call these once and cache the result locally to dodge the per-iteration
+  //  property load. The legacy `string[][]` branch was retired in Phase 4c;
+  //  every caller now hands a RowStore-shaped object via `opts.store` /
+  //  `setRows(store, …)`.
   // ═══════════════════════════════════════════════════════════════════════════
   _rowCount() {
-    return this.store ? this.store.rowCount : (this.rows ? this.rows.length : 0);
+    return this.store.rowCount;
   }
 
   _rowAt(dataIdx) {
-    if (this.store) return this.store.getRow(dataIdx);
-    const r = this.rows ? this.rows[dataIdx] : null;
-    return r || [];
+    return this.store.getRow(dataIdx);
   }
 
   _cellAt(dataIdx, colIdx) {
-    if (this.store) return this.store.getCell(dataIdx, colIdx);
-    const r = this.rows ? this.rows[dataIdx] : null;
-    if (!r) return '';
-    const v = r[colIdx];
-    return v == null ? '' : String(v);
+    return this.store.getCell(dataIdx, colIdx);
   }
 
 
@@ -2088,23 +2084,18 @@ class GridViewer {
     if (this.rowSearchText && this.rowSearchText[dataIdx]) {
       return this.rowSearchText[dataIdx].includes(needle);
     }
-    // Store + (auto | never) — resolve match on the fly with no
-    // memoisation. Used by the timeline path: its query DSL is primary,
-    // the filter bar is rare, and a 160 MB cache for a feature the user
-    // doesn't reach for is the wrong trade.
-    const cacheOff = (this._searchCacheMode === 'never')
-      || (this._searchCacheMode === 'auto' && this.store);
-    if (cacheOff && this.store) {
+    // 'auto' (default) and 'never' — resolve match on the fly without
+    // caching. The timeline path takes this branch: its query DSL is
+    // primary, the filter bar is rare, and a 160 MB cache for a feature
+    // the user doesn't reach for is the wrong trade.
+    if (this._searchCacheMode !== 'always') {
       const row = this.store.getRow(dataIdx);
-      if (!row) return false;
       return row.join(' ').toLowerCase().includes(needle);
     }
-    // Legacy mode OR store + 'always' cache — build on demand and cache
-    // for re-use. The 'always' branch reads cells through `store.getRow`
-    // exactly like the eager idle build does, so subsequent matches on
-    // the same row are O(1).
-    const row = this.store ? this.store.getRow(dataIdx) : this._rowAt(dataIdx);
-    if (!row) return false;
+    // 'always' — build on demand and cache for re-use, mirroring the
+    // eager idle pre-build's policy so subsequent matches on the same
+    // row are O(1).
+    const row = this.store.getRow(dataIdx);
     const joined = row.join(' ').toLowerCase();
     if (!this.rowSearchText) this.rowSearchText = new Array(this._rowCount());
     this.rowSearchText[dataIdx] = joined;
@@ -2112,12 +2103,13 @@ class GridViewer {
   }
 
   // ── Idle pre-build of `rowSearchText` ────────────────────────────────────
-  // Walks `this.rows` in 5 K-row batches via `requestIdleCallback` (with a
+  // Walks the store in 5 K-row batches via `requestIdleCallback` (with a
   // `setTimeout(_, 0)` fallback) and populates `this.rowSearchText[i]` so the
   // first filter keystroke on a million-row table doesn't pay an O(N · avg
   // row width) string-materialisation cost. Cancelled and re-scheduled on
   // every `setRows`. Skipped on tables <5 K rows (the lazy fallback in
-  // `_rowMatchesQuery` is fast enough at that size).
+  // `_rowMatchesQuery` is fast enough at that size) and when the active
+  // `searchCacheMode` is anything other than `'always'`.
   //
   // The per-cell `if (this.rowSearchText[i]) continue` check is what makes
   // this safe to re-schedule mid-build, but it ALSO means stale entries
@@ -2141,12 +2133,11 @@ class GridViewer {
       try { cancel(this._idleBuildHandle); } catch (_e) { /* ignore */ }
       this._idleBuildHandle = null;
     }
-    // Cache policy gate — see `_searchCacheMode` in the constructor.
-    // 'auto' + store → no cache (timeline default).
-    // 'never' → no cache regardless.
-    // 'always' or legacy 'auto' + rows → cache.
-    if (this._searchCacheMode === 'never') return;
-    if (this.store && this._searchCacheMode !== 'always') return;
+    // Cache policy gate — only build when the renderer explicitly opts in
+    // via `searchCacheMode: 'always'`. 'auto' (default) and 'never' both
+    // skip the eager build; the lazy fallback in `_rowMatchesQuery` would
+    // refuse to cache anyway.
+    if (this._searchCacheMode !== 'always') return;
     const total = this._rowCount();
     if (total < 5000) return;
     if (!this.rowSearchText) this.rowSearchText = new Array(total);
@@ -2157,10 +2148,8 @@ class GridViewer {
       const end = Math.min(i + BATCH, total);
       for (; i < end; i++) {
         if (this.rowSearchText[i]) continue;
-        // Store mode pulls cells via `store.getRow` (allocates a fresh
-        // `string[]` per row). Legacy mode reuses the in-memory row.
-        const row = this.store ? this.store.getRow(i) : this._rowAt(i);
-        this.rowSearchText[i] = row ? row.join(' ').toLowerCase() : '';
+        const row = this.store.getRow(i);
+        this.rowSearchText[i] = row.join(' ').toLowerCase();
       }
       if (i < total) {
         this._idleBuildHandle = schedule(step);
@@ -2321,35 +2310,28 @@ class GridViewer {
    * the `idx` permutation handed to `TimelineRowView` via the
    * already-parsed `_timeMs` Float64Array.
    */
-  setRows(rows, rowSearchText, rowOffsets, opts) {
-    // Phase 4: `rows` may be either the legacy `string[][]` payload or a
-    // RowStore-shaped object exposing `rowCount` / `getCell` / `getRow`
-    // (e.g. the timeline path's `TimelineRowView`). The dispatcher below
-    // routes each into the matching slot and drops the other so stale
-    // data from the previous mode can't leak across a mode switch.
-    const isStore = rows && typeof rows === 'object' && !Array.isArray(rows)
-      && typeof rows.getCell === 'function';
-    if (isStore) {
-      this.store = rows;
-      this.rows = null;
-      // Drop the cache by default; renderers that want it (csv-renderer
-      // with `searchCacheMode: 'always'`) will repopulate via the idle
-      // build below or lazily via `_rowMatchesQuery`.
-      this.rowSearchText = (this._searchCacheMode === 'always') ? (rowSearchText || null) : null;
-    } else {
-      this.store = null;
-      this.rows = rows;
-      // Drop the cache when the caller doesn't supply a fresh `rowSearchText`.
-      // The previous code retained the prior dataset's array
-      // (`rowSearchText || this.rowSearchText`); the idle-rebuild's
-      // `if (this.rowSearchText[i]) continue` check would then skip
-      // refilling those slots, and `_rowMatchesQuery` would silently filter
-      // against stale text from the old rows. EVTX / Timeline supply
-      // their own `rowSearchText` and are unaffected; the lazy build below
-      // re-populates from the new rows for every other caller. See review
-      // notes #3 from the 2026-04-27 audit.
-      this.rowSearchText = rowSearchText || null;
+  setRows(store, rowSearchText, rowOffsets, opts) {
+    // The store argument MUST be RowStore-shaped — every caller in tree
+    // hands either a `RowStore` or a thin adapter (TimelineRowView).
+    // The legacy `string[][]` shape was retired in Phase 4c; reject it
+    // here so a regression points at the call site immediately rather
+    // than producing silently-mangled cells on first read.
+    if (!store || typeof store.getCell !== 'function') {
+      throw new TypeError(
+        'GridViewer.setRows: argument must be RowStore-shaped (rowCount / getCell / getRow). ' +
+        'Wrap legacy `string[][]` callers via `RowStore.fromStringMatrix(columns, rows)`.',
+      );
     }
+    this.store = store;
+    // Drop the cache by default; renderers that want it (csv / sqlite /
+    // evtx / xlsx / json with `searchCacheMode: 'always'`) repopulate via
+    // the idle build below or lazily via `_rowMatchesQuery`. Without this
+    // reset the idle-rebuild's `if (this.rowSearchText[i]) continue`
+    // check would silently retain stale text from the prior dataset and
+    // filter the wrong rows. See review notes #3 from the 2026-04-27 audit.
+    this.rowSearchText = (this._searchCacheMode === 'always')
+      ? (rowSearchText || null)
+      : null;
     this.rowOffsets = rowOffsets || this.rowOffsets;
     // Schedule a background pre-build of `rowSearchText` so the first
     // filter keystroke doesn't pay the materialisation cost row-by-row.
@@ -2416,48 +2398,15 @@ class GridViewer {
 
   /**
    * Drop the "Empty file." placeholder added in _buildDOM when the grid
-   * was constructed with zero rows. Called whenever a chunked parser
-   * pushes its first rows in via setRows() / appendRows() — without this
-   * the placeholder lingers on top of the now-populated grid (CSV
-   * streaming path).
+   * was constructed with zero rows. Called whenever a setRows() call
+   * swaps in a non-empty store (CSV streaming path constructs the grid
+   * with `RowStore.empty(columns)` and finalises the real store on EOF).
    */
   _maybeRemoveEmptyPlaceholder() {
     if (this._emptyEl && this._rowCount()) {
       try { this._emptyEl.remove(); } catch (_) { /* ignore */ }
       this._emptyEl = null;
     }
-  }
-
-  appendRows(newRows, newRowSearch, newRowOffsets) {
-    // Cheap incremental push — used by the chunked CSV parser. Store
-    // mode is one-shot (the RowStore is finalised before the view is
-    // ever constructed) so this path is invalid.
-    if (this.store) {
-      throw new Error('GridViewer.appendRows: not supported in store mode');
-    }
-    const wasEmpty = this.rows.length === 0;
-    for (const r of newRows) this.rows.push(r);
-    if (wasEmpty && this.rows.length) this._maybeRemoveEmptyPlaceholder();
-    if (newRowSearch) {
-      if (!this.rowSearchText) this.rowSearchText = [];
-      for (const s of newRowSearch) this.rowSearchText.push(s);
-    }
-    if (newRowOffsets) {
-      if (!this.rowOffsets) this.rowOffsets = [];
-      for (const o of newRowOffsets) this.rowOffsets.push(o);
-    }
-    // If filter is active, re-evaluate just the newly-appended rows.
-    if (this.state.filteredIndices != null && this._filterInput.value) {
-      const q = this._filterInput.value.toLowerCase().trim();
-      const startIdx = this.rows.length - newRows.length;
-      for (let i = 0; i < newRows.length; i++) {
-        const dIdx = startIdx + i;
-        if (this._rowMatchesQuery(dIdx, q)) this.state.filteredIndices.push(dIdx);
-      }
-      this._filterStatus.textContent =
-        `${this.state.filteredIndices.length.toLocaleString()} of ${this.rows.length.toLocaleString()} rows`;
-    }
-    this._scheduleRender();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2472,9 +2421,10 @@ class GridViewer {
     //   `for (const r of filters.dataRows) { if (r.searchText.includes(term)) ... }`
     // We materialise on demand; each element carries searchText + offsets.
     const dataRowsProxy = {
-      get length() { return self.rows.length; },
+      get length() { return self._rowCount(); },
       [Symbol.iterator]: function* () {
-        for (let i = 0; i < self.rows.length; i++) yield self._dataRowShape(i);
+        const n = self._rowCount();
+        for (let i = 0; i < n; i++) yield self._dataRowShape(i);
       }
     };
 
@@ -4044,7 +3994,7 @@ class GridViewer {
     // highlight timer closure, back-reference from a parent view) keeps
     // the entire row dataset alive. For large files this is hundreds of
     // MB — repeated load/clear cycles OOM the browser tab.
-    this.rows = null;
+    this.store = null;
     this.rawText = null;
     this.rowSearchText = null;
     this.rowOffsets = null;

@@ -369,8 +369,11 @@ class JsonRenderer {
     const self = this;
     const viewer = new GridViewer({
       columns,
-      rows,
+      store: RowStore.fromStringMatrix(columns, rows),
       rowSearchText,
+      // JSON tables (often arrays of objects) are filter-first; keep
+      // the eager search-text cache.
+      searchCacheMode: 'always',
       rowOffsets,
       rawText,
       className: 'json-view csv-view',

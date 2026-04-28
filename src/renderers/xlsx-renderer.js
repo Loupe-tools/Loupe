@@ -145,8 +145,11 @@ class XlsxRenderer {
     const self = this;
     const viewer = new GridViewer({
       columns,
-      rows,
+      store: RowStore.fromStringMatrix(columns, rows),
       rowSearchText,
+      // Spreadsheets are filter-first (analyst hunts for a SKU /
+      // amount / formula). Keep the eager search-text cache.
+      searchCacheMode: 'always',
       rawText: '',
       className: 'xlsx-sheet-view csv-view',
       infoText,

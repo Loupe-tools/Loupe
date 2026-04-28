@@ -1331,8 +1331,12 @@ class EvtxRenderer {
       // on a typical SOC analyst layout instead of being pinned at the
       // old 480 px fill-cap while every other column over-inflates.
       columnKinds: ['timestamp', 'id', 'enum', 'short', 'short', 'short', 'blob'],
-      rows,
+      store: RowStore.fromStringMatrix(columns, rows),
       rowSearchText: eventSearchText,
+      // EVTX's filter bar is hidden in favour of the EID/Level/search
+      // chip toolbar (`hideFilterBar: true`), but `applyFilters` still
+      // runs the cached `rowSearchText` substring match — preserve it.
+      searchCacheMode: 'always',
       rawText: '',
       className: 'evtx-view csv-view',
       infoText: '',   // our stats bar replaces it
