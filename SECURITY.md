@@ -62,6 +62,47 @@ check time.
 For the implementation contract see
 [CONTRIBUTING.md § Renderer Contract](CONTRIBUTING.md#renderer-contract).
 
+### Heap-budget gate (Chromium-only)
+
+CSV / TSV / EVTX / SQLite payloads decode into a `RowStore` (flat
+chunked typed-array container — see
+[CONTRIBUTING.md § RowStore container contract](CONTRIBUTING.md#rowstore-container-contract))
+that holds every parsed cell on the JS heap until the user clears the
+view. A 1 M-row CSV with ~80-character rows budgets ~880 MB after the
+Phase 4 migration; older builds were ~4× heavier and reliably OOM'd
+the renderer process on a 16 GB Chromium.
+
+`src/app/timeline/timeline-router.js` consults Chromium's
+non-standard `performance.memory.jsHeapSizeLimit` *before* the worker
+starts streaming `rows-chunk` messages and rejects the parse with a
+fail-soft toast if the projected RowStore exceeds the budget. Two
+tunables in `RENDER_LIMITS`:
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `ROWSTORE_HEAP_BUDGET_FRACTION` | `0.6` | Maximum fraction of `jsHeapSizeLimit` the projected RowStore is allowed to occupy. |
+| `ROWSTORE_HEAP_OVERHEAD_FACTOR` | `1.6` | Multiplier on the raw decoded-text byte size used to project the RowStore footprint (covers UTF-16 expansion + per-cell offset table). |
+
+The gate is **Chromium-only**: Firefox and Safari don't ship
+`performance.memory`, and the parse proceeds without the projection.
+This is intentional fail-soft behaviour — the gate is a DoS mitigation
+for malicious or accidentally-huge CSVs, not a hard correctness
+requirement; parses on browsers without the API simply rely on the
+existing `MAX_FILE_BYTES_BY_DISPATCH` cap (`csv` ≈ 512 MiB) and the
+OS-level OOM-killer.
+
+When the gate fires the load is cancelled (the worker is never
+spawned and no `RowStore` is built) and the user sees an error toast:
+
+> "File too large for available memory: <file MB> MB needs
+>  ~<projected MB> MB but only ~<budget MB> MB heap is available.
+>  Close other tabs or split the file before loading."
+
+The user can then close other tabs to free heap and retry, switch to
+a Chromium build with a higher per-renderer budget, or split the
+file. Backpressure is enforced before the worker decodes its first
+chunk; partial RowStores are never observable.
+
 ---
 
 ## Full Content-Security-Policy

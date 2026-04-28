@@ -682,6 +682,56 @@ hand-rolling `findings.interestingStrings.push({...})`:
    warning banner. Renderer-seeded IOCs are **not** subject to this cap
    — renderers own their own truncation (item 4).
 
+### RowStore container contract
+
+Every renderer that feeds a tabular view (csv, tsv, evtx, sqlite,
+xlsx, json, timeline) hands `GridViewer` a `RowStore`-shaped object —
+the `string[][]` payload retired in Phase 4c is no longer accepted and
+the constructor throws `TypeError` if `opts.store` is missing or
+fails the `getCell` shape check. The contract lives in
+`src/row-store.js`.
+
+**Construction.** Three factories cover every in-tree caller:
+
+| Factory | Use when |
+|---|---|
+| `RowStore.fromStringMatrix(columns, rows)` | Sync builder. The renderer already has the full `string[][]` in memory (sqlite, evtx, xlsx, json, csv-renderer's small-file path). |
+| `RowStore.fromChunks(columns, chunks)` | Worker hand-off. Chunks are pre-packed via `packRowChunk` and arrive as transferable `Uint8Array` / `Uint32Array` (timeline-router). |
+| `RowStore.empty(columns)` | Placeholder. Used by csv-renderer's streaming path to construct the `GridViewer` immediately so the progress bar paints, then `setRows` swaps in the real store on EOF. |
+
+For incremental construction (csv-renderer's chunked parse, the
+worker's `parseChunk` loop) use a `RowStoreBuilder`:
+
+```js
+const builder = new RowStoreBuilder(columns);
+for (const row of parsedRows) builder.addRow(row);   // or builder.addChunk(packed)
+const store = builder.finalize();                    // single-shot — throws on second call
+viewer.setRows(store, null, rowOffsets);
+```
+
+**Renderer hand-off.** Pass the finished store to `GridViewer` via
+`opts.store` (constructor) or `setRows(store, rowSearchText,
+rowOffsets, opts)`. Renderers whose primary navigation is the filter
+bar (csv, sqlite, evtx, xlsx, json) opt into the eager
+search-text cache by passing `searchCacheMode: 'always'`; the
+timeline path leaves the default `'auto'` (no cache — its query DSL
+is primary).
+
+**Hot-path read rule.** Inside renderer / GridViewer hot loops use
+`store.getCell(r, c)` — it returns the cell text without allocating.
+`store.getRow(r)` allocates a fresh `string[colCount]` per call and is
+reserved for export paths (clipboard / CSV / JSON / share) and the
+per-visible-row resolution inside `TimelineRowView`. The grep-able
+review rule is "no `store.getRow(...)` inside a per-row inner loop".
+
+**Heap budget.** The CSV / TSV ingress path consults
+`RENDER_LIMITS.ROWSTORE_HEAP_BUDGET_FRACTION` (0.6 of the Chromium
+`performance.memory` heap limit) before kicking off the worker parse.
+On Firefox / Safari (where `performance.memory` is unavailable) the
+gate is silent — the parse proceeds. See `SECURITY.md` →
+[Heap-budget gate (Chromium-only)](SECURITY.md#heap-budget-gate-chromium-only)
+for the full DoS-mitigation rationale.
+
 ### Renderer Matrix
 
 Combined dev matrix — replaces the legacy side-effect / reference /
