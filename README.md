@@ -37,16 +37,6 @@ SOC analysts, MDR responders, phishing teams, and DFIR practitioners need to ins
 
 ---
 
-## 🎯 When to reach for Loupe
-
-- **Abuse-mailbox triage** — drop a `.eml` or `.msg`; headers, SPF/DKIM/DMARC verdicts, tracking pixels, and every embedded URL are inspectable without a single click firing. EML / MSG anchors are [rendered inert](FEATURES.md#-user-interface) so a hostile URL can't be navigated to by accident.
-- **ClickFix / `osascript` paste** — paste an obfuscated one-liner straight in with `Ctrl+V`. Loupe peels every nested Base64 / hex / gzip / zlib / XOR layer with the [full decode lineage](FEATURES.md#-security-analysis) on screen, surfacing C2 URLs, hashes, and paths as one-click MISP / STIX attributes.
-- **Host-triage timeline** — drop the `.evtx` from live response to auto-flag 4688 / 4624 / 1102 / 4104 with MITRE ATT&CK pills and a [Detections + Entities sidebar](FEATURES.md#-timeline). Browser `History.sqlite` opens straight into the same timeline for a compromise narrative on one page.
-- **Airgap / SCIF analyst VM** — single HTML, zero network, usable where VirusTotal and Any.Run are off-limits.
-- **Detection-content authoring** — drag a candidate `.yar` onto Loupe to validate it against your sample corpus before promoting it to production.
-
----
-
 ## 🚀 Quick Start
 
 [⬇️ **Download latest loupe.html**](https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html)
@@ -58,6 +48,16 @@ SOC analysts, MDR responders, phishing teams, and DFIR practitioners need to ins
 5. **Inspect** — press **S** for the security sidebar, **Y** for the YARA dialog, **?** for all shortcuts.
 
 > Loupe is a **static-analysis triage tool** — it extracts, decodes, and displays file contents for human review. It does **not execute** macros, JavaScript, or embedded code. Use Loupe for initial triage and IOC extraction, then escalate to a sandbox or disassembly environment.
+
+---
+
+## 🎯 When to reach for Loupe
+
+- **Abuse-mailbox triage** — drop a `.eml` or `.msg`; headers, SPF/DKIM/DMARC verdicts, tracking pixels, and every embedded URL are inspectable without a single click firing. EML / MSG anchors are [rendered inert](FEATURES.md#-user-interface) so a hostile URL can't be navigated to by accident.
+- **ClickFix / `osascript` paste** — paste an obfuscated one-liner straight in with `Ctrl+V`. Loupe peels every nested Base64 / hex / gzip / zlib / XOR layer with the [full decode lineage](FEATURES.md#-security-analysis) on screen, surfacing C2 URLs, hashes, and paths as one-click MISP / STIX attributes.
+- **Host-triage timeline** — drop the `.evtx` from live response to auto-flag 4688 / 4624 / 1102 / 4104 with MITRE ATT&CK pills and a [Detections + Entities sidebar](FEATURES.md#-timeline). Browser `History.sqlite` opens straight into the same timeline for a compromise narrative on one page.
+- **Airgap / SCIF analyst VM** — single HTML, zero network, usable where VirusTotal and Any.Run are off-limits.
+- **Detection-content authoring** — drag a candidate `.yar` onto Loupe to validate it against your sample corpus before promoting it to production.
 
 ---
 
