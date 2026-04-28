@@ -111,3 +111,72 @@ export async function dumpFindings(page: Page): Promise<FindingsSnapshot> {
     return w.__loupeTest.dumpFindings() as unknown;
   }) as Promise<FindingsSnapshot>;
 }
+
+/**
+ * Re-fetch `app.currentResult` (minus heavy buffers). Mirrors the
+ * `_testApiDumpResult` shape in `src/app/app-test-api.js`.
+ */
+export interface ResultSnapshot {
+  filename: string | null;
+  dispatchId: string | null;
+  formatTag: string | null;
+  hasBuffer: boolean;
+  hasYaraBuffer: boolean;
+  bufferLength: number;
+  rawTextLength: number;
+  // Timeline-routed loads (CSV/TSV/EVTX/SQLite) surface a synthetic
+  // `currentResult` shape — see `_testApiDumpResult` in
+  // `src/app/app-test-api.js`. `timeline` is `false` for renderer
+  // routes; `true` when the Timeline fast-path mounted the view.
+  timeline?: boolean;
+  timelineRowCount?: number;
+}
+export async function dumpResult(page: Page): Promise<ResultSnapshot | null> {
+  return page.evaluate(() => {
+    const w = window as unknown as {
+      __loupeTest: { dumpResult(): unknown };
+    };
+    return w.__loupeTest.dumpResult() as unknown;
+  }) as Promise<ResultSnapshot | null>;
+}
+
+// ── Severity / risk band assertions ──────────────────────────────────────────
+// Loupe's risk floor escalates from 'low' through 'medium' / 'high' /
+// 'critical' as `externalRefs` severities accumulate. Tests should
+// assert on band membership, not exact strings — the floors retune
+// over time and an exact match on 'medium' would flake when a renderer
+// adds a new high-severity Pattern row that pushes the same fixture to
+// 'high'. Use `expectRiskAtLeast` / `expectRiskInBand` to encode this
+// posture once.
+export const RISK_ORDER: Record<string, number> =
+  { low: 0, medium: 1, high: 2, critical: 3 };
+
+/** Assert `risk` is at least `floor`. `low`/`medium`/`high`/`critical`. */
+export function isRiskAtLeast(risk: string | null | undefined, floor: string): boolean {
+  if (risk == null) return false;
+  if (!(risk in RISK_ORDER) || !(floor in RISK_ORDER)) return false;
+  return RISK_ORDER[risk] >= RISK_ORDER[floor];
+}
+
+/** Assert `risk` is in the named band set. */
+export function isRiskInBand(
+  risk: string | null | undefined,
+  bands: string[],
+): boolean {
+  if (risk == null) return bands.includes('low'); // null tolerated as 'low'
+  return bands.includes(risk);
+}
+
+/**
+ * Helper for renderers that produce text. Returns the set of YARA rule
+ * names the page picked up — handy for cross-fixture assertions
+ * without boilerplate. Reads from `findings.yaraHits` (which projects
+ * `r.ruleName || r.rule || r.meta.id`).
+ */
+export function ruleNames(findings: FindingsSnapshot): string[] {
+  return Array.from(new Set(
+    (findings.yaraHits || [])
+      .map(h => (h && h.rule) || '')
+      .filter(Boolean),
+  )).sort();
+}

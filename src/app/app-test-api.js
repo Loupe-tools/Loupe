@@ -68,19 +68,45 @@ extendApp({
     return this._testApiDumpFindings();
   },
 
-  /** Resolve once `_yaraScanInProgress` is unset/false. The encoded-content
-   *  worker scan, QR decoders, and PE/ELF/Mach-O overlay-hash post-paint
-   *  may still mutate findings asynchronously after this resolves — that's
-   *  by design; tests opt into "steady-state at sidebar paint", not "every
-   *  possible post-paint mutation has landed". Tests that care about late
-   *  mutations should poll `dumpFindings()` themselves. */
+  /** Resolve once the renderer pipeline has settled. Two stages:
+   *
+   *    1. Wait for either `currentResult` (renderer route) OR
+   *       `_timelineCurrent` (Timeline fast-path route) to become
+   *       non-null. `_loadFile` returns synchronously for Timeline
+   *       formats — it kicks `_loadFileInTimeline(file)` without
+   *       `await`, so a test that checks state immediately after
+   *       `_loadFile` resolves would observe an "empty" page that's
+   *       actually about to mount a Timeline. Polling here lets
+   *       Timeline-routed tests assert against the synthetic
+   *       `dumpResult()` shape exposed in `_testApiDumpResult` for
+   *       Timeline mounts.
+   *
+   *    2. Wait for `_yaraScanInProgress` to clear. The encoded-content
+   *       worker scan, QR decoders, and PE/ELF/Mach-O overlay-hash
+   *       post-paint may still mutate findings asynchronously after
+   *       this resolves — that's by design; tests opt into
+   *       "steady-state at sidebar paint", not "every possible
+   *       post-paint mutation has landed". Tests that care about late
+   *       mutations should poll `dumpFindings()` themselves.
+   *
+   *  Both stages share the same `timeoutMs` budget; the timeout
+   *  message identifies which stage stalled to make CI failures
+   *  diagnosable without re-running with a debugger. */
   async _testApiWaitForIdle(opts) {
     const o = opts || {};
     const timeoutMs = typeof o.timeoutMs === 'number' ? o.timeoutMs : 15000;
     const t0 = Date.now();
+    while (!this.currentResult && !this._timelineCurrent) {
+      if (Date.now() - t0 > timeoutMs) {
+        throw new Error(
+          `__loupeTest.waitForIdle: no currentResult/_timelineCurrent after ${timeoutMs}ms`);
+      }
+      await new Promise(r => setTimeout(r, 25));
+    }
     while (this._yaraScanInProgress) {
       if (Date.now() - t0 > timeoutMs) {
-        throw new Error(`__loupeTest.waitForIdle: timed out after ${timeoutMs}ms`);
+        throw new Error(
+          `__loupeTest.waitForIdle: yara still in progress after ${timeoutMs}ms`);
       }
       await new Promise(r => setTimeout(r, 25));
     }
@@ -95,9 +121,17 @@ extendApp({
     const isr = Array.isArray(f.interestingStrings) ? f.interestingStrings : [];
     const allIocs = ext.concat(isr);
     const iocTypes = Array.from(new Set(allIocs.map(e => e && e.type).filter(Boolean))).sort();
+    // YARA engine emits each hit as `{ ruleName, tags, meta, condition,
+    // matches }` (see `YaraEngine.scan` in src/yara-engine.js:524). The
+    // earlier projection here read `r.rule` which never existed — every
+    // returned `rule` field came back `undefined`, hiding the rule name
+    // from every Playwright assertion. Project from `ruleName` and also
+    // surface `meta.tags` / `meta.id` (some YARA rules expose the human
+    // identifier under `meta` rather than the AST `tags` array — both
+    // are accepted by the test-side filter helpers).
     const yaraHits = Array.isArray(this._yaraResults)
       ? this._yaraResults.map(r => ({
-          rule: r && r.rule,
+          rule: r && (r.ruleName || r.rule || (r.meta && r.meta.id) || null),
           tags: Array.isArray(r && r.tags) ? r.tags.slice() : [],
           severity: r && r.meta && r.meta.severity,
         }))
@@ -122,10 +156,40 @@ extendApp({
   },
 
   /** Snapshot of `app.currentResult` minus the heavy buffers. Used by
-   *  tests that need to assert the dispatched renderer / file metadata. */
+   *  tests that need to assert the dispatched renderer / file metadata.
+   *
+   *  Returns `null` when no file is loaded AND no Timeline view is
+   *  mounted. For Timeline-routed loads (CSV/TSV/EVTX/SQLite) the app
+   *  short-circuits inside `_loadFile` at the `_timelineTryHandle`
+   *  fast-path before ever stamping `currentResult`; in that case we
+   *  surface a synthetic `{ timeline: true, … }` shape sourced from
+   *  `app._timelineCurrent` so tests can still confirm the file
+   *  actually parsed instead of silently no-op'd. */
   _testApiDumpResult() {
     const cr = this.currentResult || null;
-    if (!cr) return null;
+    const tlView = this._timelineCurrent || null;
+    if (!cr && !tlView) return null;
+    if (!cr && tlView) {
+      // Timeline-routed load. The TimelineView holds a reference to
+      // the original File and, after parse, its row count + format
+      // label. We only surface the cheap fields here — the full row
+      // table would balloon `dumpResult()` to multi-MB on a real EVTX.
+      const file = (tlView._file || tlView.file) || null;
+      const rowCount = (Array.isArray(tlView._rows) && tlView._rows.length)
+        || (Array.isArray(tlView.rows) && tlView.rows.length)
+        || 0;
+      return {
+        filename: file ? (file.name || null) : null,
+        dispatchId: null,
+        formatTag: tlView._formatLabel || tlView.formatLabel || null,
+        hasBuffer: false,
+        hasYaraBuffer: false,
+        bufferLength: file ? (file.size | 0) : 0,
+        rawTextLength: 0,
+        timeline: true,
+        timelineRowCount: rowCount,
+      };
+    }
     return {
       filename: cr.filename || null,
       dispatchId: cr.dispatchId || null,
@@ -135,9 +199,20 @@ extendApp({
       hasBuffer: !!cr.buffer,
       hasYaraBuffer: !!cr.yaraBuffer,
       bufferLength: (cr.buffer && cr.buffer.byteLength) || 0,
-      // _rawText is what click-to-focus searches; expose its length so
-      // tests can sanity-check it was populated and LF-normalised.
-      rawTextLength: (cr._rawText && cr._rawText.length) || 0,
+      // `_rawText` is the LF-normalised plane click-to-focus searches.
+      // It lives on the renderer's `docEl`, NOT on `currentResult` —
+      // `currentResult` only carries `docEl`, `binary`, `yaraBuffer`
+      // and a few metadata fields (see `RenderRoute._emptyResult` in
+      // `src/render-route.js`). The previous read of `cr._rawText`
+      // always returned 0 because that field never gets written; the
+      // canonical source is `currentResult.docEl._rawText`. Fall back
+      // to `cr.rawText` (the `RenderResult` typedef field set inside
+      // `RenderRoute.run`) for renderers that produce text but never
+      // attach a docEl.
+      rawTextLength: ((cr.docEl && cr.docEl._rawText && cr.docEl._rawText.length)
+        || (cr.rawText && cr.rawText.length) || 0),
+      timeline: false,
+      timelineRowCount: 0,
     };
   },
 

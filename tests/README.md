@@ -158,26 +158,89 @@ python scripts/run_tests_e2e.py tests/e2e-fixtures/email.spec.ts
 `make.py test-e2e` doesn't forward extra args (it's a pure orchestrator
 step) — invoke `scripts/run_tests_e2e.py` directly when you need them.
 
-## What the test suite does NOT cover (yet)
+## Coverage layers added by the fixture-walk pass
 
-This is the foundation PR. A few obvious next-step gaps:
+A subsequent expansion pass added several layers that broaden coverage
+across the entire `examples/` corpus. Each is built on the same
+test-API surface — no new ingress paths.
 
-* **Renderer breadth.** Today we cover email + encoded-payloads + pe +
-  web. The other 25-ish renderers should each have at least one
-  fixture-driven smoke that asserts the right IOC types land.
-* **Paste path.** Drag-drop and file-picker are covered; clipboard
-  paste (synthesised `ClipboardEvent`) is not.
-* **Worker-side parity.** `ioc-extract.worker.js` has its own
-  parity-with-host check (`scripts/check_shim_parity.py`), but no
-  unit test against the worker bundle's actual output. A focused
-  Playwright test can probably exercise that directly.
-* **Snapshot fixtures (`expected.jsonl`).** A future addition: a JSONL
-  file pinning expected `iocTypes` / risk for ~25 representative
-  fixtures, with one test that loops over them. Catches
-  cross-renderer regressions cheaply.
-* **YARA-rule coverage.** Each YARA rule should have a positive +
-  negative fixture; a per-rule test loop reading `src/rules/*.yar` is
-  a small follow-up.
+### Snapshot matrix (`expected.jsonl` + `snapshot-matrix.spec.ts`)
+
+`tests/e2e-fixtures/expected.jsonl` is one JSON record per fixture
+encoding range-based assertions: `formatTag` pin, Timeline-route
+boolean, `riskFloor` (lower-bound band), `iocTypeMustInclude` subset,
+`iocCountAtLeast` lower bound, and a small `yaraRulesMustInclude` set
+of family-anchor rules. The spec walks every record and asserts the
+fixture against it — 138 tests, ~3 minutes.
+
+Why ranges, not exact pins? See the comment block at the top of
+`snapshot-matrix.spec.ts`. Short version: a renderer that *adds* a row
+or *escalates* risk shouldn't break the matrix; only regressions
+that drop rows / demote risk / drop family rules will.
+
+To regenerate after a deliberate baseline shift:
+
+```bash
+LOUPE_EXPLORE=1 python scripts/run_tests_e2e.py tests/explore/dump-fixtures.spec.ts
+python scripts/gen_expected.py
+git diff tests/e2e-fixtures/expected.jsonl
+```
+
+### YARA rule coverage (`yara-rules-fired.json` + `yara-rules-coverage.spec.ts`)
+
+Inverse of the matrix: for every YARA rule that fires across the
+corpus, the JSON manifest records its first-anchor fixture. The spec
+loads each anchor once and asserts every "rules anchored here"
+continues to fire. This catches the long tail of ~50 rules that
+`expected.jsonl` deliberately doesn't pin (it caps at three
+family-anchor rules per fixture).
+
+Unanchored rules (rules with no fixture coverage at all) are tracked
+in the manifest's `unanchoredRules` field — documentation only, not
+gated by CI. Add fixtures or rules incrementally; running
+`python scripts/gen_yara_coverage.py` re-derives both numbers.
+
+### Per-renderer e2e smokes (`tests/e2e-fixtures/*.spec.ts`)
+
+In addition to email / encoded-payloads / pe / web, the corpus now
+has dedicated smokes for: archives, browser-extensions, crypto, elf,
+forensics, images, java, macos (scripts + system), npm, office, pdf,
+windows-installers, windows-scripts. Each spec anchors family-level
+invariants per renderer (e.g. `MSIX_*` cluster fires for `.msix`,
+PKCS#12 surfaces a Pattern row, Timeline route is taken for EVTX).
+
+### Worker parity (`worker-parity.spec.ts`)
+
+Cross-thread parity for `WorkerManager.runIocExtract` against the
+synchronous `extractInterestingStringsCore` shim. The host falls
+back to the shim on any worker rejection — a divergence between the
+two paths means the IOC set silently changes on a heisen-fault. The
+spec runs three anchor texts through both code paths and
+JSON-compares the canonicalised findings.
+
+### Paste path (`tests/e2e-ui/paste.spec.ts`)
+
+Synthesises `Event('paste')` with a faked `clipboardData` shape
+matching the `DataTransfer` interface the handler reads. Covers all
+four forks (file → image → text/plain → text/html) plus the
+input/textarea focus gate.
+
+## What the test suite still does NOT cover
+
+* **Worker-side encoded scan + Timeline.** `encoded.worker.js` and
+  `timeline.worker.js` only exercise host-side glue today.
+  Worker-output parity for these would mirror
+  `worker-parity.spec.ts`.
+* **Sidebar UI assertions.** Snapshot tests assert on the findings
+  projection, not the rendered DOM. A future tier could verify the
+  Click-To-Focus highlight pipeline end-to-end.
+* **Visual regressions.** Playwright screenshot diffs over a
+  reference theme set would catch CSS / layout regressions; not yet
+  wired.
+* **Long-tail YARA rule coverage.** 331 rules are currently
+  unanchored — see `yara-rules-fired.json:unanchoredRules`. CI
+  doesn't block on growing this list, but new fixtures should
+  incrementally close the gap.
 
 ## Troubleshooting
 

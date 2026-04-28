@@ -111,6 +111,38 @@ function makeSandbox(extra) {
     // today, but harmless to expose). `node:crypto.webcrypto` matches the
     // browser API surface.
     crypto: require('node:crypto').webcrypto,
+    // `AbortController` / `AbortSignal` — used by `parser-watchdog.js` and
+    // any signal-aware renderer code under test.
+    AbortController: typeof AbortController === 'function' ? AbortController : undefined,
+    AbortSignal: typeof AbortSignal === 'function' ? AbortSignal : undefined,
+    // `atob` / `btoa` — used by `base64-hex.js::_decodeBase64`.
+    atob: typeof atob === 'function' ? atob : undefined,
+    btoa: typeof btoa === 'function' ? btoa : undefined,
+    // `URL` / `URLSearchParams` — used by `safelinks.js` to parse the
+    // wrapped URLs into searchParams.
+    URL: typeof URL === 'function' ? URL : undefined,
+    URLSearchParams: typeof URLSearchParams === 'function' ? URLSearchParams : undefined,
+  };
+  // Most Loupe modules publish their public surface onto `window.<Name>`
+  // (e.g. `window.MITRE`, `window.EvtxEventIds`, `window.safeStorage`,
+  // `window.ArchiveBudget`). For unit tests we want those assignments to
+  // succeed — and the most direct way is to make `window` an alias of the
+  // sandbox itself, so `window.MITRE = …` is the same as `globalThis.MITRE
+  // = …`. The `expose` block at the end of `loadModules` then projects
+  // those `window.*` properties onto the sandbox naturally.
+  sb.window = sb;
+  // Tiny in-memory `localStorage` shim. `safeStorage` (src/storage.js)
+  // funnels every persisted-key access through this; nicelist.js consults
+  // `loupe_nicelist_builtin_enabled` at lookup time. The shim is fresh
+  // per `loadModules` call so tests never leak state.
+  const _store = new Map();
+  sb.localStorage = {
+    getItem(k) { return _store.has(String(k)) ? _store.get(String(k)) : null; },
+    setItem(k, v) { _store.set(String(k), String(v)); },
+    removeItem(k) { _store.delete(String(k)); },
+    key(i) { return Array.from(_store.keys())[i] ?? null; },
+    get length() { return _store.size; },
+    clear() { _store.clear(); },
   };
   if (extra) Object.assign(sb, extra);
   return sb;
@@ -193,6 +225,8 @@ function loadModules(relPaths, opts) {
 // a name that isn't declared is a no-op). Keep this list sorted; if a
 // new test needs a symbol, add it here in the same PR.
 const DEFAULT_EXPOSE = [
+  // src/archive-budget.js
+  'ArchiveBudget',
   // src/constants.js
   'IOC',
   'IOC_CANONICAL_SEVERITY',
@@ -206,6 +240,10 @@ const DEFAULT_EXPOSE = [
   'safeRegex',
   'safeTest',
   'stripDerTail',
+  // src/encoded-content-detector.js (root class — decoders mount onto its prototype)
+  'EncodedContentDetector',
+  // src/evtx-event-ids.js (publishes onto window.EvtxEventIds)
+  'EvtxEventIds',
   // src/hashes.js
   'computeImportHashFromList',
   'computeRichHash',
@@ -214,6 +252,17 @@ const DEFAULT_EXPOSE = [
   'normalizePeImportToken',
   // src/ioc-extract.js
   'extractInterestingStringsCore',
+  // src/mitre.js (publishes onto window.MITRE)
+  'MITRE',
+  // src/nicelist.js
+  'NICELIST',
+  'isNicelisted',
+  // src/numbering-resolver.js
+  'NumberingResolver',
+  // src/parser-watchdog.js
+  'ParserWatchdog',
+  // src/storage.js
+  'safeStorage',
   // src/tar-parser.js
   'TarParser',
 ];

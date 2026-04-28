@@ -35,7 +35,18 @@ const TEST_BUNDLE = path.join(REPO_ROOT, 'docs', 'index.test.html');
 
 export default defineConfig({
   testDir: __dirname,
-  testMatch: ['e2e-fixtures/**/*.spec.ts', 'e2e-ui/**/*.spec.ts'],
+  // `explore/**` self-skips unless `LOUPE_EXPLORE=1` is set in the env,
+  // so it costs nothing in the default CI loop. The explore spec exists
+  // to walk every file under `examples/` and dump the canonical findings
+  // shape into `dist/fixture-report.json` — research-grade, not a
+  // regression gate. Bringing the dir into testMatch means contributors
+  // can run it via the same `python make.py test-e2e` pipeline rather
+  // than maintaining a parallel runner.
+  testMatch: [
+    'e2e-fixtures/**/*.spec.ts',
+    'e2e-ui/**/*.spec.ts',
+    'explore/**/*.spec.ts',
+  ],
 
   // Single worker by default. Loupe's bundle is large (~9 MB) and each
   // page navigates to a `file://` URL; running many in parallel does

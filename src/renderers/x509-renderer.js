@@ -1204,6 +1204,24 @@ class X509Renderer {
           severity: 'info',
         });
         findings.summary = 'PKCS#12/PFX container';
+        // Mirror the lone PKCS#12 detection into externalRefs as IOC.PATTERN
+        // before the early return — without this, downstream Summary /
+        // Share / STIX / MISP / sidebar projections lose the row entirely.
+        // The post-loop mirror at line ~1406 is what every other branch
+        // relies on; the PKCS#12 path bypasses it because the bytes never
+        // parse as PEM/DER and the function returns immediately. Same
+        // shape as the post-loop mirror: `type: IOC.PATTERN`,
+        // `url: "<name> — <description>"`, severity carried verbatim.
+        // Also stamp metadata + risk so the canonical findings shape
+        // matches what every other X.509 branch produces.
+        findings.metadata = {};
+        for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
+        findings.externalRefs = findings.detections.map(d => ({
+          type: IOC.PATTERN,
+          url: `${d.name} — ${d.description}`,
+          severity: d.severity,
+        }));
+        escalateRisk(findings, findings.riskLevel);
         return findings;
       } else if (this._isDER(bytes)) {
         try { certs.push(this._parseCertificate(bytes)); } catch (e) { /* skip */ }
