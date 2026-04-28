@@ -712,10 +712,12 @@ viewer.setRows(store, null, rowOffsets);
 **Renderer hand-off.** Pass the finished store to `GridViewer` via
 `opts.store` (constructor) or `setRows(store, rowSearchText,
 rowOffsets, opts)`. Renderers whose primary navigation is the filter
-bar (csv, sqlite, evtx, xlsx, json) opt into the eager
-search-text cache by passing `searchCacheMode: 'always'`; the
-timeline path leaves the default `'auto'` (no cache — its query DSL
-is primary).
+bar (csv, sqlite, evtx, xlsx, json) opt into the eager search-text
+cache by passing `searchTextCache: true`; the timeline path leaves
+the default `false` (no cache — its query DSL is primary, not the
+free-text filter bar). Phase 9 collapsed the legacy
+`searchCacheMode: 'always' | 'auto' | 'never'` tri-state to this
+boolean — only the two-state distinction had any caller.
 
 **Hot-path read rule.** Inside renderer / GridViewer hot loops use
 `store.getCell(r, c)` — it returns the cell text without allocating.
