@@ -451,6 +451,178 @@ test('packRowChunk output is structurally compatible with postMessage transfer',
   assert.equal(store.getCell(1, 1), 'bar');
 });
 
+// ── ASCII fast-path ────────────────────────────────────────────────────────
+//
+// `packRowChunk` flags pure-7-bit-ASCII chunks via `allAscii: true`. The
+// flag is honoured by `RowStore.getCell` / `getRow` to skip TextDecoder
+// and use a `String.fromCharCode.apply` fast path instead. The tests
+// below verify (a) the flag is set correctly, (b) decoded output is
+// identical regardless of which path is taken, (c) chunk-boundary mixed
+// stores correctly switch paths per-chunk, and (d) older chunk shapes
+// missing the flag still load (back-compat).
+
+test('packRowChunk flags pure-ASCII chunks as allAscii=true', () => {
+  const rows = [
+    ['hello', 'world', '12345'],
+    ['/var/log/syslog', '2026-04-28T12:00:00', '8.8.8.8'],
+    ['', null, undefined],
+  ];
+  const chunk = packRowChunk(rows, 3);
+  assert.equal(chunk.allAscii, true);
+});
+
+test('packRowChunk flags multibyte chunks as allAscii=false', () => {
+  // A single non-ASCII byte anywhere in the chunk is enough to force
+  // the slow path. Use 'café' (é = 0xC3 0xA9) to confirm the high-bit
+  // detection rather than anything more exotic.
+  const rows = [
+    ['hello', 'world'],
+    ['café', 'ascii'],
+  ];
+  const chunk = packRowChunk(rows, 2);
+  assert.equal(chunk.allAscii, false);
+});
+
+test('packRowChunk: a single emoji forces allAscii=false', () => {
+  const chunk = packRowChunk([['🚀']], 1);
+  assert.equal(chunk.allAscii, false);
+});
+
+test('packRowChunk: empty rows + nullish cells keep allAscii=true', () => {
+  // Vacuously true — no bytes emitted means no high bit observed.
+  const chunk = packRowChunk([[null, undefined, '']], 3);
+  assert.equal(chunk.allAscii, true);
+});
+
+test('ASCII fast-path getCell output matches TextDecoder slow-path output', () => {
+  // Same string content, packed two ways: one through the canonical
+  // packer (sets allAscii=true) and one with allAscii forcibly cleared
+  // so the slow path runs. Both must produce identical results across
+  // every cell.
+  const rows = [
+    ['Alice', '30', 'London'],
+    ['Bob', '25', 'Paris'],
+    ['', 'middle', ''],
+    ['SYSTEM', 'NT AUTHORITY', '/var/log'],
+  ];
+  const fast = RowStore.fromStringMatrix(['a', 'b', 'c'], rows);
+  // Hand-build a parallel store with allAscii forced false.
+  const packed = packRowChunk(rows, 3);
+  packed.allAscii = false;
+  const slow = RowStore.fromChunks(['a', 'b', 'c'], [packed]);
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < 3; c++) {
+      assert.equal(
+        fast.getCell(r, c),
+        slow.getCell(r, c),
+        'fast/slow mismatch at (' + r + ',' + c + ')',
+      );
+      assert.equal(fast.getCell(r, c), rows[r][c] == null ? '' : rows[r][c]);
+    }
+  }
+});
+
+test('ASCII fast-path getRow output matches TextDecoder slow-path output', () => {
+  // Same matrix, two stores. `getRow` has an independent code path
+  // that must stay parity with `getCell`.
+  const rows = [
+    ['1', 'foo', 'bar'],
+    [null, '', 'baz'],
+    ['SYSTEM', 'NT AUTHORITY', '/var/log/auth'],
+  ];
+  const fast = RowStore.fromStringMatrix(['a', 'b', 'c'], rows);
+  const packed = packRowChunk(rows, 3);
+  packed.allAscii = false;
+  const slow = RowStore.fromChunks(['a', 'b', 'c'], [packed]);
+  for (let r = 0; r < rows.length; r++) {
+    assert.deepEqual(
+      fast.getRow(r),
+      slow.getRow(r),
+      'fast/slow getRow mismatch at row ' + r,
+    );
+  }
+});
+
+test('multibyte chunks still decode correctly via TextDecoder slow path', () => {
+  const rows = [
+    ['café', 'naïve', 'résumé'],
+    ['🚀', '日本語', '😀'],
+    ['Москва', 'Αθήνα', 'القاهرة'],
+  ];
+  const store = RowStore.fromStringMatrix(['a', 'b', 'c'], rows);
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < 3; c++) {
+      assert.equal(store.getCell(r, c), rows[r][c]);
+    }
+  }
+  // And confirm the chunk really did flag itself as non-ASCII (so we
+  // know we exercised the slow path, not the fast).
+  assert.equal(store.chunks[0].allAscii, false);
+});
+
+test('mixed-encoding stores preserve per-chunk allAscii decisions across the seam', () => {
+  // First chunk pure ASCII, second chunk multibyte — exercises the
+  // chunk-boundary dispatch in `getCell` / `getRow`. Force tiny chunks
+  // to guarantee the seam lands where we expect.
+  const cols = ['a'];
+  const builder = new RowStoreBuilder(cols, { chunkRowsTarget: 2 });
+  builder.addRow(['hello']);
+  builder.addRow(['world']);
+  // Chunk flush boundary lands here.
+  builder.addRow(['café']);
+  builder.addRow(['🚀']);
+  const store = builder.finalize();
+  assert.equal(store.chunks.length, 2);
+  assert.equal(store.chunks[0].allAscii, true);
+  assert.equal(store.chunks[1].allAscii, false);
+  // Round-trip every row.
+  assert.equal(store.getCell(0, 0), 'hello');
+  assert.equal(store.getCell(1, 0), 'world');
+  assert.equal(store.getCell(2, 0), 'café');
+  assert.equal(store.getCell(3, 0), '🚀');
+});
+
+test('back-compat: fromChunks accepts chunks missing the allAscii flag', () => {
+  // Simulate an older worker bundle that produces chunks without the
+  // flag. Strip it and confirm `fromChunks` rescans the bytes,
+  // populates the flag, and reads cells correctly.
+  const cols = ['a', 'b'];
+  const packed = packRowChunk([['hi', 'there'], ['foo', 'bar']], 2);
+  // Pre-flag-era shape — strip the property entirely, mirroring an
+  // older builder that simply doesn't set it.
+  delete packed.allAscii;
+  const store = RowStore.fromChunks(cols, [packed]);
+  // Rescan should have populated the flag (these cells are pure ASCII).
+  assert.equal(store.chunks[0].allAscii, true);
+  assert.equal(store.getCell(0, 0), 'hi');
+  assert.equal(store.getCell(1, 1), 'bar');
+});
+
+test('back-compat: addChunk accepts chunks missing the allAscii flag', () => {
+  const cols = ['a'];
+  const packed = packRowChunk([['café'], ['naïve']], 1);
+  // Strip the flag; `addChunk` must rescan and detect multibyte content.
+  delete packed.allAscii;
+  const builder = new RowStoreBuilder(cols);
+  builder.addChunk(packed);
+  const store = builder.finalize();
+  assert.equal(store.chunks[0].allAscii, false);
+  assert.equal(store.getCell(0, 0), 'café');
+  assert.equal(store.getCell(1, 0), 'naïve');
+});
+
+test('ASCII fast-path handles the long-cell branch (>4 KB ASCII payload)', () => {
+  // The fast-path chunks `String.fromCharCode.apply` output to 4 KB
+  // pieces above this threshold. Confirm a 12 KB pure-ASCII cell
+  // round-trips cleanly across the chunked-concatenation branch.
+  const big = 'A'.repeat(12 * 1024);
+  const store = RowStore.fromStringMatrix(['a'], [[big]]);
+  assert.equal(store.chunks[0].allAscii, true);
+  const got = store.getCell(0, 0);
+  assert.equal(got.length, big.length);
+  assert.equal(got, big);
+});
+
 // ── Stress: 1 000 rows across many chunks ──────────────────────────────────
 
 test('1 000-row store with forced 100-row chunks reads cleanly end-to-end', () => {
