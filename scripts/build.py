@@ -906,6 +906,16 @@ APP_JS_FILES = [
     # byte-identical with the pre-B2f2 `timeline-view.js`. Loads
     # AFTER timeline-view.js.
     'src/app/timeline/timeline-view-render-grid.js',
+    # timeline-view-query-chips.js — TimelineView prototype mixin
+    # (B2f3). Hosts the query-AST manipulation surface (the
+    # click-pivot mutators every Include/Exclude/Only/Pin path
+    # routes through), the chips strip renderer, the
+    # `_addOrToggleChip` and friends thin wrappers, and the
+    # Ctrl+Click multi-select helpers. The query bar is the single
+    # source of truth for row filtering, so this mixin is the
+    # central point where UI clicks become AST edits. Loads AFTER
+    # timeline-view.js.
+    'src/app/timeline/timeline-view-query-chips.js',
     'src/app/timeline/timeline-detections.js',
     'src/app/timeline/timeline-summary.js',
     'src/app/timeline/timeline-drawer.js',
