@@ -878,6 +878,16 @@ APP_JS_FILES = [
     # (the histogram bucketer). Hot paths — bodies are byte-identical
     # with the pre-B2c `timeline-view.js`. Loads AFTER timeline-view.js.
     'src/app/timeline/timeline-view-filter.js',
+    # timeline-view-popovers.js — TimelineView prototype mixin (B2d).
+    # Hosts the Add-Sus popover, right-click row context menu, the
+    # generic single-slot popover/dialog teardowns
+    # (`_closePopover` / `_closeDialog`), the Excel-style column
+    # header menu, and the multi-tab Extraction dialog (Smart-scan
+    # + Regex + Clicker). The tiny utilities `_ellipsis`,
+    # `_copyToClipboard`, `_positionFloating` remain in
+    # timeline-view.js because the chart and grid mixins also call
+    # them. Loads AFTER timeline-view.js.
+    'src/app/timeline/timeline-view-popovers.js',
     'src/app/timeline/timeline-detections.js',
     'src/app/timeline/timeline-summary.js',
     'src/app/timeline/timeline-drawer.js',
