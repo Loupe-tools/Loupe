@@ -34,6 +34,7 @@
      mauve     #8839ef   --accent
      lavender  #7287fd   --accent-hover
      sapphire  #209fb5   --accent-deep
+     violet    #6c3df4   --risk-critical
      red       #d20f39   --risk-high
      peach     #fe640b   --risk-med
      green     #40a02b   --risk-low
@@ -44,6 +45,11 @@ body.theme-latte {
   --accent-hover:  #7287fd;
   --accent-deep:   #209fb5;
 
+  /* Slightly darker mauve than the accent so critical badges stay
+     distinct from accent-tinted surfaces (focus rings, hovers). */
+  --risk-critical:     #6c3df4;
+  --risk-critical-rgb: 108 61 244;
+  --risk-critical-text:#6c3df4;
   --risk-high:     #d20f39;
   --risk-high-rgb: 210 15 57;
   --risk-med:      #fe640b;

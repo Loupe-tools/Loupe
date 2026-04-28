@@ -76,21 +76,33 @@ extendApp({
 
 
     // ── Risk bar ─────────────────────────────────────────────────────────
+    // Severity is shown as a coloured CSS dot (.sev-dot) prefixed to the
+    // banner text. Previously used Unicode coloured-square emoji (🟣🔴🟡🟢)
+    // which Firefox rendered with a glyph box that overflowed the line-box
+    // and got clipped by the sidebar's overflow:hidden.
     const rb = document.getElementById('sb-risk');
     rb.className = `sb-risk risk-${f.risk}`;
-    let riskText;
+    let dotCls, riskText;
     if (f.risk === 'critical') {
-      riskText = yaraCount ? '🟣 CRITICAL — Critical YARA rules matched' : '🟣 CRITICAL — Critical threats detected';
+      dotCls = 'critical';
+      riskText = yaraCount ? 'CRITICAL — Critical YARA rules matched' : 'CRITICAL — Critical threats detected';
     } else if (f.risk === 'high') {
-      if (f.hasMacros && (f.autoExec || []).length) riskText = '🔴 HIGH RISK — Auto-execute macros detected';
-      else if (yaraCount) riskText = '🔴 HIGH RISK — YARA rules matched';
-      else riskText = '🔴 HIGH RISK — Dangerous content detected';
+      dotCls = 'high';
+      if (f.hasMacros && (f.autoExec || []).length) riskText = 'HIGH RISK — Auto-execute macros detected';
+      else if (yaraCount) riskText = 'HIGH RISK — YARA rules matched';
+      else riskText = 'HIGH RISK — Dangerous content detected';
     } else if (f.risk === 'medium') {
-      riskText = f.hasMacros ? '🟡 Macros present' : '🟡 Potential risks detected';
+      dotCls = 'medium';
+      riskText = f.hasMacros ? 'Macros present' : 'Potential risks detected';
     } else {
-      riskText = '🟢 No threats detected';
+      dotCls = 'low';
+      riskText = 'No threats detected';
     }
-    document.getElementById('sb-risk-title').textContent = riskText;
+    const sbRiskTitle = document.getElementById('sb-risk-title');
+    const riskDot = document.createElement('span');
+    riskDot.className = `sev-dot sev-dot-${dotCls}`;
+    riskDot.setAttribute('aria-hidden', 'true');
+    sbRiskTitle.replaceChildren(riskDot, document.createTextNode(riskText));
 
     // ── Populate single scrollable body ──────────────────────────────────
     const body = document.getElementById('sb-body');
@@ -545,31 +557,29 @@ extendApp({
     // ── Filter state ──────────────────────────────────────────────────────
     const activeSeverities = new Set();
 
-    // ── Severity config ───────────────────────────────────────────────────
-    const sevConfig = {
-      critical: { icon: '🟣', color: '#4a1a7a' },
-      high:     { icon: '🔴', color: '#721c24' },
-      medium:   { icon: '🟡', color: '#856404' },
-      info:     { icon: '🔵', color: '#666' },
-    };
-
     // ── Store references ──────────────────────────────────────────────────
     const sevFilterElements = new Map();
     const cardElements = [];
 
     // ── Severity filter bar (clickable) ───────────────────────────────────
+    // Each pill renders a coloured CSS dot (.sev-dot) followed by plain
+    // text. The dot supplies the severity colour anchor; previously the
+    // pill text was tinted via inline style.color (#4a1a7a / #721c24 / …)
+    // and prefixed with an emoji glyph (🟣🔴🟡🔵). Firefox clipped those
+    // emoji top/right because they overflowed the line-box.
     const sevBar = document.createElement('div'); sevBar.className = 'sev-bar';
 
     for (const sev of ['critical', 'high', 'medium', 'info']) {
       const count = encodedFindings.filter(f => f.severity === sev).length;
       if (!count) continue;
 
-      const { icon, color } = sevConfig[sev];
       const s = document.createElement('span');
       s.className = 'sev-filter';
       s.dataset.severity = sev;
-      s.style.color = color;
-      s.textContent = `${icon} ${count} ${sev}`;
+      const dot = document.createElement('span');
+      dot.className = `sev-dot sev-dot-${sev}`;
+      dot.setAttribute('aria-hidden', 'true');
+      s.replaceChildren(dot, document.createTextNode(`${count} ${sev}`));
       s.title = `Click to filter by ${sev} severity`;
       s.addEventListener('click', () => {
         if (activeSeverities.has(sev)) {
@@ -1335,12 +1345,17 @@ extendApp({
         if (visible) visibleCount++;
       }
 
-      // Update severity bar counts based on visible items
+      // Update severity bar counts based on visible items. Rebuild the
+      // pill content as dot + text node so the .sev-dot stays present
+      // through count refreshes (textContent= would wipe the dot span).
       for (const [sev, el] of sevFilterElements) {
         const count = cardElements.filter(c => c.severity === sev).length;
         if (count > 0) {
           el.style.display = '';
-          el.textContent = `${sevConfig[sev].icon} ${count} ${sev}`;
+          const dot = document.createElement('span');
+          dot.className = `sev-dot sev-dot-${sev}`;
+          dot.setAttribute('aria-hidden', 'true');
+          el.replaceChildren(dot, document.createTextNode(`${count} ${sev}`));
         } else {
           el.style.display = 'none';
         }
@@ -1497,31 +1512,27 @@ extendApp({
     // localStorage['loupe_ioc_hide_nicelisted'].
     let hideNicelisted = isIocSection && this._getHideNicelisted();
 
-    // ── Severity config ──────────────────────────────────────────────────
-    const sevConfig = {
-      critical: { icon: '🟣', color: '#4a1a7a' },
-      high:     { icon: '🔴', color: '#721c24' },
-      medium:   { icon: '🟡', color: '#856404' },
-      info:     { icon: '🔵', color: '#666' },
-    };
-
     // ── Store references to filter elements ──────────────────────────────
     const sevFilterElements = new Map();  // severity -> element
     const typeFilterElements = new Map(); // type -> element
 
     // ── Severity filter bar (clickable) ──────────────────────────────────
+    // Same pattern as the encoded-findings pills above: CSS .sev-dot
+    // colour anchor + plain text. Replaces an emoji prefix that Firefox
+    // rendered with a clipped glyph box.
     const sevBar = document.createElement('div'); sevBar.className = 'sev-bar';
 
     for (const sev of ['critical', 'high', 'medium', 'info']) {
       const count = refs.filter(r => r.severity === sev).length;
       if (!count) continue;
 
-      const { icon, color } = sevConfig[sev];
       const s = document.createElement('span');
       s.className = 'sev-filter';
       s.dataset.severity = sev;
-      s.style.color = color;
-      s.textContent = `${icon} ${count} ${sev}`;
+      const dot = document.createElement('span');
+      dot.className = `sev-dot sev-dot-${sev}`;
+      dot.setAttribute('aria-hidden', 'true');
+      s.replaceChildren(dot, document.createTextNode(`${count} ${sev}`));
       s.title = `Click to filter by ${sev} severity`;
       s.addEventListener('click', () => {
         if (activeSeverities.has(sev)) {
@@ -1914,12 +1925,17 @@ extendApp({
         }
       }
 
-      // Step 4: Update severity bar - show/hide and update counts
+      // Step 4: Update severity bar - show/hide and update counts.
+      // Rebuild dot+text via DOM nodes (see encoded-findings filter for
+      // rationale).
       for (const [sev, el] of sevFilterElements) {
         const count = availableSevCounts[sev] || 0;
         if (count > 0) {
           el.style.display = '';
-          el.textContent = `${sevConfig[sev].icon} ${count} ${sev}`;
+          const dot = document.createElement('span');
+          dot.className = `sev-dot sev-dot-${sev}`;
+          dot.setAttribute('aria-hidden', 'true');
+          el.replaceChildren(dot, document.createTextNode(`${count} ${sev}`));
         } else {
           el.style.display = 'none';
           // Auto-deselect if it was active but now has no matches

@@ -70,9 +70,9 @@ class RarRenderer {
     const summ = document.createElement('div');
     summ.className = 'zip-summary';
     const bits = [`RAR ${parsed.version}`];
-    if (parsed.solid) bits.push('<span style="color:var(--risk-medium)">solid</span>');
+    if (parsed.solid) bits.push('<span style="color:var(--risk-med)">solid</span>');
     if (parsed.encryptedHeaders) bits.push('<span style="color:var(--risk-high)">encrypted headers</span>');
-    if (parsed.multiVolume) bits.push('<span style="color:var(--risk-medium)">multi-volume</span>');
+    if (parsed.multiVolume) bits.push('<span style="color:var(--risk-med)">multi-volume</span>');
     if (parsed.recoveryRecord) bits.push('recovery record');
     summ.innerHTML = `${files} file${files !== 1 ? 's' : ''} — ${fmtBytes(totalSize)} uncompressed` +
       (totalPacked ? ` / ${fmtBytes(totalPacked)} packed` : '') +

@@ -546,87 +546,126 @@ extendApp({
     spacer.style.flex = '1';
     toolbar.appendChild(spacer);
 
-    // ── Save dropdown button ────────────────────────────────────────
-    const saveWrap = document.createElement('span');
-    saveWrap.style.position = 'relative';
-    saveWrap.style.display = 'inline-block';
+    // Pre-H8 the toolbar laid five sibling buttons in a flat row
+    // (Save \u25be, Upload, Validate, \u2139, Run Scan). That made the busy
+    // "search bar + chips on the left, scattered actions on the right"
+    // composition feel unstructured. Post-H8 the actions are grouped:
+    //
+    //   [search\u2026]  \u2502  [\u{1F4DA} Rules \u25be]  [\u2714 Validate]  [\u25B6 Run Scan]   \u2139
+    //              ^                ^^^^^^^^^^^^^^   ^^^^^^^^^^^^   ^^^^^^^^^^^^^   ^
+    //              divider          library mgmt     correctness    primary CTA    reference
+    //
+    // The Rules menu collapses Save All / Save Uploaded / Upload /
+    // Clear-uploaded into one split-button so the "library management"
+    // surface lives in a single mental model. \u2139 is intentionally
+    // floated to the far right (separated by a small gap) so it reads
+    // as reference rather than action.
 
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'tb-btn yara-tb-btn';
-    saveBtn.textContent = '\u{1F4BE} Save';
-    saveBtn.title = 'Save rules to .yar file';
+    // ── Toolbar divider (between search-wrap and action group) ──────
+    const tbDiv = document.createElement('span');
+    tbDiv.className = 'yara-toolbar-divider';
+    tbDiv.setAttribute('aria-hidden', 'true');
+    toolbar.appendChild(tbDiv);
 
-    let saveMenuOpen = false;
-    const saveMenu = document.createElement('div');
-    saveMenu.className = 'yara-save-menu';
-    saveMenu.style.display = 'none';
+    // ── Action group (Rules \u25be / Validate / Run Scan) ──────────────
+    const actionGroup = document.createElement('div');
+    actionGroup.className = 'yara-action-group';
 
-    const allItem = document.createElement('button');
-    allItem.className = 'yara-save-menu-item';
-    allItem.textContent = 'All Rules';
-    allItem.addEventListener('click', () => {
-      saveMenu.style.display = 'none';
-      saveMenuOpen = false;
-      this._yaraSaveFile(this._getAllYaraSource(), 'loupe-rules-all.yar');
-    });
-    saveMenu.appendChild(allItem);
-
-    const upItem = document.createElement('button');
-    upItem.className = 'yara-save-menu-item';
-    upItem.textContent = 'Uploaded Only';
-    const upSrc = this._getUploadedYaraRules();
-    if (!upSrc) { upItem.disabled = true; }
-    upItem.addEventListener('click', () => {
-      saveMenu.style.display = 'none';
-      saveMenuOpen = false;
-      const u = this._getUploadedYaraRules();
-      if (u) this._yaraSaveFile(u, 'loupe-rules-uploaded.yar');
-    });
-    saveMenu.appendChild(upItem);
-
-    saveBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      saveMenuOpen = !saveMenuOpen;
-      saveMenu.style.display = saveMenuOpen ? '' : 'none';
-    });
-
-    // Close save menu on any click outside
-    const closeSaveMenu = () => { saveMenu.style.display = 'none'; saveMenuOpen = false; };
-    overlay.addEventListener('click', closeSaveMenu);
-
-    saveWrap.appendChild(saveMenu);
-    saveWrap.appendChild(saveBtn);
-    toolbar.appendChild(saveWrap);
-
-    // ── Upload button ───────────────────────────────────────────────
+    // ── Hidden file input shared by upload + drag-and-drop paths ────
     const uploadInput = document.createElement('input');
     uploadInput.type = 'file';
     uploadInput.accept = '.yar,.yara,.txt';
     uploadInput.style.display = 'none';
-
-    const uploadBtn = document.createElement('button');
-    uploadBtn.className = 'tb-btn yara-tb-btn';
-    uploadBtn.textContent = '\u{1F4C2} Upload';
-    uploadBtn.title = 'Upload .yar rules file';
-    uploadBtn.addEventListener('click', () => uploadInput.click());
-
     uploadInput.addEventListener('change', () => {
       const file = uploadInput.files[0];
       if (!file) return;
       this._yaraImportFile(file);
       uploadInput.value = ''; // reset so same file can be re-uploaded
     });
-
     toolbar.appendChild(uploadInput);
-    toolbar.appendChild(uploadBtn);
 
-    // ── Info button (ℹ) ─────────────────────────────────────────────
-    const infoBtn = document.createElement('button');
-    infoBtn.className = 'yara-info-btn';
-    infoBtn.textContent = 'i';
-    infoBtn.title = 'YARA rule writing reference';
-    infoBtn.addEventListener('click', () => this._openYaraInfoPopup(dialog));
-    toolbar.appendChild(infoBtn);
+    // ── Rules dropdown (Upload / Save / Clear) ──────────────────────
+    const rulesWrap = document.createElement('span');
+    rulesWrap.style.position = 'relative';
+    rulesWrap.style.display = 'inline-block';
+
+    const rulesBtn = document.createElement('button');
+    rulesBtn.className = 'tb-btn yara-tb-btn yara-rules-btn';
+    rulesBtn.innerHTML = '\u{1F4DA} Rules <span class="yara-rules-caret">\u25BE</span>';
+    rulesBtn.title = 'Manage rule library: upload, save, or clear uploaded rules';
+
+    let rulesMenuOpen = false;
+    const rulesMenu = document.createElement('div');
+    rulesMenu.className = 'yara-save-menu yara-rules-menu';
+    rulesMenu.style.display = 'none';
+
+    // Helper: create a menu item with optional disabled state.
+    const _mkRulesItem = (label, onClick, opts) => {
+      const it = document.createElement('button');
+      it.className = 'yara-save-menu-item';
+      it.textContent = label;
+      if (opts && opts.disabled) it.disabled = true;
+      if (opts && opts.danger) it.classList.add('yara-save-menu-item-danger');
+      it.addEventListener('click', () => {
+        rulesMenu.style.display = 'none';
+        rulesMenuOpen = false;
+        onClick();
+      });
+      return it;
+    };
+    const _mkRulesSep = () => {
+      const sep = document.createElement('div');
+      sep.className = 'yara-save-menu-sep';
+      return sep;
+    };
+
+    const hasUploaded = !!this._getUploadedYaraRules();
+
+    rulesMenu.appendChild(_mkRulesItem(
+      '\u{1F4C2} Upload .yar file\u2026',
+      () => uploadInput.click()
+    ));
+    rulesMenu.appendChild(_mkRulesSep());
+    rulesMenu.appendChild(_mkRulesItem(
+      '\u{1F4BE} Save all rules\u2026',
+      () => this._yaraSaveFile(this._getAllYaraSource(), 'loupe-rules-all.yar')
+    ));
+    rulesMenu.appendChild(_mkRulesItem(
+      '\u{1F4BE} Save uploaded only\u2026',
+      () => {
+        const u = this._getUploadedYaraRules();
+        if (u) this._yaraSaveFile(u, 'loupe-rules-uploaded.yar');
+      },
+      { disabled: !hasUploaded }
+    ));
+    rulesMenu.appendChild(_mkRulesSep());
+    rulesMenu.appendChild(_mkRulesItem(
+      '\u{1F5D1} Clear uploaded rules\u2026',
+      () => {
+        if (!this._getUploadedYaraRules()) return;
+        if (confirm('Remove all uploaded YARA rules?')) {
+          this._setUploadedYaraRules('');
+          this._yaraSetStatus('All uploaded rules removed', 'info');
+          this._closeYaraDialog();
+          this._openYaraDialog();
+        }
+      },
+      { disabled: !hasUploaded, danger: true }
+    ));
+
+    rulesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      rulesMenuOpen = !rulesMenuOpen;
+      rulesMenu.style.display = rulesMenuOpen ? '' : 'none';
+    });
+
+    // Close rules menu on any click outside (overlay-level handler).
+    const closeRulesMenu = () => { rulesMenu.style.display = 'none'; rulesMenuOpen = false; };
+    overlay.addEventListener('click', closeRulesMenu);
+
+    rulesWrap.appendChild(rulesMenu);
+    rulesWrap.appendChild(rulesBtn);
+    actionGroup.appendChild(rulesWrap);
 
     // ── Validate button ─────────────────────────────────────────────
     const validateBtn = document.createElement('button');
@@ -652,7 +691,7 @@ extendApp({
         this._yaraSetStatus('\u2717 Validation failed: ' + errors.join('; '), 'error');
       }
     });
-    toolbar.appendChild(validateBtn);
+    actionGroup.appendChild(validateBtn);
 
     // ── Scan button ─────────────────────────────────────────────────
     const scanBtn = document.createElement('button');
@@ -660,7 +699,19 @@ extendApp({
     scanBtn.textContent = '\u25B6 Run Scan';
     scanBtn.title = 'Scan loaded file against these rules';
     scanBtn.addEventListener('click', () => this._yaraRunScan());
-    toolbar.appendChild(scanBtn);
+    actionGroup.appendChild(scanBtn);
+
+    toolbar.appendChild(actionGroup);
+
+    // ── Info button (\u2139) ─────────────────────────────────────────────
+    // Sits to the right of the action group, separated by a small gap so
+    // it reads as a reference affordance rather than another action.
+    const infoBtn = document.createElement('button');
+    infoBtn.className = 'yara-info-btn';
+    infoBtn.textContent = 'i';
+    infoBtn.title = 'YARA rule writing reference';
+    infoBtn.addEventListener('click', () => this._openYaraInfoPopup(dialog));
+    toolbar.appendChild(infoBtn);
 
     dialog.appendChild(toolbar);
 
@@ -1892,33 +1943,27 @@ extendApp({
     // Helper: inline <code> wrapper
     const c = (text) => ({ _html: '<code>' + this._escHtmlYara(text) + '</code>' });
 
-    // ── 1. Rule Structure ────────────────────────────────────────────
-    body.appendChild(h('Rule Structure'));
-    const structPre = document.createElement('pre');
-    structPre.innerHTML = this._highlightYaraSyntax(
-      'rule Suspicious_PowerShell_Download\n' +
+    // ── 1. Minimum Rule ──────────────────────────────────────────────
+    // The smallest legal rule; anchors the rest of the doc by showing
+    // exactly what's mandatory before §9 piles on every recommended
+    // field. Pre-H8 this section duplicated the §9 example, which made
+    // the popup feel padded; the §9 rule is now a richer, applies_to /
+    // is_* / wide / hex / regex tour and §1 is just the floor.
+    body.appendChild(h('Minimum Rule'));
+    const minPre = document.createElement('pre');
+    minPre.innerHTML = this._highlightYaraSyntax(
+      'rule Bare_Minimum\n' +
       '{\n' +
-      '    meta:\n' +
-      '        description = "What this rule detects"\n' +
-      '        severity    = "high"\n' +
-      '        category    = "execution"\n' +
-      '        mitre       = "T1059.001"\n' +
-      '\n' +
-      '    strings:\n' +
-      '        $text1 = "suspicious string"\n' +
-      '        $hex1  = { 4D 5A 90 00 }\n' +
-      '        $re1   = /eval\\(base64_decode/i\n' +
-      '\n' +
       '    condition:\n' +
-      '        any of them\n' +
+      '        true\n' +
       '}'
     );
-    body.appendChild(structPre);
-
-    const structNote = document.createElement('p');
-    structNote.innerHTML = '<strong>Required:</strong> <code>rule NAME { condition: ... }</code> &mdash; '
-      + '<code>meta:</code> and <code>strings:</code> are optional but recommended.';
-    body.appendChild(structNote);
+    body.appendChild(minPre);
+    const minNote = document.createElement('p');
+    minNote.innerHTML = '<strong>Required:</strong> <code>rule NAME { condition: \u2026 }</code>. '
+      + 'Everything else &mdash; <code>meta:</code>, <code>strings:</code>, tags &mdash; '
+      + 'is optional but strongly recommended.';
+    body.appendChild(minNote);
 
     // ── 2. String Types ──────────────────────────────────────────────
     body.appendChild(h('String Types'));
@@ -1943,6 +1988,11 @@ extendApp({
         ['Alternative', c('( AA | BB )'), 'Match either sequence'],
       ]
     ));
+    const hexNote = document.createElement('p');
+    hexNote.innerHTML = '<strong>Gotcha:</strong> wildcards and jumps still consume bytes for the '
+      + 'purposes of <code>filesize</code>, <code>$s at N</code>, and <code>$s in (X..Y)</code>. '
+      + 'A <code>[2-4]</code> jump means the match spans 2&ndash;4 extra bytes.';
+    body.appendChild(hexNote);
 
     // ── 4. String Modifiers ──────────────────────────────────────────
     body.appendChild(h('String Modifiers'));
@@ -1974,39 +2024,208 @@ extendApp({
       ]
     ));
 
-    // ── 6. Severity Levels (Loupe-specific) ──────────────────────
+    // ── 6. Format Gates (applies_to & is_*) ──────────────────────────
+    // Loupe-specific: every loaded file is tagged with a `formatTag`
+    // (PE / PDF / Office / script subtype / …) computed from the
+    // renderer registry's dispatchId. Rules can short-circuit on it
+    // either declaratively via `meta: applies_to` (cheap pre-filter,
+    // skips the rule entirely) or inline via `is_*` condition
+    // predicates. The full set lives in `FORMAT_PREDICATES` in
+    // `src/yara-engine.js`; this section shows the high-value subset.
+    body.appendChild(h('Format Gates (applies_to & is_*)'));
+    const fmtIntro = document.createElement('p');
+    fmtIntro.innerHTML = 'Loupe detects every loaded file\u2019s format and exposes it two ways. '
+      + 'Use <code>meta: applies_to</code> as a cheap pre-filter when a rule only makes sense '
+      + 'for one format class &mdash; the engine skips the rule entirely on a non-matching file. '
+      + 'Use <code>is_*</code> predicates inline in <code>condition:</code> when you want format '
+      + 'awareness as part of a richer boolean expression (e.g. <code>not is_image and \u2026</code>).';
+    body.appendChild(fmtIntro);
+
+    body.appendChild(h('meta: applies_to aliases'));
+    body.appendChild(table(
+      ['Alias', 'Matches', 'Use when\u2026'],
+      [
+        [c('office'), 'doc, xls, ppt, msg, msi, docx, xlsx, pptx, odt, ods, odp', 'Any Office document family'],
+        [c('office_ooxml'), 'docx, xlsx, pptx', 'Modern (zip-based) Office only'],
+        [c('office_legacy'), 'doc, xls, ppt, msg, msi', 'CFB-based Office only'],
+        [c('script'), 'ps1, bash, bat, vbs, js, py, perl, scpt, wsf, hta, inf', 'Any script-language plaintext'],
+        [c('archive'), 'zip, rar, sevenz, cab, iso, dmg, pkg', 'Compressed / disk-image containers'],
+        [c('zip_container'), 'zip, docx, xlsx, pptx, msix, browserext, jar, odt, ods, odp, npm', 'Anything with a ZIP local-file-header'],
+        [c('native_binary'), 'pe, elf, macho', 'Compiled executables on any OS'],
+        [c('xml_like'), 'svg, html, hta, plist, wsf, clickonce', 'XML / SGML-ish markup'],
+        [c('email'), 'eml, msg', 'Mail messages'],
+        [c('apple_format'), 'plist, scpt, macho, pkg, dmg', 'macOS / iOS-specific files'],
+      ]
+    ));
+    const aliasFootnote = document.createElement('p');
+    aliasFootnote.innerHTML = '<strong>Also accepts:</strong> any individual format tag '
+      + '(<code>pe</code>, <code>pdf</code>, <code>lnk</code>, \u2026), and comma- or whitespace-separated '
+      + 'lists (<code>applies_to = "pe, elf"</code>). The <code>is_</code> prefix is optional '
+      + '(<code>"is_office"</code> and <code>"office"</code> are equivalent here).';
+    body.appendChild(aliasFootnote);
+
+    body.appendChild(h('is_* condition predicates'));
+    body.appendChild(table(
+      ['Predicate', 'Description', 'Example'],
+      [
+        [c('is_pe'), 'Windows PE / EXE / DLL', c('is_pe and 2 of them')],
+        [c('is_office'), 'Any Office document family (legacy + OOXML + ODF)', c('is_office and any of ($auto*)')],
+        [c('is_pdf'), 'PDF document', c('is_pdf and $js_open')],
+        [c('is_html'), 'HTML or HTA', c('is_html and $smuggling')],
+        [c('is_powershell'), 'PowerShell script (sniffed plaintext or .ps1)', c('is_powershell and $iex')],
+        [c('is_javascript'), 'JavaScript / .js', c('is_javascript and #eval > 0')],
+        [c('is_archive'), 'ZIP, RAR, 7z, CAB, ISO, DMG, PKG', c('is_archive and filesize < 8MB')],
+        [c('is_zip_container'), 'Anything ZIP-shaped (incl. OOXML / MSIX / JAR)', c('is_zip_container and $manifest')],
+        [c('is_email'), 'EML or MSG', c('is_email and $url_shortener')],
+        [c('is_native_binary'), 'PE, ELF, or Mach-O', c('not is_native_binary and $shellcode')],
+      ]
+    ));
+    const predFootnote = document.createElement('p');
+    predFootnote.innerHTML = 'See <code>FORMAT_PREDICATES</code> in <code>src/yara-engine.js</code> '
+      + 'for the complete list (\u2248 60 predicates covering every format Loupe can detect).';
+    body.appendChild(predFootnote);
+
+    // ── 7. Severity Levels (Loupe-specific) ──────────────────────
     body.appendChild(h('Severity Levels (Loupe)'));
     const sevNote = document.createElement('p');
-    sevNote.textContent = 'Set via meta: severity = "level". Controls badge colour and risk scoring.';
+    sevNote.innerHTML = 'Set via <code>meta: severity = "level"</code>. Controls badge colour and '
+      + 'feeds the per-file risk score &mdash; a single <em>critical</em> hit alone is enough to '
+      + 'colour the whole file red, while <em>info</em> hits never escalate risk on their own.';
     body.appendChild(sevNote);
+    const sevPick = document.createElement('p');
+    sevPick.innerHTML = '<strong>Choosing a severity:</strong> reach for <em>critical</em> only when '
+      + 'the rule alone is sufficient evidence of compromise (active exploit, weaponised loader). '
+      + 'Default to <em>high</em> for confident family / shellcode signatures, <em>medium</em> for '
+      + 'dual-use tools or suspicious-but-not-proof patterns, and <em>low</em> / <em>info</em> for '
+      + 'pivots and metadata that aid triage without claiming malice.';
+    body.appendChild(sevPick);
+    // Colour swatches are CSS-painted circles (.sev-dot-*) that pull
+    // straight from the unified --risk-* design tokens — same hues as the
+    // live badge / chip / sidebar-pill palette, so the help table tracks
+    // any future palette change automatically. Replaces Unicode
+    // coloured-square emoji which Firefox rendered with a glyph box that
+    // overflowed the line-box and got clipped by the modal's
+    // overflow:hidden. Same kit is reused by the sidebar risk banner,
+    // sev-filter pills, and the plist viewer's persistence cards.
+    //   critical \u2192 purple   var(--risk-critical) = #a855f7 / dark #c084fc
+    //   high     \u2192 red      var(--risk-high)     = #dc2626 / dark #f87171
+    //   medium   \u2192 amber    var(--risk-med)      = #e67e22 / dark #fbbf24
+    //   low      \u2192 green    var(--risk-low)      = #16a34a / dark #4ade80
+    //   info     \u2192 blue     var(--risk-info)     = #2563eb / dark #60a5fa
+    const sevDot = (cls, label) => ({
+      _html: '<span class="sev-dot sev-dot-' + cls
+        + '" aria-hidden="true"></span>' + label,
+    });
     body.appendChild(table(
       ['Level', 'Colour', 'Use for'],
       [
-        ['critical', '\u{1F534} Red', 'Active exploitation, weaponised payloads'],
-        ['high', '\u{1F7E0} Orange', 'Shellcode, obfuscated scripts, known malware'],
-        ['medium', '\u{1F7E1} Yellow', 'Suspicious patterns, dual-use tools'],
-        ['low', '\u{1F535} Blue', 'Informational artefacts, unusual but benign'],
-        ['info', '\u26AA Grey', 'Metadata, structural markers, FYI only'],
+        ['critical', sevDot('critical', 'Purple'), 'Active exploitation, weaponised payloads'],
+        ['high',     sevDot('high',     'Red'),    'Shellcode, obfuscated scripts, known malware'],
+        ['medium',   sevDot('medium',   'Amber'),  'Suspicious patterns, dual-use tools'],
+        ['low',      sevDot('low',      'Green'),  'Informational artefacts, unusual but benign'],
+        ['info',     sevDot('info',     'Blue'),   'Metadata, structural markers, FYI only'],
       ],
       true // sevRow class
     ));
 
-    // ── 7. Meta Fields (Loupe) ───────────────────────────────────
+    // ── 8. Meta Fields (Loupe) ───────────────────────────────────
     body.appendChild(h('Meta Fields (Loupe)'));
     const metaNote = document.createElement('p');
-    metaNote.textContent = 'Loupe recognises four standardised meta fields. All are optional but recommended.';
+    metaNote.innerHTML = 'Loupe recognises five standardised meta fields. All are optional, but '
+      + 'authoring all five gives analysts the full sidebar / Detections / export experience.';
     body.appendChild(metaNote);
     body.appendChild(table(
       ['Field', 'Type', 'Example', 'Purpose'],
       [
         [c('description'), 'string', c('"Detects PowerShell download cradle"'), 'Shown in sidebar findings and scan results'],
         [c('severity'), 'string', c('"high"'), 'Badge colour & risk scoring (see Severity Levels above)'],
-        [c('category'), 'string', c('"execution"'), 'Groups the rule logically (e.g. execution, persistence, evasion)'],
+        [c('category'), 'string', c('"execution"'), 'Groups the rule and drives sidebar pill colour (see Categories below)'],
+        [c('applies_to'), 'string', c('"office"'), 'Format pre-filter \u2014 rule is skipped on non-matching files (see \u00a76)'],
         [c('mitre'), 'string', c('"T1059.001"'), 'MITRE ATT&CK technique ID for cross-referencing'],
       ]
     ));
 
-    // ── 8. Naming Convention ─────────────────────────────────────────
+    // ── 8a. Categories ───────────────────────────────────────────────
+    // Two-column reference: MITRE tactics on the left (each with its TA-ID
+    // in subdued text), Loupe-specific threat classes on the right. Both
+    // halves drive `.yara-cat-pill-*` colours and the category-info popup;
+    // anything else still works but renders as a generic uncoloured pill.
+    body.appendChild(h('Categories'));
+    const catNote = document.createElement('p');
+    catNote.innerHTML = 'Loupe recognises two flavours of <code>category</code>: standard MITRE '
+      + 'ATT&CK tactic slugs, and Loupe-specific threat-class buckets. Either gets a coloured '
+      + 'pill in the sidebar; custom values still work but render as a generic uncoloured pill.';
+    body.appendChild(catNote);
+
+    const catGrid = document.createElement('div');
+    catGrid.className = 'yara-info-cat-grid';
+
+    // Left column: MITRE tactics, in tactic order (not alphabetical) so the
+    // attack lifecycle reads naturally top-to-bottom.
+    const tacticCol = document.createElement('div');
+    tacticCol.className = 'yara-info-cat-col';
+    const tacticH = document.createElement('h5');
+    tacticH.textContent = 'MITRE ATT&CK tactics';
+    tacticCol.appendChild(tacticH);
+    const tacticList = document.createElement('ul');
+    tacticList.className = 'yara-info-cat-list';
+    const tacticRows = [
+      ['initial-access',         'TA0001'],
+      ['execution',              'TA0002'],
+      ['persistence',            'TA0003'],
+      ['privilege-escalation',   'TA0004'],
+      ['defense-evasion',        'TA0005'],
+      ['evasion',                'TA0005'],
+      ['credential-access',      'TA0006'],
+      ['credential-theft',       'TA0006'],
+      ['discovery',              'TA0007'],
+      ['lateral-movement',       'TA0008'],
+      ['collection',             'TA0009'],
+      ['exfiltration',           'TA0010'],
+      ['command-and-control',    'TA0011'],
+      ['impact',                 'TA0040'],
+    ];
+    for (const [name, tid] of tacticRows) {
+      const li = document.createElement('li');
+      const code = document.createElement('code');
+      code.textContent = name;
+      li.appendChild(code);
+      const tag = document.createElement('span');
+      tag.className = 'yara-info-cat-tid';
+      tag.textContent = tid;
+      li.appendChild(tag);
+      tacticList.appendChild(li);
+    }
+    tacticCol.appendChild(tacticList);
+    catGrid.appendChild(tacticCol);
+
+    // Right column: Loupe threat classes, alphabetised.
+    const classCol = document.createElement('div');
+    classCol.className = 'yara-info-cat-col';
+    const classH = document.createElement('h5');
+    classH.textContent = 'Loupe threat classes';
+    classCol.appendChild(classH);
+    const classList = document.createElement('ul');
+    classList.className = 'yara-info-cat-list';
+    const classRows = [
+      'adware', 'anomaly', 'backdoor', 'browser-extension', 'clickonce',
+      'container-escape', 'cryptominer', 'delivery', 'exploit', 'file-type',
+      'info', 'malware', 'msix-appx', 'obfuscation', 'packer',
+      'phishing', 'ransomware', 'rootkit', 'suspicious', 'suspicious-api',
+    ];
+    for (const name of classRows) {
+      const li = document.createElement('li');
+      const code = document.createElement('code');
+      code.textContent = name;
+      li.appendChild(code);
+      classList.appendChild(li);
+    }
+    classCol.appendChild(classList);
+    catGrid.appendChild(classCol);
+
+    body.appendChild(catGrid);
+
+    // ── 9. Naming Convention ─────────────────────────────────────────
     body.appendChild(h('Naming Convention'));
     const nameNote = document.createElement('p');
     nameNote.innerHTML = 'Rule names use <code>Prefix_Words_With_Underscores</code>. '
@@ -2020,28 +2239,50 @@ extendApp({
       + 'to give analysts quick context in the sidebar.';
     body.appendChild(nameTip);
 
-    // ── 9. Complete Example ──────────────────────────────────────────
+    // ── 10. Complete Example ─────────────────────────────────────────
+    // Replaces the pre-H8 PowerShell sample (which duplicated §1 line for
+    // line) with a richer Office-macro rule that exercises every concept
+    // from the rest of the popup: meta with `applies_to`, regex w/ flags,
+    // wide+nocase combo, hex bytes, named-group `$auto*`, `is_office`
+    // predicate, `filesize`, and a non-trivial boolean condition.
     body.appendChild(h('Complete Example'));
+    const exNote = document.createElement('p');
+    exNote.innerHTML = 'Exercises every concept in this reference: <code>meta: applies_to</code> '
+      + 'pre-filter, an <code>is_*</code> predicate inline, regex with flags, '
+      + '<code>wide</code> + <code>nocase</code> for UTF-16LE-on-disk strings, hex bytes, a '
+      + 'named-group expansion (<code>$auto*</code>), and a <code>filesize</code> guard.';
+    body.appendChild(exNote);
     const exPre = document.createElement('pre');
     exPre.innerHTML = this._highlightYaraSyntax(
-      'rule Suspicious_PowerShell_Download\n' +
+      'rule Suspicious_Office_Macro_AutoExec\n' +
       '{\n' +
       '    meta:\n' +
-      '        description = "Detects PowerShell download cradle patterns"\n' +
+      '        description = "Office macro auto-exec entry points combined with a download primitive"\n' +
       '        severity    = "high"\n' +
       '        category    = "execution"\n' +
-      '        mitre       = "T1059.001"\n' +
+      '        applies_to  = "office"\n' +
+      '        mitre       = "T1059.005, T1204.002"\n' +
+      '        author      = "Loupe example"\n' +
       '\n' +
       '    strings:\n' +
-      '        $iwr  = "Invoke-WebRequest" nocase\n' +
-      '        $iex  = "IEX" fullword nocase\n' +
-      '        $net  = "Net.WebClient" nocase\n' +
-      '        $dl   = "DownloadString" nocase\n' +
-      '        $b64  = /FromBase64String\\(.{1,64}\\)/i\n' +
-      '        $hex  = { 49 00 45 00 58 00 }\n' +
+      '        $auto1 = "AutoOpen"      nocase fullword\n' +
+      '        $auto2 = "Document_Open" nocase fullword\n' +
+      '        $auto3 = "Workbook_Open" nocase fullword\n' +
+      '\n' +
+      '        // Net.WebClient + DownloadString cradle, with some slack\n' +
+      '        $dl    = /Net\\.WebClient.{0,40}DownloadString/i\n' +
+      '\n' +
+      '        // IEX in UTF-16LE \u2014 typical inside OOXML / VBA blobs\n' +
+      '        $iex_w = "IEX" wide nocase\n' +
+      '\n' +
+      '        // OLE / VBA module marker (raw bytes)\n' +
+      '        $ole   = { D0 CF 11 E0 A1 B1 1A E1 }\n' +
       '\n' +
       '    condition:\n' +
-      '        2 of them\n' +
+      '        is_office and\n' +
+      '        any of ($auto*) and\n' +
+      '        1 of ($dl, $iex_w) and\n' +
+      '        filesize < 4MB\n' +
       '}'
     );
     body.appendChild(exPre);

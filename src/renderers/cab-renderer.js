@@ -76,7 +76,7 @@ class CabRenderer {
     if (parsed.header.prevCabinet) flagsBits.push(`continued from ${escHtml(parsed.header.prevCabinet)}`);
     if (parsed.header.nextCabinet) flagsBits.push(`continues in ${escHtml(parsed.header.nextCabinet)}`);
     summ.innerHTML = `${files} file${files !== 1 ? 's' : ''}, ${parsed.folders.length} folder descriptor${parsed.folders.length !== 1 ? 's' : ''} — ${fmtBytes(totalSize)} uncompressed` +
-      (flagsBits.length ? ` · <span style="color:var(--risk-medium)">${flagsBits.join(', ')}</span>` : '');
+      (flagsBits.length ? ` · <span style="color:var(--risk-med)">${flagsBits.join(', ')}</span>` : '');
     wrap.appendChild(summ);
 
     // Per-folder compression / reserve bits

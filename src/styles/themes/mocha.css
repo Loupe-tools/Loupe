@@ -33,7 +33,7 @@
    Catppuccin palette for harmony.
 
      mauve     #cba6f7   --accent
-     lavender  #b4befe   --accent-hover
+     lavender  #b4befe   --accent-hover, --risk-critical
      sky       #89dceb   --accent-deep
      red       #f38ba8   --risk-high
      peach     #fab387   --risk-med
@@ -45,6 +45,12 @@ body.theme-mocha {
   --accent-hover:  #b4befe;
   --accent-deep:   #89dceb;
 
+  /* Lavender doubles as critical-severity colour: distinct from the
+     mauve accent, in-palette, and accent-hover is a fleeting state so
+     the brief visual rhyme during hover is acceptable. */
+  --risk-critical:     #b4befe;
+  --risk-critical-rgb: 180 190 254;
+  --risk-critical-text:#b4befe;
   --risk-high:     #f38ba8;
   --risk-high-rgb: 243 139 168;
   --risk-med:      #fab387;

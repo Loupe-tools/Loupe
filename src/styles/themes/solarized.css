@@ -30,6 +30,7 @@
      yellow  #b58900   --accent
      orange  #cb4b16   --accent-hover
      cyan    #2aa198   --accent-deep
+     violet  #6c71c4   --risk-critical
      red     #dc322f   --risk-high
      orange  #cb4b16   --risk-med
      green   #859900   --risk-low
@@ -40,6 +41,9 @@ body.theme-solarized {
   --accent-hover:  #cb4b16;
   --accent-deep:   #2aa198;
 
+  --risk-critical:     #6c71c4;
+  --risk-critical-rgb: 108 113 196;
+  --risk-critical-text:#6c71c4;
   --risk-high:     #dc322f;
   --risk-high-rgb: 220 50 47;
   --risk-med:      #cb4b16;

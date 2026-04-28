@@ -40,6 +40,9 @@
         scanning — a red badge is always a red badge, a
         green badge always means low risk; only the exact
         hue may shift for palette harmony) ─────────────── */
+  --risk-critical: #a855f7;
+  --risk-critical-rgb: 168 85 247;
+  --risk-critical-text: #4a1a7a;       /* deep purple for badge fg on light bg */
   --risk-high: #dc2626;
   --risk-high-rgb: 220 38 38;
   --risk-med: #e67e22;
@@ -103,6 +106,9 @@ body.dark {
   --accent-deep: #0891b2;
 
   /* ── Risk colours — slightly softer on dark backgrounds */
+  --risk-critical: #c084fc;
+  --risk-critical-rgb: 192 132 252;
+  --risk-critical-text: #c084fc;       /* dark badges use the critical hue itself for fg */
   --risk-high: #f87171;
   --risk-high-rgb: 248 113 113;
   --risk-med: #fbbf24;
@@ -1017,6 +1023,41 @@ body.dark #sidebar {
   letter-spacing: .2px;
 }
 
+/* ── Severity dot kit (sidebar / popups / plist viewer) ───────────────────
+   Pixel-perfect CSS-painted circles that replace Unicode coloured-square
+   emoji (🟣🔴🟠🟢🔵). Firefox renders those emoji at metrics that overflow
+   tight line-boxes and get clipped by ancestor overflow:hidden containers
+   (sidebar header, modal frames, table rows). CSS circles use the unified
+   --risk-* tokens so swatches always match the live badge / chip palette
+   across every theme. */
+.sev-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 8px;
+  /* Light inner ring keeps the dot visible on the very pale Latte
+     surface backgrounds without changing perceived hue. */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15);
+  /* Nudge baseline up by 1px — middle alignment + 10px square otherwise
+     sits a hair below the cap-height of adjacent text. */
+  position: relative;
+  top: -1px;
+  /* Stay solid in flex containers (.sev-bar uses display:flex). */
+  flex: none;
+}
+
+.sev-dot-critical { background: var(--risk-critical); }
+.sev-dot-high     { background: var(--risk-high); }
+.sev-dot-medium   { background: var(--risk-med); }
+.sev-dot-low      { background: var(--risk-low); }
+.sev-dot-info     { background: var(--risk-info); }
+
+body.dark .sev-dot {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15);
+}
+
 .risk-low {
   background: #d4edda;
   color: #155724;
@@ -1033,8 +1074,8 @@ body.dark #sidebar {
 }
 
 .risk-critical {
-  background: #e2d0f8;
-  color: #4a1a7a;
+  background: rgb(var(--risk-critical-rgb) / .25);
+  color: var(--risk-critical-text);
 }
 
 body.dark .risk-low {
@@ -1056,9 +1097,9 @@ body.dark .risk-high {
 }
 
 body.dark .risk-critical {
-  background: linear-gradient(135deg, rgba(168, 85, 247, .18), rgba(168, 85, 247, .08));
-  color: #c084fc;
-  border-bottom: 1px solid rgba(168, 85, 247, .2);
+  background: linear-gradient(135deg, rgb(var(--risk-critical-rgb) / .18), rgb(var(--risk-critical-rgb) / .08));
+  color: var(--risk-critical);
+  border-bottom: 1px solid rgb(var(--risk-critical-rgb) / .2);
 }
 
 /* Sidebar body — single scrollable pane */
@@ -1882,38 +1923,38 @@ body.dark .yara-chip-x:hover {
 }
 
 .yara-chip-severity-critical {
-  color: var(--risk-high);
-  background: rgba(220, 38, 38, .12);
+  color: var(--risk-critical-text);
+  background: rgb(var(--risk-critical-rgb) / .14);
 }
 
 .yara-chip-severity-high {
-  color: #ea580c;
-  background: rgba(234, 88, 12, .12);
+  color: var(--risk-high);
+  background: rgb(var(--risk-high-rgb) / .12);
 }
 
 .yara-chip-severity-medium {
-  color: #d97706;
+  color: var(--risk-med);
   background: rgba(217, 119, 6, .12);
 }
 
 .yara-chip-severity-low {
-  color: var(--accent-deep);
-  background: rgba(8, 145, 178, .12);
+  color: var(--risk-low);
+  background: rgba(22, 163, 74, .12);
 }
 
 .yara-chip-severity-info {
-  color: #64748b;
-  background: rgba(100, 116, 139, .12);
+  color: var(--risk-info);
+  background: rgba(37, 99, 235, .12);
 }
 
 body.dark .yara-chip-severity-critical {
-  color: var(--risk-high);
-  background: rgb(var(--risk-high-rgb) / .2);
+  color: var(--risk-critical);
+  background: rgb(var(--risk-critical-rgb) / .2);
 }
 
 body.dark .yara-chip-severity-high {
-  color: #fb923c;
-  background: rgba(251, 146, 60, .18);
+  color: var(--risk-high);
+  background: rgb(var(--risk-high-rgb) / .2);
 }
 
 body.dark .yara-chip-severity-medium {
@@ -1922,13 +1963,13 @@ body.dark .yara-chip-severity-medium {
 }
 
 body.dark .yara-chip-severity-low {
-  color: var(--accent);
-  background: rgb(var(--accent-rgb) / .2);
+  color: var(--risk-low);
+  background: rgba(74, 222, 128, .2);
 }
 
 body.dark .yara-chip-severity-info {
-  color: #94a3b8;
-  background: rgba(148, 163, 184, .18);
+  color: var(--risk-info);
+  background: rgba(96, 165, 250, .18);
 }
 
 /* Free-text chip — neutral colouring so it stands apart from the
@@ -2692,8 +2733,8 @@ body.dark .ext-table tr:hover td {
 }
 
 .badge-critical {
-  background: #e2d0f8;
-  color: #4a1a7a;
+  background: rgb(var(--risk-critical-rgb) / .25);
+  color: var(--risk-critical-text);
 }
 
 .badge-high {
@@ -2717,8 +2758,8 @@ body.dark .ext-table tr:hover td {
 }
 
 body.dark .badge-critical {
-  background: rgba(168, 85, 247, .18);
-  color: #c084fc;
+  background: rgb(var(--risk-critical-rgb) / .18);
+  color: var(--risk-critical);
 }
 
 body.dark .badge-high {
@@ -2773,7 +2814,7 @@ body.dark .badge-info {
 }
 
 .enc-sev-critical {
-  border-left: 3px solid #a855f7;
+  border-left: 3px solid var(--risk-critical);
 }
 
 body.dark .enc-finding-card {
@@ -2798,7 +2839,7 @@ body.dark .enc-sev-info {
 }
 
 body.dark .enc-sev-critical {
-  border-left-color: #c084fc;
+  border-left-color: var(--risk-critical);
 }
 
 .enc-finding-header {

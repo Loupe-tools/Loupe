@@ -695,7 +695,16 @@ extendApp({
 
     document.getElementById('sb-body').innerHTML = '';
     document.getElementById('sb-risk').className = 'sb-risk risk-low';
-    document.getElementById('sb-risk-title').textContent = 'No threats detected';
+    // Mirror the populated-state rendering in app-sidebar.js: dot + text
+    // node so the reset/no-file banner uses the same .sev-dot kit and
+    // matches every other severity-coloured surface in the UI.
+    {
+      const sbT = document.getElementById('sb-risk-title');
+      const dot = document.createElement('span');
+      dot.className = 'sev-dot sev-dot-low';
+      dot.setAttribute('aria-hidden', 'true');
+      sbT.replaceChildren(dot, document.createTextNode('No threats detected'));
+    }
     // Reset state
     this.findings = null; this.fileHashes = null;
     this._yaraResults = null;

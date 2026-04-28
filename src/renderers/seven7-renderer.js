@@ -119,7 +119,7 @@ class SevenZRenderer {
     const summ = document.createElement('div');
     summ.className = 'zip-summary';
     const bits = [`7z v${parsed.version.major}.${parsed.version.minor}`];
-    if (parsed.encodedHeader) bits.push('<span style="color:var(--risk-medium)">encoded header (LZMA)</span>');
+    if (parsed.encodedHeader) bits.push('<span style="color:var(--risk-med)">encoded header (LZMA)</span>');
     if (parsed.hasEncryption) bits.push('<span style="color:var(--risk-high)">encrypted</span>');
     if (files.length) {
       summ.innerHTML = `${files.length} file${files.length !== 1 ? 's' : ''} — ${fmtBytes(totalSize)} uncompressed · ${bits.join(' · ')}`;

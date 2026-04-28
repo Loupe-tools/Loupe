@@ -393,16 +393,21 @@ class PlistRenderer {
     const fn = (fileName || '').toLowerCase();
 
     // LaunchAgent / LaunchDaemon
+    // sevCls drives the .sev-dot prefix at render time (info-line +
+    // persistence card title). label stays plain text so it round-trips
+    // cleanly through findings.metadata.classification (line 947) — that
+    // metadata is exported to copy-as-markdown blobs and shouldn't carry
+    // emoji that would clip in Firefox's Twemoji rendering.
     if (keys.has('Label') && (keys.has('ProgramArguments') || keys.has('Program'))) {
       if (fn.includes('launchdaemon') || fn.includes('launchdaemons')) {
-        return { type: 'launchdaemon', label: '🔴 LaunchDaemon (root-level persistence)' };
+        return { type: 'launchdaemon', label: 'LaunchDaemon (root-level persistence)', sevCls: 'high' };
       }
-      return { type: 'launchagent', label: '🟡 LaunchAgent (user-level persistence)' };
+      return { type: 'launchagent', label: 'LaunchAgent (user-level persistence)', sevCls: 'medium' };
     }
 
     // Login Item
     if (keys.has('LSUIElement') || keys.has('LSBackgroundOnly') || fn.includes('loginitem')) {
-      return { type: 'loginitem', label: '🟡 Login Item Configuration' };
+      return { type: 'loginitem', label: 'Login Item Configuration', sevCls: 'medium' };
     }
 
     // App Info.plist
@@ -539,7 +544,20 @@ class PlistRenderer {
     infoDiv.className = 'plaintext-info';
     const formatLabel = format.type === 'binary' ? 'Binary plist (bplist' + format.version + ')' : 'XML plist';
     const keyCount = root && root._type === 'dict' ? root._entries.length : 0;
-    infoDiv.textContent = `${formatLabel}  ·  ${classification.label}  ·  ${keyCount} top-level key${keyCount !== 1 ? 's' : ''}  ·  ${PlistRenderer._fmtBytes(bytes.length)}`;
+    const tailText = `  ·  ${keyCount} top-level key${keyCount !== 1 ? 's' : ''}  ·  ${PlistRenderer._fmtBytes(bytes.length)}`;
+    if (classification.sevCls) {
+      // Render: "<format>  ·  <dot> <label> <tail>" with the dot as a
+      // .sev-dot DOM node (CSS-painted circle). Replaces an inline
+      // emoji glyph (🔴 / 🟡) which Firefox clipped against the line-box.
+      infoDiv.appendChild(document.createTextNode(`${formatLabel}  ·  `));
+      const dot = document.createElement('span');
+      dot.className = `sev-dot sev-dot-${classification.sevCls}`;
+      dot.setAttribute('aria-hidden', 'true');
+      infoDiv.appendChild(dot);
+      infoDiv.appendChild(document.createTextNode(`${classification.label}${tailText}`));
+    } else {
+      infoDiv.textContent = `${formatLabel}  ·  ${classification.label}${tailText}`;
+    }
     wrap.appendChild(infoDiv);
 
     // ── Parse error ──────────────────────────────────────────────────────
@@ -576,7 +594,18 @@ class PlistRenderer {
 
       const cardTitle = document.createElement('div');
       cardTitle.className = 'plist-card-title';
-      cardTitle.textContent = classification.type === 'launchdaemon' ? '🔴 LaunchDaemon Properties' : '🟡 LaunchAgent Properties';
+      // Persistence cards prefix the title with a severity dot:
+      //   launchdaemon → high (red)   — runs as root, max blast radius
+      //   launchagent  → medium (amber) — user-scope persistence
+      // Same .sev-dot kit as the sidebar / YARA popup; replaces emoji
+      // (🔴 / 🟡) that Firefox rendered with a clipped glyph box.
+      const titleDot = document.createElement('span');
+      titleDot.className = `sev-dot sev-dot-${classification.type === 'launchdaemon' ? 'high' : 'medium'}`;
+      titleDot.setAttribute('aria-hidden', 'true');
+      cardTitle.appendChild(titleDot);
+      cardTitle.appendChild(document.createTextNode(
+        classification.type === 'launchdaemon' ? 'LaunchDaemon Properties' : 'LaunchAgent Properties'
+      ));
       card.appendChild(cardTitle);
 
       const tbl = document.createElement('table');
