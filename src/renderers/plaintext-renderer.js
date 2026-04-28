@@ -3,14 +3,21 @@
 // plaintext-renderer.js — Catch-all viewer for unsupported file types
 // Shows plain text (with line numbers) or hex dump depending on content.
 // Supports encoding auto-detection (UTF-8, UTF-16LE, UTF-16BE, Latin-1),
-// a toggle between text / hex views, and a syntax-highlight on/off toggle
-// persisted as `loupe_plaintext_highlight`.
+// a toggle between text / hex views, a syntax-highlight on/off toggle
+// (`loupe_plaintext_highlight`) and a word-wrap on/off toggle
+// (`loupe_plaintext_wrap`).
+//
+// Both rich-rendering toggles share a single feasibility gate
+// (`_canEnhance` → `RICH_MAX_*`) so they appear/disappear in lock-step.
+// Files that exceed the gate fall back to the plain virtualised viewer.
 //
 // Minified-JS footgun: a single logical line can be multiple megabytes.
-// This renderer splits absurdly long lines into display-only chunks so the
-// browser does not choke on a single 2 MB <td>, and disables hljs for such
-// files regardless of total size (hljs produces a gigantic span tree on one
-// long line even if the byte total is modest).
+// `VirtualTextView` splits absurdly long lines into display-only chunks
+// (`SOFT_WRAP_CHUNK`) so the browser does not choke on a single 2 MB
+// <td>, and the shared rich-render gate excludes any file with a line
+// over `RICH_MAX_LINE_LEN` from both highlight and wrap modes (hljs
+// produces a gigantic span tree on one long line even if the byte total
+// is modest, and pre-wrap rows of that width paint catastrophically).
 // ════════════════════════════════════════════════════════════════════════════
 class PlainTextRenderer {
 
@@ -149,28 +156,36 @@ class PlainTextRenderer {
     'text/x-markdown': 'markdown',
   };
 
-  // Size limit for syntax highlighting (100 KB total text)
-  static HIGHLIGHT_SIZE_LIMIT = 100 * 1024;
-  // Per-line length limit — above this hljs is disabled AND lines are
-  // soft-wrapped into display-only chunks (minified-JS defence).
-  static LONG_LINE_THRESHOLD = 5000;
-  // Display-only chunk size for soft-wrap (characters).
-  static SOFT_WRAP_CHUNK = 2000;
-  // Hard cap on total lines rendered to the DOM.
-  static MAX_LINES = RENDER_LIMITS.MAX_TEXT_LINES;
-  // Storage key for the syntax-highlight on/off toggle.
-  static HIGHLIGHT_PREF_KEY = 'loupe_plaintext_highlight';
+  // ── Shared "rich rendering" gate ────────────────────────────────────────
+  // Both the syntax-highlight and word-wrap toggles share these thresholds
+  // so they appear/disappear in lock-step — a file is either eligible for
+  // both forms of enhancement or for neither.
+  //
+  // Sized in raw bytes so a UTF-16 file is judged by its on-disk size, not
+  // by the JS-string length post-decode (which is ~2× shorter for ASCII
+  // content). Three caps protect against three distinct DOM/CPU shapes:
+  //   - RICH_MAX_BYTES     → bounds hljs CPU and per-row DOM count
+  //   - RICH_MAX_LINES     → bounds wrap-mode all-rows-in-DOM cost
+  //   - RICH_MAX_LINE_LEN  → bounds hljs span-tree on a single line
+  //                          AND wrap-mode pre-wrap row width
+  // Wrap mode forfeits the `VirtualTextView` virtualisation that keeps
+  // sidebar-resize at native FPS, so its cost dominates the choice of
+  // ceilings (hljs is comfortable up to several hundred KB).
+  static RICH_MAX_BYTES     = 512 * 1024;
+  static RICH_MAX_LINES     = 10_000;
+  static RICH_MAX_LINE_LEN  = 5000;
 
-  // ── Word-wrap toggle gating ─────────────────────────────────────────────
-  // Wrap mode renders every row into the live DOM with `white-space:
-  // pre-wrap`, forfeiting the `VirtualTextView` virtualisation that keeps
-  // sidebar-resize at native FPS on giant minified files. To keep the
-  // all-rows-in-DOM cost bounded we hide the Wrap toggle (and force wrap
-  // off) on files that exceed either of these thresholds. Sibling of
-  // `HIGHLIGHT_SIZE_LIMIT` / `LONG_LINE_THRESHOLD` above.
+  // Display-only chunk size for soft-wrap (characters). Used by
+  // `VirtualTextView` to chunk pathologically long lines when wrap is
+  // OFF (the virtualised path can't render a single 2 MB <td>).
+  static SOFT_WRAP_CHUNK = 2000;
+  // Hard cap on total lines rendered to the DOM (independent of the
+  // rich-render gate above — files above this still render, just
+  // truncated).
+  static MAX_LINES = RENDER_LIMITS.MAX_TEXT_LINES;
+  // Storage keys for the toggle preferences.
+  static HIGHLIGHT_PREF_KEY = 'loupe_plaintext_highlight';
   static WRAP_PREF_KEY      = 'loupe_plaintext_wrap';
-  static WRAP_MAX_TEXT_BYTES = 512 * 1024;
-  static WRAP_MAX_LINES     = 10_000;
 
   // ── Preference accessors ────────────────────────────────────────────────
 
@@ -214,25 +229,21 @@ class PlainTextRenderer {
     // extraction) don't drift on CRLF files. See `.clinerules` gotcha.
     const decodedText = this._normalizeNewlines(this._decodeAs(bytes, detected.encoding));
 
-    // Pre-compute whether syntax highlighting is *possible at all* for
-    // this file. If it isn't — hljs missing, file too large, or a single
-    // pathologically long line present — we omit the Highlight toggle
-    // entirely rather than leaving a button that does nothing when
-    // clicked. (The same gate is applied again inside `_buildTextPane`;
-    // we duplicate the computation here so the info bar can decide
-    // whether to render the control at all.)
-    const highlightPossible = this._canHighlight(decodedText);
-
-    // Wrap mode renders every row in the live DOM (no virtualisation),
-    // so we gate it on raw byte size + logical line count to keep the
-    // cost bounded. `bytes.length` is the raw decoded byte size — using
-    // it (rather than `decodedText.length`) avoids accidentally
-    // promoting a UTF-16 file (which decodes ~2× shorter as a JS string)
-    // into wrap mode when its on-disk size already exceeds the cap.
-    const lineCountForWrap = (decodedText.match(/\n/g) || []).length + 1;
-    const wrapPossible = isTextByDefault &&
-                         bytes.length    <= PlainTextRenderer.WRAP_MAX_TEXT_BYTES &&
-                         lineCountForWrap <= PlainTextRenderer.WRAP_MAX_LINES;
+    // Pre-compute whether the rich-rendering toggles (Highlight + Wrap)
+    // are possible at all for this file. Both toggles share a single
+    // gate (`_canEnhance`) so they appear/disappear in lock-step;
+    // splitting them previously left users staring at a Wrap button
+    // without Highlight on medium-sized files (or vice versa). The
+    // outer gate also applies inside `_buildTextPane` so a pre-checked
+    // `richPossible` here doesn't permit a stale state to leak through
+    // an encoding switch.
+    //
+    // Highlight has one extra requirement (hljs must actually be loaded
+    // in this build); Wrap doesn't depend on hljs, so the two flags
+    // diverge only on builds without hljs.
+    const richPossible      = isTextByDefault && this._canEnhance(decodedText, bytes);
+    const highlightPossible = richPossible && (typeof hljs !== 'undefined');
+    const wrapPossible      = richPossible;
 
     // ── Info bar with toggle + encoding selector ──────────────────────
     const info = document.createElement('div');
@@ -331,7 +342,7 @@ class PlainTextRenderer {
     contentArea.className = 'plaintext-content-area';
 
     // Build both views
-    const textPane = this._buildTextPane(decodedText, fileName, this._mimeType, highlightEnabled, wrapEnabled);
+    const textPane = this._buildTextPane(decodedText, bytes, fileName, this._mimeType, highlightEnabled, wrapEnabled);
     const hexPane = this._buildHexPane(bytes, fileName);
 
     // Show the correct one by default
@@ -363,7 +374,7 @@ class PlainTextRenderer {
     // Rebuild helper — used by both encoding change and highlight toggle
     const rebuildTextPane = () => {
       const oldTextPane = contentArea._textPane;
-      const newTextPane = this._buildTextPane(currentText, fileName, this._mimeType, highlightEnabled, wrapEnabled);
+      const newTextPane = this._buildTextPane(currentText, bytes, fileName, this._mimeType, highlightEnabled, wrapEnabled);
       newTextPane.style.display = oldTextPane.style.display;
       contentArea.replaceChild(newTextPane, oldTextPane);
       // Tear down the old VirtualTextView so its rAFs / ResizeObserver
@@ -462,37 +473,50 @@ class PlainTextRenderer {
     return f;
   }
 
-  // ── Highlight feasibility ───────────────────────────────────────────────
+  // ── Rich-render feasibility ─────────────────────────────────────────────
 
   /**
-   * Would calling hljs on `text` actually produce any highlighting right
-   * now? Mirrors the gate inside `_buildTextPane` but operates on the
-   * text only — used by `render()` to decide whether to render the
-   * Highlight toggle at all. Three things can block highlighting:
-   *   1. hljs isn't loaded in this build.
-   *   2. The total text is over `HIGHLIGHT_SIZE_LIMIT` (hljs slows to a
-   *      crawl on multi-hundred-KB inputs).
-   *   3. A single line is over `LONG_LINE_THRESHOLD` — the hljs span
-   *      tree for one multi-megabyte minified-JS line can freeze or
-   *      OOM the tab regardless of total size.
-   * When any of these holds we hide the button instead of leaving it
-   * present but inert.
+   * Shared gate for the "rich rendering" toggles (Highlight + Wrap).
+   * Returns true iff the file is small enough on every relevant axis
+   * that both toggles can do their work without tanking sidebar-drag
+   * FPS or freezing the hljs span-tree pass. When this returns false
+   * the info-bar omits *both* toggles entirely so they appear and
+   * disappear in lock-step.
+   *
+   * Three independent thresholds:
+   *   1. `RICH_MAX_BYTES` on raw on-disk size (bounds hljs CPU and
+   *      total per-row DOM count).
+   *   2. `RICH_MAX_LINES` on logical line count (bounds wrap-mode
+   *      all-rows-in-DOM cost).
+   *   3. `RICH_MAX_LINE_LEN` on the longest single line — the hljs
+   *      span tree for one multi-megabyte minified-JS line can freeze
+   *      or OOM the tab regardless of total size, and wrap-mode rows
+   *      with a 50K-char pre-wrap cell paint catastrophically slowly.
+   *
+   * `bytes` is the raw decoded buffer (Uint8Array). `text` is the
+   * normalised JS string used by both renderers — passing both lets us
+   * gate UTF-16 files on their on-disk size while still walking the
+   * decoded text for line-count / longest-line.
    */
-  _canHighlight(text) {
-    if (typeof hljs === 'undefined') return false;
-    if (text.length >= PlainTextRenderer.HIGHLIGHT_SIZE_LIMIT) return false;
-    // Walk lines until we either exceed the long-line threshold or run
-    // out of text. Early-exit keeps this O(n) with a very small constant
-    // for normal files.
+  _canEnhance(text, bytes) {
+    if (bytes.length > PlainTextRenderer.RICH_MAX_BYTES) return false;
+
+    // Single pass: count lines and find longest line simultaneously.
+    // Early-exit keeps this O(n) with a very small constant for normal
+    // files.
+    let lines = 1;
     let runStart = 0;
-    const limit = PlainTextRenderer.LONG_LINE_THRESHOLD;
+    const lineLimit = PlainTextRenderer.RICH_MAX_LINE_LEN;
+    const maxLines  = PlainTextRenderer.RICH_MAX_LINES;
     for (let i = 0; i < text.length; i++) {
       if (text.charCodeAt(i) === 0x0A /* \n */) {
-        if (i - runStart > limit) return false;
+        if (i - runStart > lineLimit) return false;
         runStart = i + 1;
+        lines++;
+        if (lines > maxLines) return false;
       }
     }
-    if (text.length - runStart > limit) return false;
+    if (text.length - runStart > lineLimit) return false;
     return true;
   }
 
@@ -577,18 +601,20 @@ class PlainTextRenderer {
 
   // ── Build text pane (line-numbered view with syntax highlighting) ────────
 
-  _buildTextPane(text, fileName, mimeType, highlightEnabled, wrapEnabled) {
+  _buildTextPane(text, bytes, fileName, mimeType, highlightEnabled, wrapEnabled) {
     const lines = text.split('\n');
 
     // Detect any pathologically long line — common in minified JS, CSS, JSON.
-    // If one is present we disable hljs (span tree would explode on a
-    // single-line megabyte) regardless of the global size gate.
+    // Drives `VirtualTextView`'s soft-wrap chunking when wrap is OFF (the
+    // virtualised path can't render a single 2 MB <td> in one row). The
+    // highlight gate below uses `_canEnhance(text, bytes)` directly so
+    // the per-line cap stays in lock-step with the outer toggle gate.
     let maxLineLen = 0;
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].length > maxLineLen) maxLineLen = lines[i].length;
-      if (maxLineLen > PlainTextRenderer.LONG_LINE_THRESHOLD) break;
+      if (maxLineLen > PlainTextRenderer.RICH_MAX_LINE_LEN) break;
     }
-    const hasLongLine = maxLineLen > PlainTextRenderer.LONG_LINE_THRESHOLD;
+    const hasLongLine = maxLineLen > PlainTextRenderer.RICH_MAX_LINE_LEN;
 
     // Get file extension and determine language
     const ext = (fileName || '').split('.').pop().toLowerCase();
@@ -598,12 +624,14 @@ class PlainTextRenderer {
       lang = PlainTextRenderer.MIME_TO_LANG[mimeType];
     }
 
-    // Gate: hljs must be available AND user preference on AND text small
-    // enough AND no pathologically long line present.
+    // Gate: hljs must be available AND user preference on AND the same
+    // shared rich-render gate that decided whether the toggle was even
+    // shown. Re-checking here (rather than trusting an outer flag)
+    // keeps the inner gate honest across encoding switches, where the
+    // line count and longest-line characteristics can shift.
     const shouldHighlight = highlightEnabled &&
                             typeof hljs !== 'undefined' &&
-                            text.length < PlainTextRenderer.HIGHLIGHT_SIZE_LIMIT &&
-                            !hasLongLine;
+                            this._canEnhance(text, bytes);
 
     let highlightedLines = null;
     let detectedLang = null;
@@ -643,9 +671,10 @@ class PlainTextRenderer {
     //
     // Note on `wrap`: when `wrapEnabled` is true `VirtualTextView` switches
     // into all-rows-in-DOM mode and ignores `chunkSize` / `hasLongLine`.
-    // The outer gate (`wrapPossible`) already excludes files large enough
-    // for `hasLongLine` to matter (a single 5000+ char line on a ≤512 KB
-    // file is rare); the wrap path therefore never has to soft-wrap chunks.
+    // The shared rich-render gate (`_canEnhance`) excludes any file with
+    // a line longer than `RICH_MAX_LINE_LEN` from both toggles, so when
+    // `wrapEnabled` is true `hasLongLine` is guaranteed false and the
+    // wrap path never has to soft-wrap chunks.
     const view = new VirtualTextView({
       lines:            count === lines.length ? lines : lines.slice(0, count),
       highlightedLines: highlightedLines || null,

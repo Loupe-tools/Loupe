@@ -810,7 +810,7 @@ Current user-regex compile sites (must use `safeRegex`):
   tables, `table-layout: fixed`).
 - **Soft-wrap pathologically long lines in display.** A single 2 MB
   `<td>` tanks layout / paint / click-to-focus even with
-  `table-layout: fixed`. See `PlainTextRenderer.LONG_LINE_THRESHOLD` /
+  `table-layout: fixed`. See `PlainTextRenderer.RICH_MAX_LINE_LEN` /
   `SOFT_WRAP_CHUNK` for canonical values.
 - **Long IOC lists must end with an `IOC.INFO` truncation marker.**
 - **Two limit constants, two jobs.** `PARSER_LIMITS` is the *safety*
@@ -887,8 +887,8 @@ filter, and (c) auditable against this table.
 | `loupe_ioc_hide_nicelisted` | string | `_setHideNicelisted()` in `src/app/app-sidebar.js` | `"0"` (show, dimmed — default) or `"1"` (hide). |
 | `loupe_nicelist_builtin_enabled` | string | `setBuiltinEnabled()` in `src/nicelist-user.js` | `"1"` (on — default) or `"0"` (off). Master switch for the Default Nicelist. |
 | `loupe_nicelists_user` | string (JSON) | `save()` in `src/nicelist-user.js` | `{version:1, lists:[{id,name,enabled,createdAt,updatedAt,entries}]}`. Capped at 64 lists × 10 000 entries × 1 MB. |
-| `loupe_plaintext_highlight` | string | `PlainTextRenderer._writeHighlightPref()` | `"on"` (default) / `"off"`. Syntax-highlighting master switch for the plaintext / catch-all renderer. |
-| `loupe_plaintext_wrap` | string | `PlainTextRenderer._writeWrapPref()` | `"on"` (default) / `"off"`. Hidden — and wrap forced off — for files larger than `WRAP_MAX_TEXT_BYTES` (512 KB) or longer than `WRAP_MAX_LINES` (10 000 lines). |
+| `loupe_plaintext_highlight` | string | `PlainTextRenderer._writeHighlightPref()` | `"on"` (default) / `"off"`. Syntax-highlighting master switch for the plaintext / catch-all renderer. Hidden — and highlighting skipped — by the shared rich-render gate described under `loupe_plaintext_wrap` below, plus an extra requirement that hljs is loaded in this build. |
+| `loupe_plaintext_wrap` | string | `PlainTextRenderer._writeWrapPref()` | `"on"` (default) / `"off"`. Hidden — and wrap forced off — by the shared rich-render gate (`RICH_MAX_BYTES` 512 KB / `RICH_MAX_LINES` 10 000 / `RICH_MAX_LINE_LEN` 5 000 chars), which also gates `loupe_plaintext_highlight` so both toggles disappear together. |
 | `loupe_grid_drawer_w` | string (integer) | `_saveDrawerWidth()` in `src/renderers/grid-viewer.js` | Pixel width of the row-details drawer. Default `420`. Lower-bound `280` on read; upper bound dynamic. |
 | `loupe_grid_colW_<gridKey>` | string (JSON object) | `_saveUserColumnWidth()` | `{ "<colIdx>": pixelWidth, … }`. Per-renderer manual width overrides. Double-clicking a handle deletes the entry to restore auto sizing. |
 | `loupe_timeline_grid_h` | string (integer) | `.tl-splitter` drag | Height of the virtual-grid pane. Clamped on read. |

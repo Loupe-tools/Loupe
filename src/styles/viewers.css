@@ -2086,8 +2086,10 @@ body.dark .plaintext-row.ioc-highlight-line {
  * `VirtualTextView` adds `.is-wrapping` to the root and renders every
  * row into normal flow rather than absolute-positioning a small
  * window. This forfeits virtualisation — sidebar-resize FPS is bounded
- * only by `WRAP_MAX_TEXT_BYTES` (512 KB) / `WRAP_MAX_LINES` (10 000)
- * gates in `PlainTextRenderer`.
+ * only by the shared rich-render gate in `PlainTextRenderer`
+ * (`RICH_MAX_BYTES` 512 KB / `RICH_MAX_LINES` 10 000 / `RICH_MAX_LINE_LEN`
+ * 5 000), which also governs the syntax-highlight toggle so both
+ * toggles disappear together for files that exceed the gate.
  *
  * `!important` is load-bearing because the virtualised path writes
  * inline `style.width` / `style.height` on `.plaintext-virtual-sizer`

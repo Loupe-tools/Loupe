@@ -90,8 +90,9 @@ class VirtualTextView {
     this.rawText          = opts.rawText || '';
     // Wrap mode: when true, render every row into normal flow with
     // `white-space: pre-wrap` and skip virtualisation entirely. The
-    // outer `PlainTextRenderer` gates this on file size + line count
-    // (see `WRAP_MAX_TEXT_BYTES` / `WRAP_MAX_LINES`).
+    // outer `PlainTextRenderer` gates this (alongside syntax
+    // highlighting) on file size, line count and longest-line length
+    // via the shared `_canEnhance` / `RICH_MAX_*` thresholds.
     this.wrap             = !!opts.wrap;
 
     // Flat virtual-row table — indexes into `this.lines` plus an optional
@@ -339,7 +340,8 @@ class VirtualTextView {
     // for that row is sacrificed for correctness (the legacy
     // _highlightInHtmlNode TreeWalker path is too fragile against the
     // virtualizer's row recycling — and the syntax HTML for any row is
-    // bounded in size anyway since hljs is gated to ≤ 100 KB total).
+    // bounded in size anyway since hljs is gated by the shared rich-
+    // render thresholds, `RICH_MAX_BYTES` / `RICH_MAX_LINE_LEN`).
     const decorMarks = this._collectMarksForRow(rowIdx);
     if (decorMarks.length) {
       tdCode.innerHTML = this._buildMarkedHtml(cellText, decorMarks);
