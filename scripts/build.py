@@ -859,6 +859,16 @@ APP_JS_FILES = [
     # `fromSqlite`; attaches via `Object.assign(TimelineView, {...})`.
     # MUST load AFTER timeline-view.js so the class identifier exists.
     'src/app/timeline/timeline-view-factories.js',
+    # timeline-view-persist.js — TimelineView static-method mixin
+    # (B2b). Hosts the ~30 `_loadXxx` / `_saveXxx` localStorage
+    # helpers (bucket pref, grid/chart heights, sections, per-file
+    # card widths/order/pinned cols, entities pinned/order, regex
+    # extracts, autoextract-done marker, pivot spec, query, sus
+    # marks). All keys live in `TIMELINE_KEYS` (timeline-helpers.js)
+    # and are documented in the **Persistence Keys** table in
+    # CONTRIBUTING.md — never rename without bumping that table.
+    # Loads AFTER timeline-view.js for the same reason as factories.
+    'src/app/timeline/timeline-view-persist.js',
     'src/app/timeline/timeline-detections.js',
     'src/app/timeline/timeline-summary.js',
     'src/app/timeline/timeline-drawer.js',
