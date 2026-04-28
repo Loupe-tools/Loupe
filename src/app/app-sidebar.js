@@ -108,6 +108,19 @@ extendApp({
     const body = document.getElementById('sb-body');
     body.innerHTML = '';
 
+    // Reset per-render row registry on every encoded finding. The Detections
+    // and IOCs tables render next and repopulate this array via the
+    // `ref._encodedFinding` back-ref. Without clearing, stale detached <tr>
+    // nodes from prior renders linger and break the "IOCs: N <type>" click-
+    // to-flash on deobfuscation cards: rows[0] is the oldest (detached) row,
+    // so .closest() returns null and .scrollIntoView() is a silent no-op.
+    // `finding._cardEl` is overwritten unconditionally in
+    // `_renderEncodedContentSection` for the same reason — keep these two
+    // lifecycles symmetrical.
+    if (f.encodedContent) {
+      for (const ef of f.encodedContent) ef._iocRows = [];
+    }
+
     // 1. File Info (collapsed by default)
     this._renderFileInfoSection(body, fileName);
 
@@ -613,11 +626,12 @@ extendApp({
       // Store DOM reference for bidirectional cross-flash linking
       finding._cardEl = card;
 
-      // Keep any rows already registered by _renderIocsSection (which runs
-      // BEFORE this section — see _renderSidebar ordering). Overwriting with
-      // a fresh `[]` here would wipe those registrations and break the
-      // "IOCs: N URL" click-to-flash handler below.
-      finding._iocRows = finding._iocRows || [];
+      // `_iocRows` is reset at the top of `_renderSidebar` (before the
+      // Detections / IOCs sections register fresh <tr>s into it via the
+      // `ref._encodedFinding` back-ref). Defensive fallback only — don't
+      // reassign `[]` here unconditionally, that would wipe the rows the
+      // earlier sections already registered for this finding.
+      finding._iocRows ||= [];
 
       // ── Compute the FULL deobfuscation lineage up-front ─────────────
       // Every downstream UI element (header depth badge, chain pill row,

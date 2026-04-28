@@ -3898,7 +3898,17 @@ body.dark .yara-sidebar-sid {
 }
 
 .yara-sidebar-val {
-  flex: 1 1 auto;
+  /* `flex-basis: 0` (not `auto`) is load-bearing: with `auto` the flex
+     algorithm sizes this span to its content width *before* applying
+     `flex-grow`, so a long YARA `/regex/` matched value (e.g. a
+     PowerShell format-string detector's full pattern) widens the `<li>`
+     past the cell, defeating the `text-overflow: ellipsis` below and
+     pushing the title-row ➕/📐 buttons + td3 severity badge offscreen.
+     With `flex-basis: 0` the span starts at zero width, then grows to
+     fill the remaining row space and the `nowrap` content is clipped to
+     `…` instead. The full value is still reachable via the click-to-
+     expand reason sub-row and the YARA rule viewer (📐). */
+  flex: 1 1 0;
   min-width: 0;
   font-family: 'Fira Code', 'Consolas', monospace;
   font-size: 11px;

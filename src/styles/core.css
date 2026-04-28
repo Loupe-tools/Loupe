@@ -2278,8 +2278,38 @@ body.dark .ext-search {
 
 .ext-table {
   width: 100%;
+  /* Fixed layout so a long unbreakable td2 child (e.g. a YARA `/regex/`
+     matched value rendered with `white-space: nowrap` for ellipsis) can
+     no longer drive td2's intrinsic min-content width up and clip the
+     td3 severity column off the right edge of the sidebar (which has
+     `overflow-x: hidden`). With auto layout, table column widths follow
+     the longest unbreakable cell content and `min-width: 0` on flex
+     descendants does not reduce the cell's contribution to that
+     calculation; only fixed layout decouples cell content from column
+     sizing. Other tables that need this pattern (`.plaintext-table`,
+     `.x509-ext-table`) already use `table-layout: fixed`. */
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 11px;
+}
+
+/* Column-width hints for the IOC table. With `table-layout: fixed`,
+   browsers compute column widths from declared widths on the first
+   row's cells; absent these, the three columns split into thirds and
+   td3 (Risk) ends up far wider than the badge needs while td2 (Value)
+   gets squeezed. Sized to fit the longest realistic content in td1
+   ("Command Line", "Mac Address", etc.) and td3 (the longest severity
+   badge text, "critical") with a small comfort margin; td2 flexes into
+   the remaining width. The td3 selector targets by position because
+   the severity cell has no dedicated class. */
+.ext-table th:nth-child(1),
+.ext-table td:nth-child(1) {
+  width: 110px;
+}
+
+.ext-table th:nth-child(3),
+.ext-table td:nth-child(3) {
+  width: 64px;
 }
 
 .ext-table th {

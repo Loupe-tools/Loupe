@@ -1182,8 +1182,13 @@ extendApp({
 
   // ── Flash IOC rows linked to an encoded finding ─────────────────────────
   _flashIocRows(finding) {
-    const rows = finding._iocRows;
-    if (!rows || !rows.length) return;
+    // Filter to DOM-attached rows. Belt-and-braces against any future code
+    // path that might leave stale (detached) <tr> nodes in `_iocRows`:
+    // `rows[0].scrollIntoView` on a detached node is a silent no-op, and
+    // `.closest('.sb-details')` returns null so the section auto-open also
+    // skips. The primary lifecycle reset lives in `_renderSidebar`.
+    const rows = (finding._iocRows || []).filter(tr => tr.isConnected);
+    if (!rows.length) return;
     // Ensure parent section is open
     const sigDetails = rows[0].closest('.sb-details');
     if (sigDetails && !sigDetails.open) sigDetails.open = true;
