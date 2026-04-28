@@ -888,6 +888,16 @@ APP_JS_FILES = [
     # timeline-view.js because the chart and grid mixins also call
     # them. Loads AFTER timeline-view.js.
     'src/app/timeline/timeline-view-popovers.js',
+    # timeline-view-render-chart.js — TimelineView prototype mixin
+    # (B2f1). Hosts the entire chart paint stack: scrubber rendering
+    # + drag, the histogram canvas paint (`_renderChartInto` and its
+    # stable-stack-color cache), the red-line "you are here" cursor
+    # (paint, drag, grid-scroll sync), the rubber-band selection
+    # (`_installChartDrag`), the chart-only height grab-bar, and the
+    # legend click/dbl-click/context handlers. Hot paths — bodies
+    # are byte-identical with pre-B2f1 `timeline-view.js`. Loads
+    # AFTER timeline-view.js.
+    'src/app/timeline/timeline-view-render-chart.js',
     'src/app/timeline/timeline-detections.js',
     'src/app/timeline/timeline-summary.js',
     'src/app/timeline/timeline-drawer.js',
