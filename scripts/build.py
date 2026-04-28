@@ -869,6 +869,15 @@ APP_JS_FILES = [
     # CONTRIBUTING.md — never rename without bumping that table.
     # Loads AFTER timeline-view.js for the same reason as factories.
     'src/app/timeline/timeline-view-persist.js',
+    # timeline-view-filter.js — TimelineView prototype mixin (B2c).
+    # Hosts the filter + chart-data pipeline: timestamp parsing,
+    # `_applyQueryString`, `_recomputeFilter`, sus + detection bitmap
+    # rebuilds, the window-only fast path, sync + cooperative-async
+    # column stats, distinct-values lookup, the ignore-one-column
+    # index helper, the bucket-size resolver, and `_computeChartData`
+    # (the histogram bucketer). Hot paths — bodies are byte-identical
+    # with the pre-B2c `timeline-view.js`. Loads AFTER timeline-view.js.
+    'src/app/timeline/timeline-view-filter.js',
     'src/app/timeline/timeline-detections.js',
     'src/app/timeline/timeline-summary.js',
     'src/app/timeline/timeline-drawer.js',
