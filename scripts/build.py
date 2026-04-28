@@ -916,6 +916,16 @@ APP_JS_FILES = [
     # central point where UI clicks become AST edits. Loads AFTER
     # timeline-view.js.
     'src/app/timeline/timeline-view-query-chips.js',
+    # timeline-view-export.js — TimelineView prototype mixin (B2f4).
+    # Hosts the pivot-table auto-pick + builder, the per-section
+    # "⋯" / export menu dispatcher (`_onSectionAction`), the
+    # `_forensic*` filename helpers, and every CSV / PNG exporter.
+    # All five exporters route through `FileDownload.downloadText`
+    # / `downloadBlob` and share the
+    # `<source-stem>__<section>__<UTC>.<ext>` naming convention
+    # — keeping them in one mixin is what makes that convention a
+    # single locked-down place. Loads AFTER timeline-view.js.
+    'src/app/timeline/timeline-view-export.js',
     'src/app/timeline/timeline-detections.js',
     'src/app/timeline/timeline-summary.js',
     'src/app/timeline/timeline-drawer.js',
