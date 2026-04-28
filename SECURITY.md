@@ -91,6 +91,18 @@ requirement; parses on browsers without the API simply rely on the
 existing `MAX_FILE_BYTES_BY_DISPATCH` cap (`csv` ≈ 512 MiB) and the
 OS-level OOM-killer.
 
+The gate is also **Timeline-route only**: it lives in
+`_loadFileInTimeline` and never sees files that take the regular
+analyser pipeline (PE / ELF / Office / archive / image …). Those
+formats don't build a RowStore and have radically different memory
+profiles (binary buffers, parsed AST nodes, no UTF-16 expansion), so
+projecting `file.size × ROWSTORE_HEAP_OVERHEAD_FACTOR` would be both
+too loose for some (e.g. archives that decompress 100×) and too
+strict for others. The non-Timeline path is bounded by the coarser
+`LARGE_FILE_THRESHOLD` (200 MB → switch to chunked decode) and the
+per-dispatch `MAX_FILE_BYTES_BY_DISPATCH` ceiling defined in
+[§ Parser Limits](#parser-limits).
+
 When the gate fires the load is cancelled (the worker is never
 spawned and no `RowStore` is built) and the user sees an error toast:
 
