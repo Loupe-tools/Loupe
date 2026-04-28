@@ -65,8 +65,31 @@ class GridViewer {
    */
   constructor(opts) {
     this.columns = opts.columns || [];
-    this.rows = opts.rows || [];
-    this.rowSearchText = opts.rowSearchText || null;
+    // Phase 4: GridViewer is dual-mode for row storage:
+    //   - `opts.store`: a RowStore-shaped container exposing
+    //                   `rowCount`, `getCell(r, c)`, `getRow(r)`. Used by
+    //                   the timeline path (TimelineView wraps its
+    //                   RowStore + extracted columns + filter idx as a
+    //                   `TimelineRowView` so this class stays
+    //                   container-agnostic).
+    //   - `opts.rows` : legacy `string[][]`. Still the only path used by
+    //                   the standalone csv / sqlite / evtx / xlsx / json
+    //                   renderers (Phase 4b/c will migrate them).
+    // All cell access inside GridViewer goes through `_rowCount()` /
+    // `_rowAt(r)` / `_cellAt(r, c)` so these branches live in exactly one
+    // place — see the accessor block immediately below the constructor.
+    this.store = opts.store || null;
+    this.rows = this.store ? null : (opts.rows || []);
+    // `rowSearchText` is the per-row pre-joined lowercase text cache used
+    // by the filter-bar substring match. In legacy mode it is populated
+    // either eagerly by the caller (EVTX) or lazily by the idle build
+    // (`_scheduleIdleSearchTextBuild`). In store mode the cache is
+    // always null and `_rowMatchesQuery` resolves search text on the fly
+    // via the store's `getRow` — the timeline path doesn't use the
+    // grid filter (it has its own query DSL) so the cache earns its
+    // ~3× memory cost only on legacy CSV / EVTX where the filter bar is
+    // primary.
+    this.rowSearchText = this.store ? null : (opts.rowSearchText || null);
     this.rowOffsets = opts.rowOffsets || null;
     this.rawText = opts.rawText || '';
     this._rootClass = opts.className || 'csv-view';
@@ -267,7 +290,7 @@ class GridViewer {
     // Mutable state — all reads go through here; all writes schedule a render.
     this.state = {
       filteredIndices: null,              // null = no filter + no sort; else Array of dataIdx
-      visibleCount: this.rows.length,
+      visibleCount: this._rowCount(),
       renderedRange: { start: -1, end: -1 },
       drawer: {
         open: false,
@@ -309,7 +332,31 @@ class GridViewer {
     // If rows were provided up-front (non-streaming case), materialise the
     // timeline now. Streaming callers rebuild it in endParseProgress() /
     // setRows() — by which time the time column is populated.
-    if (this.rows.length) this._rebuildTimeline();
+    if (this._rowCount()) this._rebuildTimeline();
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  ROW ACCESSORS — single source of truth for the legacy `string[][]` ↔
+  //  `RowStore`-shaped store branching. Hot loops should call these once and
+  //  cache the result locally to dodge the per-iteration property load.
+  // ═══════════════════════════════════════════════════════════════════════════
+  _rowCount() {
+    return this.store ? this.store.rowCount : (this.rows ? this.rows.length : 0);
+  }
+
+  _rowAt(dataIdx) {
+    if (this.store) return this.store.getRow(dataIdx);
+    const r = this.rows ? this.rows[dataIdx] : null;
+    return r || [];
+  }
+
+  _cellAt(dataIdx, colIdx) {
+    if (this.store) return this.store.getCell(dataIdx, colIdx);
+    const r = this.rows ? this.rows[dataIdx] : null;
+    if (!r) return '';
+    const v = r[colIdx];
+    return v == null ? '' : String(v);
   }
 
 
@@ -510,7 +557,7 @@ class GridViewer {
     // Build header cells
     this._buildHeaderCells();
 
-    if (!this.rows.length) {
+    if (!this._rowCount()) {
       const empty = document.createElement('div');
       empty.className = 'grid-empty';
       empty.textContent = this._emptyMessage;
@@ -669,7 +716,7 @@ class GridViewer {
     }
 
     // Stratified sample: head + middle + tail, up to ~300 rows total.
-    const n = this.rows.length;
+    const n = this._rowCount();
     const sampleIdxs = [];
     if (n > 0) {
       const HEAD = Math.min(100, n);
@@ -695,7 +742,7 @@ class GridViewer {
     const HEX_RE = /^[0-9a-fA-F]+$/;
 
     for (const r of sampleIdxs) {
-      const row = this.rows[r];
+      const row = this._rowAt(r);
       if (!row) continue;
       for (let c = 0; c < cols; c++) {
         let cell = row[c];
@@ -1063,7 +1110,7 @@ class GridViewer {
     if (this._infoText) {
       this._info.textContent = this._infoText;
     } else {
-      const rc = this.rows.length;
+      const rc = this._rowCount();
       const cc = this.columns.length;
       this._info.textContent = `${rc.toLocaleString()} rows × ${cc} columns`;
     }
@@ -1104,7 +1151,7 @@ class GridViewer {
       this._applyFilter();
     };
     this._boundHandlers.onFilter = () => {
-      const big = (this.rows && this.rows.length >= this._filterDebounceMin);
+      const big = this._rowCount() >= this._filterDebounceMin;
       if (this._filterTimer != null) clearTimeout(this._filterTimer);
       if (big) {
         this._filterTimer = setTimeout(_runFilter, this._filterDebounceMs);
@@ -1543,7 +1590,7 @@ class GridViewer {
   }
 
   _visibleCount() {
-    return this.state.filteredIndices ? this.state.filteredIndices.length : this.rows.length;
+    return this.state.filteredIndices ? this.state.filteredIndices.length : this._rowCount();
   }
 
   _dataIdxOf(virtualIdx) {
@@ -1595,7 +1642,7 @@ class GridViewer {
     const frag = document.createDocumentFragment();
     for (let v = firstIdx; v < lastIdx; v++) {
       const dataIdx = this._dataIdxOf(v);
-      if (dataIdx == null || dataIdx >= this.rows.length) continue;
+      if (dataIdx == null || dataIdx >= this._rowCount()) continue;
       frag.appendChild(this._buildRow(dataIdx, v));
     }
     this._sizer.replaceChildren(frag);
@@ -1603,7 +1650,7 @@ class GridViewer {
   }
 
   _buildRow(dataIdx, virtualIdx) {
-    const row = this.rows[dataIdx];
+    const row = this._rowAt(dataIdx);
     const tr = document.createElement('div');
     // Zebra striping is stamped from `dataIdx` parity (stable per source
     // row) rather than via CSS `:nth-child`, which would re-shuffle on
@@ -1772,7 +1819,7 @@ class GridViewer {
   }
 
   _renderDrawerBody(dataIdx) {
-    const row = this.rows[dataIdx];
+    const row = this._rowAt(dataIdx);
     if (!row) { this._drawerBody.replaceChildren(); return; }
     // Title — overridable by format-specific renderers (EVTX wants
     //   "Event 4624 — Record 12345", not "Row 42").
@@ -1987,7 +2034,7 @@ class GridViewer {
     this._closeDrawer();
     this._clearHighlight(/* silent */ true);
 
-    const total = this.rows.length;
+    const total = this._rowCount();
     const tw = this._timeWindow;
     if (!query && !tw) {
       this.state.filteredIndices = null;
@@ -2034,11 +2081,21 @@ class GridViewer {
     if (this.rowSearchText && this.rowSearchText[dataIdx]) {
       return this.rowSearchText[dataIdx].includes(needle);
     }
-    // Fallback — build on demand, cache for re-use.
-    const row = this.rows[dataIdx];
+    // Store mode: pull a fresh row out of the store and resolve the
+    // match on the fly. We deliberately do NOT cache the joined text —
+    // the timeline path doesn't use the grid filter (its own query DSL
+    // is the primary entry point) so caching would just bloat the heap
+    // for rows the user will never search.
+    if (this.store) {
+      const row = this.store.getRow(dataIdx);
+      if (!row) return false;
+      return row.join(' ').toLowerCase().includes(needle);
+    }
+    // Legacy fallback — build on demand, cache for re-use.
+    const row = this._rowAt(dataIdx);
     if (!row) return false;
     const joined = row.join(' ').toLowerCase();
-    if (!this.rowSearchText) this.rowSearchText = new Array(this.rows.length);
+    if (!this.rowSearchText) this.rowSearchText = new Array(this._rowCount());
     this.rowSearchText[dataIdx] = joined;
     return joined.includes(needle);
   }
@@ -2073,6 +2130,9 @@ class GridViewer {
       try { cancel(this._idleBuildHandle); } catch (_e) { /* ignore */ }
       this._idleBuildHandle = null;
     }
+    // Store mode skips the cache entirely — see comment on
+    // `this.rowSearchText` in the constructor.
+    if (this.store) return;
     if (!this.rows || this.rows.length < 5000) return;
     if (!this.rowSearchText) this.rowSearchText = new Array(this.rows.length);
     let i = 0;
@@ -2083,7 +2143,7 @@ class GridViewer {
       const end = Math.min(i + BATCH, total);
       for (; i < end; i++) {
         if (this.rowSearchText[i]) continue;
-        const row = this.rows[i];
+        const row = this._rowAt(i);
         this.rowSearchText[i] = row ? row.join(' ').toLowerCase() : '';
       }
       if (i < total) {
@@ -2211,7 +2271,7 @@ class GridViewer {
   // ═══════════════════════════════════════════════════════════════════════════
   beginParseProgress(total) {
     this.state.parseComplete = false;
-    this.state.parseProgress = { rows: this.rows.length, total };
+    this.state.parseProgress = { rows: this._rowCount(), total };
     this._progress.classList.remove('hidden');
     this._progressBar.style.width = '0%';
     this._progressLbl.textContent = 'Parsing…';
@@ -2242,26 +2302,41 @@ class GridViewer {
    * datasets. The previous `_sortSpec` is preserved so column-header
    * sort indicators still render and subsequent user-initiated sorts
    * work as before. Timeline Mode uses this path because it pre-sorts
-   * `rowsConcat` via the already-parsed `_timeMs` Float64Array.
+   * the `idx` permutation handed to `TimelineRowView` via the
+   * already-parsed `_timeMs` Float64Array.
    */
   setRows(rows, rowSearchText, rowOffsets, opts) {
-    this.rows = rows;
-    // Drop the cache when the caller doesn't supply a fresh `rowSearchText`.
-    // The previous code retained the prior dataset's array
-    // (`rowSearchText || this.rowSearchText`); the idle-rebuild's
-    // `if (this.rowSearchText[i]) continue` check would then skip
-    // refilling those slots, and `_rowMatchesQuery` would silently filter
-    // against stale text from the old rows. EVTX / Timeline supply
-    // their own `rowSearchText` and are unaffected; the lazy build below
-    // re-populates from the new rows for every other caller. See review
-    // notes #3 from the 2026-04-27 audit.
-    this.rowSearchText = rowSearchText || null;
+    // Phase 4: `rows` may be either the legacy `string[][]` payload or a
+    // RowStore-shaped object exposing `rowCount` / `getCell` / `getRow`
+    // (e.g. the timeline path's `TimelineRowView`). The dispatcher below
+    // routes each into the matching slot and drops the other so stale
+    // data from the previous mode can't leak across a mode switch.
+    const isStore = rows && typeof rows === 'object' && !Array.isArray(rows)
+      && typeof rows.getCell === 'function';
+    if (isStore) {
+      this.store = rows;
+      this.rows = null;
+      this.rowSearchText = null;
+    } else {
+      this.store = null;
+      this.rows = rows;
+      // Drop the cache when the caller doesn't supply a fresh `rowSearchText`.
+      // The previous code retained the prior dataset's array
+      // (`rowSearchText || this.rowSearchText`); the idle-rebuild's
+      // `if (this.rowSearchText[i]) continue` check would then skip
+      // refilling those slots, and `_rowMatchesQuery` would silently filter
+      // against stale text from the old rows. EVTX / Timeline supply
+      // their own `rowSearchText` and are unaffected; the lazy build below
+      // re-populates from the new rows for every other caller. See review
+      // notes #3 from the 2026-04-27 audit.
+      this.rowSearchText = rowSearchText || null;
+    }
     this.rowOffsets = rowOffsets || this.rowOffsets;
     // Schedule a background pre-build of `rowSearchText` so the first
     // filter keystroke doesn't pay the materialisation cost row-by-row.
     // Skipped when the caller already supplied a populated array (EVTX,
-    // Timeline) or when the dataset is small enough that lazy caching
-    // is fast anyway.
+    // Timeline), in store mode (no cache needed), or when the dataset
+    // is small enough that lazy caching is fast anyway.
     this._scheduleIdleSearchTextBuild();
     this._maybeRemoveEmptyPlaceholder();
     // Re-run column-kind sniffer now that we have real rows to sample.
@@ -2285,7 +2360,7 @@ class GridViewer {
     if (opts && opts.preSorted && prevSort) {
       // Caller pre-sorted — stamp an identity sort order and restore the
       // spec so header arrows render correctly. No re-parse needed.
-      const n = rows.length;
+      const n = this._rowCount();
       const idxs = new Array(n);
       for (let i = 0; i < n; i++) idxs[i] = i;
       this._sortSpec = prevSort;
@@ -2328,14 +2403,19 @@ class GridViewer {
    * streaming path).
    */
   _maybeRemoveEmptyPlaceholder() {
-    if (this._emptyEl && this.rows.length) {
+    if (this._emptyEl && this._rowCount()) {
       try { this._emptyEl.remove(); } catch (_) { /* ignore */ }
       this._emptyEl = null;
     }
   }
 
   appendRows(newRows, newRowSearch, newRowOffsets) {
-    // Cheap incremental push — used by the chunked CSV parser.
+    // Cheap incremental push — used by the chunked CSV parser. Store
+    // mode is one-shot (the RowStore is finalised before the view is
+    // ever constructed) so this path is invalid.
+    if (this.store) {
+      throw new Error('GridViewer.appendRows: not supported in store mode');
+    }
     const wasEmpty = this.rows.length === 0;
     for (const r of newRows) this.rows.push(r);
     if (wasEmpty && this.rows.length) this._maybeRemoveEmptyPlaceholder();
@@ -2439,13 +2519,13 @@ class GridViewer {
   }
 
   _dataRowShape(dataIdx) {
-    const row = this.rows[dataIdx] || [];
+    const row = this._rowAt(dataIdx) || [];
     let searchText;
     if (this.rowSearchText && this.rowSearchText[dataIdx] != null) {
       searchText = this.rowSearchText[dataIdx];
     } else {
       searchText = row.join(' ').toLowerCase();
-      if (!this.rowSearchText) this.rowSearchText = new Array(this.rows.length);
+      if (!this.rowSearchText) this.rowSearchText = new Array(this._rowCount());
       this.rowSearchText[dataIdx] = searchText;
     }
     const off = this.rowOffsets ? this.rowOffsets[dataIdx] : null;
@@ -2662,7 +2742,7 @@ class GridViewer {
     for (let v = 0; v < scanCap; v++) {
       const dIdx = this._dataIdxOf(v);
       if (dIdx == null) continue;
-      const row = this.rows[dIdx];
+      const row = this._rowAt(dIdx);
       if (!row) continue;
       let val = row[colIdx];
       if (val == null) val = '';
@@ -2739,14 +2819,14 @@ class GridViewer {
    * intersects with the active filter. Stable.
    */
   _sortByColumn(colIdx, dir) {
-    const n = this.rows.length;
+    const n = this._rowCount();
     const idxs = new Array(n);
     for (let i = 0; i < n; i++) idxs[i] = i;
 
     const mul = dir === 'desc' ? -1 : 1;
 
     const getCell = (i) => {
-      const r = this.rows[i];
+      const r = this._rowAt(i);
       return r ? (r[colIdx] == null ? '' : r[colIdx]) : '';
     };
 
@@ -2784,11 +2864,11 @@ class GridViewer {
     let numCount = 0, nonEmpty = 0;
     const sampleN = Math.min(n, 200);
     for (let i = 0; i < sampleN; i++) {
-      const v = this.rows[i] && this.rows[i][colIdx];
-      if (v == null || v === '') continue;
+      const v = this._cellAt(i, colIdx);
+      if (v === '') continue;
       nonEmpty++;
       const f = parseFloat(v);
-      if (Number.isFinite(f) && /^-?\s*\d/.test(String(v).trim())) numCount++;
+      if (Number.isFinite(f) && /^-?\s*\d/.test(v.trim())) numCount++;
     }
     const numeric = !temporal && nonEmpty > 0 && numCount / nonEmpty >= 0.9;
 
@@ -2971,8 +3051,7 @@ class GridViewer {
     const parts = new Array(n);
     for (let v = 0; v < n; v++) {
       const d = this._dataIdxOf(v);
-      const r = this.rows[d];
-      parts[v] = (r && r[colIdx] != null) ? String(r[colIdx]) : '';
+      parts[v] = this._cellAt(d, colIdx);
     }
     const text = parts.join('\n');
     try {
@@ -3050,7 +3129,7 @@ class GridViewer {
       this.state.filteredIndices = arr;
       this._clearBtn.style.display = '';
       this._filterStatus.textContent =
-        `${arr.length.toLocaleString()} malformed of ${this.rows.length.toLocaleString()} rows`;
+        `${arr.length.toLocaleString()} malformed of ${this._rowCount().toLocaleString()} rows`;
     } else {
       // Restore current filter-input state.
       this._applyFilter();
@@ -3100,14 +3179,14 @@ class GridViewer {
    *  timestamps with at least 2 distinct values, and rejects bare numeric
    *  IDs (integers without any date separators). */
   _columnLooksTemporal(colIdx) {
-    const n = this.rows.length;
+    const n = this._rowCount();
     if (!n) return false;
     const SAMPLE = Math.min(n, 40);
     const step = Math.max(1, Math.floor(n / SAMPLE));
     let nonEmpty = 0, parsed = 0, idLike = 0;
     const seen = new Set();
     for (let i = 0; i < n && seen.size < 20; i += step) {
-      const r = this.rows[i];
+      const r = this._rowAt(i);
       if (!r) continue;
       const cell = r[colIdx];
       if (cell == null || cell === '') continue;
@@ -3144,13 +3223,13 @@ class GridViewer {
     }
     this._timeColumn = col;
 
-    const n = this.rows.length;
+    const n = this._rowCount();
     if (!n) { this._hideTimeline(); return; }
 
     const ms = new Array(n);
     let min = Infinity, max = -Infinity, parsed = 0;
     for (let i = 0; i < n; i++) {
-      const r = this.rows[i];
+      const r = this._rowAt(i);
       const t = r ? this._parseTimeCell(r[col], i) : NaN;
       ms[i] = t;
       if (Number.isFinite(t)) {
@@ -3263,7 +3342,7 @@ class GridViewer {
       if (b >= B) b = B - 1;
       if (b < 0) b = 0;
       if (doStack) {
-        const row = this.rows[dataIdx];
+        const row = this._rowAt(dataIdx);
         const rawVal = row ? row[stackCol] : '';
         const k = this._stackKeyForValue(rawVal);
         stack[b][k]++;
@@ -3297,7 +3376,7 @@ class GridViewer {
   _makeBucketRowIterator(filteredIndices, tw) {
     if (!filteredIndices) {
       let i = 0;
-      const n = this.rows.length;
+      const n = this._rowCount();
       return () => (i < n ? i++ : -1);
     }
     if (!tw) {
@@ -3315,7 +3394,7 @@ class GridViewer {
     const set = new Set(filteredIndices);
     const ms = this._timeMs;
     let i = 0;
-    const n = this.rows.length;
+    const n = this._rowCount();
     return () => {
       while (i < n) {
         const d = i++;
@@ -3356,7 +3435,7 @@ class GridViewer {
     for (let v = 0; v < n; v++) {
       const d = this._dataIdxOf(v);
       if (d == null) continue;
-      const row = this.rows[d];
+      const row = this._rowAt(d);
       if (!row) continue;
       const val = row[colIdx];
       if (val == null || val === '') continue;
@@ -3385,7 +3464,7 @@ class GridViewer {
     const iter = this._makeBucketRowIterator(filtered, tw);
     let d;
     while ((d = iter()) !== -1) {
-      const row = this.rows[d];
+      const row = this._rowAt(d);
       if (!row) continue;
       let v = row[col];
       if (v == null) v = '';

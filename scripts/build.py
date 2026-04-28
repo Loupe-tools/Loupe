@@ -830,6 +830,14 @@ APP_JS_FILES = [
     'src/app/timeline/timeline-helpers.js',
     'src/app/timeline/timeline-query.js',
     'src/app/timeline/timeline-query-editor.js',
+    # timeline-row-view.js — RowStore-shaped adapter wrapping
+    # `{ baseStore, extractedCols, baseLen, idx }` so GridViewer can
+    # consume Timeline rows without an intermediate `string[][]`
+    # materialisation. Loads before timeline-view.js (which builds an
+    # instance per render) and after row-store.js (already in
+    # APP_JS_FILES; provides the `RowStore` class type the adapter
+    # delegates to).
+    'src/app/timeline/timeline-row-view.js',
     # timeline-wheel.js — outer-host scroll-continuation handler. Loads
     # before timeline-view.js so the installer (`window.installTimeline-
     # WheelContinuation`) is in scope when `_buildDOM` mounts `.tl-host`.

@@ -353,11 +353,12 @@ class TimelineView {
   constructor(opts) {
     this.file = opts.file;
     this._baseColumns = opts.columns || [];
-    // Phase 3 row container — TimelineView reads cells exclusively via
-    // `this.store.getCell(rowIdx, colIdx)` (see `src/row-store.js`). The
-    // legacy `string[][]` layout is gone from this class entirely; it
-    // lives on briefly inside the `_buildRowConcat` cache that feeds
-    // GridViewer (Phase 4 will eliminate that cache).
+    // Phase 3+4 row container — TimelineView reads cells exclusively
+    // via `this.store.getCell(rowIdx, colIdx)` (see `src/row-store.js`).
+    // The legacy `string[][]` layout is gone from this class entirely;
+    // GridViewer reads through a per-render `TimelineRowView` adapter
+    // (see `src/app/timeline/timeline-row-view.js`) so no full row
+    // matrix is ever materialised.
     //
     //   - `opts.store`  : already-built RowStore (worker / router path).
     //   - `opts.rows`   : legacy `string[][]` from the sync factory paths
@@ -484,12 +485,14 @@ class TimelineView {
     this._colStats = null;
     this._colStatsGen = 0;   // generation counter for async cancellation
 
-    // Grid sort + rowsConcat caches — invalidated by _invalidateGridCache()
-    // whenever _timeMs content changes. Avoids the O(n log n) re-sort and
-    // O(n) rowsConcat rebuild on filter-clear for 1M-row datasets.
+    // Grid sort cache — invalidated by _invalidateGridCache() whenever
+    // _timeMs content changes. Avoids the O(n log n) re-sort on
+    // filter-clear for 1M-row datasets. Phase 4 dropped the matching
+    // `_cachedRowsConcat` materialisation cache: GridViewer now reads
+    // cells through a `TimelineRowView` adapter on the underlying
+    // RowStore, so re-renders cost no allocations beyond the small
+    // adapter object itself.
     this._sortedFullIdx = null;
-    this._cachedRowsConcat = null;
-    this._cachedRowsConcatExtLen = -1;
 
     // Grid
     this._grid = null;
@@ -620,7 +623,6 @@ class TimelineView {
     this._extractedCols = null;
     this._colStats = null;
     this._sortedFullIdx = null;
-    this._cachedRowsConcat = null;
     this._filteredIdx = null;
     this._susBitmap = null;
     this._detectionBitmap = null;
@@ -2929,10 +2931,12 @@ class TimelineView {
     for (let v = lo; v <= hi; v++) {
       const di = viewer._dataIdxOf ? viewer._dataIdxOf(v) : null;
       if (di == null) continue;
-      // `di` here is an index into the grid's `rowsConcat` — which is the
-      // same as the original dataIdx because we pass rows in the exact
-      // order of `this._filteredIdx` / `this._susFilteredIdx` (see
-      // `_renderGridInto`). Map grid-virtual → original data row.
+      // `di` here is the grid's `dataIdx` — i.e. the index passed to
+      // `TimelineRowView.getCell(dataIdx, …)`. Because we feed the
+      // adapter `idx === this._filteredIdx` (or `_susFilteredIdx` for
+      // the suspicious sub-grid), `dataIdx` is _not_ the original row
+      // — it's the position inside that filtered/sorted index. Map it
+      // back via the same array to recover the original data row.
       const role = viewer._tlRole;
       const srcArr = (role === 'main') ? this._filteredIdx : this._susFilteredIdx;
       const orig = srcArr ? srcArr[di] : di;
@@ -3427,29 +3431,30 @@ class TimelineView {
     this._renderGridInto(this._els.gridWrap, this._filteredIdx || new Uint32Array(0), 'main');
   }
 
-  /** Invalidate the cached sorted-index and rowsConcat arrays. Called
-   *  whenever `_timeMs` content changes (via `_parseAllTimestamps`) so
-   *  the next `_renderGridInto` re-sorts from scratch. */
+  /** Invalidate the cached sorted-index. Called whenever `_timeMs`
+   *  content changes (via `_parseAllTimestamps`) so the next
+   *  `_renderGridInto` re-sorts from scratch. The Phase 4 RowView
+   *  adapter has no per-render cache of its own — re-renders allocate
+   *  only the small adapter object — so there's nothing else to clear. */
   _invalidateGridCache() {
     this._sortedFullIdx = null;
-    this._cachedRowsConcat = null;
-    this._cachedRowsConcatExtLen = -1;
   }
 
   _renderGridInto(wrap, idx, role) {
     // ── Pre-sort idx by timestamp ──────────────────────────────────────
     // Sort the filtered index array by the pre-parsed _timeMs values so
-    // rowsConcat is handed to GridViewer in chronological order. This
-    // avoids GridViewer's _sortByColumn temporal path which would re-parse
+    // rows are handed to GridViewer in chronological order. This avoids
+    // GridViewer's _sortByColumn temporal path which would re-parse
     // every cell via Date.parse() inside the sort comparator — O(n log n)
     // Date.parse calls that cost 2-4s for 1M rows. The numerical sort
     // below is O(n log n) float comparisons on an already-parsed
     // Float64Array, which completes in ~200ms for 1M rows.
     //
     // When the index covers the full dataset (no query active) and the
-    // time column hasn't changed, reuse the previously sorted index and
-    // the pre-built rowsConcat array. This turns filter-clear from
-    // O(n log n) re-sort + O(n) array build into O(1) cache hits.
+    // time column hasn't changed, reuse the previously sorted index.
+    // This turns filter-clear from an O(n log n) re-sort into an O(1)
+    // cache hit; the per-row materialisation cost vanished entirely
+    // with the Phase 4 `TimelineRowView` adapter.
     const timeCol = this._timeCol;
     const timeMs = this._timeMs;
     const isFullDataset = idx.length === this.store.rowCount;
@@ -3479,40 +3484,17 @@ class TimelineView {
       if (role === 'main') this._filteredIdx = idx;
     }
 
-    // When no extracted columns exist, reference the base row arrays
-    // directly instead of calling _buildRowConcat per row. For 500K rows
-    // this eliminates 500K function calls + the per-row length check.
-    //
-    // For the full-dataset case, cache the result so filter-clears skip
-    // the O(n) rebuild. Invalidated when extracted columns change (the
-    // grid is destroyed and recreated in that case anyway) or when
-    // _invalidateGridCache() is called.
-    const hasExtracted = this._extractedCols.length > 0;
-    const extLen = this._extractedCols.length;
-    const cacheHit = isFullDataset && this._cachedRowsConcat &&
-      this._cachedRowsConcat.length === idx.length &&
-      this._cachedRowsConcatExtLen === extLen;
-    let rowsConcat;
-    if (cacheHit) {
-      rowsConcat = this._cachedRowsConcat;
-    } else {
-      rowsConcat = new Array(idx.length);
-      if (hasExtracted) {
-        for (let i = 0; i < idx.length; i++) rowsConcat[i] = this._buildRowConcat(idx[i]);
-      } else {
-        // Materialise the filtered subset out of the RowStore as a fresh
-        // `string[][]` for GridViewer (which still consumes the legacy
-        // shape — Phase 4 will teach it to read store cells directly).
-        // `getRow` always returns a fresh array padded to column-width
-        // with `''`, so the `|| []` defensive default is unnecessary.
-        const store = this.store;
-        for (let i = 0; i < idx.length; i++) rowsConcat[i] = store.getRow(idx[i]);
-      }
-      if (isFullDataset) {
-        this._cachedRowsConcat = rowsConcat;
-        this._cachedRowsConcatExtLen = extLen;
-      }
-    }
+    // Build a RowStore-shaped adapter that GridViewer can read cells
+    // through directly — no `string[][]` materialisation, no per-render
+    // ~3× input allocation. The adapter is cheap to recreate (a few
+    // field assignments) so we don't bother caching it across re-renders;
+    // invalidation is implicit when the caller passes a different `idx`.
+    const rowView = new TimelineRowView({
+      baseStore: this.store,
+      extractedCols: this._extractedCols,
+      baseLen: this._baseColumns.length,
+      idx,
+    });
     const sus = this._susBitmap;
     const origIdx = idx;
 
@@ -3592,16 +3574,14 @@ class TimelineView {
       : -1;
     const evtxLookupRec = (dataIdx) => {
       if (evtxEidCol < 0) return null;
-      // dataIdx here is an index into `rowsConcat`, which is the
-      // GridViewer's source. `origIdx` maps back to the un-sorted
-      // original row offset where applicable, but `rowsConcat` rows
-      // are self-contained — the cell at colIdx is already the value
-      // the user sees. Read directly.
-      const row = rowsConcat[dataIdx];
-      if (!row) return null;
-      const eid = row[evtxEidCol];
+      // `dataIdx` is the grid's visIdx — the position within
+      // `rowView` (which already has the chrono sort + chip filter
+      // applied). Read the EID and Channel cells out of the rowView
+      // directly; it dispatches to `baseStore.getCell` internally so
+      // no allocation happens per pill rebuild.
+      const eid = rowView.getCell(dataIdx, evtxEidCol);
       if (!eid) return null;
-      const ch = evtxChannelCol >= 0 ? row[evtxChannelCol] : '';
+      const ch = evtxChannelCol >= 0 ? rowView.getCell(dataIdx, evtxChannelCol) : '';
       try { return Reg.lookup(eid, ch); } catch (_) { return null; }
     };
     const cellTitle = (evtxEidCol >= 0) ? (dataIdx, colIdx /*, raw */) => {
@@ -3618,11 +3598,9 @@ class TimelineView {
       // helper so the drawer / Top-values card / Detections table all
       // render identical chips. Drawer additionally promotes the
       // tooltip onto `valEl` itself.
-      const row = rowsConcat[dataIdx];
-      if (!row) return;
-      const eid = row[evtxEidCol];
+      const eid = rowView.getCell(dataIdx, evtxEidCol);
       if (!eid) return;
-      const ch = evtxChannelCol >= 0 ? row[evtxChannelCol] : '';
+      const ch = evtxChannelCol >= 0 ? rowView.getCell(dataIdx, evtxChannelCol) : '';
       try {
         const rec = Reg.lookup(eid, ch);
         if (rec) valEl.title = Reg.formatTooltip(rec);
@@ -3640,11 +3618,9 @@ class TimelineView {
     // the cell on a single 28 px row regardless of summary length.
     const cellAugment = (evtxEidCol >= 0) ? (dataIdx, colIdx, _raw, td) => {
       if (colIdx !== evtxEidCol) return;
-      const row = rowsConcat[dataIdx];
-      if (!row) return;
-      const eid = row[evtxEidCol];
-      if (eid === '' || eid == null) return;
-      const ch = evtxChannelCol >= 0 ? row[evtxChannelCol] : '';
+      const eid = rowView.getCell(dataIdx, evtxEidCol);
+      if (eid === '') return;
+      const ch = evtxChannelCol >= 0 ? rowView.getCell(dataIdx, evtxChannelCol) : '';
       const frag = this._evtxEidPillsFor(eid, ch);
       // Wrap the bare EID number in a fixed-width, tabular-numeric span
       // so the trailing `.tl-evtx-eid-pill` summary chip starts at the
@@ -3669,7 +3645,7 @@ class TimelineView {
     if (!existing) {
       const viewer = new GridViewer({
         columns: this.columns,
-        rows: rowsConcat,
+        store: rowView,
         className: 'tl-grid-inner csv-view',
         hideFilterBar: true,
         infoText: '',
@@ -3826,15 +3802,16 @@ class TimelineView {
         if (!rowEl) return;
         const virtualIdx = parseInt(rowEl.dataset.idx || '-1', 10);
         if (!Number.isFinite(virtualIdx) || virtualIdx < 0) return;
-        // grid-viewer uses data-idx = dataIdx within the viewer's rows array;
-        // that's the position in `rowsConcat`, NOT the original index.
+        // grid-viewer uses data-idx = dataIdx within the viewer's rows view;
+        // that's the position inside the `TimelineRowView` adapter (i.e.
+        // an index into the filtered/sorted `idx`), NOT the original row.
         // IMPORTANT: resolve the virtual → original-row mapping against the
         // LIVE filtered-index on `this`, not the `origIdx` captured in this
         // listener's closure at first-render time. The contextmenu listener
         // is wired once, but `_renderGridInto` re-uses the same GridViewer
-        // and swaps rows via `existing.setRows(rowsConcat)` whenever a
-        // filter is applied — `origIdx` becomes stale the moment the query
-        // bar narrows the grid, which previously made the right-click
+        // and swaps the row source via `existing.setRows(rowView, …)`
+        // whenever a filter is applied — `origIdx` becomes stale the moment
+        // the query bar narrows the grid, which previously made the right-click
         // menu's `Include / Exclude "<value>"` labels (and the resulting
         // chips) point at the wrong cell. Mirrors the same pattern the
         // left-click handler above already uses.
@@ -3875,7 +3852,7 @@ class TimelineView {
         // which would re-parse every cell via Date.parse(). This saves
         // 2-4s for 1M rows.
         if (this._timeCol != null) {
-          const n = rowsConcat.length;
+          const n = rowView.rowCount;
           const idxs = new Array(n);
           for (let i = 0; i < n; i++) idxs[i] = i;
           viewer._sortSpec = { colIdx: this._timeCol, dir: 'asc' };
@@ -3890,31 +3867,17 @@ class TimelineView {
       existing._rowClassFn = rowClass;
       existing._cellClassFn = cellClass;
       // Re-bind the EVTX EID `cellAugment` closure too — it captures the
-      // current `rowsConcat` reference, so without re-assignment the hook
-      // would keep appending pills based on a stale row array after a
-      // filter / sort re-render.
+      // current `rowView` reference, so without re-assignment the hook
+      // would keep appending pills based on a stale view after a filter
+      // / sort re-render.
       existing._cellAugmentFn = cellAugment;
-      // Rows are pre-sorted by _timeMs — skip the expensive re-sort in
-      // setRows that would call _sortByColumn → Date.parse per comparison.
-      existing.setRows(rowsConcat, null, null, { preSorted: true });
+      // Hand the new rowView to GridViewer's setRows. `setRows` detects
+      // the RowStore-shape and switches the grid into store mode; the
+      // identity sort order is stamped via `preSorted` so the chrono
+      // permutation already encoded in `idx` is preserved without an
+      // expensive Date.parse-per-comparison re-sort.
+      existing.setRows(rowView, null, null, { preSorted: true });
     }
-  }
-
-  // Build a concatenated row (base + extracted cell values) for GridViewer.
-  // Pulls base cells out of the RowStore (`getRow` returns a fresh
-  // `''`-padded array of `_baseColumns.length`) then appends each
-  // extracted column's per-row value. Allocations are unavoidable here:
-  // GridViewer eats `string[][]` until Phase 4 swaps it onto the store.
-  _buildRowConcat(dataIdx) {
-    const baseLen = this._baseColumns.length;
-    const extLen = this._extractedCols.length;
-    const out = this.store.getRow(dataIdx);
-    if (!extLen) return out;
-    out.length = baseLen + extLen;
-    for (let e = 0; e < extLen; e++) {
-      out[baseLen + e] = this._extractedCols[e].values[dataIdx] || '';
-    }
-    return out;
   }
 
   // ── Column top-values cards ──────────────────────────────────────────────

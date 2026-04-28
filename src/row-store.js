@@ -69,10 +69,11 @@
 //   optimisation; not implemented in this commit.
 // • `getRow(r)` allocates a new `string[]` of length `colCount` and
 //   one string per cell. Hot loops (sort comparators, filter predicates,
-//   row-concat) MUST prefer `getCell` to avoid the row allocation —
-//   the grep-able rule for reviewers is "no `store.getRow(...)` inside
-//   a per-row inner loop". `_buildRowConcat` and the export paths are
-//   the only legitimate `getRow` callers.
+//   per-cell augmenters) MUST prefer `getCell` to avoid the row
+//   allocation — the grep-able rule for reviewers is "no
+//   `store.getRow(...)` inside a per-row inner loop". The legitimate
+//   `getRow` callers are export paths (clipboard / CSV / JSON / share)
+//   and the `TimelineRowView` adapter's per-visible-row resolution.
 // • Chunked layout is a deliberate compromise: a single flat buffer
 //   would simplify the binary search away but force a 1+ GB contiguous
 //   `Uint8Array` allocation on completion — Chromium's allocator
@@ -241,8 +242,9 @@ class RowStore {
   }
 
   // Materialise a row as a freshly-allocated `string[]`. Use sparingly —
-  // see "Performance notes" above. The CSV / TSV exporter and
-  // `_buildRowConcat` are the legitimate callers.
+  // see "Performance notes" above. The CSV / TSV exporter and the
+  // per-visible-row resolution inside `TimelineRowView` are the
+  // legitimate callers.
   getRow(rowIdx) {
     const out = new Array(this.colCount);
     if (rowIdx < 0 || rowIdx >= this.rowCount) {
