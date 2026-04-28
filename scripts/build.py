@@ -436,6 +436,14 @@ _DETECTOR_FILES = [
     # `cmd-obfuscation` candidates that flow through
     # `_processCommandObfuscation`). See PLAN.md → D3.
     'src/decoders/ps-mini-evaluator.js',
+    # js-assembly.js — JS string-array obfuscation resolver (obfuscator.io
+    # / javascript-obfuscator npm package shape). Same `cmd-obfuscation`
+    # candidate emission contract as ps-mini-evaluator.js, so the
+    # `_processCommandObfuscation` pipeline (severity, IOC extraction,
+    # deobfuscated-command sidebar shape) is reused unchanged. Must load
+    # AFTER cmd-obfuscation.js (it consumes `_processCommandObfuscation`).
+    # See PLAN.md → D6.
+    'src/decoders/js-assembly.js',
     # interleaved-separator.js — finds + decodes interleaved-separator
     # obfuscation (`$\x00W\x00C\x00=\x00…` → `$WC=…`). Two-pass finder:
     # (1) single-character separator at strides 2/3/4 (e.g. `a.b.c.d`),

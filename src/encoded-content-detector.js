@@ -251,6 +251,12 @@ class EncodedContentDetector {
     const commentObfCandidates   = _runFinder(this._findCommentObfuscationCandidates);
     const cmdObfCandidates       = _runFinder(this._findCommandObfuscationCandidates);
     const psVarResCandidates     = _runFinder(this._findPsVariableResolutionCandidates);
+    // JS string-array obfuscation resolver (obfuscator.io shape).
+    // Defensively guarded so a missing prototype method doesn't blow up
+    // the bundle if the mixin order regresses.
+    const jsStringArrayCandidates = (typeof this._findJsStringArrayCandidates === 'function')
+      ? _runFinder(this._findJsStringArrayCandidates)
+      : [];
     // Interleaved-separator finder (`$\x00W\x00C\x00=…`, `a.b.c.d…`,
     // `&#0;A&#0;B…`). Defensively guarded so a missing prototype method
     // doesn't blow up the bundle if the mixin order regresses.
@@ -366,6 +372,10 @@ class EncodedContentDetector {
       if (result) findings.push(result);
     }
     for (const cand of psVarResCandidates) {
+      const result = await this._processCommandObfuscation(cand);
+      if (result) findings.push(result);
+    }
+    for (const cand of jsStringArrayCandidates) {
       const result = await this._processCommandObfuscation(cand);
       if (result) findings.push(result);
     }

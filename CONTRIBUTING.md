@@ -469,6 +469,52 @@ the existing `Object.assign(...)` block at the bottom, never re-declare
 the class. Helpers must not depend on each other's load order — the
 contract is "class root first, helpers afterwards", nothing finer.
 
+### JS string-array obfuscation resolver
+
+`src/decoders/js-assembly.js` is a **pure tokeniser** that defangs the
+canonical obfuscator.io / `javascript-obfuscator` shape: a string-array
+literal at the top of the script, an indexer function returning
+`arr[i ± N]`, and one or more sink calls (`eval`, `Function`,
+`setTimeout`, `setInterval`, `atob`) whose arguments are concatenations
+of `INDEXER(<numeric>)` calls and string literals. The resolver
+recovers the sink-call payload string and emits it as a
+`cmd-obfuscation` candidate, so severity scoring + IOC extraction +
+sidebar wiring all flow through the existing
+`_processCommandObfuscation` pipeline (`src/decoders/cmd-obfuscation.js`).
+
+Loads **after** `cmd-obfuscation.js` in `_DETECTOR_FILES` (it consumes
+`_processCommandObfuscation`). The `_findJsStringArrayCandidates` entry
+is invoked from the secondary-finder cascade in
+`encoded-content-detector.js`, defensively guarded so a missing
+prototype method (mixin order regression) doesn't blow up the bundle.
+
+**Trigger gate.** Two paths qualify a span as obfuscation-shaped:
+≥ `MIN_ENTRIES = 10` distinct array entries, OR
+≥ `MIN_BASE64_LOOKING = 5` base64-shaped entries (length ≥ 8, alphabet
+conforms). The gate also requires at least one indexer function and
+one sink call. Below those thresholds the finder returns `[]` cheaply.
+
+**All-or-nothing concat.** Inside a sink, every operand must resolve —
+either as a JS string literal or as a single `INDEXER(<numeric>)` call
+whose computed `i - offset` is in-bounds. One unresolvable operand
+drops the whole sink so the analyst doesn't chase a half-resolved
+payload. `setTimeout` / `setInterval` split on the top-level `,` and
+resolve only the first argument (the delay is ignored).
+
+**Out of scope (deliberate).** Multiple arrays, runtime array shuffles
+(`arr.push(arr.shift())` cycles), `Function.prototype.constructor`
+access, and bracket-property access on indexer-call returns. These
+shapes need real control-flow tracking, not a one-pass tokeniser.
+
+**Tunables** (file-local):
+
+| Constant | Default | Purpose |
+|---|---|---|
+| `MAX_SOURCE_BYTES` | `256 KiB` | Above this, almost certainly bundled libs (jQuery, lodash, webpack) — false-positive cost dwarfs analytic value. |
+| `MAX_ARRAY_ENTRIES` | `4096` | Hard cap on the recovered string-array. Real obfuscator output is typically 50–500 entries. |
+| `MIN_ENTRIES` / `MIN_BASE64_LOOKING` | `10` / `5` | Trigger-gate thresholds (see above). |
+| `MAX_RESOLVED_LEN` | `16 KiB` | Per-sink resolved-string cap; defends against pathological concat chains. |
+
 ### Decoded-payload YARA gate
 
 After `WorkerManager.runEncoded` returns the findings tree, the host

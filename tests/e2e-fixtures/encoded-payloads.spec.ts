@@ -43,6 +43,22 @@ test.describe('encoded-payloads renderer (fixture-driven)', () => {
     expect(findings.risk).not.toBe('low');
   });
 
+  test('js-string-array-obfuscation surfaces a URL after JS resolver runs', async () => {
+    // Fixture: obfuscator.io-shaped JS — string-array literal +
+    // indexer function + two sink calls (eval, setTimeout). The
+    // `js-assembly` decoder resolves both sinks and feeds them to
+    // `_processCommandObfuscation`, which extracts the URL IOC and
+    // escalates risk on PowerShell-cradle keywords (`IEX`,
+    // `DownloadString`). A regression where the resolver doesn't fire
+    // would zero out URL findings and drop risk back to baseline.
+    const findings = await loadFixture(
+      ctx.page, 'examples/encoded-payloads/js-string-array-obfuscation.js');
+    expect(findings.iocTypes).toContain('URL');
+    // PowerShell + DownloadString is a textbook download cradle; risk
+    // should escalate beyond `low`.
+    expect(findings.risk).not.toBe('low');
+  });
+
   test('defanged-iocs.txt refangs hxxp:// → http://', async () => {
     // Direct fixture for the refanging path tested in unit-land. End-to-end
     // version verifies the renderer-level wiring (extractor result →

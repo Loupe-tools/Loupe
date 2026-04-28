@@ -42,6 +42,7 @@
 {"formatTag":"plaintext","iocCountAtLeast":1,"iocTypeMustInclude":["URL"],"path":"examples/encoded-payloads/encoded-hex-base64-powershell.txt","riskFloor":"high","timeline":false,"yaraRulesMustInclude":["Stacked_Encoding_Indicators"]}
 {"formatTag":"plaintext","iocCountAtLeast":0,"iocTypeMustInclude":["URL"],"path":"examples/encoded-payloads/encoded-zlib-base64.txt","riskFloor":"medium","timeline":false,"yaraRulesMustInclude":[]}
 {"formatTag":"plaintext","iocCountAtLeast":9,"iocTypeMustInclude":["Email","URL"],"path":"examples/encoded-payloads/example-safelinks.txt","riskFloor":"any","timeline":false,"yaraRulesMustInclude":[]}
+{"formatTag":null,"iocCountAtLeast":1,"iocTypeMustInclude":["URL"],"path":"examples/encoded-payloads/js-string-array-obfuscation.js","riskFloor":"medium","timeline":false,"yaraRulesMustInclude":[]}
 {"formatTag":"plaintext","iocCountAtLeast":13,"iocTypeMustInclude":[],"path":"examples/encoded-payloads/mixed-obfuscations.txt","riskFloor":"critical","timeline":false,"yaraRulesMustInclude":["Encoded_Base64_Gzip","General_Hex_Encoded_Shellcode","Hex_Shellcode_Pattern"]}
 {"formatTag":"plaintext","iocCountAtLeast":1,"iocTypeMustInclude":["File Path","URL"],"path":"examples/encoded-payloads/nested-b64-hex-url.txt","riskFloor":"high","timeline":false,"yaraRulesMustInclude":["Obfuscated_Download_Cradle"]}
 {"formatTag":"vbs","iocCountAtLeast":0,"iocTypeMustInclude":["URL"],"path":"examples/encoded-payloads/nested-b64-zlib-url.vbs","riskFloor":"medium","timeline":false,"yaraRulesMustInclude":[]}
