@@ -102,14 +102,21 @@ test('timeline-view-persist.js defines every _load/_save helper exactly once', (
 
 // ── Storage-key inventory ──────────────────────────────────────────────────
 
-test('TIMELINE_KEYS inventory in timeline-view-persist.js is the canonical 16-key set', () => {
-  // The 16 keys these helpers are responsible for. Any change here
+test('TIMELINE_KEYS inventory in timeline-view-persist.js is the canonical 17-key set', () => {
+  // The 17 keys these helpers are responsible for. Any change here
   // would be a localStorage format break — bump CONTRIBUTING.md's
   // Persistence Keys table in the same commit if you have a real
   // reason to do so.
+  //
+  // GEOIP_DONE was split out from AUTOEXTRACT_DONE: the two were
+  // briefly conflated, which silently disabled JSON / URL / host
+  // extraction on files with no IPv4-shaped columns (the GeoIP no-op
+  // path stamped the shared marker). See timeline-view-geoip-marker-
+  // isolation.test.js for the ownership invariants.
   const EXPECTED_KEYS = [
     'AUTOEXTRACT_DONE', 'BUCKET', 'CARD_ORDER', 'CARD_WIDTHS',
     'CHART_H', 'DETECTIONS_GROUP', 'ENT_ORDER', 'ENT_PINNED',
+    'GEOIP_DONE',
     'GRID_COL_ORDER', 'GRID_H', 'PINNED_COLS', 'PIVOT', 'QUERY',
     'REGEX_EXTRACTS', 'SECTIONS', 'SUS_MARKS',
   ];

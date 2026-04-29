@@ -168,6 +168,22 @@ Object.assign(TimelineView, {
     all[fileKey] = true;
     safeStorage.setJSON(TIMELINE_KEYS.AUTOEXTRACT_DONE, all);
   },
+  // Per-file GeoIP done-marker — distinct from AUTOEXTRACT_DONE so that
+  // a file with no IPv4-shaped columns (which still stamps this marker
+  // on the no-op path to avoid re-running the IP-detect scan on every
+  // reopen) doesn't inadvertently disable JSON / URL / host extraction
+  // performed by `_autoExtractBestEffort`. Read by `_runGeoipEnrichment`
+  // for its short-circuit check; written on both the no-op and
+  // post-enrichment paths in `timeline-view-geoip.js`.
+  _loadGeoipDoneFor(fileKey) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.GEOIP_DONE, null);
+    return !!(all && all[fileKey]);
+  },
+  _saveGeoipDoneFor(fileKey) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.GEOIP_DONE, {}) || {};
+    all[fileKey] = true;
+    safeStorage.setJSON(TIMELINE_KEYS.GEOIP_DONE, all);
+  },
   _loadPivotSpec() {
     const obj = safeStorage.getJSON(TIMELINE_KEYS.PIVOT, null);
     return obj && typeof obj === 'object' ? obj : null;

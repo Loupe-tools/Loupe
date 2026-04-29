@@ -170,18 +170,32 @@ test('scripts/build.py prepends __GEOIP_BUNDLE_B64 const to Block 1', () => {
 // ── Idempotence — done-marker wiring ──────────────────────────────────────
 
 test('_runGeoipEnrichment writes the per-file done-marker via the persist mixin', () => {
-  // Same marker auto-extract uses (`_saveAutoExtractDoneFor`). A
-  // refactor that introduces a separate marker would resurrect deleted
-  // columns on reopen and break the "deleted-stays-deleted" rule.
+  // GeoIP-specific marker (`_saveGeoipDoneFor` / `_loadGeoipDoneFor`).
+  // Distinct from auto-extract's marker — they were briefly conflated,
+  // which silently disabled JSON / URL / host extraction on files with
+  // no IPv4-shaped columns (because GeoIP's no-op path stamped the
+  // shared marker). See timeline-view-geoip-marker-isolation.test.js
+  // for the full ownership invariants.
   assert.match(
     MIXIN,
-    /TimelineView\._saveAutoExtractDoneFor\(/,
-    '_runGeoipEnrichment must persist the done-marker via the auto-extract persist key',
+    /TimelineView\._saveGeoipDoneFor\(/,
+    '_runGeoipEnrichment must persist the done-marker via the GeoIP-specific persist key',
   );
   assert.match(
     MIXIN,
-    /TimelineView\._loadAutoExtractDoneFor\(/,
+    /TimelineView\._loadGeoipDoneFor\(/,
     '_runGeoipEnrichment must read the done-marker on every call (else deletes resurrect)',
+  );
+  // And it must NOT touch the auto-extract marker — that was the bug.
+  assert.doesNotMatch(
+    MIXIN,
+    /TimelineView\._saveAutoExtractDoneFor\(/,
+    'GeoIP must not write the auto-extract marker (that was the bug)',
+  );
+  assert.doesNotMatch(
+    MIXIN,
+    /TimelineView\._loadAutoExtractDoneFor\(/,
+    'GeoIP must not read the auto-extract marker',
   );
 });
 
@@ -194,8 +208,8 @@ test('_runGeoipEnrichment skips writing the marker on forced refresh', () => {
   // negative force/forceKind/forceCol predicate.
   assert.match(
     MIXIN,
-    /if\s*\(\s*!\s*force\s*&&\s*!\s*forceKind\s*&&\s*forceCol\s*<\s*0\s*\)\s*\{[^}]*_saveAutoExtractDoneFor/,
-    '_runGeoipEnrichment must guard _saveAutoExtractDoneFor behind `!force && !forceKind && forceCol < 0`',
+    /if\s*\(\s*!\s*force\s*&&\s*!\s*forceKind\s*&&\s*forceCol\s*<\s*0\s*\)\s*\{[^}]*_saveGeoipDoneFor/,
+    '_runGeoipEnrichment must guard _saveGeoipDoneFor behind `!force && !forceKind && forceCol < 0`',
   );
 });
 

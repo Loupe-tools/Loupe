@@ -46,10 +46,13 @@
 // Right-click → "Enrich IP" overrides the skip for both kinds.
 //
 // ── Idempotence ─────────────────────────────────────────────────────────────
-// Same `loupe_timeline_autoextract_done_<fileKey>` per-file marker the
-// auto-extract pass uses, scoped through TimelineView._loadAutoExtractDoneFor
-// / _saveAutoExtractDoneFor. The marker is shared by both kinds — if either
-// has been emitted (or skipped) on this file, we don't auto-run again.
+// Per-file `loupe_timeline_geoip_done_<fileKey>` marker, scoped through
+// `TimelineView._loadGeoipDoneFor` / `_saveGeoipDoneFor`. Distinct from the
+// `AUTOEXTRACT_DONE` marker the JSON / URL / host extractor uses — the two
+// were briefly conflated, which caused files with no IPv4-shaped columns
+// (where GeoIP stamps the marker on its no-op path) to silently lose
+// auto-extract entirely. Shared by both geo + asn kinds: if either has
+// been emitted (or skipped) on this file, we don't auto-run GeoIP again.
 // Right-click forces both providers regardless of marker.
 //
 // Dedup is per-kind: `_geoipDuplicateFor(sourceCol, kind)` walks
@@ -192,10 +195,12 @@
                     : ['geoip', 'geoip-asn'];
         this._dropAllGeoipCols(kinds);
       } else {
-        // Per-file done-marker. Same key the auto-extract pass uses, so
-        // an analyst who deleted an auto-extracted geo / asn col and
-        // reopens the file does NOT see it return.
-        if (TimelineView._loadAutoExtractDoneFor(this._fileKey)) {
+        // Per-file GeoIP done-marker. Independent from the auto-extract
+        // marker (see file header) so a file with no IPv4-shaped columns
+        // doesn't disable auto-extract just because GeoIP had nothing to
+        // do. An analyst who deleted an auto-extracted geo / asn col and
+        // reopens the file still does NOT see it return.
+        if (TimelineView._loadGeoipDoneFor(this._fileKey)) {
           // Marker set — short-circuit only if at least one enrichment
           // column from any kind already exists.
           if (this._extractedCols.some(e => e && (e.kind === 'geoip' || e.kind === 'geoip-asn'))) return;
@@ -207,11 +212,13 @@
         : this._detectIpColumns();
 
       if (!targetCols.length) {
-        // Nothing to do; only stamp the marker on the natural-detect
-        // path so a forced override on a file with no auto-detected IP
-        // cols doesn't poison future opens.
+        // Nothing to do; only stamp the GeoIP-specific marker on the
+        // natural-detect path so a forced override on a file with no
+        // auto-detected IP cols doesn't poison future opens. This
+        // marker is GeoIP-only — it does NOT affect the auto-extract
+        // pass that handles JSON / URL / host extraction.
         if (!force && !forceKind && forceCol < 0) {
-          TimelineView._saveAutoExtractDoneFor(this._fileKey);
+          TimelineView._saveGeoipDoneFor(this._fileKey);
         }
         return;
       }
@@ -250,9 +257,10 @@
         }
       }
 
-      // Mark the file as enriched so a deletion is sticky.
+      // Mark the file as enriched so a deletion is sticky. GeoIP-only
+      // marker — does not affect auto-extract.
       if (!force && !forceKind && forceCol < 0) {
-        TimelineView._saveAutoExtractDoneFor(this._fileKey);
+        TimelineView._saveGeoipDoneFor(this._fileKey);
       }
     },
 

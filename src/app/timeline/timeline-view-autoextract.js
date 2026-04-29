@@ -190,7 +190,16 @@ Object.assign(TimelineView.prototype, {
 
         const p = ranked[idx++];
         const before = this._extractedCols.length;
-        try { this._applyAutoProposal(p); } catch (_) { /* skip on error, keep going */ }
+        try {
+          this._applyAutoProposal(p);
+        } catch (e) {
+          // Skip on error, keep going. Surface to console only when
+          // the analyst has set `app.debug = true` so a regression in
+          // the apply path is diagnosable without re-shipping.
+          if (this._app && this._app.debug && typeof console !== 'undefined') {
+            console.warn('[loupe] _applyAutoProposal threw:', e, 'proposal:', p);
+          }
+        }
         if (this._extractedCols.length > before) {
           added++;
           // Refresh per proposal — `_rebuildExtractedStateAndRender`
@@ -206,7 +215,13 @@ Object.assign(TimelineView.prototype, {
           // bounded to the cheap `_buildHeaderCells` +
           // `_applyColumnTemplate` + `_forceFullRender` pass inside
           // `_updateColumns` (header cells are O(cols), not O(rows)).
-          try { this._rebuildExtractedStateAndRender(); } catch (_) { /* noop */ }
+          try {
+            this._rebuildExtractedStateAndRender();
+          } catch (e) {
+            if (this._app && this._app.debug && typeof console !== 'undefined') {
+              console.warn('[loupe] _rebuildExtractedStateAndRender threw:', e);
+            }
+          }
         }
 
         // Yield between proposals — each `_applyAutoProposal` is itself
@@ -389,10 +404,13 @@ Object.assign(TimelineView.prototype, {
           } else if (emittedLeaves < JSON_LEAF_CAP) {
             // Generic JSON leaf — lets the user flatten arbitrary nested
             // keys (`Events[*].EventID`, `response.status`, …) into
-            // extracted columns via the Auto tab.
+            // extracted columns via the Auto tab. Clamp to 100 because
+            // `[*]` array recursion in `_jsonCollectLeafPaths` emits
+            // one entry per element, so a path that touches every row
+            // with multi-element arrays would otherwise exceed 100 %.
             proposals.push({
               kind: 'json-leaf', kindLabel: 'JSON leaf', sourceCol: c, path: rec.path,
-              matchPct: rec.total * 100 / samples.length,
+              matchPct: Math.min(100, rec.total * 100 / samples.length),
               proposedName: `${this._baseColumns[c] || 'col' + c}.${_tlJsonPathLabel(rec.path)}`,
               sample: rec.sample,
             });

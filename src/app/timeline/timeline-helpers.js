@@ -45,7 +45,19 @@ const TIMELINE_KEYS = Object.freeze({
   // re-add columns the analyst has since deleted. Replaces the old
   // `loupe_timeline_autoextract_nudged_hard` flag from the prompt-style
   // nudge UX. `_reset()` wipes this via the `loupe_timeline_*` prefix.
+  // OWNED EXCLUSIVELY by `_autoExtractBestEffort` — GeoIP enrichment has
+  // its own marker (`GEOIP_DONE`). Conflating the two caused files with
+  // no IP-shaped columns to silently lose auto-extract entirely (the
+  // GeoIP no-op path stamped this key, poisoning the auto-extract guard).
   AUTOEXTRACT_DONE: 'loupe_timeline_autoextract_done',
+  // Per-file marker — `{ [fileKey]: true }` — set the first time GeoIP
+  // enrichment runs against a given file, so deleted geo / asn columns
+  // stay deleted on reopen. Independent from `AUTOEXTRACT_DONE` so that
+  // a file with no IPv4-shaped columns (the GeoIP no-op path stamps this
+  // marker too, to avoid re-running the IP-detect scan on every reopen)
+  // doesn't inadvertently disable JSON / URL / host extraction.
+  // `_reset()` wipes this via the `loupe_timeline_*` prefix.
+  GEOIP_DONE: 'loupe_timeline_geoip_done',
   // Entities-section parity with Top values (per-file persistence). The
   // entity card head was promoted from a fixed type-label to a Top-values-
   // style head with pin / copy / sort-cycle / search affordances; these
