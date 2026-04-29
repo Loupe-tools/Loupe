@@ -222,9 +222,25 @@ Object.assign(TimelineView.prototype, {
 
       const applyStep = () => {
         this._autoExtractIdleHandle = null;
-        if (this._destroyed) return;
+        if (this._destroyed) {
+          // Defensive: if a destroy raced the idle tick the flag would
+          // otherwise stay true on this (now-orphaned) view. The flag
+          // is read by `_rebuildExtractedStateAndRender`; clearing here
+          // is belt-and-braces — `destroy()` clears it too.
+          this._autoExtractApplying = false;
+          return;
+        }
 
         if (idx >= ranked.length) {
+          // Apply pump finished. Drop the suppression flag so any
+          // `_rebuildExtractedStateAndRender` from here onwards (e.g.
+          // the GeoIP retry below, or a user clicking through the
+          // Extract Values dialog) goes back to scheduling `'columns'`
+          // per call. Then schedule the deferred Top Values sweep
+          // exactly once so the strip populates from the final column
+          // set instead of churning per-proposal mid-pump.
+          this._autoExtractApplying = false;
+          this._scheduleRender(['columns']);
           // Toast suppression: gated on the per-file `toast_shown`
           // marker captured at the top of `_autoExtractBestEffort`.
           // First open → toast fires + marker stamped. Reopens → no
@@ -308,6 +324,16 @@ Object.assign(TimelineView.prototype, {
         this._autoExtractIdleHandle = schedule(applyStep);
       };
 
+      // Suppress per-proposal `'columns'` render scheduling for the
+      // duration of the apply pump (read by
+      // `_rebuildExtractedStateAndRender`). The terminating branch of
+      // `applyStep` clears the flag and schedules `['columns']` exactly
+      // once, so the Top Values strip populates from the final column
+      // set rather than thrashing through ~N supersession-cancelled
+      // sweeps mid-pump. Set here, AFTER the early-exit
+      // `if (!eligible.length) return;` above, so a file with no
+      // eligible proposals doesn't leave the flag stuck `true`.
+      this._autoExtractApplying = true;
       this._autoExtractIdleHandle = schedule(applyStep);
     };
 

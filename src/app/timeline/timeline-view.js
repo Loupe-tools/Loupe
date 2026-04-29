@@ -278,6 +278,18 @@ class TimelineView {
     // pair the cancel API with whichever scheduler the runtime picked
     // (`requestIdleCallback` vs the `setTimeout` fallback for Safari).
     this._autoExtractIdleHandle = null;
+    // True for the duration of the auto-extract apply pump (between the
+    // first `applyStep` schedule and the terminating branch that fires
+    // when every ranked proposal has been applied). Read by
+    // `_rebuildExtractedStateAndRender` to suppress the per-proposal
+    // `'columns'` render task — that task triggers `_computeColumnStatsAsync`,
+    // an O(rows × cols) sweep that re-fires once per applied proposal
+    // under default scheduling. With N proposals on a 100k-row file the
+    // sweeps superseded each other continuously, burning ~28 s of main-
+    // thread CPU on work the apply-pump itself was about to invalidate.
+    // Apply-pump terminus schedules `['columns']` exactly once so the
+    // Top Values strip populates from the final column set.
+    this._autoExtractApplying = false;
     // GeoIP detection result-cache. Populated by the natural-detect
     // path inside `_runGeoipEnrichment` (via `_detectIpColumns()`)
     // and consumed by the auto-extract settle hook in
@@ -344,6 +356,12 @@ class TimelineView {
       try { this._autoExtractIdleHandle.cancel(); } catch (_) { /* noop */ }
       this._autoExtractIdleHandle = null;
     }
+    // Belt-and-braces clear so a destroyed view never leaves the flag
+    // sticky. The flag is per-view-instance, so this is mostly defensive
+    // — but `_rebuildExtractedStateAndRender` reads it unconditionally
+    // and a stale `true` on a recycled prototype would silently swallow
+    // a future `'columns'` schedule.
+    this._autoExtractApplying = false;
     if (this._grid && typeof this._grid.destroy === 'function') {
       try { this._grid.destroy(); } catch (_) { /* noop */ }
     }

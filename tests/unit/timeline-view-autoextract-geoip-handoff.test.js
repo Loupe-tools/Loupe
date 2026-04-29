@@ -214,6 +214,14 @@ function buildView(sandbox, opts = {}) {
   };
 
   view._rebuildExtractedStateAndRender = () => {};
+  // Stub the render scheduler so the apply-pump terminus branch (which
+  // schedules a one-shot `['columns']` to populate the Top Values strip
+  // after the pump finishes) can call it without blowing up. Records
+  // the calls for tests that want to assert the terminus fires the
+  // deferred sweep.
+  const renderCalls = [];
+  view._scheduleRender = (tasks) => { renderCalls.push(tasks); };
+  view.renderCalls = renderCalls;
 
   return view;
 }

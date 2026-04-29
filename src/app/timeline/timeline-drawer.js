@@ -319,10 +319,14 @@ Object.assign(TimelineView.prototype, {
       try { this._grid._updateColumns(this.columns); } catch (_) {
         // If the in-place patch threw for any reason, fall back to the
         // legacy destroy/rebuild path so we don't leave the grid in a
-        // half-updated state.
+        // half-updated state. Same `'columns'` suppression as the
+        // success path — the apply-pump terminus schedules it once.
         try { this._grid.destroy(); } catch (__) { /* noop */ }
         this._grid = null;
-        this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns']);
+        const fallbackTasks = this._autoExtractApplying
+          ? ['chart', 'scrubber', 'chips', 'grid']
+          : ['chart', 'scrubber', 'chips', 'grid', 'columns'];
+        this._scheduleRender(fallbackTasks);
         return;
       }
       // CRITICAL: The GridViewer's `store` is a `TimelineRowView`, which
@@ -353,14 +357,29 @@ Object.assign(TimelineView.prototype, {
       // appended the new real-indices to `_colOrder`'s tail; this call
       // overrides that with the user's saved name-keyed order.
       this._applyGridColOrder();
-      this._scheduleRender(['chart', 'scrubber', 'chips', 'columns']);
+      // Suppress the per-proposal `'columns'` task while the auto-extract
+      // apply pump is running. `_computeColumnStatsAsync` is O(rows × cols)
+      // and runs on every `'columns'` render — N back-to-back sweeps
+      // (one per applied proposal) would supersede each other and burn
+      // CPU on work the pump itself is about to invalidate. The pump's
+      // terminating branch (`applyStep` in timeline-view-autoextract.js)
+      // schedules `['columns']` exactly once after the last proposal
+      // lands, so the Top Values strip still populates correctly.
+      const fastTasks = this._autoExtractApplying
+        ? ['chart', 'scrubber', 'chips']
+        : ['chart', 'scrubber', 'chips', 'columns'];
+      this._scheduleRender(fastTasks);
       return;
     }
     // Cold path — first mount, or a grid implementation without the
     // `_updateColumns` helper. Reconstruct via `_renderGrid` on the
-    // next RAF.
+    // next RAF. Same `'columns'` suppression as the fast path: the
+    // apply-pump terminus will schedule it once at the end.
     if (this._grid) { try { this._grid.destroy(); } catch (_) { } this._grid = null; }
-    this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns']);
+    const coldTasks = this._autoExtractApplying
+      ? ['chart', 'scrubber', 'chips', 'grid']
+      : ['chart', 'scrubber', 'chips', 'grid', 'columns'];
+    this._scheduleRender(coldTasks);
   },
 
   _persistRegexExtracts() {

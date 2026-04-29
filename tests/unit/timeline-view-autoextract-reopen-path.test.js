@@ -248,6 +248,11 @@ function buildView(sandbox, columnValues, fileKey, opts = {}) {
 
   // Render is a no-op — the test cares about state, not visuals.
   view._rebuildExtractedStateAndRender = () => {};
+  // Stub the render scheduler so the apply-pump terminus's deferred
+  // `['columns']` schedule (the post-pump Top Values populate) doesn't
+  // throw. The test only cares about state, so a recorder that
+  // discards the calls is enough.
+  view._scheduleRender = () => {};
 
   // Pre-seed any persisted regex extracts (simulating the ctor's
   // `_loadRegexExtractsFor` replay). Mirrors production by calling
