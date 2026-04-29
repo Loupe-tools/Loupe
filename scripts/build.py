@@ -1888,7 +1888,7 @@ HTML = f"""<!DOCTYPE html>
     <div id="viewer">
       <div id="viewer-toolbar" class="hidden">
         <div class="vt-group">
-          <button class="tb-btn tb-action-btn tb-accent-btn" id="btn-copy-analysis" title="Copy AI/SOC summary to clipboard">⚡ Summarize</button>
+          <button class="tb-btn tb-action-btn tb-accent-btn" id="btn-copy-analysis" title="Copy AI/SOC summary to clipboard (Ctrl+Enter)">⚡ Summarize</button>
           <div class="tb-menu-wrap">
             <button class="tb-btn tb-action-btn" id="btn-export" aria-haspopup="menu" aria-expanded="false" title="Export analysis in various formats">📤 Export <span class="tb-caret">▾</span></button>
             <div class="tb-menu hidden" id="export-menu" role="menu"></div>

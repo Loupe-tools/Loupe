@@ -15900,16 +15900,113 @@ body.dark .grid-cell.tl-stack-text-35 {
   flex: 1 1 auto;
 }
 
-/* Extract dialog — 2 panes (auto + regex) */
+/* Extract dialog — 2 panes (auto + manual).
+ *
+ * Layout strategy: only the proposal list (`.tl-auto-body`) scrolls. The
+ * pane itself owns the scroll boundary so the toolbar at the top and the
+ * preview strip + footer at the bottom stay pinned, keeping the primary
+ * "Extract selected" CTA always reachable without scrolling. The body's
+ * own `overflow:auto` is suppressed for this dialog so panes get a
+ * predictable flex height. */
 .tl-dialog-extract .tl-dialog-body {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-/* ── Auto-extract list ───────────────────────────────────────────── */
+.tl-dialog-extract .tl-dialog-pane {
+  padding: 0;
+}
+
+.tl-dialog-extract .tl-dialog-pane-auto,
+.tl-dialog-extract .tl-dialog-pane-manual {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Manual pane keeps its native vertical padding (it's a short form, not
+ * a virtualised list, so scroll-on-pane is fine). */
+.tl-dialog-extract .tl-dialog-pane-manual {
+  padding: 12px 16px;
+  overflow: auto;
+}
+
+/* Header CTA — duplicate of the footer Extract button so analysts never
+ * have to scroll to find the primary action. Sits next to the dialog
+ * title; hidden on the Manual tab via JS. */
+.tl-dialog-head-cta {
+  margin-left: 12px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tl-dialog-head-cta:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.tl-dialog-head-cta-count {
+  opacity: .85;
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+/* "What does this do?" disclosure — collapsed by default so the
+ * scannable area is uncluttered. */
+.tl-auto-about {
+  margin: 0 14px 4px;
+  flex: 0 0 auto;
+}
+
+.tl-auto-about > summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 0;
+  user-select: none;
+  list-style: none;
+}
+
+.tl-auto-about > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tl-auto-about > summary::before {
+  content: '▸ ';
+  font-size: 9px;
+  vertical-align: 1px;
+}
+
+.tl-auto-about[open] > summary::before {
+  content: '▾ ';
+}
+
+.tl-auto-about > summary:hover {
+  color: var(--text);
+}
+
+.tl-auto-about .tl-dialog-muted {
+  margin: 4px 0 0;
+}
+
+/* ── Auto-extract list — the only scroll region in the Auto pane ── */
 .tl-auto-body {
   padding: 8px 14px 14px;
-  min-height: 120px;
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 200px;
+}
+
+/* Pin the toolbar / preview strip / footer so the primary CTA stays in
+ * view regardless of the proposal list's scroll position. */
+.tl-dialog-extract .tl-auto-toolbar,
+.tl-dialog-extract .tl-dialog-preview,
+.tl-dialog-extract .tl-dialog-pane-auto > .tl-dialog-foot {
+  flex: 0 0 auto;
 }
 
 .tl-auto-empty {

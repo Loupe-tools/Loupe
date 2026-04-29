@@ -212,13 +212,28 @@ class App {
     this._initTimelineState();
     this._checkVersionParam();
     this._checkHostedMode();
-    // Keyboard shortcuts: S=toggle sidebar, Y=YARA dialog, F=focus document search.
+    // Keyboard shortcuts: Ctrl/Cmd+Enter=⚡ Summary, S=toggle sidebar,
+    // Y=YARA dialog, F=focus document search.
     // F (not Ctrl+F) is used because every major browser reserves Ctrl+F for its
     // own find-in-page bar and the hijack is brittle / user-hostile.
     // Drill-down navigation (archives, PDF attachments, etc.) is driven
     // exclusively by the toolbar breadcrumb trail — no back/forward
     // shortcuts or mouse side-button handlers are wired up.
     document.addEventListener('keydown', e => {
+      // ── First-class shortcut: Ctrl+Enter / Cmd+Enter → ⚡ Summary ─────
+      // Sits ABOVE the input/modifier guard so analysts can fire it from
+      // any focused field (sidebar search, doc-search, YARA editor, etc.).
+      // No-op when no file is loaded (viewer toolbar hidden). Forwards to
+      // the toolbar button itself rather than calling _copyAnalysis()
+      // directly, so any future button-level decoration (disabled state,
+      // visual feedback) flows through one path.
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.altKey && !e.shiftKey) {
+        const tb = document.getElementById('viewer-toolbar');
+        if (!tb || tb.classList.contains('hidden')) return;
+        const btn = document.getElementById('btn-copy-analysis');
+        if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+        return;
+      }
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 's' || e.key === 'S') this._toggleSidebar();
       else if (e.key === 'y' || e.key === 'Y') this._openYaraDialog();
