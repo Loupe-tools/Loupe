@@ -119,27 +119,34 @@ test('CSV/CLF ingest loops use currentBatchThreshold(), not the bare constant', 
   );
 });
 
-// ── EVTX + SQLite paths use a local `firstFlush` flag ──────────────────────
+// ── EVTX + SQLite paths share the P3-G `_makeRowStreamer` helper ──────────
 
-test('EVTX and SQLite paths inline the first-flush dynamic threshold', () => {
-  // EVTX (`_parseEvtx`) and SQLite (`_parseSqlite`) don't share
-  // `_parseCsv`'s closure; each declares its own `firstFlush` local
-  // and computes `threshold = firstFlush ? FIRST : STEADY` in-line.
-  // Pin both: two `let firstFlush = true;` declarations and two
-  // `firstFlush ? WORKER_FIRST_CHUNK_ROWS : WORKER_CHUNK_ROWS`
-  // ternaries.
-  const decls = WORKER_SRC.match(/let\s+firstFlush\s*=\s*true\s*;/g);
-  assert.ok(decls && decls.length === 2,
-    `expected exactly 2 \`let firstFlush = true;\` declarations ` +
-    `(one in _parseEvtx, one in _parseSqlite), got ` +
-    `${decls ? decls.length : 0}`);
+test('EVTX and SQLite paths use the shared _makeRowStreamer helper', () => {
+  // P3-G consolidated the two duplicated EVTX/SQLite "first-flush"
+  // patterns behind a single `_makeRowStreamer(colCount)` helper that
+  // encapsulates the W1 small-first-batch + steady-state cadence.
+  // The W1 contract is unchanged — just expressed in one place rather
+  // than two — so we pin the helper exists and is used by both
+  // non-CSV parse paths.
+  assert.match(WORKER_SRC, /function\s+_makeRowStreamer\s*\(\s*colCount\s*\)/,
+    'expected `function _makeRowStreamer(colCount)` to be the canonical ' +
+    'home of the W1 first-batch / steady-state threshold logic');
 
+  // The helper itself must implement the dynamic threshold (one
+  // ternary survives, but inside the helper rather than duplicated
+  // across the EVTX and SQLite paths).
   const ternaries = WORKER_SRC.match(
     /firstFlush\s*\?\s*WORKER_FIRST_CHUNK_ROWS\s*:\s*WORKER_CHUNK_ROWS/g);
-  assert.ok(ternaries && ternaries.length === 2,
-    `expected exactly 2 \`firstFlush ? WORKER_FIRST_CHUNK_ROWS : ` +
-    `WORKER_CHUNK_ROWS\` ternaries (one per non-CSV ingest path), ` +
-    `got ${ternaries ? ternaries.length : 0}`);
+  assert.ok(ternaries && ternaries.length === 1,
+    `expected exactly 1 \`firstFlush ? WORKER_FIRST_CHUNK_ROWS : ` +
+    `WORKER_CHUNK_ROWS\` ternary (inside _makeRowStreamer), got ` +
+    `${ternaries ? ternaries.length : 0}`);
+
+  // Both call sites must use the helper.
+  const callSites = WORKER_SRC.match(/_makeRowStreamer\(colCount\)/g);
+  assert.ok(callSites && callSites.length >= 2,
+    `expected >= 2 _makeRowStreamer(colCount) call sites (EVTX + SQLite), ` +
+    `got ${callSites ? callSites.length : 0}`);
 
   // EVTX/SQLite must not retain the bare `pending.length >=
   // WORKER_CHUNK_ROWS` check — that would always defer the first
@@ -147,7 +154,6 @@ test('EVTX and SQLite paths inline the first-flush dynamic threshold', () => {
   assert.ok(
     !/pending\.length\s*>=\s*WORKER_CHUNK_ROWS/.test(WORKER_SRC),
     'expected NO `pending.length >= WORKER_CHUNK_ROWS` literal in ' +
-    'EVTX/SQLite paths — replaced by a `firstFlush ? FIRST : STEADY` ' +
-    'threshold ternary'
+    'EVTX/SQLite paths — must go through _makeRowStreamer'
   );
 });

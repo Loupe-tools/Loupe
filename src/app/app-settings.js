@@ -308,7 +308,7 @@ extendApp({
     // delegates body content (state line, hint, button row) to
     // `_refreshGeoipSlot`, which re-renders in place after every
     // Upload / Remove.
-    const geoCard = this._buildGeoipCard('geo', 'Geo MMDB', 'country / region / city');
+    const geoCard = this._buildGeoipCard('geo', 'IP Geolocation Lookup', 'country / region / city');
     host.appendChild(geoCard);
     this._refreshGeoipSlot(
       geoCard.querySelector('.settings-geoip-card-body'),
@@ -318,7 +318,7 @@ extendApp({
       '~30 MB',
     );
 
-    const asnCard = this._buildGeoipCard('asn', 'ASN MMDB', 'autonomous system / organisation');
+    const asnCard = this._buildGeoipCard('asn', 'IP ASN Lookup', 'autonomous system / organisation');
     host.appendChild(asnCard);
     this._refreshGeoipSlot(
       asnCard.querySelector('.settings-geoip-card-body'),
@@ -388,7 +388,7 @@ extendApp({
       btnRow.innerHTML = '';
       hint.innerHTML = '';
       if (meta) {
-        const what = meta.databaseType || 'MMDB override';
+        const what = meta.databaseType || 'database override';
         const when = meta.vintage || (meta.savedAt
           ? `saved ${new Date(meta.savedAt).toISOString().slice(0, 10)}`
           : '');
@@ -414,8 +414,8 @@ extendApp({
               try { app._timelineCurrent._runGeoipEnrichment(); } catch (_) { /* noop */ }
             }
             app._toast(slot === 'geo'
-              ? 'Geo MMDB removed — using bundled IPv4 → country'
-              : 'ASN MMDB removed');
+              ? 'IP Geolocation database removed — using bundled IPv4 → country'
+              : 'IP ASN database removed');
           } else {
             app._toast('Could not remove (storage blocked?)');
           }
@@ -423,7 +423,7 @@ extendApp({
         });
         btnRow.appendChild(remove);
       } else {
-        stateLine.textContent = 'No MMDB loaded';
+        stateLine.textContent = 'No database loaded';
         // Show the suggested-download hint only in the empty state.
         hint.style.display = '';
         const safeLabel = this._escapeAttr(suggestionLabel);
@@ -437,8 +437,8 @@ extendApp({
       upload.className = 'nicelist-btn';
       upload.textContent = meta ? '⬆ Replace…' : '⬆ Upload .mmdb / .mmdb.gz';
       upload.title = (slot === 'geo')
-        ? 'MaxMind / DB-IP city or country MMDB — richer than bundled (region + city)'
-        : 'MaxMind / DB-IP ASN MMDB — emits a second column with AS number + organisation';
+        ? 'MaxMind / DB-IP city or country database — richer than bundled (region + city)'
+        : 'MaxMind / DB-IP ASN database — emits a second column with AS number + organisation';
       upload.addEventListener('click', () => fileInput.click());
       btnRow.appendChild(upload);
     };
@@ -452,7 +452,7 @@ extendApp({
         reader = await MmdbReader.fromBlob(f);
       } catch (e) {
         console.warn('[geoip] mmdb load failed:', e);
-        app._toast(`MMDB rejected: ${e && e.message ? e.message : 'invalid file'}`);
+        app._toast(`Database rejected: ${e && e.message ? e.message : 'invalid file'}`);
         return;
       }
       // Schema sniff — reject obvious slot mismatches at upload time.
@@ -460,7 +460,7 @@ extendApp({
       let schema = 'unknown';
       try { schema = reader.detectSchema(); } catch (_) { schema = 'unknown'; }
       if (schema !== 'unknown' && schema !== slot) {
-        app._toast(`This looks like a ${schema.toUpperCase()} MMDB — upload it into the ${schema.toUpperCase()} slot instead`);
+        app._toast(`This looks like a ${schema.toUpperCase()} database — upload it into the ${schema.toUpperCase()} slot instead`);
         return;
       }
       const meta = {
@@ -473,12 +473,12 @@ extendApp({
       };
       const ok = await GeoipStore.save(slot, f, meta);
       if (!ok) {
-        app._toast('Could not save MMDB (storage quota or blocked)');
+        app._toast('Could not save database (storage quota or blocked)');
         return;
       }
       if (slot === 'geo') app.geoip = reader;
       else app.geoipAsn = reader;
-      app._toast(`${slot === 'geo' ? 'Geo' : 'ASN'} MMDB loaded: ${reader.vintage}`);
+      app._toast(`IP ${slot === 'geo' ? 'Geolocation' : 'ASN'} database loaded: ${reader.vintage}`);
       if (app._timelineCurrent && typeof app._timelineCurrent._runGeoipEnrichment === 'function') {
         try { app._timelineCurrent._runGeoipEnrichment(); } catch (_) { /* noop */ }
       }

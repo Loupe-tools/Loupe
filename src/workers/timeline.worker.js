@@ -177,6 +177,42 @@ function _postColumns(columns) {
   });
 }
 
+// P3-G: streaming-rows helper used by EVTX and SQLite (which build
+// rows in a tight `for (i = 0; i < list.length; i++)` loop with no
+// header / padding / truncation logic to interleave). The CSV / CLF
+// paths can't use this helper as-is because their per-row logic
+// (header detection, row-count cap, padOrTrimCells, multi-byte tail
+// buffer) is interwoven with the threshold check; they keep their
+// own `pendingRows` + `firstBatchPending` flag, which still exercises
+// the same W1 small-first-batch behaviour.
+//
+// The helper returns an opaque object with `push(row)` and `flush()`.
+// Steady-state threshold is `WORKER_CHUNK_ROWS`; the FIRST batch
+// fires at `WORKER_FIRST_CHUNK_ROWS` so the host can land its
+// `RowStoreBuilder` setup early (see W1).
+function _makeRowStreamer(colCount) {
+  let pending = [];
+  let firstFlush = true;
+  return {
+    push(row) {
+      pending.push(row);
+      const threshold = firstFlush ? WORKER_FIRST_CHUNK_ROWS : WORKER_CHUNK_ROWS;
+      if (pending.length >= threshold) {
+        _postRowsChunk(pending, colCount);
+        pending = [];
+        firstFlush = false;
+      }
+    },
+    flush() {
+      if (pending.length) {
+        _postRowsChunk(pending, colCount);
+        pending = [];
+      }
+      firstFlush = false;
+    },
+  };
+}
+
 // ── CSV / TSV parse (streaming chunk-decode + packed-chunk emit) ───────────
 //
 // Memory-conscious rewrite of the legacy "decode into one giant string,
@@ -527,30 +563,19 @@ async function _parseEvtx(buffer) {
   // — once a batch reaches the chunk threshold it's packed and posted,
   // then the array is dropped so the per-cell strings can GC before
   // the next batch is built.
-  // W1: ship the first batch at WORKER_FIRST_CHUNK_ROWS (small) so the
-  // host can start `RowStoreBuilder` setup early; subsequent flushes
-  // use the steady-state WORKER_CHUNK_ROWS.
-  let pending = [];
-  let firstFlush = true;
+  // P3-G: shared `_makeRowStreamer` encapsulates the W1 first-batch
+  // small-threshold + steady-state cadence so EVTX and SQLite share a
+  // single implementation.
+  const stream = _makeRowStreamer(colCount);
   for (let i = 0; i < list.length; i++) {
     const ev = list[i] || {};
-    pending.push([
+    stream.push([
       ev.timestamp ? ev.timestamp.replace('T', ' ').replace('Z', '') : '',
       ev.eventId || '', ev.level || '', ev.provider || '',
       ev.channel || '', ev.computer || '', ev.eventData || '',
     ]);
-    const threshold = firstFlush ? WORKER_FIRST_CHUNK_ROWS : WORKER_CHUNK_ROWS;
-    if (pending.length >= threshold) {
-      _postRowsChunk(pending, colCount);
-      pending = [];
-      firstFlush = false;
-    }
   }
-  if (pending.length) {
-    _postRowsChunk(pending, colCount);
-    pending = [];
-    firstFlush = false;
-  }
+  stream.flush();
 
   // Strip the per-event `rawRecord` Uint8Array before transferring — those
   // copies sum to most of the file size and the Detections / view code on
@@ -628,28 +653,18 @@ function _parseSqlite(buffer) {
   }
 
   // Stream rows in batches (see `_parseEvtx` for rationale, including
-  // the W1 first-batch dynamic-threshold motivation).
-  let pending = [];
-  let firstFlush = true;
+  // the W1 first-batch dynamic-threshold motivation). P3-G: shared
+  // `_makeRowStreamer` helper.
+  const stream = _makeRowStreamer(colCount);
   for (let i = 0; i < list.length; i++) {
     const src = list[i] || [];
     const row = new Array(colCount);
     for (let j = 0; j < colCount; j++) {
       row[j] = src[j] != null ? String(src[j]) : '';
     }
-    pending.push(row);
-    const threshold = firstFlush ? WORKER_FIRST_CHUNK_ROWS : WORKER_CHUNK_ROWS;
-    if (pending.length >= threshold) {
-      _postRowsChunk(pending, colCount);
-      pending = [];
-      firstFlush = false;
-    }
+    stream.push(row);
   }
-  if (pending.length) {
-    _postRowsChunk(pending, colCount);
-    pending = [];
-    firstFlush = false;
-  }
+  stream.flush();
 
   const browserLabel = db.browserType === 'firefox' ? 'Firefox' : 'Chrome';
   const timeColIdx = useEvents ? 0 : 3;

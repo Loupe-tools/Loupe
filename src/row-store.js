@@ -360,9 +360,24 @@ class RowStore {
   // legitimate callers.
   getRow(rowIdx) {
     const out = new Array(this.colCount);
+    this.getRowInto(rowIdx, out);
+    return out;
+  }
+
+  // P3-F: Fill `out[0..colCount)` with the cells of `rowIdx`. Identical
+  // semantics to `getRow` but never allocates — caller supplies the
+  // target array. Used by hot loops that previously called
+  // `getCell(r, c)` `colCount` times per row, paying the chunk
+  // binary-search cost on every cell. With `getRowInto` the search
+  // happens once per row.
+  //
+  // `out` must have `length >= this.colCount`; surplus slots are left
+  // untouched (so callers that interleave base + extracted data into a
+  // larger scratch array work without reallocating).
+  getRowInto(rowIdx, out) {
     if (rowIdx < 0 || rowIdx >= this.rowCount) {
       for (let c = 0; c < this.colCount; c++) out[c] = '';
-      return out;
+      return;
     }
     const ci = this._chunkIndexForRow(rowIdx);
     const chunk = this.chunks[ci];
@@ -380,7 +395,7 @@ class RowStore {
         const end = offsets[base + c + 1];
         out[c] = end <= start ? '' : _decodeAsciiSlice(bytes, start, end);
       }
-      return out;
+      return;
     }
     const dec = this._decoder;
     for (let c = 0; c < this.colCount; c++) {
@@ -388,7 +403,6 @@ class RowStore {
       const end = offsets[base + c + 1];
       out[c] = end <= start ? '' : dec.decode(bytes.subarray(start, end));
     }
-    return out;
   }
 
   // Sum of cell-payload bytes + offsets bytes across every chunk.

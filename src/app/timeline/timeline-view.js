@@ -1331,6 +1331,28 @@ class TimelineView {
           this._colStatsRaf = requestAnimationFrame(() => {
             this._colStatsRaf = 0;
             if (this._destroyed) return;
+            const totalCols = this.columns.length;
+            // P3-B: incremental extension path. When `_colStats` survived
+            // a `_recomputeFilter` (because `_filteredIdx` was identity-
+            // stable) but new columns have been appended, compute stats
+            // ONLY for the appended range. The auto-extract apply pump
+            // is the primary beneficiary: a 30-col grid with 5 newly
+            // extracted cols pays 5/30 of the previous post-pump cost.
+            if (this._colStats && this._colStats.length < totalCols) {
+              const idx = this._filteredIdx || new Uint32Array(0);
+              const fromCol = this._colStats.length;
+              const gen = ++this._colStatsGen;
+              this._extendColumnStatsAsync(idx, fromCol, gen).then(result => {
+                if (this._destroyed) return;
+                if (result === null) return; // superseded
+                // Append the new column slots in place. `_colStats` is
+                // mutated rather than replaced so the existing entries
+                // (still valid for unchanged columns + idx) survive.
+                for (let c = 0; c < result.length; c++) this._colStats.push(result[c]);
+                this._renderColumns();
+              });
+              return;
+            }
             if (!this._colStats) {
               const idx = this._filteredIdx || new Uint32Array(0);
               // Small datasets: synchronous (no perceptible delay).

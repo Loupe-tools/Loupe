@@ -117,6 +117,21 @@ class CsvRenderer {
     let cells    = state.cells;
     let rowStart = state.rowStart;
 
+    // P3-D allocator hygiene: rather than `cur += text[i]` per char (which
+    // ropes a cons-string and forces flatten on read, then GCs the rope
+    // generation), we track the start index of the current run of
+    // ordinary content chars in this chunk and emit one `text.slice(...)`
+    // per "boundary" (delim, NL, opening/closing quote, escape pair).
+    // `chunkStart === -1` means no run is currently in flight; flushRun()
+    // appends the pending slice to `cur` and resets.
+    let chunkStart = -1;
+    const flushRun = (upto) => {
+      if (chunkStart >= 0) {
+        cur += text.slice(chunkStart, upto);
+        chunkStart = -1;
+      }
+    };
+
     let i = fromIdx | 0;
 
     while (i < len && (maxRows <= 0 || rows.length < maxRows)) {
@@ -126,7 +141,7 @@ class CsvRenderer {
       //    split natively (much faster than the char-by-char machine).
       //    This preserves the throughput of the previous line-based
       //    parser on the overwhelmingly common no-quote case.
-      if (!inQuotes && rowStart < 0 && cells.length === 0 && cur === '') {
+      if (!inQuotes && rowStart < 0 && cells.length === 0 && cur === '' && chunkStart < 0) {
         const nlIdx = text.indexOf('\n', i);
         const lineEnd = nlIdx === -1 ? len : nlIdx;
         // Skip blank lines outright.
@@ -152,16 +167,19 @@ class CsvRenderer {
         if (ch === QUOTE) {
           // RFC-4180: doubled quote inside a quoted cell escapes to one quote.
           if (i + 1 < len && text.charCodeAt(i + 1) === QUOTE) {
+            flushRun(i);
             cur += '"';
             i += 2;
             continue;
           }
+          flushRun(i);
           inQuotes = false;
           i++;
           continue;
         }
-        // Every other char (incl. \n, delim) is literal cell content.
-        cur += text[i];
+        // Every other char (incl. \n, delim) is literal cell content —
+        // accumulate via slice run rather than per-char concat.
+        if (chunkStart < 0) chunkStart = i;
         i++;
         continue;
       }
@@ -169,10 +187,11 @@ class CsvRenderer {
       // Not in quotes.
       if (ch === NL) {
         // Blank physical line outside quotes — skip without emitting.
-        if (rowStart < 0 && cells.length === 0 && cur === '') {
+        if (rowStart < 0 && cells.length === 0 && cur === '' && chunkStart < 0) {
           i++;
           continue;
         }
+        flushRun(i);
         cells.push(cur);
         rows.push(cells);
         rowOffsets.push({
@@ -194,19 +213,28 @@ class CsvRenderer {
         // behaviour (quote anywhere toggles); permissive vs strict
         // RFC-4180 (where a quote is only special at cell start) but
         // matches what real-world spreadsheets emit.
+        flushRun(i);
         inQuotes = true;
         i++;
         continue;
       }
       if (ch === delimCode) {
+        flushRun(i);
         cells.push(cur);
         cur = '';
         i++;
         continue;
       }
-      cur += text[i];
+      // Ordinary content char — accumulate via slice run.
+      if (chunkStart < 0) chunkStart = i;
       i++;
     }
+
+    // Persist any in-flight slice run into `cur` so the loop's exit
+    // state is identical to the pre-P3-D string-concat behaviour. This
+    // also ensures the partial-row flush below sees the full pending
+    // cell content.
+    flushRun(i);
 
     let endedInQuotes = false;
     if (flush && i >= len &&

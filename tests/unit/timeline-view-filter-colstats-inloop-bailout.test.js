@@ -62,11 +62,17 @@ test('in-loop bailout returns null (matches the post-yield bailout contract)', (
 
 test('in-loop bailout sits BEFORE the per-row column scan (cheap-first ordering)', () => {
   // The bailout has to be the first thing the loop body does — the
-  // whole point is to skip the 30-cell scan when the work is stale.
-  // Find the bailout, then assert the inner-cell loop comes after.
+  // whole point is to skip the per-row column scan when the work is
+  // stale. Find the bailout, then assert the inner-cell loop comes
+  // after. P3-B parameterised the column range as `[fromCol, toCol)`
+  // so the original `for (let c = 0; c < cols; c++)` shape was
+  // replaced with `for (let c = fromCol; c < toCol; c++)`. Either
+  // shape satisfies the cheap-first ordering contract.
   const bailoutIdx = SRC.indexOf('(i & 4095) === 0');
-  const innerLoopIdx = SRC.indexOf('for (let c = 0; c < cols; c++) {', bailoutIdx);
-  assert.ok(bailoutIdx > 0 && innerLoopIdx > bailoutIdx,
+  const innerLoopRe = /for \(let c = (?:0|fromCol); c < (?:cols|toCol); c\+\+\) \{/g;
+  innerLoopRe.lastIndex = bailoutIdx;
+  const m = innerLoopRe.exec(SRC);
+  assert.ok(bailoutIdx > 0 && m && m.index > bailoutIdx,
     'expected the inner column-scan loop to follow the bailout, not precede it');
 
   // And the bailout must be inside the chunked outer loop, not the

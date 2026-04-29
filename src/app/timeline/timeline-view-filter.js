@@ -329,7 +329,26 @@ Object.assign(TimelineView.prototype, {
       this._susFilteredIdx = null;
     }
 
-    this._colStats = null;
+    // P3-B: column-stats incremental reuse. The auto-extract apply
+    // pump appends one extracted column per proposal and calls
+    // `_rebuildExtractedStateAndRender` → `_recomputeFilter` →
+    // `_applyWindowOnly` between every append. Historically that
+    // unconditionally nulled `_colStats`, so the post-pump terminus
+    // recomputed stats for ALL columns even though only the newly-
+    // appended ones were missing. When `_filteredIdx` is reference-
+    // identical to the previous run (the common case during a pump:
+    // no active query → `_filteredIdx === _identityIdx`, or stable
+    // query → `_chipFilteredIdx` is reused), we keep the existing
+    // stats and let the 'columns' render task extend them only over
+    // the newly-appended column range.
+    const prevIdxRef = this._colStatsIdxRef;
+    const filterStable = !!this._colStats
+      && prevIdxRef === this._filteredIdx
+      && this._colStats.length <= this.columns.length;
+    if (!filterStable) {
+      this._colStats = null;
+    }
+    this._colStatsIdxRef = this._filteredIdx;
     // Cancel any pending column-stats rAF — without this, the rAF
     // started in `_scheduleRender(['columns'])` would still fire and
     // launch a fresh O(rows × cols) async pass that the generation
@@ -376,11 +395,24 @@ Object.assign(TimelineView.prototype, {
    *  Callers pass a `generation` counter; if `this._colStatsGen` has
    *  moved on by the time a chunk resumes, the computation bails early
    *  (superseded by a newer filter change). Returns `null` on cancel. */
+  // P3-B: incremental column-stats. Computes only `[fromCol, toCol)`,
+  // returning an array of length `toCol - fromCol` ready to be appended
+  // onto the existing `_colStats`. Used during the auto-extract apply
+  // pump's terminus when the filtered-row index hasn't changed but new
+  // columns were appended — only the new slots need stats.
+  _extendColumnStatsAsync(idx, fromCol, generation) {
+    return this._computeColumnStatsAsyncInternal(idx, generation, fromCol, this.columns.length);
+  },
+
   _computeColumnStatsAsync(idx, generation) {
+    return this._computeColumnStatsAsyncInternal(idx, generation, 0, this.columns.length);
+  },
+
+  _computeColumnStatsAsyncInternal(idx, generation, fromCol, toCol) {
     const CHUNK = 50000;
-    const cols = this.columns.length;
-    const stats = new Array(cols);
-    for (let c = 0; c < cols; c++) stats[c] = new Map();
+    const span = toCol - fromCol;
+    const stats = new Array(span);
+    for (let c = 0; c < span; c++) stats[c] = new Map();
     const total = idx.length;
     const self = this;
 
@@ -393,6 +425,16 @@ Object.assign(TimelineView.prototype, {
         setTimeout(resolve, 0);
       }
     });
+
+    // P3-F: per-row scratch reused across the entire computation — one
+    // allocation rather than `span` allocations per row. The dataset's
+    // `rowInto` fills this in place, hoisting the chunk binary-search
+    // outside the column loop. Falls back to the legacy per-cell path
+    // when the dataset is unavailable (e.g. detached view).
+    const ds = this._dataset;
+    // Scratch sized to the FULL column count (rowInto fills [0, totalCols))
+    // — we then iterate only the `[fromCol, toCol)` slice into `stats`.
+    const rowScratch = ds ? new Array(toCol) : null;
 
     return (async () => {
       let i = 0;
@@ -412,9 +454,20 @@ Object.assign(TimelineView.prototype, {
             return null;
           }
           const di = idx[i];
-          for (let c = 0; c < cols; c++) {
-            const v = self._cellAt(di, c);
-            stats[c].set(v, (stats[c].get(v) || 0) + 1);
+          if (rowScratch) {
+            // Row-major fast path: one chunk search per row.
+            ds.rowInto(di, rowScratch);
+            for (let c = fromCol; c < toCol; c++) {
+              const v = rowScratch[c];
+              const m = stats[c - fromCol];
+              m.set(v, (m.get(v) || 0) + 1);
+            }
+          } else {
+            for (let c = fromCol; c < toCol; c++) {
+              const v = self._cellAt(di, c);
+              const m = stats[c - fromCol];
+              m.set(v, (m.get(v) || 0) + 1);
+            }
           }
         }
         // Yield between chunks so the browser stays responsive.
@@ -424,8 +477,8 @@ Object.assign(TimelineView.prototype, {
           if (self._colStatsGen !== generation || self._destroyed) return null;
         }
       }
-      const out = new Array(cols);
-      for (let c = 0; c < cols; c++) {
+      const out = new Array(span);
+      for (let c = 0; c < span; c++) {
         const arr = Array.from(stats[c].entries());
         arr.sort((a, b) => b[1] - a[1]);
         out[c] = { total, distinct: arr.length, values: arr.slice(0, TIMELINE_COL_TOP_N) };

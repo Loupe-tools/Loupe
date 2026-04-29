@@ -153,6 +153,34 @@ class TimelineDataset {
   }
 
   /**
+   * P3-F: Fill `out[0..totalColCount)` with every cell of `origRow`,
+   * resolving base columns via `RowStore.getRowInto` (one chunk search
+   * per row instead of one per cell) and extracted columns via direct
+   * array indexing (already O(1)). Same fail-soft semantics as `cellAt`:
+   * OOB rows fill the whole array with `''`.
+   *
+   * Used by `_computeColumnStatsAsync` to amortise the chunk search
+   * across all `cols` cell reads in a row, turning ~30M `getCell` calls
+   * into ~1M `getRowInto` calls + 30M cheap array indexes on a
+   * 1 M-row × 30-col grid.
+   */
+  rowInto(origRow, out) {
+    const baseLen = this._store.colCount;
+    const ext = this._extractedCols;
+    if (origRow < 0 || origRow >= this.rowCount) {
+      const total = baseLen + ext.length;
+      for (let c = 0; c < total; c++) out[c] = '';
+      return;
+    }
+    this._store.getRowInto(origRow, out);
+    for (let i = 0; i < ext.length; i++) {
+      const e = ext[i];
+      const v = (e && e.values) ? e.values[origRow] : null;
+      out[baseLen + i] = v == null ? '' : String(v);
+    }
+  }
+
+  /**
    * Parsed timestamp for `origRow` in milliseconds-since-epoch (or the
    * raw numeric domain when `_timeIsNumeric` mode is active on the
    * owning view). Returns NaN for OOB indices and rows whose timestamp
