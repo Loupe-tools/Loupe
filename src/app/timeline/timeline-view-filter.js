@@ -366,20 +366,69 @@ Object.assign(TimelineView.prototype, {
   },
 
   /** Synchronous fallback for small datasets (< 50 K rows). */
-  _computeColumnStatsSync(idx) {
-    const cols = this.columns.length;
-    const stats = new Array(cols);
-    for (let c = 0; c < cols; c++) stats[c] = new Map();
+  _computeColumnStatsSync(idx, fromCol, toCol) {
+    // Optional range — `(idx)` keeps the legacy "all columns" semantics
+    // every existing caller relies on; `(idx, fromCol, toCol)` computes
+    // stats for `[fromCol, toCol)` only and returns an array of length
+    // `toCol - fromCol` (parallel to `_computeColumnStatsAsyncInternal`'s
+    // contract). Used by the Extract Values dialog's cold-cache fast
+    // path to materialise stats for the trailing N newly-extracted
+    // columns synchronously without paying for the base-col sweep.
+    const totalCols = this.columns.length;
+    const lo = (fromCol == null) ? 0 : fromCol;
+    const hi = (toCol == null) ? totalCols : toCol;
+    const span = hi - lo;
+    const stats = new Array(span);
+    for (let c = 0; c < span; c++) stats[c] = new Map();
     const total = idx.length;
-    for (let i = 0; i < total; i++) {
-      const di = idx[i];
-      for (let c = 0; c < cols; c++) {
-        const v = this._cellAt(di, c);
-        stats[c].set(v, (stats[c].get(v) || 0) + 1);
+
+    // P3-H: extracted-only fast path. When the requested range lies
+    // entirely in extracted-col territory (`lo >= baseLen`), every read
+    // is an O(1) array index into a pre-materialised `values[]` —
+    // skipping the per-cell `_decodeAsciiSlice` walk that `_cellAt`
+    // would otherwise pay for base columns. The auto-extract apply
+    // pump's "stats for the new trailing N cols" use case hits this
+    // path: `lo == baseLen`, `hi == baseLen + advance`, advance ≤ ~10.
+    // Without this branch a 100k-row sweep would still decode every
+    // base-col cell of every row even though only extracted-col
+    // entries are read into `stats`.
+    const ds = this._dataset;
+    const baseLen = ds ? ds._store.colCount : -1;
+    if (ds && lo >= baseLen) {
+      // Pre-resolve the `values` arrays for the requested extracted
+      // cols once, so the inner loop is a flat `arr[di]` indexing —
+      // no method dispatch, no fallback branches, no per-cell
+      // null-check beyond the value coercion.
+      const ext = ds._extractedCols;
+      const colArrays = new Array(span);
+      for (let c = 0; c < span; c++) {
+        const e = ext[(lo + c) - baseLen];
+        colArrays[c] = (e && e.values) ? e.values : null;
+      }
+      for (let i = 0; i < total; i++) {
+        const di = idx[i];
+        for (let c = 0; c < span; c++) {
+          const arr = colArrays[c];
+          const raw = arr ? arr[di] : null;
+          const v = raw == null ? '' : (typeof raw === 'string' ? raw : String(raw));
+          stats[c].set(v, (stats[c].get(v) || 0) + 1);
+        }
+      }
+    } else {
+      // Legacy / mixed-range path. `_cellAt` dispatches through the
+      // dataset to either `_store.getCell` (decodes ASCII slice from
+      // chunk offsets) or `_extractedCols[i].values[di]` per cell.
+      for (let i = 0; i < total; i++) {
+        const di = idx[i];
+        for (let c = lo; c < hi; c++) {
+          const v = this._cellAt(di, c);
+          stats[c - lo].set(v, (stats[c - lo].get(v) || 0) + 1);
+        }
       }
     }
-    const out = new Array(cols);
-    for (let c = 0; c < cols; c++) {
+
+    const out = new Array(span);
+    for (let c = 0; c < span; c++) {
       const arr = Array.from(stats[c].entries());
       arr.sort((a, b) => b[1] - a[1]);
       out[c] = { total, distinct: arr.length, values: arr.slice(0, TIMELINE_COL_TOP_N) };
@@ -436,6 +485,27 @@ Object.assign(TimelineView.prototype, {
     // — we then iterate only the `[fromCol, toCol)` slice into `stats`.
     const rowScratch = ds ? new Array(toCol) : null;
 
+    // P3-H: extracted-only fast path. The auto-extract apply pump's
+    // post-extract sweep (`_extendColumnStatsAsync(idx, fromCol=baseLen,
+    // gen)`) requests stats for ONLY the new extracted cols. The legacy
+    // path still calls `ds.rowInto(di, rowScratch)` for every row, which
+    // decodes every base-col cell from chunk bytes via `_decodeAsciiSlice`
+    // — pure waste when none of those decoded base values is read into
+    // `stats`. On a 100k-row × 10-base-col CSV that's ~1M ASCII slice
+    // decodes per sweep. Pre-resolving the requested extracted-col
+    // `values[]` once and indexing them directly turns the inner loop
+    // into a flat array lookup, eliminating the dominant ~700ms tail.
+    const baseLen = ds ? ds._store.colCount : -1;
+    const extractedOnly = ds && fromCol >= baseLen;
+    const colArrays = extractedOnly ? new Array(span) : null;
+    if (extractedOnly) {
+      const ext = ds._extractedCols;
+      for (let c = 0; c < span; c++) {
+        const e = ext[(fromCol + c) - baseLen];
+        colArrays[c] = (e && e.values) ? e.values : null;
+      }
+    }
+
     return (async () => {
       let i = 0;
       while (i < total) {
@@ -454,7 +524,17 @@ Object.assign(TimelineView.prototype, {
             return null;
           }
           const di = idx[i];
-          if (rowScratch) {
+          if (extractedOnly) {
+            // Pure extracted-col read — `colArrays[c][di]` is O(1)
+            // and never touches RowStore.
+            for (let c = 0; c < span; c++) {
+              const arr = colArrays[c];
+              const raw = arr ? arr[di] : null;
+              const v = raw == null ? '' : (typeof raw === 'string' ? raw : String(raw));
+              const m = stats[c];
+              m.set(v, (m.get(v) || 0) + 1);
+            }
+          } else if (rowScratch) {
             // Row-major fast path: one chunk search per row.
             ds.rowInto(di, rowScratch);
             for (let c = fromCol; c < toCol; c++) {

@@ -65,8 +65,16 @@ Object.assign(TimelineView.prototype, {
     if (!Number.isInteger(rowsCol) || rowsCol < 0 || rowsCol >= this.columns.length) return;
 
     // Ensure column stats are fresh so the heuristic can read distinct counts.
+    // Note: the helper was renamed `_computeColumnStats` →
+    // `_computeColumnStatsSync` in the B2c filter/chart-data refactor;
+    // this call site was missed and would throw `TypeError:
+    // this._computeColumnStats is not a function` whenever an analyst
+    // clicked "Auto pivot on this column" with cold stats. The Sync
+    // variant is the right one — `_autoPivotFromColumn` runs
+    // synchronously and the heuristic needs the result before
+    // continuing.
     if (!this._colStats) {
-      this._colStats = this._computeColumnStats(this._filteredIdx || new Uint32Array(0));
+      this._colStats = this._computeColumnStatsSync(this._filteredIdx || new Uint32Array(0));
     }
     const stats = this._colStats;
 

@@ -210,6 +210,16 @@ class TimelineView {
     // Column stats — invalidated on any filter change.
     this._colStats = null;
     this._colStatsGen = 0;   // generation counter for async cancellation
+    // Hint stamped by the Extract Values dialog's Extract-selected
+    // click handler before triggering `_rebuildExtractedStateAndRender`.
+    // When > 0, the next 'columns' render task knows the only
+    // structural change since the prior render is `_colStatsExtractAdvance`
+    // newly-appended trailing extracted columns. The render task
+    // computes stats for THOSE cols synchronously (small slice,
+    // bounded — typically advance ≤ 10) so the new column cards
+    // paint immediately, then schedules the base-col sweep async.
+    // Consumed exactly once per stamp.
+    this._colStatsExtractAdvance = 0;
 
     // Grid sort cache — invalidated by _invalidateGridCache() whenever
     // _timeMs content changes. Avoids the O(n log n) re-sort on
@@ -1260,6 +1270,9 @@ class TimelineView {
     // scheduleRender starts from scratch.
     this._colStats = null;
     this._colStatsGen++;
+    // Reset wipes extracted cols entirely — any stale extract-apply
+    // hint must NOT outlive that and confuse the next 'columns' render.
+    this._colStatsExtractAdvance = 0;
     this._lastChartData = null;
     // Column count may have changed (extracted columns dropped) — kill
     // the grid so it rebuilds with the correct column set. Mirrors
@@ -1339,6 +1352,12 @@ class TimelineView {
             // is the primary beneficiary: a 30-col grid with 5 newly
             // extracted cols pays 5/30 of the previous post-pump cost.
             if (this._colStats && this._colStats.length < totalCols) {
+              // Consume the extract-apply hint if it's set — the warm
+              // path doesn't need it, but leaving it stuck for the
+              // next render would re-trigger the cold-extend branch
+              // below on a future cold cache that's actually meant to
+              // do a full sweep.
+              this._colStatsExtractAdvance = 0;
               const idx = this._filteredIdx || new Uint32Array(0);
               const fromCol = this._colStats.length;
               const gen = ++this._colStatsGen;
@@ -1353,7 +1372,73 @@ class TimelineView {
               });
               return;
             }
+            // Cold-cache extract-apply fast path. The Extract Values
+            // dialog's Extract-selected click stamps
+            // `_colStatsExtractAdvance` with the count of newly
+            // appended extracted columns just before
+            // `_rebuildExtractedStateAndRender`. When `_colStats` is
+            // null here (typical: 100k-row CSV where the post-load
+            // async stats sweep hadn't finished or had been
+            // superseded by the dialog interaction), we know the only
+            // structural delta vs. the prior column set is `advance`
+            // new trailing cols. Computing stats for THOSE cols
+            // synchronously is bounded (advance × rowCount cell reads
+            // — typically advance ≤ 10), and it lets the new column
+            // cards paint immediately so the analyst sees the
+            // extraction landed. The base columns then fill in via a
+            // background `[0, totalCols - advance)` sweep that
+            // re-renders when complete. Without this branch the user
+            // pays the full O(rows × totalCols) sweep before any
+            // visual feedback (the dominant remaining cost on the
+            // 100k-row repro: ~1.4 s of `_computeColumnStatsAsync`).
+            const advance = this._colStatsExtractAdvance | 0;
+            if (!this._colStats && advance > 0 && advance <= totalCols) {
+              this._colStatsExtractAdvance = 0;
+              const idx = this._filteredIdx || new Uint32Array(0);
+              const baseEnd = totalCols - advance;
+              // Compute stats for the trailing `advance` extracted cols
+              // synchronously. The slice is small (advance × rowCount)
+              // and the user explicitly requested these columns —
+              // they're the highest-value cards to surface first.
+              const newColsSlice = this._computeColumnStatsSync(idx, baseEnd, totalCols);
+              // Seed a sparse `_colStats` so the renderer at least
+              // shows placeholder cards for base cols. Renderer
+              // tolerates missing entries (line 599 of
+              // timeline-view-render-grid.js: `(stats && stats[c]) ||
+              // { total: 0, distinct: 0, values: [] }`).
+              const seeded = new Array(totalCols);
+              for (let c = 0; c < newColsSlice.length; c++) {
+                seeded[baseEnd + c] = newColsSlice[c];
+              }
+              this._colStats = seeded;
+              this._renderColumns();
+              // Schedule the base-col fill in the background. Use the
+              // same async-yielding internal call as
+              // `_computeColumnStatsAsync` but restrict to
+              // `[0, baseEnd)`. On resolve, splice the result in place
+              // and re-render so the base cards populate.
+              if (baseEnd > 0) {
+                const gen = ++this._colStatsGen;
+                this._computeColumnStatsAsyncInternal(idx, gen, 0, baseEnd).then(result => {
+                  if (this._destroyed) return;
+                  if (result === null) return; // superseded
+                  // Splice in place; the trailing extracted-col slots
+                  // we computed synchronously above must survive.
+                  // `_colStats` may have been replaced by a newer
+                  // computation (e.g. user changed filter mid-sweep);
+                  // the generation guard above already handled that
+                  // case by returning null.
+                  for (let c = 0; c < result.length; c++) {
+                    this._colStats[c] = result[c];
+                  }
+                  this._renderColumns();
+                });
+              }
+              return;
+            }
             if (!this._colStats) {
+              // Cold cache, no extract-apply hint — full sweep.
+              this._colStatsExtractAdvance = 0;
               const idx = this._filteredIdx || new Uint32Array(0);
               // Small datasets: synchronous (no perceptible delay).
               // Large datasets: cooperative-yielding so the main thread
@@ -1372,6 +1457,7 @@ class TimelineView {
               }
               return; // large-dataset path renders after the promise resolves
             }
+            this._colStatsExtractAdvance = 0;
             this._renderColumns();
           });
         }

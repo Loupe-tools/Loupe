@@ -1031,61 +1031,85 @@ Object.assign(TimelineView.prototype, {
       }
       if (!pick.length) return;
       const before = this._extractedCols.length;
-      for (const p of pick) {
-        if (p.kind === 'json-url' || p.kind === 'json-host' || p.kind === 'json-leaf') {
-          this._addJsonExtractedColNoRender(p.sourceCol, p.path, p.proposedName, { autoKind: p.kind });
-        } else if (p.kind === 'text-url' || p.kind === 'text-host') {
 
-          this._addRegexExtractNoRender({
-            name: p.proposedName,
-            col: p.sourceCol,
-            pattern: (p.kind === 'text-url' ? TL_URL_RE.source : TL_HOSTNAME_INLINE_RE.source),
-            flags: 'i',
-            group: (p.kind === 'text-host') ? 1 : 0,
-            kind: 'auto',
-          });
-        } else if (p.kind === 'kv-field') {
-          // Pipe-delimited Key=Value cells (e.g. EVTX Event Data rendered as
-          // "Key1=val | Key2=val | …"). The value can span newlines (e.g.
-          // `UserAccountControl=\n%%2080\n%%2082`) or contain XML payloads,
-          // so we use `[\s\S]*?` and a lookahead that stops at the next
-          // real " | SomeKey=" boundary or end-of-string.
-          //
-          // The boundary uses LITERAL ` | ` (single-space / pipe / single-
-          // space), matching exactly what `EvtxRenderer` emits via
-          // `parts.join(' | ')`. Historically this was `\s\|\s`, which is
-          // looser and risks false boundaries on multi-line values that
-          // contain a stray `\n|\n` sequence. `trim: true` asks the eval
-          // path to strip leading/trailing whitespace and per-line tab
-          // indentation so multi-line values (`PrivilegeList`,
-          // `UserAccountControl`) don't render as `\n\t\t\tSeTcbPrivilege…`
-          // in the grid / topvals / pivot.
-          const esc = String(p.fieldName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const pattern = `(?:^| \\| )${esc}=([\\s\\S]*?)(?= \\| [A-Za-z_][\\w.-]*=|$)`;
-          this._addRegexExtractNoRender({
-            name: p.proposedName,
-            col: p.sourceCol,
-            pattern,
-            flags: '',
-            group: 1,
-            kind: 'auto',
-            trim: true,
-          });
-        } else if (p.kind === 'url-part') {
-          // Browser-history SQLite `url` column: extract scheme://host,
-          // path, or ?query using pre-baked regex patterns from the
-          // scanner. `p.pattern` / `p.group` come straight from the
-          // proposal so we don't need to re-derive them here.
-          this._addRegexExtractNoRender({
-            name: p.proposedName,
-            col: p.sourceCol,
-            pattern: p.pattern,
-            flags: p.flags || '',
-            group: p.group != null ? p.group : 1,
-            kind: 'auto',
-          });
-        }
+      // Group picks by source column so we can decode each source CSV
+      // column ONCE and reuse the materialised string array for every
+      // proposal in the group. Without this, N JSON-leaf proposals on
+      // the same column trigger N × rowCount calls into
+      // `_cellAt` → `RowStore.getCell` → `_decodeAsciiSlice`. On a
+      // 100k-row CSV with a JSON column that exposes ~10 leaves, that
+      // was ~5 s of main-thread blocking on click (profile evidence:
+      // `_decodeAsciiSlice` ~18 s of a 21 s click). Mirrors the
+      // `applyStep` strategy in `timeline-view-autoextract.js` (apply
+      // pump for the silent best-effort pass) — the same `srcValues`
+      // contract is honoured by `_addJsonExtractedColNoRender` and
+      // `_addRegexExtractNoRender` (both fall back to `_cellAt` when
+      // the cache is absent).
+      //
+      // Iteration order: insertion-ordered Map preserves the user's
+      // original tick order across groups, and within each bucket we
+      // preserve the order in which `pick` saw them. The dedup logic
+      // inside the helpers is independent of order, so the final
+      // column set is identical to the legacy un-grouped path.
+      const bySource = new Map();
+      for (const p of pick) {
+        if (!bySource.has(p.sourceCol)) bySource.set(p.sourceCol, []);
+        bySource.get(p.sourceCol).push(p);
       }
+
+      // Suppress per-call regex persistence for the duration of the
+      // apply loop — `_addRegexExtractNoRender` would otherwise
+      // serialise + write localStorage once per regex-kind pick.
+      // Cleared in the `finally` so an exception inside the loop can't
+      // leave the flag stuck on the view (which would silently break
+      // future Manual-tab extracts that DO want their persist call).
+      this._suppressRegexPersist = true;
+      let sawRegex = false;
+      try {
+        for (const [sourceCol, bucket] of bySource) {
+          // Materialise the source column once for this group. The
+          // auto-extract scanner (`_autoExtractScan`) iterates only
+          // base columns (`this._baseColumns.length`) when emitting
+          // proposals, so `sourceCol` is GUARANTEED to be in
+          // `[0, baseLen)`. We can therefore call `store.getCell`
+          // directly and skip the `_cellAt` → `dataset.cellAt`
+          // dispatch hop, shaving the per-cell tail-call + nullable
+          // checks off a 100k-iteration hot loop. (The extracted-col
+          // branch in `cellAt` is unreachable for any `sourceCol`
+          // that came from `_autoExtractScan`.)
+          const n = this.store.rowCount;
+          const srcValues = new Array(n);
+          const store = this.store;
+          for (let i = 0; i < n; i++) srcValues[i] = store.getCell(i, sourceCol);
+          for (const p of bucket) {
+            if (p.kind !== 'json-url' && p.kind !== 'json-host' && p.kind !== 'json-leaf') {
+              sawRegex = true;
+            }
+            // `_applyAutoProposal` does the same per-kind dispatch as
+            // the silent best-effort pump (json-* → JSON helper;
+            // text-* / kv-field / url-part → regex helper with the
+            // right pattern / flags / group / trim) and threads
+            // `srcValues` through to both helpers. Reusing it keeps
+            // the dialog and the silent pump on a single code path,
+            // so a future kind addition only needs to touch
+            // `_applyAutoProposal`.
+            try {
+              this._applyAutoProposal(p, srcValues);
+            } catch (e) {
+              if (this._app && this._app.debug && typeof console !== 'undefined') {
+                console.warn('[loupe] _applyAutoProposal threw in dialog apply:', e, 'proposal:', p);
+              }
+            }
+          }
+        }
+      } finally {
+        this._suppressRegexPersist = false;
+      }
+      // One persist for every regex-kind pick combined.
+      if (sawRegex) {
+        try { this._persistRegexExtracts(); } catch (_) { /* persistence is additive */ }
+      }
+
       const added = this._extractedCols.length - before;
       const skipped = pick.length - added;
       if (this._app && this._app._toast) {
@@ -1093,6 +1117,17 @@ Object.assign(TimelineView.prototype, {
         else if (added) this._app._toast(`Added ${added} column${added === 1 ? '' : 's'}`, 'info');
         else if (skipped) this._app._toast(`Skipped ${skipped} duplicate${skipped === 1 ? '' : 's'} — already extracted`, 'info');
       }
+      // Hint the next 'columns' render task that the only structural
+      // change is `added` new trailing extracted columns. The cold-
+      // cache branch in `timeline-view.js`'s columns-render task
+      // reads this and computes stats for the new cols synchronously
+      // (paint cards immediately) while scheduling the base-col
+      // stats async — eliminates the ~1.4 s blocking
+      // `_computeColumnStatsAsync` sweep that dominated the post-
+      // click async tail in the 100k-row repro. Consumed exactly
+      // once; the render task clears it so a future cold cache
+      // (e.g. user changes filter) goes back to the full sweep.
+      if (added > 0) this._colStatsExtractAdvance = added;
       this._rebuildExtractedStateAndRender();
       close();
     });

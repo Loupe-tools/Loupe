@@ -36,7 +36,55 @@ Object.assign(TimelineView.prototype, {
 
   // Walk a value with a path that may contain [*] — returns the first found
   // leaf string (deterministic first-match semantics).
+  //
+  // Fast path: when `path` contains no `[*]` wildcard and no `[N]`
+  // indexed-array segments (the common case for JSON-leaf extracts —
+  // a deterministic dotted route into the parsed payload), every step
+  // is a plain object-key read with at most one survivor. We can walk
+  // it inline with `cur?.[seg]` and skip the per-segment `cur`/`next`
+  // array bookkeeping entirely. Hot path on the Extract Values dialog
+  // apply, where this helper is called `picks × rowCount` times: the
+  // simple-path inline form removes the per-row 5-element-array
+  // allocation churn (Firefox profile attributed ~460 ms / 1.81 s of
+  // click time to this helper on a 100k-row CSV).
+  //
+  // Behavioural parity with the slow path:
+  //   • Empty `path` → return `value` iff non-null & not an object/array;
+  //     else `undefined`. Matches the slow path's final "first non-
+  //     object leaf in `cur`" loop applied to `cur = [value]`.
+  //   • Mid-path null / non-object → `undefined`. Slow path's
+  //     `else if (typeof v === 'object')` branch silently drops these.
+  //   • Final value is an object/array → `undefined`. Slow path's
+  //     final loop only returns non-object leaves.
+  //   • Final value is a primitive → return it as-is.
+  // Arrays are objects in JS, so a plain-key segment on an array
+  // (e.g. `"length"`) reads `arr[seg]` on both paths. Identical.
   _jsonPathGetWithStar(value, path) {
+    // Pre-scan for wildcard / indexed-array segments. If none, use the
+    // inline walker. Single pass over the path (typically 1-5 entries),
+    // and `_addJsonExtractedColNoRender` calls this helper with the
+    // SAME `path` array per row, so JIT can hoist the scan via the
+    // identical-shape check on the second iteration anyway.
+    let simple = true;
+    for (let i = 0; i < path.length; i++) {
+      const seg = path[i];
+      if (seg === '[*]' || (typeof seg === 'string' && seg.length > 2
+        && seg.charCodeAt(0) === 91 /* '[' */
+        && seg.charCodeAt(seg.length - 1) === 93 /* ']' */)) {
+        simple = false;
+        break;
+      }
+    }
+    if (simple) {
+      let cur = value;
+      for (let i = 0; i < path.length; i++) {
+        if (cur == null || typeof cur !== 'object') return undefined;
+        cur = cur[path[i]];
+      }
+      if (cur == null || typeof cur === 'object') return undefined;
+      return cur;
+    }
+
     let cur = [value];
     for (const seg of path) {
       const next = [];
@@ -183,8 +231,15 @@ Object.assign(TimelineView.prototype, {
       trim: doTrim,
       values,
     });
-    // Persist regex extractors.
-    this._persistRegexExtracts();
+    // Persist regex extractors. Skipped when the caller has set
+    // `_suppressRegexPersist` (the Extract-Values dialog batches the
+    // persist to a single call after applying all selected proposals,
+    // so we don't write localStorage N times for N regex picks). The
+    // dialog clears the flag and calls `_persistRegexExtracts()` once
+    // at the end of its loop. Direct callers (manual Regex-tab,
+    // persisted-regex replay, drawer pick) leave the flag falsy and
+    // get the per-call persist behaviour unchanged.
+    if (!this._suppressRegexPersist) this._persistRegexExtracts();
   },
 
   // Returns the index of an existing extractor equivalent to `spec`, or -1
