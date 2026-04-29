@@ -903,11 +903,52 @@ class ZipRenderer {
   // ── ZIP structure parsing ─────────────────────────────────────────────────
 
   _detectEncryption(bytes) {
-    // Quick check: look for PK signature + encryption bit in first local header
+    // Encryption is a per-entry property in ZIP. The naive heuristic of
+    // "look at the first local file header and test GP-flag bit 0" is
+    // wrong in the common case where the archive opens with a directory
+    // record (e.g. `Foo/`, compSize=0). Tools that emit explicit
+    // directory entries (Info-ZIP, 7-Zip, macOS Archive Utility,
+    // pyminizip, …) leave the encryption bit clear on those entries
+    // even when every payload entry is encrypted, because there is no
+    // data to encrypt. Looking only at the first local header therefore
+    // mis-classifies such archives as unencrypted and the user lands in
+    // the `_nonZip` "Unknown archive" hex-dump branch instead of the
+    // password-cracking UI.
+    //
+    // The correct test is "any entry in the central directory has the
+    // encryption bit set". We're already in JSZip's catch-branch when
+    // this runs, so the extra walk is on the failure path only.
     if (bytes.length < 30) return false;
     if (bytes[0] !== 0x50 || bytes[1] !== 0x4B || bytes[2] !== 0x03 || bytes[3] !== 0x04) return false;
-    const flags = bytes[6] | (bytes[7] << 8);
-    return !!(flags & 0x01); // Bit 0 = encrypted
+    const cdEntries = this._parseCentralDirectory(bytes);
+    if (cdEntries.length) return cdEntries.some(e => e.encrypted);
+    // Defensive fallback: central directory unparseable (corrupt /
+    // truncated EOCD or a ZIP64 shape we don't yet handle). Walk local
+    // file headers sequentially and accept the first encrypted one as
+    // proof. This mirrors the old single-header behaviour but extended
+    // across every local header rather than just the leading one.
+    let off = 0;
+    let scanned = 0;
+    const MAX_LOCAL_HEADERS_SCAN = 4096; // hard cap, defensive
+    while (off + 30 <= bytes.length && scanned < MAX_LOCAL_HEADERS_SCAN) {
+      if (bytes[off] !== 0x50 || bytes[off + 1] !== 0x4B
+        || bytes[off + 2] !== 0x03 || bytes[off + 3] !== 0x04) break;
+      const flags = bytes[off + 6] | (bytes[off + 7] << 8);
+      if (flags & 0x01) return true;
+      const compSize = bytes[off + 18] | (bytes[off + 19] << 8)
+        | (bytes[off + 20] << 16) | ((bytes[off + 21] << 24) >>> 0);
+      const nameLen = bytes[off + 26] | (bytes[off + 27] << 8);
+      const extraLen = bytes[off + 28] | (bytes[off + 29] << 8);
+      // Streamed entries (GP flag bit 3) carry zero comp size in the
+      // local header — without a way to find the next local header
+      // cheaply, bail rather than risk a runaway walk.
+      if (flags & 0x08) break;
+      const next = off + 30 + nameLen + extraLen + compSize;
+      if (next <= off) break;
+      off = next;
+      scanned++;
+    }
+    return false;
   }
 
   async _hasEncryptedEntries(zip) {
