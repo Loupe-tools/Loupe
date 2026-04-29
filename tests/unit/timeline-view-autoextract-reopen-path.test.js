@@ -275,8 +275,15 @@ test('first open: auto-extract runs, toast fires, marker stamped, no regex persi
   assert.ok(view._extractedCols.length >= 10,
     `first-open auto-extract should produce >=10 columns; got ` +
     `${view._extractedCols.length}: ${view._extractedCols.map(e => e.name).join(', ')}`);
-  assert.ok(view._extractedCols.length <= 12,
-    `first-open auto-extract is capped at 12; got ${view._extractedCols.length}`);
+  // Below LARGE_FILE_THRESHOLD (200 MB) the apply loop is uncapped —
+  // every eligible proposal applies. The fixture is < 100 KB so we
+  // expect the full eligible set, NOT a 12-cap. Pin a generous upper
+  // bound (something the scanner physically couldn't exceed for this
+  // fixture) to catch a regression that re-introduces a hard cap.
+  assert.ok(view._extractedCols.length <= 60,
+    `first-open auto-extract should not produce an absurd column count; ` +
+    `got ${view._extractedCols.length} — has the JSON_LEAF_CAP soft ` +
+    `limit broken?`);
   assert.ok(view.toasts.length >= 1,
     `toast must fire on first open; got 0 toasts`);
   const toastMsg = view.toasts[0].msg;
@@ -379,11 +386,12 @@ test('reopen with pre-existing user regex extract: user wins, count matches, per
   // Run auto-extract.
   view._autoExtractBestEffort();
 
-  // Total cols = 1 user + N auto, where N is bounded by MAX=12. Dedup
-  // should ensure we don't double up on the user's column 1 (if auto
-  // wanted to put a text-host there, dedup either skips or coexists
-  // depending on shape — we just assert the user extract is still
-  // there with its original name and pattern).
+  // Total cols = 1 user + N auto, where N is uncapped below 200 MB
+  // (test fixture is well below that). Dedup should ensure we don't
+  // double up on the user's column 1 (if auto wanted to put a
+  // text-host there, dedup either skips or coexists depending on
+  // shape — we just assert the user extract is still there with its
+  // original name and pattern).
   const userExtractStill = view._extractedCols.find(e => e.name === 'My Custom Extract');
   assert.ok(userExtractStill,
     `user regex extract must be preserved after auto-extract pass; ` +

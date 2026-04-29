@@ -76,6 +76,7 @@ const DRAWER = fs.readFileSync(
 const MIXIN_METHODS = [
   '_runGeoipEnrichment',
   '_detectIpColumns',
+  '_detectIpColumnsExtracted',
   '_classifyColumnNeighbourhood',
   '_enrichSingleIpCol',
   '_geoipDuplicateFor',

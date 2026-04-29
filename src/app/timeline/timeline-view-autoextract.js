@@ -72,8 +72,13 @@ Object.assign(TimelineView.prototype, {
   //   1. kind priority: url-part / text-url / json-url → text-host /
   //      json-host → forensic kv-field → generic kv-field → json-leaf
   //   2. matchPct desc
-  // …and the top `MAX` (12) are applied. Avoids drowning the grid in
-  // 40+ columns on JSON-heavy logs.
+  // …and (by default) ALL eligible proposals are applied. The cap of
+  // 12 only kicks in when `_app._fileMeta.size >= LARGE_FILE_THRESHOLD`
+  // (200 MB) — at that scale the per-proposal O(rows) cell-decode pass
+  // adds up. Below 200 MB the analyst sees every extractable column so
+  // they don't mistake the cap for "this is all the file has." Scanner-
+  // internal soft caps (`JSON_LEAF_CAP = 60`, `KV_FIELD_CAP = 80` per
+  // source column) still bound the proposal explosion at the source.
   //
   // Idempotence — auto-extracted columns are EPHEMERAL by design. The
   // pass runs on every file open and re-derives the same proposals
@@ -195,8 +200,23 @@ Object.assign(TimelineView.prototype, {
         return (b.matchPct || 0) - (a.matchPct || 0);
       });
 
-      const MAX = 12;
-      const ranked = eligible.slice(0, MAX);
+      // Size-conditional cap. Files ≥ LARGE_FILE_THRESHOLD (200 MB)
+      // are kept on the historical 12-cap to avoid O(rows × proposals)
+      // CPU blow-up; smaller files apply every eligible proposal so
+      // the analyst sees the full extractable column set. File size
+      // is read from `_app._fileMeta.size` (set by `timeline-router.js`
+      // at load time); we treat a missing meta as "small" — the worst
+      // case is that an unusually large file slips through uncapped,
+      // which the apply pump still handles gracefully one idle tick
+      // at a time.
+      const fileSize = (this._app
+        && this._app._fileMeta
+        && Number.isFinite(this._app._fileMeta.size))
+        ? this._app._fileMeta.size : 0;
+      const HUGE_FILE_CAP = 12;
+      const ranked = (fileSize >= RENDER_LIMITS.LARGE_FILE_THRESHOLD)
+        ? eligible.slice(0, HUGE_FILE_CAP)
+        : eligible;
       let added = 0;
       let idx = 0;
 
@@ -216,6 +236,31 @@ Object.assign(TimelineView.prototype, {
               && this._app && typeof this._app._toast === 'function') {
             this._app._toast(`Auto-extracted ${added} field${added === 1 ? '' : 's'}`, 'info');
             TimelineView._saveAutoExtractToastShownFor(this._fileKey);
+          }
+          // Settle hook — auto-extract has fully landed. If the
+          // initial GeoIP pass (constructor +100 ms) found no
+          // IP-shaped BASE columns (`_geoipBaseDetectResult` is the
+          // result-cache stamped by `_runGeoipEnrichment` on its
+          // natural-detect path), retry detection over the extracted
+          // columns we just installed and enrich whichever of them
+          // is IPv4-shaped. This catches files where the IP lives
+          // inside a JSON blob (json-leaf), an EVTX kv-field
+          // (`SrcIp=…`), or any regex-extracted column. Skipped when
+          // base detection already found IP cols (retry would be a
+          // no-op) or no extracted cols were added (nothing new to
+          // scan).
+          if (added > 0
+              && this._extractedCols && this._extractedCols.length
+              && Array.isArray(this._geoipBaseDetectResult)
+              && this._geoipBaseDetectResult.length === 0
+              && typeof this._runGeoipEnrichment === 'function') {
+            try {
+              this._runGeoipEnrichment({ retryExtractedCols: true });
+            } catch (_) { /* enrichment is additive */ }
+            // Clear the gate so subsequent triggers (MMDB hydrate,
+            // user upload, right-click) re-evaluate against the
+            // current column set rather than this stale snapshot.
+            this._geoipBaseDetectResult = null;
           }
           return;
         }

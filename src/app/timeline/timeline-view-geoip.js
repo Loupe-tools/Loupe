@@ -169,12 +169,23 @@
   Object.assign(TimelineView.prototype, {
 
     // ── Public entry point ──────────────────────────────────────────────
-    // `opts.force`    — true|'geo'|'asn'. true drops both kinds and
-    //                   rebuilds; 'geo' / 'asn' drops only that kind.
-    // `opts.forceCol` — index of a single base column to enrich
-    //                   unconditionally — bypasses both the IPv4
-    //                   detection threshold and the skip heuristic for
-    //                   ALL configured providers.
+    // `opts.force`              — true|'geo'|'asn'. true drops both kinds
+    //                             and rebuilds; 'geo' / 'asn' drops only
+    //                             that kind.
+    // `opts.forceCol`           — index of a single column to enrich
+    //                             unconditionally (works for both base
+    //                             and extracted cols via `_cellAt`).
+    //                             Bypasses both the IPv4 detection
+    //                             threshold and the skip heuristic for
+    //                             ALL configured providers.
+    // `opts.retryExtractedCols` — second-chance IP detection over the
+    //                             extracted-column plane. Used by the
+    //                             auto-extract settle hook when the
+    //                             initial natural-detect pass found no
+    //                             IP-shaped base columns. Mirrors the
+    //                             natural-detect path otherwise (skip
+    //                             marker, neighbour-skip heuristic,
+    //                             marker stamp on completion).
     _runGeoipEnrichment(opts) {
       if (this._destroyed) return;
       if (!this._app) return;
@@ -184,6 +195,7 @@
       const force = !!(opts && opts.force);
       const forceKind = (opts && (opts.force === 'geo' || opts.force === 'asn')) ? opts.force : null;
       const forceCol = (opts && Number.isInteger(opts.forceCol)) ? opts.forceCol : -1;
+      const retryExtractedCols = !!(opts && opts.retryExtractedCols);
 
       // Forced-refresh path drops existing enrichment cols of the
       // affected kind first so the rebuild lands at the same logical
@@ -208,17 +220,38 @@
         }
       }
 
-      const targetCols = (forceCol >= 0)
-        ? [forceCol]
-        : this._detectIpColumns();
+      // Three detection paths:
+      //   • forceCol — single explicit column (right-click "Enrich IP")
+      //   • retryExtractedCols — second-chance scan over extracted
+      //     columns, fired by the auto-extract settle hook when the
+      //     initial natural-detect pass came up empty.
+      //   • default — natural detection over base columns.
+      //
+      // The base-detect result is cached on `_geoipBaseDetectResult`
+      // so the auto-extract settle hook can read it without re-
+      // scanning. Any explicit-target path (forceCol / retry) leaves
+      // the cache untouched so it still reflects the most recent
+      // natural detect.
+      let targetCols;
+      if (forceCol >= 0) {
+        targetCols = [forceCol];
+      } else if (retryExtractedCols) {
+        targetCols = this._detectIpColumnsExtracted();
+      } else {
+        targetCols = this._detectIpColumns();
+        this._geoipBaseDetectResult = targetCols.slice();
+      }
 
       if (!targetCols.length) {
         // Nothing to do; only stamp the GeoIP-specific marker on the
         // natural-detect path so a forced override on a file with no
-        // auto-detected IP cols doesn't poison future opens. This
+        // auto-detected IP cols doesn't poison future opens. The
+        // retry-extracted path does NOT stamp here because it's a
+        // post-settle second chance — if it found nothing the natural
+        // pass already stamped (or will stamp) the marker. This
         // marker is GeoIP-only — it does NOT affect the auto-extract
         // pass that handles JSON / URL / host extraction.
-        if (!force && !forceKind && forceCol < 0) {
+        if (!force && !forceKind && forceCol < 0 && !retryExtractedCols) {
           TimelineView._saveGeoipDoneFor(this._fileKey);
         }
         return;
@@ -228,18 +261,27 @@
       // so a column may produce a geo cell but no ASN cell (or vice
       // versa). Insertion order is geo first, then ASN, so the grid
       // shows IP | IP.geo | IP.asn | … left-to-right.
+      //
+      // The neighbour-skip heuristic ('column already has geo data
+      // nearby') applies only to base columns — it walks ±3 base
+      // columns by header name and value shape. For the retry-
+      // extracted path the target is by definition an extracted
+      // column with no inherent base neighbours, so the heuristic is
+      // bypassed there too (mirrors the forceCol branch which
+      // already does so).
+      const bypassSkipHeuristic = forceCol >= 0 || retryExtractedCols;
       let added = 0;
       for (const col of targetCols) {
         // Geo pass.
         if (geoProvider && (forceKind == null || forceKind === 'geo')) {
-          const skipGeo = (forceCol < 0) && this._classifyColumnNeighbourhood(col, 'geo');
+          const skipGeo = !bypassSkipHeuristic && this._classifyColumnNeighbourhood(col, 'geo');
           if (!skipGeo) {
             if (this._enrichSingleIpCol(col, geoProvider, 'geo')) added++;
           }
         }
         // ASN pass.
         if (asnProvider && (forceKind == null || forceKind === 'asn')) {
-          const skipAsn = (forceCol < 0) && this._classifyColumnNeighbourhood(col, 'asn');
+          const skipAsn = !bypassSkipHeuristic && this._classifyColumnNeighbourhood(col, 'asn');
           if (!skipAsn) {
             if (this._enrichSingleIpCol(col, asnProvider, 'asn')) added++;
           }
@@ -259,13 +301,19 @@
       }
 
       // Mark the file as enriched so a deletion is sticky. GeoIP-only
-      // marker — does not affect auto-extract.
+      // marker — does not affect auto-extract. Both the natural-detect
+      // path AND the retry-extracted-cols path stamp here: the latter
+      // is also auto-derived (no user force opt), so its enrichment
+      // should likewise be sticky across reopens.
       if (!force && !forceKind && forceCol < 0) {
         TimelineView._saveGeoipDoneFor(this._fileKey);
       }
     },
 
     // ── IPv4 column detection ───────────────────────────────────────────
+    // Scans BASE columns by value shape (no header-name matching). The
+    // 80% IPv4 hit-rate threshold is "lenient when sparse" — small log
+    // files with few non-empty IP cells are accepted at 100% match.
     _detectIpColumns() {
       if (!this.store || !this.store.rowCount || !this._baseColumns) return [];
       const baseCount = this._baseColumns.length;
@@ -282,6 +330,46 @@
         }
         if (nonEmpty >= 8 && (hits / nonEmpty) >= 0.8) out.push(c);
         else if (nonEmpty < 8 && nonEmpty > 0 && hits === nonEmpty) out.push(c);
+      }
+      return out;
+    },
+
+    // Sister scan over EXTRACTED columns. Used by the auto-extract
+    // settle hook (`retryExtractedCols: true`) when the base scan
+    // came up empty — catches files whose IPv4 lives inside a JSON
+    // blob (json-leaf), an EVTX kv-field (SrcIp=…), or any regex-
+    // extracted column. Returns indices in the unified column plane
+    // (i.e. `_baseColumns.length + i`) so they slot directly into
+    // the existing `_enrichSingleIpCol` path, which already handles
+    // extracted-source-col naming via `_isExtractedCol`.
+    //
+    // Skips GeoIP's own outputs (`geoip` / `geoip-asn`) to prevent
+    // self-reference loops if an enriched cell happens to look like
+    // an IPv4 (the `'<lat>,<lng>'` shape doesn't, but keep the guard
+    // explicit so future formatRow changes can't induce a cycle).
+    _detectIpColumnsExtracted() {
+      if (!this.store || !this.store.rowCount) return [];
+      if (!this._extractedCols || !this._extractedCols.length) return [];
+      const baseLen = this._dataset
+        ? this._dataset.baseColCount
+        : this._baseColumns.length;
+      const sample = Math.min(this.store.rowCount, 200);
+      const out = [];
+      for (let i = 0; i < this._extractedCols.length; i++) {
+        const col = this._extractedCols[i];
+        if (!col) continue;
+        if (col.kind === 'geoip' || col.kind === 'geoip-asn') continue;
+        const colIdx = baseLen + i;
+        let nonEmpty = 0;
+        let hits = 0;
+        for (let r = 0; r < sample; r++) {
+          const v = this._cellAt(r, colIdx);
+          if (!v) continue;
+          nonEmpty++;
+          if (isStrictIPv4(v)) hits++;
+        }
+        if (nonEmpty >= 8 && (hits / nonEmpty) >= 0.8) out.push(colIdx);
+        else if (nonEmpty < 8 && nonEmpty > 0 && hits === nonEmpty) out.push(colIdx);
       }
       return out;
     },

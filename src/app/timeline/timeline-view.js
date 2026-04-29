@@ -278,6 +278,17 @@ class TimelineView {
     // pair the cancel API with whichever scheduler the runtime picked
     // (`requestIdleCallback` vs the `setTimeout` fallback for Safari).
     this._autoExtractIdleHandle = null;
+    // GeoIP detection result-cache. Populated by the natural-detect
+    // path inside `_runGeoipEnrichment` (via `_detectIpColumns()`)
+    // and consumed by the auto-extract settle hook in
+    // `timeline-view-autoextract.js` to decide whether to retry IP
+    // detection over the freshly-installed extracted columns. Stays
+    // null until at least one natural-detect run has fired; the
+    // settle hook only fires the retry when this is an empty array
+    // (base detect ran AND found nothing). Cleared back to null
+    // after the retry to avoid stale snapshot reuse on subsequent
+    // GeoIP triggers (MMDB hydrate, user upload, right-click).
+    this._geoipBaseDetectResult = null;
     this._pendingTasks = new Set();
     this._openPopover = null;
     this._openDialog = null;

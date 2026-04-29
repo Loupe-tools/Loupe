@@ -20,10 +20,11 @@
 //     columns appear after auto-extract runs").
 //   • Every emitted proposal has `matchPct <= 100` (the array-leaf
 //     overcount fix).
-//   • The proposal cap (`MAX = 12` in `_autoExtractBestEffort`) is not
-//     enforced INSIDE `_autoExtractScan` — the scanner emits the full set
-//     and the apply loop trims (so a future "let's also cap in the
-//     scanner" change would surface here).
+//   • The proposal cap (`HUGE_FILE_CAP = 12` in `_autoExtractBestEffort`,
+//     which only kicks in for files ≥ 200 MB) is not enforced INSIDE
+//     `_autoExtractScan` — the scanner emits the full set and the apply
+//     loop trims (so a future "let's also cap in the scanner" change
+//     would surface here).
 // ════════════════════════════════════════════════════════════════════════════
 
 const test = require('node:test');
@@ -225,13 +226,15 @@ test('_autoExtractScan never emits matchPct > 100', () => {
   }
 });
 
-test('_autoExtractScan does NOT enforce the MAX=12 cap (apply loop trims)', () => {
+test('_autoExtractScan does NOT enforce the 12-cap (apply loop trims)', () => {
   // The 12-column cap lives in `_autoExtractBestEffort` (the apply
   // scheduler), not in `_autoExtractScan`. The scanner emits the full
-  // set so the dialog UX has access to all candidates — only the silent
-  // first-open pass clips to 12. Pin the separation so a refactor that
-  // collapses the cap into the scanner doesn't silently shrink the
-  // Extract Values dialog's catalog.
+  // set so the dialog UX has access to all candidates — only the
+  // huge-file path (≥ LARGE_FILE_THRESHOLD = 200 MB) clips to 12 in
+  // the apply loop; below that threshold the apply loop is uncapped.
+  // Pin the separation so a refactor that collapses the cap into the
+  // scanner doesn't silently shrink the Extract Values dialog's
+  // catalog.
   const sandbox = loadScannerSandbox();
   const col = readColumn7();
   const view = buildScannerInstance(sandbox, col);
