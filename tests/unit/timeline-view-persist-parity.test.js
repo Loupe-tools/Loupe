@@ -55,7 +55,7 @@ const PERSIST_METHODS = [
   '_loadEntOrderFor',        '_saveEntOrderFor',
   '_loadDetectionsGroup',    '_saveDetectionsGroup',
   '_loadRegexExtractsFor',   '_saveRegexExtractsFor',
-  '_loadAutoExtractDoneFor', '_saveAutoExtractDoneFor',
+  '_loadAutoExtractToastShownFor', '_saveAutoExtractToastShownFor',
   '_loadPivotSpec',          '_savePivotSpec',
   '_loadQueryFor',           '_saveQueryFor',
   '_loadSusMarksFor',        '_saveSusMarksFor',
@@ -102,19 +102,27 @@ test('timeline-view-persist.js defines every _load/_save helper exactly once', (
 
 // ── Storage-key inventory ──────────────────────────────────────────────────
 
-test('TIMELINE_KEYS inventory in timeline-view-persist.js is the canonical 17-key set', () => {
-  // The 17 keys these helpers are responsible for. Any change here
+test('TIMELINE_KEYS inventory in timeline-view-persist.js is the canonical 18-key set', () => {
+  // The 18 keys these helpers are responsible for. Any change here
   // would be a localStorage format break — bump CONTRIBUTING.md's
   // Persistence Keys table in the same commit if you have a real
   // reason to do so.
   //
-  // GEOIP_DONE was split out from AUTOEXTRACT_DONE: the two were
-  // briefly conflated, which silently disabled JSON / URL / host
-  // extraction on files with no IPv4-shaped columns (the GeoIP no-op
-  // path stamped the shared marker). See timeline-view-geoip-marker-
-  // isolation.test.js for the ownership invariants.
+  // GEOIP_DONE was split out from the (now-renamed) AUTOEXTRACT key:
+  // the two were briefly conflated, which silently disabled JSON / URL
+  // / host extraction on files with no IPv4-shaped columns. See
+  // timeline-view-geoip-marker-isolation.test.js for the ownership
+  // invariants.
+  //
+  // AUTOEXTRACT_TOAST_SHOWN replaces the old AUTOEXTRACT_DONE — the
+  // semantics changed (now gates only the toast, not the extraction
+  // itself, because auto-extracted columns are ephemeral and re-derived
+  // every open). AUTOEXTRACT_DONE_LEGACY is the pre-rename key; it
+  // exists ONLY for the one-shot localStorage cleanup inside
+  // `_loadAutoExtractToastShownFor` and has no other consumer.
   const EXPECTED_KEYS = [
-    'AUTOEXTRACT_DONE', 'BUCKET', 'CARD_ORDER', 'CARD_WIDTHS',
+    'AUTOEXTRACT_TOAST_SHOWN', 'AUTOEXTRACT_DONE_LEGACY',
+    'BUCKET', 'CARD_ORDER', 'CARD_WIDTHS',
     'CHART_H', 'DETECTIONS_GROUP', 'ENT_ORDER', 'ENT_PINNED',
     'GEOIP_DONE',
     'GRID_COL_ORDER', 'GRID_H', 'PINNED_COLS', 'PIVOT', 'QUERY',
@@ -180,8 +188,10 @@ test('callers still reach the persist helpers via TimelineView.<methodName>', ()
   //
   // We scan both `timeline-view.js` AND the sibling mixins because
   // call sites have migrated as the B2 split progressed (e.g.
-  // `_loadAutoExtractDoneFor` callers moved into
-  // `timeline-view-autoextract.js` during B2e).
+  // `_loadAutoExtractToastShownFor` callers moved into
+  // `timeline-view-autoextract.js` during B2e; the method itself was
+  // also renamed from `_loadAutoExtractDoneFor` when its semantics
+  // narrowed from "gates extraction" to "gates the toast only").
   const SIBLING_FILES = [
     'src/app/timeline/timeline-view.js',
     'src/app/timeline/timeline-view-factories.js',
@@ -199,7 +209,7 @@ test('callers still reach the persist helpers via TimelineView.<methodName>', ()
     'TimelineView._loadBucketPref',
     'TimelineView._loadSusMarksFor',
     'TimelineView._loadQueryFor',
-    'TimelineView._loadAutoExtractDoneFor',
+    'TimelineView._loadAutoExtractToastShownFor',
   ];
   for (const s of SENTINELS) {
     assert.ok(

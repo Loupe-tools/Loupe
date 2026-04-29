@@ -290,11 +290,15 @@ class TimelineView {
     this._scheduleRender(['chart', 'scrubber', 'chips', 'grid', 'columns', 'detections', 'entities', 'pivot', 'sections']);
     // Best-effort auto-extract — run one tick later so the initial render
     // has painted (the analyst sees the grid first, then any high-coverage
-    // extracted columns slide in next to it). Single-shot per file: the
-    // `loupe_timeline_autoextract_done` marker is checked + set inside
-    // `_autoExtractBestEffort` so deleted columns never come back on
-    // reopen. The full Extract Values dialog still exists for analysts
-    // who want to opt into lower-coverage proposals manually.
+    // extracted columns slide in next to it). Runs UNCONDITIONALLY on
+    // every file open: the auto-extracted columns are ephemeral (re-
+    // derived deterministically by the scanner) so re-running is correct
+    // and avoids the silent column-loss bug that the persistence
+    // asymmetry caused for JSON-shaped CSVs. The
+    // `loupe_timeline_autoextract_toast_shown` marker only suppresses
+    // the post-apply toast on reopens; the extraction itself ignores it.
+    // Manual Regex-tab extracts persist via `_persistRegexExtracts` and
+    // are dedupe-merged with the auto pass.
     setTimeout(() => this._autoExtractBestEffort(), 60);
     // GeoIP enrichment runs on the same post-mount tick as auto-extract,
     // but slightly later so its idempotence-marker check sees any

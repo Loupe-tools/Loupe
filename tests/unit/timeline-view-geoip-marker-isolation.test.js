@@ -11,16 +11,23 @@
 //
 // FIX: split into a distinct `loupe_timeline_geoip_done` key, owned
 // exclusively by `_runGeoipEnrichment`. `_autoExtractBestEffort` retains
-// sole ownership of `loupe_timeline_autoextract_done`.
+// sole ownership of its own marker — which has since been renamed from
+// `AUTOEXTRACT_DONE` (`loupe_timeline_autoextract_done`) to
+// `AUTOEXTRACT_TOAST_SHOWN` (`loupe_timeline_autoextract_toast_shown`)
+// when its semantics changed: it no longer gates the EXTRACTION (which
+// runs every open) but only the post-apply TOAST.
 //
 // Pins (static-text invariants — NOT a behavioural test):
-//   • TIMELINE_KEYS defines BOTH `AUTOEXTRACT_DONE` and `GEOIP_DONE`,
-//     with distinct string values.
+//   • TIMELINE_KEYS defines BOTH `AUTOEXTRACT_TOAST_SHOWN` and
+//     `GEOIP_DONE`, with distinct string values. The legacy
+//     `AUTOEXTRACT_DONE_LEGACY` constant exists ONLY for the
+//     migration cleanup inside `_loadAutoExtractToastShownFor`.
 //   • `timeline-view-geoip.js` references ONLY the GeoIP-specific
 //     load/save methods (never the auto-extract pair).
-//   • `timeline-view-autoextract.js` references ONLY the auto-extract
-//     load/save methods (never the GeoIP pair).
-//   • `timeline-view-persist.js` defines all four methods.
+//   • `timeline-view-autoextract.js` references ONLY the
+//     auto-extract toast-shown load/save methods (never the GeoIP
+//     pair).
+//   • `timeline-view-persist.js` defines all four current methods.
 // ════════════════════════════════════════════════════════════════════════════
 
 const test = require('node:test');
@@ -49,11 +56,23 @@ const AUTOEXTRACT = fs.readFileSync(
 
 // ── Key definitions ────────────────────────────────────────────────────────
 
-test('TIMELINE_KEYS defines AUTOEXTRACT_DONE with the canonical key string', () => {
+test('TIMELINE_KEYS defines AUTOEXTRACT_TOAST_SHOWN with the canonical key string', () => {
   assert.match(
     HELPERS,
-    /AUTOEXTRACT_DONE:\s*'loupe_timeline_autoextract_done'/,
-    'TIMELINE_KEYS.AUTOEXTRACT_DONE must be loupe_timeline_autoextract_done',
+    /AUTOEXTRACT_TOAST_SHOWN:\s*'loupe_timeline_autoextract_toast_shown'/,
+    'TIMELINE_KEYS.AUTOEXTRACT_TOAST_SHOWN must be loupe_timeline_autoextract_toast_shown',
+  );
+});
+
+test('TIMELINE_KEYS defines AUTOEXTRACT_DONE_LEGACY for migration only', () => {
+  // The legacy alias must be present so `_loadAutoExtractToastShownFor`
+  // can locate and delete stale entries from existing browser profiles.
+  assert.match(
+    HELPERS,
+    /AUTOEXTRACT_DONE_LEGACY:\s*'loupe_timeline_autoextract_done'/,
+    'TIMELINE_KEYS.AUTOEXTRACT_DONE_LEGACY must keep the pre-rename ' +
+    'value loupe_timeline_autoextract_done so the migration cleanup ' +
+    'in _loadAutoExtractToastShownFor can target it.',
   );
 });
 
@@ -65,24 +84,43 @@ test('TIMELINE_KEYS defines GEOIP_DONE with a distinct key string', () => {
   );
 });
 
-test('the two keys are distinct strings', () => {
+test('the toast-shown and GeoIP keys are distinct strings', () => {
   // Defence in depth — even if someone redefines the constants, the
   // string values themselves must differ.
-  const auto = HELPERS.match(/AUTOEXTRACT_DONE:\s*'([^']+)'/);
+  const auto = HELPERS.match(/AUTOEXTRACT_TOAST_SHOWN:\s*'([^']+)'/);
   const geo = HELPERS.match(/GEOIP_DONE:\s*'([^']+)'/);
-  assert.ok(auto, 'AUTOEXTRACT_DONE constant not found');
+  assert.ok(auto, 'AUTOEXTRACT_TOAST_SHOWN constant not found');
   assert.ok(geo, 'GEOIP_DONE constant not found');
   assert.notEqual(
     auto[1], geo[1],
-    'AUTOEXTRACT_DONE and GEOIP_DONE must be distinct localStorage keys',
+    'AUTOEXTRACT_TOAST_SHOWN and GEOIP_DONE must be distinct localStorage keys',
   );
 });
 
 // ── Persist mixin owns all four methods ────────────────────────────────────
 
-test('timeline-view-persist.js defines _loadAutoExtractDoneFor + _saveAutoExtractDoneFor', () => {
-  assert.match(PERSIST, /_loadAutoExtractDoneFor\s*\(/);
-  assert.match(PERSIST, /_saveAutoExtractDoneFor\s*\(/);
+test('timeline-view-persist.js defines _loadAutoExtractToastShownFor + _saveAutoExtractToastShownFor', () => {
+  assert.match(PERSIST, /_loadAutoExtractToastShownFor\s*\(/);
+  assert.match(PERSIST, /_saveAutoExtractToastShownFor\s*\(/);
+});
+
+test('timeline-view-persist.js does NOT define the legacy auto-extract methods', () => {
+  // The pre-rename method names (`_loadAutoExtractDoneFor` /
+  // `_saveAutoExtractDoneFor`) must not coexist with the new ones —
+  // having both invites confusion about which gates extraction vs
+  // toast.
+  assert.doesNotMatch(
+    PERSIST,
+    /_loadAutoExtractDoneFor\s*\(/,
+    'timeline-view-persist.js must not define the pre-rename method ' +
+    '_loadAutoExtractDoneFor — it was renamed to _loadAutoExtractToastShownFor.',
+  );
+  assert.doesNotMatch(
+    PERSIST,
+    /_saveAutoExtractDoneFor\s*\(/,
+    'timeline-view-persist.js must not define the pre-rename method ' +
+    '_saveAutoExtractDoneFor — it was renamed to _saveAutoExtractToastShownFor.',
+  );
 });
 
 test('timeline-view-persist.js defines _loadGeoipDoneFor + _saveGeoipDoneFor', () => {
@@ -98,14 +136,22 @@ test('timeline-view-geoip.js does NOT reference auto-extract marker methods', ()
   // would re-introduce the regression we just fixed.
   assert.doesNotMatch(
     GEOIP,
-    /_loadAutoExtractDoneFor/,
-    'timeline-view-geoip.js must not read the auto-extract marker — it has its own (_loadGeoipDoneFor)',
+    /_loadAutoExtractToastShownFor/,
+    'timeline-view-geoip.js must not read the auto-extract toast-shown ' +
+    'marker — it has its own (_loadGeoipDoneFor)',
   );
   assert.doesNotMatch(
     GEOIP,
-    /_saveAutoExtractDoneFor/,
-    'timeline-view-geoip.js must not write the auto-extract marker — that was the bug. Use _saveGeoipDoneFor.',
+    /_saveAutoExtractToastShownFor/,
+    'timeline-view-geoip.js must not write the auto-extract toast-shown ' +
+    'marker — that was the bug class. Use _saveGeoipDoneFor.',
   );
+  // Also block any reference to the pre-rename methods (defensive — if
+  // someone reverts the rename in geoip but the rest of the codebase
+  // moved on, this fires first).
+  assert.doesNotMatch(GEOIP, /_loadAutoExtractDoneFor|_saveAutoExtractDoneFor/,
+    'timeline-view-geoip.js must not reference the legacy ' +
+    '_loadAutoExtractDoneFor / _saveAutoExtractDoneFor methods.');
 });
 
 test('timeline-view-geoip.js DOES reference GeoIP-specific marker methods', () => {
@@ -139,7 +185,19 @@ test('timeline-view-autoextract.js does NOT reference GeoIP marker methods', () 
   );
 });
 
-test('timeline-view-autoextract.js DOES reference auto-extract marker methods', () => {
-  assert.match(AUTOEXTRACT, /_loadAutoExtractDoneFor/);
-  assert.match(AUTOEXTRACT, /_saveAutoExtractDoneFor/);
+test('timeline-view-autoextract.js DOES reference toast-shown marker methods', () => {
+  assert.match(AUTOEXTRACT, /_loadAutoExtractToastShownFor/);
+  assert.match(AUTOEXTRACT, /_saveAutoExtractToastShownFor/);
+});
+
+test('timeline-view-autoextract.js does NOT reference the legacy marker methods', () => {
+  // Once the rename's complete, no caller should reference the old names.
+  assert.doesNotMatch(AUTOEXTRACT, /_loadAutoExtractDoneFor/,
+    'timeline-view-autoextract.js must not reference the legacy ' +
+    '_loadAutoExtractDoneFor method — it was renamed to ' +
+    '_loadAutoExtractToastShownFor.');
+  assert.doesNotMatch(AUTOEXTRACT, /_saveAutoExtractDoneFor/,
+    'timeline-view-autoextract.js must not reference the legacy ' +
+    '_saveAutoExtractDoneFor method — it was renamed to ' +
+    '_saveAutoExtractToastShownFor.');
 });

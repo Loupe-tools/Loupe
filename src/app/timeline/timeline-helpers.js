@@ -41,15 +41,25 @@ const TIMELINE_KEYS = Object.freeze({
   // `GridViewer._resolveColOrder`. Mirrors the `CARD_ORDER` shape.
   GRID_COL_ORDER: 'loupe_timeline_grid_col_order',
   // Per-file marker — `{ [fileKey]: true }` — set the first time the
-  // best-effort auto-extract pass runs against a given file, so we never
-  // re-add columns the analyst has since deleted. Replaces the old
-  // `loupe_timeline_autoextract_nudged_hard` flag from the prompt-style
-  // nudge UX. `_reset()` wipes this via the `loupe_timeline_*` prefix.
-  // OWNED EXCLUSIVELY by `_autoExtractBestEffort` — GeoIP enrichment has
-  // its own marker (`GEOIP_DONE`). Conflating the two caused files with
-  // no IP-shaped columns to silently lose auto-extract entirely (the
-  // GeoIP no-op path stamped this key, poisoning the auto-extract guard).
-  AUTOEXTRACT_DONE: 'loupe_timeline_autoextract_done',
+  // best-effort auto-extract pass FIRES THE TOAST against a given file.
+  // The auto-extract pass itself runs on every file open (it's
+  // deterministic and fast), but the "Auto-extracted N fields" toast
+  // would be noisy if it surfaced on every reopen, so we gate the
+  // toast on this marker. Renamed (was `AUTOEXTRACT_DONE` /
+  // `loupe_timeline_autoextract_done`) when the gating semantic
+  // changed: previously it short-circuited the EXTRACTION itself,
+  // which broke JSON-shaped CSVs because JSON-leaf columns aren't
+  // persisted and so were silently lost on reopen. The legacy key is
+  // deleted on first load by `_loadAutoExtractToastShownFor`. `_reset()`
+  // wipes this via the `loupe_timeline_*` prefix. OWNED EXCLUSIVELY by
+  // `_autoExtractBestEffort` — GeoIP enrichment has its own marker
+  // (`GEOIP_DONE`).
+  AUTOEXTRACT_TOAST_SHOWN: 'loupe_timeline_autoextract_toast_shown',
+  // Legacy alias for the above key (pre-rename). Kept ONLY so the
+  // migration path in `_loadAutoExtractToastShownFor` can locate and
+  // delete stale entries from existing browser profiles. Do not write
+  // to this key — it has no consumers post-rename.
+  AUTOEXTRACT_DONE_LEGACY: 'loupe_timeline_autoextract_done',
   // Per-file marker — `{ [fileKey]: true }` — set the first time GeoIP
   // enrichment runs against a given file, so deleted geo / asn columns
   // stay deleted on reopen. Independent from `AUTOEXTRACT_DONE` so that

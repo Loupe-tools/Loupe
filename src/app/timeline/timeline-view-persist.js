@@ -153,20 +153,33 @@ Object.assign(TimelineView, {
     safeStorage.setJSON(TIMELINE_KEYS.REGEX_EXTRACTS, all);
   },
   // Per-file marker — set the first time the best-effort auto-extract pass
-  // runs against a file so we never re-add columns the analyst has since
-  // deleted. Read on construction (`_autoExtractBestEffort` short-circuits
-  // when truthy), written once after that pass runs (whether or not it
-  // added any columns — a zero-result file shouldn't get re-scanned on
-  // every reopen). Cleared by `_reset()` via the `loupe_timeline_*` prefix
-  // wipe so a hard reset always re-runs auto-extract.
-  _loadAutoExtractDoneFor(fileKey) {
-    const all = safeStorage.getJSON(TIMELINE_KEYS.AUTOEXTRACT_DONE, null);
+  // FIRES THE TOAST against a file. The extraction itself runs on every
+  // file open (it's deterministic and re-derives JSON-leaf / json-host /
+  // json-url columns that the regex-extracts persister can't store), but
+  // the toast notification would be noisy across reopens, so we gate the
+  // toast on this marker. Cleared by `_reset()` via the `loupe_timeline_*`
+  // prefix wipe so a hard reset re-arms the toast.
+  //
+  // Legacy migration: prior versions used `loupe_timeline_autoextract_done`
+  // to gate the EXTRACTION itself, not the toast. That gate broke JSON-
+  // shaped CSVs because JSON-leaf extracts aren't persisted, so reopening
+  // any such file silently lost most of its extracted columns. On first
+  // call after the upgrade, we delete the legacy key — idempotent and
+  // safe to leave in for several releases.
+  _loadAutoExtractToastShownFor(fileKey) {
+    // One-shot legacy-key cleanup. `safeStorage.remove` is a no-op when
+    // the key isn't present, so subsequent calls are free. We do this
+    // on every load rather than maintaining a separate "migrated"
+    // flag — the cost is one localStorage hit per file open, which
+    // is dwarfed by the rest of the open path.
+    safeStorage.remove(TIMELINE_KEYS.AUTOEXTRACT_DONE_LEGACY);
+    const all = safeStorage.getJSON(TIMELINE_KEYS.AUTOEXTRACT_TOAST_SHOWN, null);
     return !!(all && all[fileKey]);
   },
-  _saveAutoExtractDoneFor(fileKey) {
-    const all = safeStorage.getJSON(TIMELINE_KEYS.AUTOEXTRACT_DONE, {}) || {};
+  _saveAutoExtractToastShownFor(fileKey) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.AUTOEXTRACT_TOAST_SHOWN, {}) || {};
     all[fileKey] = true;
-    safeStorage.setJSON(TIMELINE_KEYS.AUTOEXTRACT_DONE, all);
+    safeStorage.setJSON(TIMELINE_KEYS.AUTOEXTRACT_TOAST_SHOWN, all);
   },
   // Per-file GeoIP done-marker — distinct from AUTOEXTRACT_DONE so that
   // a file with no IPv4-shaped columns (which still stamps this marker

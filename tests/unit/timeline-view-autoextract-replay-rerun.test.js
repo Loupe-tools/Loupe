@@ -1,40 +1,49 @@
 'use strict';
 // ════════════════════════════════════════════════════════════════════════════
 // timeline-view-autoextract-replay-rerun.test.js — pin the structural
-// contract that lets auto-extract recover from the persistence asymmetry
-// between regex extracts (persisted) and JSON extracts (not persisted).
+// contract that lets auto-extract run on every reopen without the
+// extract-persistence asymmetry causing silent column loss.
 //
-// CONTEXT — the bug this test exists to prevent regressing:
-//   `_persistRegexExtracts` (timeline-drawer.js) writes only entries whose
-//   `kind` is `'regex'` or `'auto'`. JSON-leaf / json-host / json-url
-//   extractions emitted by the auto-extract scanner have `kind: 'json'`
-//   and are never persisted. On reopen, the constructor replays the
-//   persisted regex extracts; the auto-extract pass then sees a non-empty
-//   `_extractedCols` and (in the buggy version) bailed at an
-//   `_extractedCols.length > 0` guard — silently losing every JSON-shaped
-//   column on every reopen.
+// CONTEXT — the bug class this test exists to prevent regressing:
+//   `_persistRegexExtracts` (timeline-drawer.js) historically wrote
+//   entries whose `kind` was `'regex'` OR `'auto'`. The auto-extract
+//   scanner emits a mix of regex-shaped (`kind:'auto'` with a
+//   `pattern`) and JSON-path-shaped (`kind:'json'`-via-`autoKind`,
+//   no pattern) outputs. Persisting the regex half meant that on
+//   reopen, only the regex-shaped auto-extracted columns replayed
+//   while the JSON ones vanished — a JSON-heavy CSV like
+//   `examples/forensics/json-example.csv` lost 10 of its 12 columns
+//   on every reopen.
 //
-//   The fix narrows the bail to "true analyst work": entries whose
-//   `kind !== 'auto'`. Replayed `kind:'auto'` entries are treated as
-//   "previous auto-extract residue" and the scanner re-runs, with
-//   `_findDuplicateExtractedCol` deduplicating any replayed columns.
+//   The fix:
+//     • Auto-extract runs on every file open, unconditionally.
+//     • `_persistRegexExtracts` ONLY writes `kind:'regex'` (manual
+//       Regex-tab) — not `kind:'auto'`. Auto extracts are ephemeral.
+//     • The done-marker (`loupe_timeline_autoextract_done`) was
+//       renamed to `loupe_timeline_autoextract_toast_shown` and now
+//       gates only the post-apply toast, not the extraction.
+//     • Dedup inside `_addJsonExtractedColNoRender` /
+//       `_addRegexExtractNoRender` handles overlap when a manual
+//       Regex-tab extract collides with an auto proposal — the
+//       manual one wins.
 //
-// What this test pins:
-//   • The early-return guard reads a non-`'auto'` predicate, not a raw
-//     length check. A regression that re-introduces `length > 0` lights
-//     up here.
-//   • `_persistRegexExtracts`'s filter remains `kind === 'regex' ||
-//     kind === 'auto'`. If someone "fixes" the asymmetry by adding
-//     `kind: 'json'` to the persister without revisiting the early-
-//     return predicate (which would then start firing on every reopen
-//     and re-break the bug), this test catches the change so it's a
-//     conscious decision, not a silent regression.
+// What this test pins (static-text only — the end-to-end reopen flow
+// is pinned by `timeline-view-autoextract-reopen-path.test.js`):
 //
-// These are static-text checks rather than behavioural — the behavioural
-// regression is already pinned by `timeline-view-autoextract-real-fixture`
-// (which re-runs the scanner against the real CSV). This file's job is
-// to make sure the two coupled lines of source code don't drift apart
-// silently.
+//   • `_persistRegexExtracts.filter(...)` includes `'regex'` and
+//     specifically EXCLUDES `'auto'` and `'json'`. A regression that
+//     re-adds either re-introduces the silent-drop bug.
+//
+//   • `_autoExtractBestEffort` does NOT call
+//     `_loadAutoExtractToastShownFor` as an early-return guard. It's
+//     allowed to consult the marker, but only at the toast call site
+//     near the bottom of the apply loop.
+//
+//   • The constants + methods are renamed correctly:
+//     `AUTOEXTRACT_TOAST_SHOWN` is the new key constant;
+//     `_loadAutoExtractToastShownFor` / `_saveAutoExtractToastShownFor`
+//     are the new methods. The legacy `AUTOEXTRACT_DONE_LEGACY`
+//     constant exists ONLY to drive the one-shot localStorage cleanup.
 // ════════════════════════════════════════════════════════════════════════════
 
 const test = require('node:test');
@@ -49,98 +58,141 @@ const AUTOEXTRACT_SRC = fs.readFileSync(
 const DRAWER_SRC = fs.readFileSync(
   path.join(REPO_ROOT, 'src/app/timeline/timeline-drawer.js'),
   'utf8');
+const HELPERS_SRC = fs.readFileSync(
+  path.join(REPO_ROOT, 'src/app/timeline/timeline-helpers.js'),
+  'utf8');
+const PERSIST_SRC = fs.readFileSync(
+  path.join(REPO_ROOT, 'src/app/timeline/timeline-view-persist.js'),
+  'utf8');
 
-test('_autoExtractBestEffort early-return guard predicates on kind, not length', () => {
-  // The PRE-fix line was a raw length check:
-  //   if (this._extractedCols.length > 0) { … return; }
-  // The POST-fix line conditions on the entry shape:
-  //   const hasAnalystWork = this._extractedCols.some(
-  //     e => e && e.kind !== 'auto');
-  //   if (hasAnalystWork) { … return; }
-  //
-  // Pin the predicate substring so a refactor that reverts to a raw
-  // length check (or any guard that doesn't discriminate on `kind`)
-  // breaks this test loudly.
-  // Match the method definition specifically (`_autoExtractBestEffort()`
-  // with parens) — the bare identifier also appears in the file's
-  // header doc comment.
-  const fnStart = AUTOEXTRACT_SRC.indexOf('_autoExtractBestEffort()');
-  assert.ok(fnStart >= 0,
-    '_autoExtractBestEffort() method definition must exist');
-  // Look at the first ~3000 chars of the function body — the early-
-  // return is preceded by a long explanatory comment block.
-  const slice = AUTOEXTRACT_SRC.slice(fnStart, fnStart + 3000);
-  assert.ok(slice.includes("kind !== 'auto'"),
-    `_autoExtractBestEffort early-return must predicate on ` +
-    `\`kind !== 'auto'\` so replayed auto-extract entries don't suppress ` +
-    `re-running the scanner. The bug this guards against is JSON-shaped ` +
-    `columns silently disappearing on every reopen because their ` +
-    `\`kind:'json'\` entries aren't persisted by _persistRegexExtracts.`);
-  assert.ok(!/this\._extractedCols\.length\s*>\s*0\s*\)\s*\{\s*[^}]*_saveAutoExtractDoneFor/.test(slice),
-    `_autoExtractBestEffort must not bail on a raw ` +
-    `\`_extractedCols.length > 0\` check — that's the pre-fix guard ` +
-    `that silently dropped JSON-leaf columns on reopen.`);
-});
-
-test('_persistRegexExtracts filter stays `kind === regex || kind === auto`', () => {
-  // The persister INTENTIONALLY drops `kind:'json'` entries — the JSON
-  // branch reconstructs them via the auto-extract re-run on reopen.
-  // If someone adds `kind:'json'` to the persister without also
-  // tightening the early-return guard above, the bug returns: replayed
-  // JSON entries become `kind:'json'` (i.e. `!== 'auto'`), the new
-  // guard treats them as analyst work, the auto-extract pass bails,
-  // and any json-host / text-host proposals never surface.
-  //
-  // This test forces a coupled change: bumping the persister's filter
-  // requires breaking this test, which forces the author to read the
-  // comment above and update the early-return guard in lockstep.
-  // Match `_persistRegexExtracts() {` (with trailing brace) so we land
-  // on the method DEFINITION, not its call sites elsewhere in the file.
+test('_persistRegexExtracts filter is `kind === regex` ONLY (no auto, no json)', () => {
+  // The HEART of the fix: auto and json extracts must NOT persist.
+  // Re-adding either re-introduces the silent-drop bug for JSON-shaped
+  // CSVs (where only the regex-shaped half of the auto-extract output
+  // would survive across reopens).
   const fnStart = DRAWER_SRC.indexOf('_persistRegexExtracts() {');
   assert.ok(fnStart >= 0,
     '_persistRegexExtracts() { … } method definition must exist');
-  const slice = DRAWER_SRC.slice(fnStart, fnStart + 1000);
-  // Two independent checks: 'regex' string is in the filter, 'auto'
-  // string is in the filter. Looser than a full-expression regex but
-  // robust to formatting changes.
-  const filterMatch0 = slice.match(/\.filter\([^)]+\)/);
-  assert.ok(filterMatch0,
-    '_persistRegexExtracts must contain a .filter(…) call');
-  assert.ok(filterMatch0[0].includes("'regex'"),
-    `_persistRegexExtracts.filter(…) must include 'regex' kind. ` +
-    `Got: ${filterMatch0[0]}`);
-  assert.ok(filterMatch0[0].includes("'auto'"),
-    `_persistRegexExtracts.filter(…) must include 'auto' kind. ` +
-    `Got: ${filterMatch0[0]}`);
-  // Belt-and-braces: 'json' must NOT appear in the FIRST .filter(...)
-  // call. (There's a second `.filter(e => e.pattern)` below that drops
-  // entries with no regex pattern; that one's irrelevant here.)
-  assert.ok(!filterMatch0[0].includes("'json'"),
-    `_persistRegexExtracts.filter(…) must NOT include 'json'. ` +
-    `JSON extracts are recovered via auto-extract re-run on reopen. ` +
-    `Adding 'json' here without tightening _autoExtractBestEffort's ` +
-    `guard re-introduces the silent-drop bug. Got: ${filterMatch0[0]}`);
+  const slice = DRAWER_SRC.slice(fnStart, fnStart + 1500);
+  // The function contains TWO `.filter(...)` calls in sequence:
+  //   .filter(e => e.kind === 'regex')   ← the kind filter (pin THIS)
+  //   …
+  //   .filter(e => e.pattern)            ← drops empty patterns
+  // Match the first one explicitly by anchoring on `kind`.
+  const kindFilterMatch = slice.match(/\.filter\(\s*[a-z]\s*=>\s*[^)]*\.kind[^)]*\)/);
+  assert.ok(kindFilterMatch,
+    `_persistRegexExtracts must contain a .filter(...) on .kind. ` +
+    `Slice: ${slice.slice(0, 500)}`);
+  assert.ok(kindFilterMatch[0].includes("'regex'"),
+    `_persistRegexExtracts kind-filter must include 'regex'. ` +
+    `Got: ${kindFilterMatch[0]}`);
+  assert.ok(!kindFilterMatch[0].includes("'auto'"),
+    `_persistRegexExtracts kind-filter must NOT include 'auto'. ` +
+    `Auto extracts are ephemeral — they're re-derived by the silent ` +
+    `auto-extract pass on every file open. Persisting them would ` +
+    `re-introduce the silent-drop bug for JSON-shaped CSVs (where ` +
+    `the json-leaf half of the auto-extract output isn't persistable ` +
+    `as a regex anyway). Got: ${kindFilterMatch[0]}`);
+  assert.ok(!kindFilterMatch[0].includes("'json'"),
+    `_persistRegexExtracts kind-filter must NOT include 'json'. ` +
+    `JSON extracts have no \`pattern\` field; persisting them would ` +
+    `mean writing a half-shaped record. Got: ${kindFilterMatch[0]}`);
+});
+
+test('_autoExtractBestEffort does NOT use the toast-shown marker as an early-return guard', () => {
+  // The pre-fix code short-circuited the entire extraction when the
+  // marker was set. The new design reads the marker only to gate the
+  // toast call — extraction runs unconditionally, dedup inside the
+  // apply helpers handles overlap with replayed manual regex extracts.
+  //
+  // This test catches a regression that re-adds an `if (… marker …)
+  // return;` line near the top of the function.
+  const fnStart = AUTOEXTRACT_SRC.indexOf('_autoExtractBestEffort()');
+  assert.ok(fnStart >= 0,
+    '_autoExtractBestEffort() method definition must exist');
+  // The function body runs ~140 lines (long inline doc + scheduler
+  // setup + scanStep + applyStep). Look at the FIRST 30 lines after
+  // the method header — that's where the early-return guards live.
+  // The toast-shown marker read should appear there, but NOT followed
+  // by `return`.
+  const slice = AUTOEXTRACT_SRC.slice(fnStart, fnStart + 4000);
+  // Find the first 30 lines or so of the method body (everything
+  // up to the start of the idle-scheduler setup, marked by
+  // `const useIdle =`).
+  const earlyEnd = slice.indexOf('const useIdle =');
+  assert.ok(earlyEnd > 0,
+    '_autoExtractBestEffort must contain the idle scheduler setup');
+  const earlyBody = slice.slice(0, earlyEnd);
+  // Negative pin: no `if (… ToastShown …) return`-style early-return.
+  assert.ok(!/_loadAutoExtractToastShownFor\([^)]*\)\s*\)\s*return/.test(earlyBody),
+    `_autoExtractBestEffort must not bail on the toast-shown marker. ` +
+    `That would re-introduce the silent-drop bug — extraction must ` +
+    `run on every open, the marker only suppresses the toast. ` +
+    `Found offending early-return in body:\n${earlyBody}`);
+  // Negative pin: no `_loadAutoExtractDoneFor` (the legacy method) —
+  // catches a mistaken revert of the rename.
+  assert.ok(!/_loadAutoExtractDoneFor\(/.test(earlyBody),
+    `_autoExtractBestEffort must use _loadAutoExtractToastShownFor, ` +
+    `not the legacy _loadAutoExtractDoneFor. The rename matters: ` +
+    `the legacy method gated extraction; the new one only gates the ` +
+    `toast.`);
+  // Positive pin: the toast marker IS read in the early body (we
+  // capture it at the top so the closure reads a stable value, not
+  // a value that might race with another file's mark).
+  assert.ok(/_loadAutoExtractToastShownFor\(/.test(earlyBody),
+    `_autoExtractBestEffort must call _loadAutoExtractToastShownFor ` +
+    `near the top to capture the toast-suppression flag for use at ` +
+    `the toast call site later.`);
+});
+
+test('TIMELINE_KEYS exposes AUTOEXTRACT_TOAST_SHOWN with the renamed value', () => {
+  // The constant rename must be consistent across the codebase. The
+  // legacy alias (AUTOEXTRACT_DONE_LEGACY) must STILL exist for the
+  // migration path inside _loadAutoExtractToastShownFor.
+  assert.ok(/AUTOEXTRACT_TOAST_SHOWN:\s*'loupe_timeline_autoextract_toast_shown'/.test(HELPERS_SRC),
+    `TIMELINE_KEYS.AUTOEXTRACT_TOAST_SHOWN must be the canonical key, ` +
+    `with value 'loupe_timeline_autoextract_toast_shown'.`);
+  assert.ok(/AUTOEXTRACT_DONE_LEGACY:\s*'loupe_timeline_autoextract_done'/.test(HELPERS_SRC),
+    `TIMELINE_KEYS.AUTOEXTRACT_DONE_LEGACY must exist with the ` +
+    `pre-rename value 'loupe_timeline_autoextract_done' so the ` +
+    `migration inside _loadAutoExtractToastShownFor can locate and ` +
+    `delete stale entries.`);
+  // Negative: the old `AUTOEXTRACT_DONE` constant (without the
+  // _LEGACY suffix) must NOT exist — it would be ambiguous and
+  // would invite accidental writes to the dead key.
+  assert.ok(!/^\s*AUTOEXTRACT_DONE:/m.test(HELPERS_SRC),
+    `TIMELINE_KEYS.AUTOEXTRACT_DONE (unsuffixed) must not exist — ` +
+    `it was renamed to AUTOEXTRACT_TOAST_SHOWN. The legacy value ` +
+    `lives under AUTOEXTRACT_DONE_LEGACY for the migration only.`);
+});
+
+test('_loadAutoExtractToastShownFor performs one-shot legacy-key cleanup', () => {
+  // The migration is intentionally located inside the load function
+  // (not a module-level IIFE) so it runs lazily on the first file
+  // open after upgrade and is idempotent thereafter
+  // (safeStorage.remove on a missing key is a no-op).
+  const fnStart = PERSIST_SRC.indexOf('_loadAutoExtractToastShownFor(');
+  assert.ok(fnStart >= 0,
+    '_loadAutoExtractToastShownFor(…) method definition must exist');
+  const slice = PERSIST_SRC.slice(fnStart, fnStart + 800);
+  assert.ok(/safeStorage\.remove\([^)]*AUTOEXTRACT_DONE_LEGACY/.test(slice),
+    `_loadAutoExtractToastShownFor must call safeStorage.remove(` +
+    `TIMELINE_KEYS.AUTOEXTRACT_DONE_LEGACY) so existing browser ` +
+    `profiles with the pre-rename key get cleaned up on first open ` +
+    `after the upgrade.`);
 });
 
 test('text-host detection in _autoExtractScan uses anchored TL_HOSTNAME_RE', () => {
-  // Issue 2 fix: the unanchored `TL_HOSTNAME_INLINE_RE` matched the
-  // millisecond fragment `21.271Z` inside ISO-8601 timestamps and
-  // flagged Timestamp as a hostname column. Detection switched to
-  // anchored `TL_HOSTNAME_RE.test(s.v.trim())`.
-  //
-  // The EXTRACTION regex (the `pattern: TL_HOSTNAME_INLINE_RE.source`
-  // passed to `_addRegexExtractNoRender`) stays unanchored — that's
-  // intentional, see the comment in source. This test only pins the
-  // detection-side change.
-  //
-  // Locate the plain-text detection block by searching for the
-  // distinctive comment we left in source.
+  // Issue 2 fix from commit 237eb7d (kept): the unanchored
+  // `TL_HOSTNAME_INLINE_RE` matched the millisecond fragment `21.271Z`
+  // inside ISO-8601 timestamps and flagged Timestamp as a hostname
+  // column. Detection switched to anchored
+  // `TL_HOSTNAME_RE.test(s.v.trim())`. The EXTRACTION regex is
+  // separately unanchored — that's intentional, see the source comment.
   const detectionAnchor = AUTOEXTRACT_SRC.indexOf(
     'Plain-text column: test URL + hostname patterns directly.');
   assert.ok(detectionAnchor >= 0,
     'plain-text detection block anchor comment must exist');
-  // Look at the ~1500 chars after the anchor — covers the for-loop
-  // that increments hostHits / urlHits.
   const slice = AUTOEXTRACT_SRC.slice(detectionAnchor, detectionAnchor + 1500);
   assert.ok(/TL_HOSTNAME_RE\.test\(/.test(slice),
     `text-host detection must call \`TL_HOSTNAME_RE.test(...)\` ` +
@@ -148,11 +200,6 @@ test('text-host detection in _autoExtractScan uses anchored TL_HOSTNAME_RE', () 
     `(unanchored). The unanchored variant matches hostname-shaped ` +
     `fragments inside structured cells (notably the millisecond ` +
     `fragment of ISO-8601 timestamps).`);
-  // The unanchored variant must not appear in the detection scan
-  // (it's still allowed in the EXTRACTION regex passed to
-  // _addRegexExtractNoRender, but that's a different code path).
-  // We assert the detection branch specifically — the `for (const s
-  // of samples)` loop that increments hostHits.
   const detectionLoopMatch = slice.match(
     /for\s*\(\s*const\s+s\s+of\s+samples\s*\)\s*\{[\s\S]*?\}/);
   assert.ok(detectionLoopMatch,

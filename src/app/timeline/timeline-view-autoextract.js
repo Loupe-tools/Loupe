@@ -14,10 +14,12 @@
 //     `_updateColumns` instead of destroying it — so the analyst
 //     sees columns slide in one per idle frame rather than the
 //     whole grid blinking out for a coalesced rebuild at the end.
-//     The done-marker (`loupe_timeline_autoextract_done_<fileKey>`)
-//     is only written when the full pass completes — a `destroy()`
-//     mid-run cancels the handle and leaves the marker unset so the
-//     next reopen retries.
+//     The pass runs UNCONDITIONALLY on every file open: auto-
+//     extracted columns are ephemeral (re-derived deterministically)
+//     so re-running is correct. A toast-shown marker
+//     (`loupe_timeline_autoextract_toast_shown_<fileKey>`) suppresses
+//     the post-apply notification on reopens; the extraction itself
+//     ignores the marker.
 //
 //   • `_applyAutoProposal` — the per-proposal apply, dispatching to
 //     `_addJsonExtractedColNoRender` (json-url / json-host /
@@ -73,11 +75,35 @@ Object.assign(TimelineView.prototype, {
   // …and the top `MAX` (12) are applied. Avoids drowning the grid in
   // 40+ columns on JSON-heavy logs.
   //
-  // Idempotence — a per-file marker (`loupe_timeline_autoextract_done`)
-  // is set after the pass, so the analyst can delete an auto-extracted
-  // column and it stays gone on reopen. `_reset()` wipes the marker via
-  // its `loupe_timeline_*` prefix scrub, so a hard reset re-runs the
-  // pass.
+  // Idempotence — auto-extracted columns are EPHEMERAL by design. The
+  // pass runs on every file open and re-derives the same proposals
+  // deterministically (the scanner is pure given the file content), so
+  // there's no need to persist them. The toast notification ("Auto-
+  // extracted N fields") would be noisy across reopens, so it's gated
+  // on a one-shot per-file marker (`loupe_timeline_autoextract_toast_shown`)
+  // that fires once on first open and stays silent after that.
+  //
+  // Why ephemeral? Because the regex-extracts persister (`_persistRegexExtracts`
+  // in timeline-drawer.js) only stores `kind === 'regex'` entries — manual
+  // Regex-tab work the analyst typed in by hand. The auto-extract pass
+  // emits a mix of `kind: 'auto'` (text-host / text-url / kv-field /
+  // url-part — regex-shaped, persistable) and `kind: 'json'` via the
+  // JSON-leaf / json-host / json-url branches (path-shaped, NOT
+  // persistable as a regex). Persisting only the regex-shaped half led
+  // to silent column loss on reopen for JSON-shaped CSVs (10 of 12
+  // columns vanished). Rather than introduce a parallel JSON-extract
+  // persistence key, we just re-run the deterministic scanner — same
+  // proposals, same outputs, no schema drift. Manual Regex-tab extracts
+  // continue to persist via `_persistRegexExtracts`; the dedup inside
+  // `_addJsonExtractedColNoRender` / `_addRegexExtractNoRender` ensures
+  // re-running the auto pass against an already-replayed regex extract
+  // is a silent no-op (user wins on overlap).
+  //
+  // Trade-off: the analyst can't "delete an auto-extracted column and
+  // have it stay gone on reopen" — it'll come back. They CAN open the
+  // Extract Values dialog and curate; they CAN add a manual Regex-tab
+  // extract that persists. The Auto/Edit dialog's tick/untick
+  // selections are session-only.
   //
   // Scheduling — historically this method ran the scan + every apply
   // synchronously after a 60 ms post-mount setTimeout. On 5M-row CSVs
@@ -91,39 +117,16 @@ Object.assign(TimelineView.prototype, {
   // proposals so the spinner stays smooth and the grid stays
   // scrollable. `requestIdleCallback` with a `setTimeout(0)` Safari
   // fallback mirrors `_scheduleIdleSearchTextBuild` in grid-viewer.js
-  // (same handle bookkeeping idiom). The done-marker is only written
-  // when the full pass completes (or a guarded early-exit fires) — a
-  // mid-run `destroy()` cancels the handle and leaves the marker
-  // unset so the next reopen retries.
+  // (same handle bookkeeping idiom).
   _autoExtractBestEffort() {
     if (this._destroyed) return;
     if (!this._els || !this._els.host) return;
-    // Already done for this file — never re-add deleted columns.
-    if (TimelineView._loadAutoExtractDoneFor(this._fileKey)) return;
-    // Persisted extracts already replayed in the constructor. Bail only
-    // when the analyst has TRUE prior work — entries with `kind !==
-    // 'auto'` (manual `'regex'`, `'json'` from the Auto/Edit dialogs).
-    //
-    // Why not bail on any extracted column? Because `_persistRegexExtracts`
-    // only persists `kind: 'regex' | 'auto'` — the JSON-leaf / json-host /
-    // json-url branches produce `kind: 'json'` entries that AREN'T
-    // persisted. On reopen, a previous auto-extract pass that emitted
-    // (say) 1 text-host + 11 json-leaf columns leaves only the 1 text-
-    // host column behind in storage. Replay restores it; if we bailed
-    // on that single replayed column, the 11 JSON-leaf columns would be
-    // silently lost on every reopen. So we re-run the scan when only
-    // `'auto'` entries are present and let `_findDuplicateExtractedCol`
-    // inside the apply helpers dedupe the replayed regex extracts.
-    //
-    // Trade-off: a deleted JSON-leaf column will return on next reopen
-    // (the deletion isn't persisted because the column wasn't persisted
-    // in the first place). Acceptable because the alternative — silently
-    // losing 90 % of the extracted columns on every reopen — is worse.
-    const hasAnalystWork = this._extractedCols.some(e => e && e.kind !== 'auto');
-    if (hasAnalystWork) {
-      TimelineView._saveAutoExtractDoneFor(this._fileKey);
-      return;
-    }
+    // No extraction-side early-return. The auto-extract pass runs on
+    // every file open; dedup inside the apply helpers handles overlap
+    // with replayed manual regex extracts. The toast-shown marker is
+    // read here but only consulted at the end of the apply loop to
+    // suppress the toast — it does NOT gate the extraction itself.
+    const toastShown = TimelineView._loadAutoExtractToastShownFor(this._fileKey);
 
     // Idle scheduler — pair the cancel API with the chosen scheduler so
     // `destroy()` doesn't have to remember which one we used. Stored on
@@ -148,7 +151,11 @@ Object.assign(TimelineView.prototype, {
 
       let proposals = [];
       try { proposals = this._autoExtractScan() || []; } catch (_) {
-        TimelineView._saveAutoExtractDoneFor(this._fileKey);
+        // Scanner threw — bail. We don't stamp any persistent marker
+        // here; the scanner is deterministic so it'll throw again next
+        // open with the same input, and that's a real bug we want to
+        // be loud about (in dev tools / debug mode) rather than masking
+        // by stamping a "done" flag.
         return;
       }
 
@@ -163,9 +170,10 @@ Object.assign(TimelineView.prototype, {
       });
 
       if (!eligible.length) {
-        // No candidates met the bar — set the marker so we don't re-scan
-        // every reopen of an unhelpful file.
-        TimelineView._saveAutoExtractDoneFor(this._fileKey);
+        // No candidates met the bar — nothing to extract, nothing to
+        // toast about. The scan is cheap (sample-capped at 200 rows)
+        // so re-running it on every reopen of an unhelpful file is
+        // affordable; no marker is set.
         return;
       }
 
@@ -197,10 +205,18 @@ Object.assign(TimelineView.prototype, {
         if (this._destroyed) return;
 
         if (idx >= ranked.length) {
-          if (added > 0 && this._app && typeof this._app._toast === 'function') {
+          // Toast suppression: gated on the per-file `toast_shown`
+          // marker captured at the top of `_autoExtractBestEffort`.
+          // First open → toast fires + marker stamped. Reopens → no
+          // toast (extraction itself ran unconditionally; dedup keeps
+          // the count stable). `added > 0` guards the noisy zero-
+          // result case where every proposal collided with a manually
+          // persisted regex extract.
+          if (added > 0 && !toastShown
+              && this._app && typeof this._app._toast === 'function') {
             this._app._toast(`Auto-extracted ${added} field${added === 1 ? '' : 's'}`, 'info');
+            TimelineView._saveAutoExtractToastShownFor(this._fileKey);
           }
-          TimelineView._saveAutoExtractDoneFor(this._fileKey);
           return;
         }
 

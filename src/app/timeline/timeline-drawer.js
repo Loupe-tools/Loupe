@@ -364,8 +364,20 @@ Object.assign(TimelineView.prototype, {
   },
 
   _persistRegexExtracts() {
+    // ONLY persist `kind: 'regex'` — the manual Regex-tab extracts the
+    // analyst typed in by hand. `kind: 'auto'` (silent scanner +
+    // Auto/Edit dialog) and `kind: 'json'` (JSON-tree click) are
+    // EPHEMERAL by design: the auto-extract pass re-derives them
+    // deterministically on every file open, so persisting them would
+    // (a) duplicate work for no benefit, and (b) re-introduce the
+    // silent column-loss bug — the JSON branch produces `kind: 'json'`
+    // entries with no `pattern`, which would be filtered out by the
+    // `.filter(e => e.pattern)` below, leaving only the regex-shaped
+    // half of the auto-extract output behind. See the long comment in
+    // `_autoExtractBestEffort` (timeline-view-autoextract.js) for the
+    // full design rationale.
     const list = this._extractedCols
-      .filter(e => e.kind === 'regex' || e.kind === 'auto')
+      .filter(e => e.kind === 'regex')
       .map(e => ({
         name: e.name, col: e.sourceCol, pattern: e.pattern, flags: e.flags,
         group: e.group, kind: e.kind,

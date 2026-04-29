@@ -99,15 +99,25 @@ test('_autoExtractBestEffort idle-tick scheduling survives', () => {
   );
 });
 
-test('_autoExtractBestEffort writes the done-marker via persist mixin', () => {
-  // Idempotence: the per-file marker
-  // (`loupe_timeline_autoextract_done_<fileKey>`) prevents re-adding
-  // user-deleted columns on reopen. Pin the call into the B2b persist
-  // mixin so a regression that drops the marker write is caught.
+test('_autoExtractBestEffort writes the toast-shown marker via persist mixin', () => {
+  // Toast suppression: the per-file marker
+  // (`loupe_timeline_autoextract_toast_shown_<fileKey>`) suppresses
+  // the post-apply "Auto-extracted N fields" toast on reopens.
+  // Pin the call into the B2b persist mixin so a regression that
+  // drops the marker write is caught.
+  //
+  // NOTE: this used to test `_saveAutoExtractDoneFor`, which gated
+  // the EXTRACTION itself — but that broke JSON-shaped CSVs (the
+  // pass writes both regex-shaped and json-shaped extracts; only
+  // the former persist via _persistRegexExtracts, so the marker
+  // would suppress re-extraction of the missing JSON columns on
+  // every reopen). The marker is now toast-only; extraction is
+  // unconditional.
   assert.match(
     MIXIN,
-    /TimelineView\._saveAutoExtractDoneFor\(/,
-    '_autoExtractBestEffort must persist the done-marker via the persist mixin',
+    /TimelineView\._saveAutoExtractToastShownFor\(/,
+    '_autoExtractBestEffort must persist the toast-shown marker via ' +
+    'the persist mixin',
   );
 });
 

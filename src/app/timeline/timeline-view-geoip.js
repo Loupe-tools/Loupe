@@ -48,10 +48,11 @@
 // ── Idempotence ─────────────────────────────────────────────────────────────
 // Per-file `loupe_timeline_geoip_done_<fileKey>` marker, scoped through
 // `TimelineView._loadGeoipDoneFor` / `_saveGeoipDoneFor`. Distinct from the
-// `AUTOEXTRACT_DONE` marker the JSON / URL / host extractor uses — the two
-// were briefly conflated, which caused files with no IPv4-shaped columns
-// (where GeoIP stamps the marker on its no-op path) to silently lose
-// auto-extract entirely. Shared by both geo + asn kinds: if either has
+// `AUTOEXTRACT_TOAST_SHOWN` marker the JSON / URL / host extractor uses
+// for its toast suppression — the two were briefly conflated under the
+// pre-rename `AUTOEXTRACT_DONE` key, which caused files with no IPv4-
+// shaped columns (where GeoIP stamps the marker on its no-op path) to
+// silently lose auto-extract entirely. Shared by both geo + asn kinds: if either has
 // been emitted (or skipped) on this file, we don't auto-run GeoIP again.
 // Right-click forces both providers regardless of marker.
 //
