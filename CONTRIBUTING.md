@@ -167,6 +167,40 @@ guarantee in [SECURITY.md § Reproducible Build](SECURITY.md#reproducible-build)
 covers `docs/index.html` only — the test bundle is never deployed,
 never signed, and never byte-pinned.
 
+### Performance profiling — single-profile comparisons are unreliable
+
+The CSV worker path (`parseChunk` + `packRowChunk` in
+`src/renderers/csv-renderer.js` and `src/row-store.js`) has been measured
+at **4.75 s, 5.6 s, and 7.3 s worker CPU on the same commit, same
+Firefox build, same fixture, same machine** — a 50 %+ spread across runs.
+The variance correlates with SpiderMonkey GC mode for the byte-builder
+rope nodes in `parseChunk`: nursery-dominant runs (Minor GC ≫ Major GC)
+finish in ~5 s, major-heap-dominant runs (Minor GC ~30 ms, Major GC
+2 500 ms+) take ~7 s. This is a runtime decision driven by allocation-site
+profiling and JIT/IC warmth, not by the source code.
+
+When evaluating a worker-side perf change:
+
+- Capture **at least 3 profiles per HEAD** with `loupe_*` localStorage
+  cleared between captures (`Object.keys(localStorage).filter(k => k.startsWith('loupe_')).forEach(k => localStorage.removeItem(k))`).
+- Compare cluster means and minimums, not single captures.
+- A worker-CPU swing `< 50 %` between two single captures is almost
+  certainly noise — bisecting on it will waste hours.
+- Per-sample CPU efficiency (`threadCPUDelta` ÷ wall-clock Δt across
+  active samples) sits at ~0.96 on a healthy run; a drop below ~0.85
+  indicates thermal throttling or contention from another process,
+  not a real regression.
+- The `_parseCsv` inclusive sample count is a more stable signal than
+  total worker span when DevTools panels were open during one capture
+  but not another (panels add main-thread idle time without affecting
+  worker work).
+
+To rule out a runtime-state artefact when an apparent regression is
+seen: `git checkout <suspect-parent>`, `python make.py build`, capture
+2–3 profiles, restore HEAD, capture another 2–3 profiles. If the parent
+reproduces the "regressed" numbers, the variance is runtime-state, not
+source-level.
+
 ---
 
 ## Architecture & Signal Chain
