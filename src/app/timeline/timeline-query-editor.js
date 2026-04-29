@@ -1011,11 +1011,17 @@ class TimelineQueryEditor {
     TimelineQueryEditor._saveHistory(this._history);
   }
 
-  // History menu is keyboard-first: a persistent `_hist` handle tracks
-  // the mounted menu + selected index so the editor's `_onKeyDown` can
-  // drive it without stealing focus from the <textarea>. Pointer hover
-  // mirrors keyboard selection so mouse + keys stay in sync.
-  _isHistoryOpen() { return !!(this._hist && this._hist.el && this._hist.el.parentNode); }
+  // History menu is keyboard-first: a persistent `_historyMenu` handle
+  // tracks the mounted menu + selected index so the editor's `_onKeyDown`
+  // can drive it without stealing focus from the <textarea>. Pointer
+  // hover mirrors keyboard selection so mouse + keys stay in sync.
+  //
+  // NB: deliberately NOT named `_hist` — that's the undo/redo ring (an
+  // array of `{value, selStart, selEnd}` frames, see line ~109). Reusing
+  // the same property name nuked the undo ring whenever the dropdown
+  // closed (`onDismiss` set it to null), so the very next keystroke
+  // crashed `_snapshotHistory` with `this._hist is null`.
+  _isHistoryOpen() { return !!(this._historyMenu && this._historyMenu.el && this._historyMenu.el.parentNode); }
 
   _openHistoryMenu() {
     this._closeSuggest();
@@ -1027,7 +1033,7 @@ class TimelineQueryEditor {
     const menu = document.createElement('div');
     menu.className = 'tl-query-hist-menu';
     menu.setAttribute('role', 'listbox');
-    this._hist = { el: menu, sel: 0, items: this._history.slice() };
+    this._historyMenu = { el: menu, sel: 0, items: this._history.slice() };
     for (let i = 0; i < this._history.length; i++) {
       const q = this._history[i];
       const row = document.createElement('div');
@@ -1038,43 +1044,43 @@ class TimelineQueryEditor {
       row.title = q;
       row.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        if (!this._hist) return;
-        this._hist.sel = i;
+        if (!this._historyMenu) return;
+        this._historyMenu.sel = i;
         this._applyHistorySel();
       });
       // Hover syncs keyboard selection so mouse + keys can't desync.
       row.addEventListener('pointermove', () => {
-        if (!this._hist || this._hist.sel === i) return;
+        if (!this._historyMenu || this._historyMenu.sel === i) return;
         this._setHistorySel(i);
       });
       menu.appendChild(row);
     }
-    this._mountFloatingMenu(menu, this.historyBtn, { onDismiss: () => { this._hist = null; } });
+    this._mountFloatingMenu(menu, this.historyBtn, { onDismiss: () => { this._historyMenu = null; } });
     // Keep focus on the textarea so the editor's _onKeyDown keeps
     // receiving arrow / Enter / Escape.
     this.input.focus();
   }
 
   _setHistorySel(i) {
-    if (!this._hist) return;
-    const n = this._hist.items.length;
+    if (!this._historyMenu) return;
+    const n = this._historyMenu.items.length;
     if (!n) return;
     const next = ((i % n) + n) % n;
-    if (next === this._hist.sel) return;
-    const rows = this._hist.el.querySelectorAll('.tl-query-hist-item');
-    if (rows[this._hist.sel]) rows[this._hist.sel].classList.remove('tl-query-hist-item-active');
-    this._hist.sel = next;
+    if (next === this._historyMenu.sel) return;
+    const rows = this._historyMenu.el.querySelectorAll('.tl-query-hist-item');
+    if (rows[this._historyMenu.sel]) rows[this._historyMenu.sel].classList.remove('tl-query-hist-item-active');
+    this._historyMenu.sel = next;
     if (rows[next]) {
       rows[next].classList.add('tl-query-hist-item-active');
       rows[next].scrollIntoView({ block: 'nearest' });
     }
   }
 
-  _moveHistorySel(d) { if (this._hist) this._setHistorySel(this._hist.sel + d); }
+  _moveHistorySel(d) { if (this._historyMenu) this._setHistorySel(this._historyMenu.sel + d); }
 
   _applyHistorySel() {
-    if (!this._hist) return;
-    const q = this._hist.items[this._hist.sel];
+    if (!this._historyMenu) return;
+    const q = this._historyMenu.items[this._historyMenu.sel];
     this._closeHistoryMenu();
     if (q == null) return;
     this.setValue(q);
@@ -1090,7 +1096,7 @@ class TimelineQueryEditor {
       if (typeof existing._dismiss === 'function') existing._dismiss();
       else if (existing.parentNode) existing.parentNode.removeChild(existing);
     }
-    this._hist = null;
+    this._historyMenu = null;
   }
 
   _openHelpPopover() {
