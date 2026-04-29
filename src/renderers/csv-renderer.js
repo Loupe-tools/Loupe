@@ -112,25 +112,23 @@ class CsvRenderer {
 
     // Hoist state into locals — measurable speedup over property access in
     // the hot loop on V8.
+    //
+    // NOTE on per-char accumulation (`cur += text[i]`): an earlier
+    // attempt (P3-D, reverted) replaced this with a `chunkStart` cursor
+    // and a `flushRun(end)` lambda that emitted one `text.slice(...)`
+    // per cell boundary, on the theory that this would avoid per-char
+    // string-concat allocations. Empirically this REGRESSED CSV parse
+    // by ~15% on Firefox: SpiderMonkey already optimises `cur += ch`
+    // into rope concatenation (cheap O(1) appends with no per-char
+    // allocation), and the slice-then-concat form forced a fresh flat
+    // string per run plus the same rope-concat onto `cur`. Keep the
+    // straightforward per-char form. See commit log for the profile
+    // evidence (TenuringTracer::allocString + Arena::init dominated
+    // parseChunk's self-time post-revert-target).
     let inQuotes = state.inQuotes;
     let cur      = state.cur;
     let cells    = state.cells;
     let rowStart = state.rowStart;
-
-    // P3-D allocator hygiene: rather than `cur += text[i]` per char (which
-    // ropes a cons-string and forces flatten on read, then GCs the rope
-    // generation), we track the start index of the current run of
-    // ordinary content chars in this chunk and emit one `text.slice(...)`
-    // per "boundary" (delim, NL, opening/closing quote, escape pair).
-    // `chunkStart === -1` means no run is currently in flight; flushRun()
-    // appends the pending slice to `cur` and resets.
-    let chunkStart = -1;
-    const flushRun = (upto) => {
-      if (chunkStart >= 0) {
-        cur += text.slice(chunkStart, upto);
-        chunkStart = -1;
-      }
-    };
 
     let i = fromIdx | 0;
 
@@ -141,7 +139,7 @@ class CsvRenderer {
       //    split natively (much faster than the char-by-char machine).
       //    This preserves the throughput of the previous line-based
       //    parser on the overwhelmingly common no-quote case.
-      if (!inQuotes && rowStart < 0 && cells.length === 0 && cur === '' && chunkStart < 0) {
+      if (!inQuotes && rowStart < 0 && cells.length === 0 && cur === '') {
         const nlIdx = text.indexOf('\n', i);
         const lineEnd = nlIdx === -1 ? len : nlIdx;
         // Skip blank lines outright.
@@ -167,19 +165,16 @@ class CsvRenderer {
         if (ch === QUOTE) {
           // RFC-4180: doubled quote inside a quoted cell escapes to one quote.
           if (i + 1 < len && text.charCodeAt(i + 1) === QUOTE) {
-            flushRun(i);
             cur += '"';
             i += 2;
             continue;
           }
-          flushRun(i);
           inQuotes = false;
           i++;
           continue;
         }
-        // Every other char (incl. \n, delim) is literal cell content —
-        // accumulate via slice run rather than per-char concat.
-        if (chunkStart < 0) chunkStart = i;
+        // Every other char (incl. \n, delim) is literal cell content.
+        cur += text[i];
         i++;
         continue;
       }
@@ -187,11 +182,10 @@ class CsvRenderer {
       // Not in quotes.
       if (ch === NL) {
         // Blank physical line outside quotes — skip without emitting.
-        if (rowStart < 0 && cells.length === 0 && cur === '' && chunkStart < 0) {
+        if (rowStart < 0 && cells.length === 0 && cur === '') {
           i++;
           continue;
         }
-        flushRun(i);
         cells.push(cur);
         rows.push(cells);
         rowOffsets.push({
@@ -213,28 +207,19 @@ class CsvRenderer {
         // behaviour (quote anywhere toggles); permissive vs strict
         // RFC-4180 (where a quote is only special at cell start) but
         // matches what real-world spreadsheets emit.
-        flushRun(i);
         inQuotes = true;
         i++;
         continue;
       }
       if (ch === delimCode) {
-        flushRun(i);
         cells.push(cur);
         cur = '';
         i++;
         continue;
       }
-      // Ordinary content char — accumulate via slice run.
-      if (chunkStart < 0) chunkStart = i;
+      cur += text[i];
       i++;
     }
-
-    // Persist any in-flight slice run into `cur` so the loop's exit
-    // state is identical to the pre-P3-D string-concat behaviour. This
-    // also ensures the partial-row flush below sees the full pending
-    // cell content.
-    flushRun(i);
 
     let endedInQuotes = false;
     if (flush && i >= len &&
