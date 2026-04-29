@@ -654,7 +654,7 @@ Object.assign(TimelineView.prototype, {
       // but kept visually subtle.
       const searchRow = document.createElement('div');
       searchRow.className = 'tl-col-search-wrap';
-      searchRow.innerHTML = `<input type="text" class="tl-col-search" placeholder="filter values…" spellcheck="false" autocomplete="off">`;
+      searchRow.innerHTML = `<input type="text" class="tl-col-search" placeholder="filter values…" spellcheck="false" autocomplete="off" title="Press Enter to filter the timeline by the visible values · Shift+Enter to exclude them · Ctrl/⌘+Enter to add them to the multi-select buffer">`;
       card.appendChild(searchRow);
       const searchInput = searchRow.querySelector('.tl-col-search');
 
@@ -785,7 +785,63 @@ Object.assign(TimelineView.prototype, {
           card._searchText = '';
           applySortAndFilter();
           renderRows();
+          return;
         }
+        if (e.key !== 'Enter') return;
+        // Flush any pending debounced filter so `displayValues` reflects
+        // exactly what the user sees right now (typing fast then hitting
+        // Enter would otherwise commit the prior frame's value set).
+        if (searchTimer) {
+          clearTimeout(searchTimer);
+          searchTimer = 0;
+          card._searchText = searchInput.value;
+          applySortAndFilter();
+        }
+        // Empty input → no-op, let default behaviour stand.
+        if (!card._searchText) return;
+        e.preventDefault();
+        if (!displayValues.length) {
+          if (this._app && typeof this._app._toast === 'function') {
+            this._app._toast('No matches to apply', 'info');
+          }
+          return;
+        }
+        const visibleVals = displayValues.map(([val]) => val);
+        // Modifier semantics mirror the row-click handler above:
+        //   plain Enter        → IN-list (replace eq/ne/in for this column)
+        //   Shift+Enter        → NOT IN-list
+        //   Ctrl/Meta+Enter    → accumulate into the multi-select buffer
+        //                        (commit deferred, like Ctrl-click)
+        if (e.ctrlKey || e.metaKey) {
+          // Reuse the existing accumulator. It needs a row element to
+          // toggle the `tl-col-row-selected` class; for values that are
+          // currently virtualised out of view we pass a detached stand-in
+          // so the bookkeeping inside `_accumulateCtrlSelect` succeeds —
+          // visible rows will get the class re-applied on the next
+          // `renderRows()` via the `_pendingCtrlSelect.values` check.
+          for (const val of visibleVals) {
+            const liveRow = sizer.querySelector(`.tl-col-row[data-value="${(window.CSS && CSS.escape) ? CSS.escape(String(val)) : String(val).replace(/"/g, '\\"')}"]`);
+            const stand = liveRow || document.createElement('div');
+            this._accumulateCtrlSelect(c, val, stand);
+          }
+          // Repaint so `tl-col-row-selected` is consistent across the
+          // virtualised viewport.
+          renderRows();
+        } else {
+          this._clearCtrlSelect();
+          if (e.shiftKey) {
+            this._queryReplaceNotInForCol(c, visibleVals);
+          } else {
+            this._queryReplaceEqForCol(c, visibleVals);
+          }
+        }
+        // Clear the input so the card returns to showing all values —
+        // after the recompute settles, the displayed list will naturally
+        // coincide with what was just committed.
+        searchInput.value = '';
+        card._searchText = '';
+        applySortAndFilter();
+        renderRows();
       });
 
       // Wire the sort-cycle button — single click cycles forward, Alt-click
