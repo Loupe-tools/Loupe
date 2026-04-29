@@ -1536,24 +1536,18 @@ extendApp({
     //    a user list we stash the list's display name on `_nicelistSource`
     //    so the bar tooltip can break down the hit-count by source.
     const isIocSection = _sbKey === 'iocs';
-    const _hasUserNicelists = typeof _NicelistUser !== 'undefined' && _NicelistUser && typeof _NicelistUser.match === 'function';
-    if (isIocSection) {
-      for (const r of refs) {
-        let source = null;
-        if (typeof isNicelisted === 'function' && isNicelisted(r.url, r.type)) {
-          source = 'Default Nicelist';
-        } else if (_hasUserNicelists) {
-          const userHit = _NicelistUser.match(r.url, r.type);
-          if (userHit) source = userHit;
-        }
-        if (source) {
-          r._nicelisted = true;
-          r._nicelistSource = source;
-        } else {
-          r._nicelisted = false;
-          r._nicelistSource = null;
-        }
-      }
+    // Tags are normally stamped once by `annotateNicelist(this.findings)`
+    // in `app-load.js` (see src/nicelist-annotate.js for the rationale)
+    // BEFORE `_renderSidebar` runs, so every consumer — sidebar, Copy
+    // Analysis Summary, STIX, MISP, CSV — sees the same view. We keep a
+    // defensive recompute here for safety: if a caller invokes
+    // `_renderSidebar` against a `findings` object that never passed
+    // through `_loadFile` (e.g. a future test harness, a dev-tools
+    // monkey-patch), the sidebar still annotates correctly. The check
+    // is a single property read per ref so it stays cheap.
+    if (isIocSection && typeof annotateNicelist === 'function') {
+      const needsAnnotate = refs.some(r => r && typeof r._nicelisted === 'undefined');
+      if (needsAnnotate) annotateNicelist({ externalRefs: refs });
     }
     const niceCount = isIocSection ? refs.filter(r => r._nicelisted).length : 0;
 

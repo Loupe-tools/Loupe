@@ -2298,6 +2298,99 @@ class MachoRenderer {
       } catch (_) { /* hash computation is best-effort */ }
 
 
+      // ── Trust-tier classification (code signature) ─────────────────
+      // Mach-O has its own code-signing model (LC_CODE_SIGNATURE blob,
+      // CMS-wrapped X.509 chain). The same `TrustedCAs.classifyTrustTier`
+      // helper used for PE works here because Apple's WWDR / Developer
+      // ID / Apple Root CA patterns are in the curated public-CA list,
+      // and the certs come back from `X509Renderer.parseCertificatesFromCMS`
+      // in the same shape. Tier feeds BinaryClass below; only LOW-severity
+      // ubiquitous-API noise gets demoted on `signed-trusted` builds.
+      // Critical capabilities (injection / cred-theft / ransomware crypto)
+      // are NEVER demoted by trust.
+      let trustTier = 'unsigned';
+      const _csi = mo.codeSignatureInfo;
+      if (_csi) {
+        if (_csi.certificates && _csi.certificates.length > 0
+            && typeof TrustedCAs !== 'undefined' && TrustedCAs.classifyTrustTier) {
+          trustTier = TrustedCAs.classifyTrustTier(_csi.certificates);
+        } else if (_csi.teamId) {
+          // CodeDirectory carried a Team ID but we couldn't parse certs
+          // (older / linker-stripped builds). Apple-issued Team IDs are
+          // always Apple-chain-signed in practice; treat as plain `signed`
+          // (small +1 trust boost, no strong demote).
+          trustTier = 'signed';
+        } else if (mo.security.signed) {
+          trustTier = 'signed';
+        }
+      }
+      findings.metadata['Authenticode'] = (() => {
+        switch (trustTier) {
+          case 'signed-trusted': {
+            const leaf = (_csi && _csi.certificates && _csi.certificates[0]) || {};
+            const cn = (leaf.subject && leaf.subject.CN) || leaf.subjectStr ||
+                       (_csi && _csi.teamId ? `Team ID ${_csi.teamId}` : '(signed)');
+            return `signed-trusted — leaf CN: ${cn}`;
+          }
+          case 'signed':
+            return _csi && _csi.teamId
+              ? `signed (Team ID ${_csi.teamId}, chain not parseable)`
+              : 'signed (chain present, issuer not in trusted-CA list)';
+          case 'self-signed': return 'self-signed (issuer = subject)';
+          case 'unsigned':    return 'unsigned';
+          default:            return trustTier;
+        }
+      })();
+
+      // ── Binary classification (size · trust · family · kind) ───────
+      // Drives `_weight()` below — ubiquitous-API capability bumps are
+      // scaled down on large signed-trusted media-SDK / system-utility
+      // / compiler-toolchain binaries, where those APIs are normal
+      // infrastructure usage. Mirrors the wiring in pe-renderer.js /
+      // elf-renderer.js.
+      const _capImportsForClass = mo.symbols
+        .filter(s => s && s.name && s.typeField === 0 && s.isExternal)
+        .map(s => {
+          const n = s.name.startsWith('_') ? s.name.substring(1) : s.name;
+          return String(n).toLowerCase();
+        });
+      const _capDylibsForClass = (mo.dylibs || []).map(d =>
+        String((typeof d === 'string' ? d : (d && d.name) || '')).toLowerCase()
+      );
+      const _kindForClass = mo.filetype === 6 ? 'library'   // MH_DYLIB
+                          : mo.filetype === 7 ? 'library'   // MH_DYLINKER
+                          : mo.filetype === 11 ? 'driver'   // MH_KEXT_BUNDLE
+                          : 'exe';
+      const binaryClass = (typeof BinaryClass !== 'undefined' && BinaryClass.classify)
+        ? BinaryClass.classify({
+            sizeBytes: bytes.length,
+            format: 'macho',
+            kind: _kindForClass,
+            trustTier,
+            metadata: findings.metadata,
+            imports: _capImportsForClass,
+            dylibs: _capDylibsForClass,
+            flags: {
+              isFat:            !!fat,
+              isUniversal:      !!fat,
+              hardenedRuntime:  !!mo.security.hardenedRuntime,
+              hasEntitlements:  !!(_csi && _csi.entitlements),
+            },
+          })
+        : null;
+      if (binaryClass) {
+        findings.binaryClass = binaryClass;
+        findings.metadata['Binary Class'] = binaryClass.summary;
+      }
+      const _weight = (severity, category) => {
+        if (typeof BinaryClass === 'undefined' || !BinaryClass.weightFor || !binaryClass) return 1;
+        return BinaryClass.weightFor(binaryClass, severity, category);
+      };
+      const _surface = (category) => {
+        if (typeof BinaryClass === 'undefined' || !BinaryClass.shouldSurfaceLowSeverity || !binaryClass) return true;
+        return BinaryClass.shouldSurfaceLowSeverity(binaryClass, category);
+      };
+
       // ── Extract embedded Info.plist for Bundle ID ──────────────────
       try {
         const plistSec = mo.sections.find(s => s.sectname === '__info_plist' && s.size > 0 && s.offset > 0);
@@ -2416,11 +2509,27 @@ class MachoRenderer {
         const hasPersistence = suspiciousImports.some(x =>
           /login.*item|persistence/i.test(suspMap[x.lookup]));
 
-        if (hasExec) { issues.push('Imports command execution functions (execve/system/popen)'); riskScore += 1; }
+        // Cluster bumps. Critical clusters (injection / cred-theft /
+        // privesc / fileless / surveillance / persistence) are NEVER
+        // demoted — they keep full weight regardless of trust. Only the
+        // ubiquitous-API noise (anti-debug ptrace, generic networking,
+        // generic exec) is gated through `_weight`/`_surface` so that
+        // signed-trusted media-SDKs / system utilities / compiler
+        // toolchains stop being flagged for normal infrastructure usage.
+        if (hasExec && _surface('execution')) {
+          issues.push('Imports command execution functions (execve/system/popen)');
+          riskScore += 1 * _weight('medium', 'execution');
+        }
         if (hasInjection) { issues.push('Imports process memory manipulation APIs (task_for_pid/mach_vm_write)'); riskScore += 2; }
-        if (hasNetwork) { issues.push('Imports network socket APIs — potential C2/backdoor capability'); riskScore += 1; }
+        if (hasNetwork && _surface('networking')) {
+          issues.push('Imports network socket APIs — potential C2/backdoor capability');
+          riskScore += 1 * _weight('low', 'networking');
+        }
         if (hasPrivesc) { issues.push('Imports privilege escalation functions (AuthorizationExecuteWithPrivileges)'); riskScore += 2; }
-        if (hasAntiDebug) { issues.push('Imports anti-debugging function (ptrace/PT_DENY_ATTACH)'); riskScore += 1; }
+        if (hasAntiDebug && _surface('anti-debug')) {
+          issues.push('Imports anti-debugging function (ptrace/PT_DENY_ATTACH)');
+          riskScore += 1 * _weight('low', 'anti-debug');
+        }
         if (hasKeychain) { issues.push('Imports Keychain access APIs — potential credential theft (Atomic Stealer pattern)'); riskScore += 2.5; }
         if (hasFileless) { issues.push('Imports fileless execution functions (NSCreateObjectFileImageFromMemory)'); riskScore += 2; }
         if (hasSurveillance) { issues.push('Imports screen capture/keylogging APIs — surveillance capability'); riskScore += 2; }
@@ -2741,8 +2850,57 @@ class MachoRenderer {
           }) || [];
           if (caps.length) {
             findings.capabilities = caps;
-            const sevWeight = { critical: 3, high: 2, medium: 1, low: 0.5 };
+            const sevWeight = { critical: 3, high: 2, medium: 1, low: 0.5, info: 0 };
+            // Mirror of the capCategory map in pe-renderer.js / elf-renderer.js.
+            // Suppresses ubiquitous-API rows (anti-debug ptrace, generic
+            // networking, dynamic loading) on signed-trusted system-class
+            // Mach-O binaries while NEVER demoting injection / cred-theft
+            // / ransomware-class / persistence findings.
+            const capCategory = {
+              'anti-debug-winapi':        'anti-debug',
+              'anti-debug-ptrace':        'anti-debug',
+              'anti-debug-macos':         'anti-debug',
+              'sandbox-sleep-skip':       'timing',
+              'network-winhttp':          'networking',
+              'network-sockets':          'networking',
+              'proc-injection-classic':   'injection',
+              'proc-hollowing':           'injection',
+              'proc-injection-apc':       'injection',
+              'proc-injection-reflective':'injection',
+              'proc-inject-ptrace':       'injection',
+              'proc-inject-mach':         'injection',
+              'creds-lsa':                'cred-theft',
+              'creds-sam':                'cred-theft',
+              'creds-dpapi':              'cred-theft',
+              'creds-keychain':           'cred-theft',
+              'creds-shadow':             'cred-theft',
+              'ransomware-crypto':        'ransomware',
+              'shadow-copy-delete':       'ransomware',
+              'persist-run-key':          'persistence',
+              'persist-schtasks':         'persistence',
+              'persist-service':          'persistence',
+              'persist-launchd':          'persistence',
+              'persist-cron':             'persistence',
+              'persist-systemd':          'persistence',
+              'persist-ld-preload':       'persistence',
+              'fileless-memfd':           'execution',
+            };
             for (const cap of caps) {
+              const cat = capCategory[cap.id] || 'other';
+              if ((cap.severity === 'medium' || cap.severity === 'low' || cap.severity === 'info')
+                  && !_surface(cat)) {
+                findings.metadata['Suppressed Capability'] =
+                  (findings.metadata['Suppressed Capability'] || '') +
+                  (findings.metadata['Suppressed Capability'] ? ', ' : '') + cap.name;
+                continue;
+              }
+              const w = _weight(cap.severity, cat);
+              if (w === 0) {
+                findings.metadata['Suppressed Capability'] =
+                  (findings.metadata['Suppressed Capability'] || '') +
+                  (findings.metadata['Suppressed Capability'] ? ', ' : '') + cap.name;
+                continue;
+              }
               pushIOC(findings, {
                 type: IOC.PATTERN,
                 value: `[capability] ${cap.name}` + (cap.mitre ? ` (${cap.mitre})` : ''),
@@ -2751,7 +2909,7 @@ class MachoRenderer {
                 _noDomainSibling: true,
               });
               issues.push(`Capability — ${cap.name}` + (cap.mitre ? ` [${cap.mitre}]` : ''));
-              riskScore += sevWeight[cap.severity] || 0;
+              riskScore += (sevWeight[cap.severity] || 0) * w;
             }
           }
         }

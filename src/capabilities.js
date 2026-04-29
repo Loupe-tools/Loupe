@@ -85,15 +85,33 @@ const _CAPABILITIES = [
   },
 
   // ── Anti-debug / anti-analysis ───────────────────────────────────────
+  // Tightened (2026-04-29): a single anti-debug API in isolation is noise —
+  // `IsDebuggerPresent` and `QueryPerformanceCounter` appear in essentially
+  // every non-trivial Windows binary as part of CRT init. Require at least
+  // TWO classic anti-debug primitives to co-occur; the high-signal subset
+  // below excludes pure timing APIs (those are covered by
+  // `sandbox-sleep-skip`). PEB-walk strings (BeingDebugged, NtGlobalFlag)
+  // and the hide-from-debugger thread API push the signal further when
+  // present, so the capability fires at quorum=2 over imports OR at
+  // quorum=2 over the PEB string-hint set.
   {
     id: 'anti-debug-winapi',
     name: 'Anti-Debug (Windows)',
     severity: 'medium',
     mitre: 'T1622',
-    description: 'Classic Win32 anti-debug API cluster — IsDebuggerPresent, CheckRemoteDebuggerPresent, NtQueryInformationProcess.',
-    imports: ['isdebuggerpresent', 'checkremotedebuggerpresent', 'ntqueryinformationprocess', 'outputdebugstringa'],
-    quorum: 1,
-    any: true,
+    description: 'Classic Win32 anti-debug API cluster — multiple primitives co-occur (IsDebuggerPresent + CheckRemoteDebuggerPresent / NtQueryInformationProcess(ProcessDebugPort) / NtSetInformationThread(HideFromDebugger) / RtlGetNtGlobalFlags).',
+    imports: [
+      'isdebuggerpresent', 'checkremotedebuggerpresent',
+      'ntqueryinformationprocess', 'outputdebugstringa', 'outputdebugstringw',
+      'ntsetinformationthread', 'rtlgetntglobalflags',
+      'ntclose',                  // common in NtClose-with-invalid-handle anti-debug trick
+    ],
+    strings: [
+      'beingdebugged', 'ntglobalflag', 'processheap.flags',
+      'pt_deny_attach',           // macOS anti-debug variant — also matches here for cross-platform tooling
+      'hidefromdebugger',
+    ],
+    quorum: 2,
   },
   {
     id: 'anti-debug-ptrace',
@@ -120,9 +138,19 @@ const _CAPABILITIES = [
     name: 'Sandbox Evasion (timing)',
     severity: 'medium',
     mitre: 'T1497.003',
-    description: 'Calls to GetTickCount / timing APIs paired with long Sleep chains are used to stall sandboxes that have a short emulation budget.',
-    imports: ['gettickcount', 'queryperformancecounter', 'sleep', 'sleepex'],
-    quorum: 2,
+    description: 'Timing primitive (GetTickCount / QueryPerformanceCounter) paired with a stalling primitive (Sleep / SleepEx / WaitForSingleObject / NtDelayExecution). Single-API timing alone is benign CRT init.',
+    imports: [
+      'gettickcount', 'gettickcount64', 'queryperformancecounter',
+      'sleep', 'sleepex', 'waitforsingleobject', 'waitforsingleobjectex',
+      'waitformultipleobjects', 'ntdelayexecution',
+    ],
+    // True quorum needs both halves of the pair, not 2 of one half. This is
+    // checked specially in `detectCapabilities` via `splitQuorum`.
+    splitQuorum: {
+      timing:   ['gettickcount', 'gettickcount64', 'queryperformancecounter'],
+      stalling: ['sleep', 'sleepex', 'waitforsingleobject', 'waitforsingleobjectex',
+                 'waitformultipleobjects', 'ntdelayexecution'],
+    },
   },
 
   // ── Keylogging / surveillance ────────────────────────────────────────
@@ -290,13 +318,16 @@ const _CAPABILITIES = [
     name: 'Network Client (WinHTTP/WinInet)',
     severity: 'medium',
     mitre: 'T1071.001',
-    description: 'WinHTTP / WinInet / URLDownloadToFile — HTTP(S) C2 or payload download.',
+    description: 'WinHTTP / WinInet / URLDownloadToFile — HTTP(S) client surface. Single-call use (e.g. one InternetOpen for a benign update check) is unactionable, so we require either a request+send pair or a download-to-file primitive.',
     imports: [
-      'internetopen', 'internetopenurl', 'httpopenrequest', 'httpsendrequest',
+      'internetopen', 'internetopena', 'internetopenw',
+      'internetopenurl', 'internetopenurla', 'internetopenurlw',
+      'httpopenrequest', 'httpopenrequesta', 'httpopenrequestw',
+      'httpsendrequest', 'httpsendrequesta', 'httpsendrequestw',
       'winhttpopen', 'winhttpopenrequest', 'winhttpsendrequest',
-      'urldownloadtofile',
+      'urldownloadtofile', 'urldownloadtofilea', 'urldownloadtofilew',
     ],
-    any: true,
+    quorum: 2,
   },
   {
     id: 'network-sockets',
@@ -421,14 +452,24 @@ function detectCapabilities(ctx) {
     }
 
     let fired = false;
-    if (cap.any) {
+    if (cap.splitQuorum) {
+      // Split-quorum: the capability needs at least one hit from EACH bucket
+      // — used for "timing primitive AND stalling primitive" pairs where
+      // 2-of-one-bucket should NOT fire (`Sleep`+`SleepEx` alone is benign).
+      let allBucketsHit = true;
+      for (const bucket of Object.values(cap.splitQuorum)) {
+        const hit = bucket.some(tok => _hasImport(importSet, tok.toLowerCase()));
+        if (!hit) { allBucketsHit = false; break; }
+      }
+      fired = allBucketsHit;
+    } else if (cap.any) {
       fired = (importHits + stringHits) > 0;
     } else if (cap.stringsAny && stringHits > 0) {
       fired = true;
     } else if (cap.stringsQuorum && stringHits >= cap.stringsQuorum) {
       fired = true;
     } else if (cap.quorum) {
-      fired = (importHits >= cap.quorum) || (stringHits >= cap.quorum);
+      fired = (importHits + stringHits) >= cap.quorum;
     } else {
       // Default: every listed token must be present (AND semantics within
       // each bucket, OR across buckets when both are populated).

@@ -609,6 +609,14 @@ extendApp({
 
       // Await hashes and render sidebar
       this.fileHashes = await hashPromise;
+      // Single canonical nicelist tagging — see src/nicelist-annotate.js
+      // header for the rationale. Must run BEFORE `_renderSidebar` so the
+      // sidebar IOC section sees `_nicelisted`/`_nicelistSource` already
+      // set, AND before any export-pipeline consumer (`_collectIocs`,
+      // STIX, MISP, CSV) reads from the findings. Idempotent — the
+      // worker-fallback path that re-runs after the IOC worker resolves
+      // calls this again before it re-paints.
+      if (typeof annotateNicelist === 'function') annotateNicelist(this.findings);
       this._renderSidebar(file.name, analyzer);
       // Sentinel for async post-render patchers — see the early reset
       // above (`this._sidebarPainted = false;`) for the rationale. After
@@ -2184,6 +2192,11 @@ extendApp({
     // up the patched IOCs without an early stale render. See review
     // notes #4 from the 2026-04-27 audit.
     if (!this._sidebarPainted) return;
+    // Re-tag the freshly-merged IOCs before the repaint so the sidebar
+    // and any export consumer that runs after this point sees consistent
+    // `_nicelisted` flags. Idempotent — the natural paint at the end of
+    // `_loadFile` already called `annotateNicelist` once.
+    if (typeof annotateNicelist === 'function') annotateNicelist(this.findings);
     // Repaint — `_renderSidebar` snapshots a fresh findings view from
     // `this.findings` so the patched IOC list lands in the next paint.
     // The `_currentAnalyzer` lookup mirrors the deferred-refresh path in

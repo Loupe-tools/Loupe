@@ -314,21 +314,57 @@ extendApp({
       }
 
       // ═══════ 4. IOCs (ALL types except detections) ═══════════════════════
+      // Defensive nicelist tagging — `_loadFile` does this once, but
+      // `Copy Analysis` can in theory be invoked against a findings
+      // shape that bypassed the load chain (e.g. a future "report from
+      // saved JSON" path). Cheap idempotent op.
+      if (typeof annotateNicelist === 'function'
+          && allRefs.some(r => r && typeof r._nicelisted === 'undefined')) {
+        annotateNicelist(f);
+      }
+      // Honour the user setting controlling how nicelisted IOCs appear
+      // in the Summary output:
+      //   • 'group'  — separate "### Nicelisted IOCs" subsection (default)
+      //   • 'omit'   — drop nicelisted rows entirely
+      //   • 'inline' — single combined table (legacy behaviour, no marker)
+      // Persisted as `loupe_summary_include_nicelisted`.
+      const niceMode = (() => {
+        const v = safeStorage.get('loupe_summary_include_nicelisted');
+        return (v === 'omit' || v === 'inline') ? v : 'group';
+      })();
       const iocSeen = new Set();
       const iocs = [];
+      const niceIocs = [];
       for (const r of allRefs) {
         if (!detectionTypes.has(r.type) && r.url && !iocSeen.has(r.type + '|' + r.url)) {
           iocSeen.add(r.type + '|' + r.url);
+          if (r._nicelisted) {
+            if (niceMode === 'omit') continue;
+            if (niceMode === 'group') { niceIocs.push(r); continue; }
+            // 'inline' falls through into the main bucket.
+          }
           iocs.push(r);
         }
       }
-      if (iocs.length) {
+      if (iocs.length || niceIocs.length) {
         const iocCap = rowCap(350);
         let d = '\n## IOCs\n| Type | Value | Severity |\n|------|-------|----------|\n';
         for (const ioc of iocs.slice(0, iocCap)) {
           d += `| ${tp(ioc.type)} | \`${tp(ioc.url)}\` | ${ioc.severity || 'info'} |\n`;
         }
         if (iocs.length > iocCap) d += `\n… and ${iocs.length - iocCap} more IOCs\n`;
+        // Nicelisted bucket — separate sub-table so the row count is
+        // honest but the analyst can collapse / skip it. Receivers piping
+        // this into a TIP can `grep -B999 '^### Nicelisted'` to discard.
+        if (niceIocs.length && niceMode === 'group') {
+          d += '\n### Nicelisted IOCs (matched Loupe nicelist — likely benign)\n';
+          d += '| Type | Value | Source |\n|------|-------|--------|\n';
+          const niceCap = rowCap(150);
+          for (const ioc of niceIocs.slice(0, niceCap)) {
+            d += `| ${tp(ioc.type)} | \`${tp(ioc.url)}\` | ${tp(ioc._nicelistSource || 'nicelist')} |\n`;
+          }
+          if (niceIocs.length > niceCap) d += `\n… and ${niceIocs.length - niceCap} more nicelisted IOCs\n`;
+        }
         sections.push({ text: d, priority: 4, maxLen: charCap(10000) });
       }
 
@@ -1483,6 +1519,14 @@ extendApp({
     const detectionTypes = new Set([IOC.YARA, IOC.PATTERN, IOC.INFO]);
     const seen = new Set();
     const out = [];
+    // Defensive: in the unlikely case `_loadFile` skipped the canonical
+    // tagging step (e.g. a test harness invoking `App._buildStixBundle`
+    // directly on a constructed findings shape), make sure every ref has
+    // `_nicelisted` set before we start collecting. Cheap idempotent op.
+    if (typeof annotateNicelist === 'function'
+        && allRefs.some(r => r && typeof r._nicelisted === 'undefined')) {
+      annotateNicelist(f);
+    }
     for (const r of allRefs) {
       if (!r || !r.url) continue;
       if (detectionTypes.has(r.type)) continue;       // detections live in `detections`, not here
@@ -1496,7 +1540,9 @@ extendApp({
         severity: r.severity || 'info',
         note: r.description || r.ruleName || '',
         source: r._source || r.section || '',
-        stixType, // may be null for unmappable types (skipped by STIX)
+        stixType,                                  // may be null for unmappable types (skipped by STIX)
+        nicelisted: !!r._nicelisted,               // carried through to STIX/MISP/CSV
+        nicelistSource: r._nicelistSource || null, // 'Default Nicelist' | user-list display name | null
       });
     }
     out.sort((a, b) => (a.type + a.value).localeCompare(b.type + b.value));
@@ -1540,14 +1586,32 @@ extendApp({
     // RFC 4180: fields containing ',', '"' or CR/LF are wrapped in double
     // quotes and embedded quotes are doubled. Sort order is done by caller
     // so diffing two exports of the same file is byte-stable.
+    //
+    // Columns (extended 2026-04 to carry nicelist context downstream):
+    //   type, value, severity, note, source, nicelisted, nicelist_source
+    //
+    // The `nicelisted` column is `true`/`false`; `nicelist_source` is the
+    // matching list's display name (`'Default Nicelist'` for built-ins,
+    // user-list label otherwise) or empty when not nicelisted. Analysts
+    // who want to drop the noise post-hoc can `awk -F, '$6=="false"'`
+    // without losing the underlying record. Earlier consumers that
+    // `head -1`'d the CSV will see the new columns appended at the end.
     const q = (v) => {
       const s = v == null ? '' : String(v);
       if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
       return s;
     };
-    const lines = ['type,value,severity,note,source'];
+    const lines = ['type,value,severity,note,source,nicelisted,nicelist_source'];
     for (const i of iocs) {
-      lines.push([q(i.type), q(i.value), q(i.severity || 'info'), q(i.note || ''), q(i.source || '')].join(','));
+      lines.push([
+        q(i.type),
+        q(i.value),
+        q(i.severity || 'info'),
+        q(i.note || ''),
+        q(i.source || ''),
+        q(i.nicelisted ? 'true' : 'false'),
+        q(i.nicelistSource || ''),
+      ].join(','));
     }
     // BOM-less UTF-8; use CRLF per RFC 4180 for maximal Excel friendliness.
     return lines.join('\r\n') + '\r\n';
@@ -1658,6 +1722,19 @@ extendApp({
       else if (sev === 'medium') ind.indicator_types = ['anomalous-activity'];
       // low/info: omit indicator_types per STIX optionality rules.
       if (ioc.note) ind.description = ioc.note;
+      // Nicelisted IOCs ship with low confidence + a `loupe-nicelisted`
+      // label rather than being dropped, so receivers can filter them
+      // out with their own policy without losing the audit trail. STIX
+      // 2.1 confidence is 0..100; 25 is the canonical "low" tier per the
+      // OASIS confidence-scale appendix.
+      if (ioc.nicelisted) {
+        ind.confidence = 25;
+        ind.labels = ['loupe-nicelisted'];
+        const src = ioc.nicelistSource ? ` (${ioc.nicelistSource})` : '';
+        ind.description = (ind.description ? ind.description + ' — ' : '')
+          + 'Matched Loupe nicelist' + src
+          + '; treat as benign unless confirmed otherwise.';
+      }
       objects.push(ind);
       indicatorIds.push(id);
     }
@@ -1793,6 +1870,17 @@ extendApp({
       const a = mapMisp(ioc);
       // Loupe-side "info" severity forces to_ids:false regardless of type.
       if ((ioc.severity || '').toLowerCase() === 'info') a.to_ids = '0';
+      // Nicelisted IOCs ship as `to_ids:'0'` with a comment prefix so
+      // the analyst (or a feed-consumer rule) can drop them downstream
+      // without ever blocking on a known-good CDN / Microsoft telemetry
+      // / Google Fonts hostname. We deliberately keep the attribute (it's
+      // still useful for cross-correlation in MISP) — only the IDS flag
+      // and comment change.
+      if (ioc.nicelisted) {
+        a.to_ids = '0';
+        const src = ioc.nicelistSource ? ` (${ioc.nicelistSource})` : '';
+        a.comment = '[loupe-nicelisted' + src + '] ' + (a.comment || ioc.type);
+      }
       pushAttr(a);
     }
 

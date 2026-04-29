@@ -545,6 +545,14 @@ APP_JS_FILES = [
     # AFTER nicelist.js (built-in takes priority for the "Default Nicelist"
     # label) and BEFORE app-sidebar.js / app-settings.js (both consume it).
     'src/nicelist-user.js',
+    # nicelist-annotate.js — single canonical IOC tagger. Walks every
+    # `findings.externalRefs` / `interestingStrings` entry and stamps
+    # `_nicelisted` / `_nicelistSource` so downstream consumers (sidebar
+    # IOC table, Copy Analysis Summary, STIX bundle, MISP event, IOC CSV)
+    # share a single source of truth instead of recomputing tags each
+    # time. Must load AFTER nicelist.js and nicelist-user.js (consumes
+    # both) and BEFORE app-load.js / app-sidebar.js / app-ui.js.
+    'src/nicelist-annotate.js',
 
     'src/parser-watchdog.js',
     # file-download.js — single home for the Blob → <a download> → revoke
@@ -579,6 +587,22 @@ APP_JS_FILES = [
     # canonical technique id instead of rolling its own table.
     'src/mitre.js',
     'src/evtx-event-ids.js',
+    # trusted-cas.js — curated public-CA recognition for Authenticode /
+    # Mach-O code-sig trust tier classification. Exposes `TrustedCAs` with
+    # `classifyTrustTier(certs) → 'unsigned'|'self-signed'|'signed'|'signed-trusted'`
+    # and `trustBoostForTier(tier) → -1|0|+1|+2`. Consumed by binary-class.js
+    # and the PE / Mach-O renderers. Must load BEFORE binary-class.js and
+    # the native-binary renderers.
+    'src/trusted-cas.js',
+    # binary-class.js — shared binary-classification helper (size · trust ·
+    # kind · family). Drives the `_weight()` and `_surface()` gates inside
+    # the PE / ELF / Mach-O renderers so ubiquitous-API capability noise
+    # (anti-debug, generic networking, dynamic loading) gets demoted on
+    # large signed-trusted SDK / system / compiler-toolchain binaries while
+    # critical capabilities (process injection, credential theft,
+    # ransomware-class crypto) keep full weight. Must load BEFORE
+    # capabilities.js consumers AND AFTER trusted-cas.js.
+    'src/binary-class.js',
     # capabilities.js — static capability tagging (capa-lite). Consumed by
     # PE / ELF / Mach-O renderers via `Capabilities.detect({imports,strings,dylibs})`
     # to turn a wall of suspicious APIs into named behaviours with MITRE

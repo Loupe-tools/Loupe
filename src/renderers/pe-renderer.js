@@ -1534,6 +1534,196 @@ class PeRenderer {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  //  TLS callback content inspector
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  // The mere presence of TLS callbacks is not a reliable malware signal —
+  // every Microsoft C++ runtime registers them for thread-local storage
+  // initialisation, so a 24 MB SDK with 4 callbacks is doing nothing
+  // unusual. We inspect a bounded byte-window at each callback's file
+  // offset and flag well-known suspicious shapes (PEB walk, anti-debug
+  // import call, decryption-stub-shaped loop, dynamic-API-resolution
+  // pattern). Severity scales with the number and kind of hints across
+  // ALL callbacks; a single tiny `RET` callback does not flag.
+  //
+  // Hints are byte-pattern-only — no real disassembler. The patterns are
+  // chosen to be high-precision (low FP) on amd64 / x86 code; ARM64 PE
+  // binaries skip the inspection (they would generate noise).
+  //
+  // Returns: { hints: { tinyStub, pebAccess, antiDebugImport, decryptStub,
+  //                     dynApi, largeCallback, inWX },
+  //            perCallback: [ { hints:[...] } ] }
+
+  _inspectTlsCallbacks(bytes, tls, sections, imports, isArm) {
+    const out = {
+      hints: {
+        tinyStub: 0, pebAccess: 0, antiDebugImport: 0,
+        decryptStub: 0, dynApi: 0, largeCallback: 0, inWX: 0,
+      },
+      perCallback: [],
+    };
+    if (!tls || !Array.isArray(tls.callbacks) || tls.callbacks.length === 0) return out;
+    if (isArm) return out; // skip — patterns are x86/x64 specific
+
+    // Build a Set of import-RVA addresses for the anti-debug subset, so we
+    // can recognise a `call [rip + IAT]` whose target points at one of
+    // those entries. Best-effort — anti-debug detection still fires from
+    // the mere presence of those imports in the binary, so this is purely
+    // a TLS-content escalator.
+    const ANTI_DEBUG_NAMES = new Set([
+      'isdebuggerpresent', 'checkremotedebuggerpresent',
+      'ntqueryinformationprocess', 'ntsetinformationthread',
+      'rtlgetntglobalflags', 'outputdebugstringa', 'outputdebugstringw',
+    ]);
+    const DYN_API_NAMES = new Set([
+      'loadlibrarya', 'loadlibraryw', 'loadlibraryexa', 'loadlibraryexw',
+      'getprocaddress', 'ldrloaddll', 'ldrgetprocedureaddress',
+    ]);
+    let hasAntiDebugImport = false;
+    let hasDynApiImport = false;
+    for (const imp of (imports || [])) {
+      for (const fn of (imp.functions || [])) {
+        const nm = String(fn && fn.name || '').toLowerCase();
+        if (ANTI_DEBUG_NAMES.has(nm)) hasAntiDebugImport = true;
+        if (DYN_API_NAMES.has(nm))    hasDynApiImport    = true;
+      }
+    }
+
+    const WINDOW = 256;
+    for (const cb of tls.callbacks) {
+      const cbHints = [];
+      if (cb.section) {
+        const sec = sections.find(s => s.name === cb.section);
+        if (sec && sec.isWritable && sec.isExecutable) {
+          out.hints.inWX++;
+          cbHints.push('w+x section');
+        }
+      }
+      const off = (typeof cb.fileOffset === 'number' && cb.fileOffset > 0)
+        ? cb.fileOffset
+        : null;
+      if (off === null || off + 16 > bytes.length) {
+        out.perCallback.push({ hints: cbHints });
+        continue;
+      }
+      const end = Math.min(off + WINDOW, bytes.length);
+      // Tiny-stub: trivial RET / XOR EAX,EAX RET / MOV EAX,1 RET in first
+      // 16 bytes. Indicates a benign C++ TLS init slot.
+      const b0 = bytes[off], b1 = bytes[off + 1], b2 = bytes[off + 2],
+            b3 = bytes[off + 3], b4 = bytes[off + 4];
+      const tiny =
+        (b0 === 0xC3) ||                                  // RET
+        (b0 === 0xC2 && b2 === 0x00) ||                   // RET imm16, low byte trivial
+        (b0 === 0x33 && b1 === 0xC0 && b2 === 0xC3) ||    // XOR EAX,EAX; RET
+        (b0 === 0x31 && b1 === 0xC0 && b2 === 0xC3) ||    // XOR EAX,EAX; RET (alt)
+        (b0 === 0xB8 && b3 === 0x00 && b4 === 0x00) ||    // MOV EAX, imm32 (small) — followed by RET often
+        // 64-bit MSVC stubs frequently start with `48 89 5C 24 ..` (mov
+        // [rsp+x], rbx) — but we only flag the "trivial RET" case here.
+        false;
+      if (tiny) {
+        out.hints.tinyStub++;
+        cbHints.push('tiny-stub');
+      }
+
+      // Slice for pattern scan.
+      const slice = bytes.subarray(off, end);
+
+      // PEB walk patterns:
+      //   x86: `64 A1 30 00 00 00`            (mov eax, fs:[30h])
+      //   x86: `64 8B 0D 30 00 00 00`         (mov ecx, fs:[30h])
+      //   x64: `65 48 8B 04 25 60 00 00 00`   (mov rax, gs:[60h])
+      //   x64: `65 48 8B 0C 25 60 00 00 00`   (mov rcx, gs:[60h])
+      let pebHit = false;
+      for (let i = 0; i + 9 < slice.length; i++) {
+        if (slice[i] === 0x65 && slice[i + 1] === 0x48 && slice[i + 2] === 0x8B
+            && (slice[i + 3] === 0x04 || slice[i + 3] === 0x0C) && slice[i + 4] === 0x25
+            && slice[i + 5] === 0x60 && slice[i + 6] === 0x00 && slice[i + 7] === 0x00
+            && slice[i + 8] === 0x00) { pebHit = true; break; }
+      }
+      if (!pebHit) {
+        for (let i = 0; i + 5 < slice.length; i++) {
+          if (slice[i] === 0x64 && slice[i + 1] === 0xA1 && slice[i + 2] === 0x30
+              && slice[i + 3] === 0x00 && slice[i + 4] === 0x00 && slice[i + 5] === 0x00) {
+            pebHit = true; break;
+          }
+        }
+      }
+      if (pebHit) {
+        out.hints.pebAccess++;
+        cbHints.push('peb-walk');
+      }
+
+      // Decryption-stub heuristic — high local entropy (ascii text very
+      // unlikely in a 256 B code window) AND a tight short-jump backward
+      // (`75 ??`/`74 ??` with negative offset, or `E2 ??` LOOP). High
+      // entropy on its own is too noisy; require BOTH.
+      let entropy = 0;
+      {
+        const freq = new Uint16Array(256);
+        for (let i = 0; i < slice.length; i++) freq[slice[i]]++;
+        for (let i = 0; i < 256; i++) {
+          if (!freq[i]) continue;
+          const p = freq[i] / slice.length;
+          entropy -= p * Math.log2(p);
+        }
+      }
+      let hasShortBackJump = false;
+      for (let i = 0; i + 1 < slice.length; i++) {
+        const op = slice[i];
+        if ((op === 0x75 || op === 0x74 || op === 0xE2) && (slice[i + 1] & 0x80) !== 0) {
+          hasShortBackJump = true; break;
+        }
+      }
+      if (entropy > 5.5 && hasShortBackJump) {
+        out.hints.decryptStub++;
+        cbHints.push('decrypt-stub');
+      }
+
+      // Dynamic-API-resolution / anti-debug-import call: rough proxy is
+      // "callback contains a CALL [RIP+disp32]" (`FF 15 ?? ?? ?? ??`)
+      // AND the binary imports LoadLibrary/GetProcAddress (or anti-debug).
+      // We don't resolve the IAT slot — that would need a full disasm —
+      // but the combined hint is precise enough in practice because TLS
+      // callbacks rarely contain indirect calls in benign binaries.
+      let hasIndirectCall = false;
+      for (let i = 0; i + 5 < slice.length; i++) {
+        if (slice[i] === 0xFF && slice[i + 1] === 0x15) { hasIndirectCall = true; break; }
+      }
+      if (hasIndirectCall) {
+        if (hasAntiDebugImport) {
+          out.hints.antiDebugImport++;
+          cbHints.push('anti-debug-call');
+        }
+        if (hasDynApiImport) {
+          out.hints.dynApi++;
+          cbHints.push('dyn-api-call');
+        }
+      }
+
+      // Large-callback: ≥ 4 KB before the next callback or section end.
+      // Computed approximately from the next callback's fileOffset, falling
+      // back to the section end.
+      const idx = tls.callbacks.indexOf(cb);
+      const nextCb = tls.callbacks[idx + 1];
+      const nextOff = (nextCb && typeof nextCb.fileOffset === 'number' && nextCb.fileOffset > off)
+        ? nextCb.fileOffset
+        : null;
+      let limit = nextOff;
+      if (!limit && cb.section) {
+        const sec = sections.find(s => s.name === cb.section);
+        if (sec) limit = sec.rawDataOffset + sec.sizeOfRawData;
+      }
+      if (limit && limit - off >= 4096) {
+        out.hints.largeCallback++;
+        cbHints.push('large');
+      }
+
+      out.perCallback.push({ hints: cbHints });
+    }
+    return out;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   //  .NET CLR Header parser (IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR = 14)
   // ═══════════════════════════════════════════════════════════════════════
   //
@@ -3363,7 +3553,92 @@ class PeRenderer {
       if (!pe.security.cfg) { issues.push('CFG disabled — no control flow integrity'); riskScore += 0.5; }
 
       const hasCert = pe.dataDirectories[4] && pe.dataDirectories[4].rva !== 0 && pe.dataDirectories[4].size !== 0;
-      if (!hasCert) { issues.push('No Authenticode signature'); riskScore += 1; }
+
+      // ── Authenticode trust tier ────────────────────────────────────
+      // Replaces the old "No Authenticode signature → +1 risk" rule. We
+      // look at the parsed certificate chain and classify into one of
+      // four tiers (see trusted-cas.js). The tier drives a `trustBoost`
+      // (+2 / +1 / 0 / -1) which is then fed into BinaryClass and used
+      // by `_weight()` below to demote ubiquitous-API noise on
+      // signed-trusted binaries. Critical capabilities (injection,
+      // cred-theft, ransomware crypto) are NEVER demoted by trust.
+      let trustTier = 'unsigned';
+      if (hasCert) {
+        if (typeof TrustedCAs !== 'undefined' && TrustedCAs.classifyTrustTier) {
+          trustTier = TrustedCAs.classifyTrustTier(pe.certificates || []);
+        } else {
+          trustTier = (pe.certificates && pe.certificates.length > 0) ? 'signed' : 'unsigned';
+        }
+      }
+      findings.metadata['Authenticode'] = (() => {
+        switch (trustTier) {
+          case 'signed-trusted': {
+            const leaf = (pe.certificates && pe.certificates[0]) || {};
+            const cn = (leaf.subject && leaf.subject.CN) || leaf.subjectStr || '(signed)';
+            return `signed-trusted — leaf CN: ${cn}`;
+          }
+          case 'signed':         return 'signed (chain present, issuer not in trusted-CA list)';
+          case 'self-signed':    return 'self-signed (issuer = subject)';
+          case 'unsigned':       return 'unsigned';
+          default:               return trustTier;
+        }
+      })();
+      if (trustTier === 'unsigned')      { issues.push('No Authenticode signature'); riskScore += 1; }
+      else if (trustTier === 'self-signed') { issues.push('Authenticode chain is self-signed (no real CA)'); riskScore += 1; }
+
+      // ── Binary classification (size · trust · family · kind) ───────
+      // Drives `_weight()` below — ubiquitous-API capability bumps are
+      // scaled down on large signed-trusted media-SDK / system-utility
+      // binaries, where those APIs are normal infrastructure usage.
+      const _capImportsForClass = [];
+      for (const imp of (pe.imports || [])) {
+        for (const fn of (imp.functions || [])) {
+          if (fn && fn.name) _capImportsForClass.push(String(fn.name).toLowerCase());
+        }
+      }
+      const _capDylibsForClass = (pe.imports || []).map(i => String(i.dllName || '').toLowerCase());
+      const binaryClass = (typeof BinaryClass !== 'undefined' && BinaryClass.classify)
+        ? BinaryClass.classify({
+            sizeBytes: bytes.length,
+            format: 'pe',
+            kind: pe.coff.isDLL ? 'dll' : pe.coff.isSystem ? 'driver' : 'exe',
+            trustTier,
+            metadata: findings.metadata,
+            imports: _capImportsForClass,
+            dylibs: _capDylibsForClass,
+            installerType: pe.installerType || null,
+            subsystem: pe.optional && pe.optional.subsystemStr,
+            flags: {
+              isDotNet:       !!pe.dotnet,
+              isGoBinary:     !!pe.isGoBinary,
+              isXll:          !!pe.isXll,
+              isAutoHotkey:   !!pe.isAutoHotkey,
+              hasResources:   !!(pe.resources && pe.resources.leaves && pe.resources.leaves.length),
+              hasDebugInfo:   !!(pe.debugInfo && pe.debugInfo.pdbPath),
+            },
+          })
+        : null;
+      if (binaryClass) {
+        findings.binaryClass = binaryClass;
+        findings.metadata['Binary Class'] = binaryClass.summary;
+      }
+
+      // Helper: weight a per-cluster riskScore bump by the binary class.
+      // `severity` is the cluster's intrinsic severity (low/medium/high/
+      // critical); `category` is one of {anti-debug, timing, networking,
+      // dynamic-loading, injection, cred-theft, crypto, persistence,
+      // execution}. Returns the multiplier to apply.
+      const _weight = (severity, category) => {
+        if (typeof BinaryClass === 'undefined' || !BinaryClass.weightFor || !binaryClass) return 1;
+        return BinaryClass.weightFor(binaryClass, severity, category);
+      };
+      // Helper: should we even emit a low-severity capability row given
+      // the binary class? Used to suppress anti-debug/timing/dyn-loading
+      // findings on signed-trusted system-class binaries.
+      const _surface = (category) => {
+        if (typeof BinaryClass === 'undefined' || !BinaryClass.shouldSurfaceLowSeverity || !binaryClass) return true;
+        return BinaryClass.shouldSurfaceLowSeverity(binaryClass, category);
+      };
 
       // ── Timestamp anomalies ────────────────────────────────────────
       const ts = pe.coff.timestamp;
@@ -3421,7 +3696,11 @@ class PeRenderer {
       }
 
       if (suspiciousImports.length > 0) {
-        riskScore += Math.min(suspiciousImports.length * 0.5, 5);
+        // Per-API noise bump scaled down on signed binaries — a 24 MB
+        // signed media-SDK that imports 30 ubiquitous Win32 APIs should
+        // not get a +5 riskScore floor for the imports table alone.
+        const perApiBase = Math.min(suspiciousImports.length * 0.5, 5);
+        riskScore += perApiBase * _weight('low', 'dynamic-loading');
 
         // Categorize suspicious API patterns
         const hasInjection = suspiciousImports.some(s =>
@@ -3435,11 +3714,20 @@ class PeRenderer {
         const hasCrypto = suspiciousImports.some(s =>
           /ransomware|encryption|crypto/i.test(s.info));
 
-        if (hasInjection) { issues.push('Imports process injection APIs (VirtualAlloc/WriteProcessMemory/CreateRemoteThread)'); riskScore += 2; }
-        if (hasCredTheft) { issues.push('Imports credential theft APIs'); riskScore += 2; }
-        if (hasAntiDebug) { issues.push('Imports anti-debugging / sandbox evasion APIs'); riskScore += 1; }
-        if (hasNetworking) { issues.push('Imports networking APIs (C2 / download capability)'); riskScore += 1; }
-        if (hasCrypto) { issues.push('Imports cryptographic APIs (potential ransomware)'); riskScore += 1.5; }
+        // Critical clusters (injection, cred-theft, ransomware crypto) keep
+        // full weight regardless of signer — see binary-class.js. Low /
+        // medium clusters (anti-debug, generic networking) demote.
+        if (hasInjection) { issues.push('Imports process injection APIs (VirtualAlloc/WriteProcessMemory/CreateRemoteThread)'); riskScore += 2 * _weight('high', 'injection'); }
+        if (hasCredTheft) { issues.push('Imports credential theft APIs'); riskScore += 2 * _weight('high', 'cred-theft'); }
+        if (hasAntiDebug && _surface('anti-debug')) {
+          issues.push('Imports anti-debugging / sandbox evasion APIs');
+          riskScore += 1 * _weight('low', 'anti-debug');
+        }
+        if (hasNetworking && _surface('networking')) {
+          issues.push('Imports networking APIs (C2 / download capability)');
+          riskScore += 1 * _weight('medium', 'networking');
+        }
+        if (hasCrypto) { issues.push('Imports cryptographic APIs (potential ransomware)'); riskScore += 1.5 * _weight('high', 'ransomware'); }
       }
 
       // ── T3.9: Suspicious delay-loaded imports ─────────────────────
@@ -3803,38 +4091,75 @@ class PeRenderer {
         }
       } catch (_) { /* entry-point analysis is best-effort */ }
 
-      // ── TLS callbacks ──────────────────────────────────────────────
-      // One or more registered callbacks = anti-debug / early-exec hook
-      // (loader invokes them *before* EP). Medium by default; escalated
-      // to high when an anti-debug / sandbox-evasion capability is also
-      // present (classic evasion chain). MITRE T1546.009.
+      // ── TLS callbacks (content-aware) ─────────────────────────────
+      // The mere count of TLS callbacks is not a reliable signal — every
+      // MSVC C++ runtime registers them for thread-local storage init.
+      // Instead, inspect a 256 B byte-window at each callback's file
+      // offset and tally hints (PEB walk, anti-debug indirect-call, decrypt
+      // stub shape, dynamic-API resolution, large callback, W+X section).
+      // Single tiny `RET` callback in a large signed SDK → metadata only.
+      // 30 KB unsigned PE with one callback that hits PEB-walk +
+      // anti-debug-call → high. MITRE T1546.009.
       try {
         if (pe.tls && pe.tls.callbacks && pe.tls.callbacks.length > 0) {
           const n = pe.tls.callbacks.length;
           findings.metadata['TLS Callbacks'] = String(n);
-          const hasAntiDebugImport = suspiciousImports.some(s =>
-            /debug|sandbox|evasion/i.test(s.info));
-          // Also check for a TLS callback that lives in a W+X section —
-          // strong indicator of a self-modifying unpacker hidden behind the
-          // TLS hook.
-          const cbInWX = pe.tls.callbacks.some(cb => {
-            if (!cb.section) return false;
-            const sec = pe.sections.find(s => s.name === cb.section);
-            return sec && sec.isWritable && sec.isExecutable;
-          });
-          const severity = (hasAntiDebugImport || cbInWX) ? 'high' : 'medium';
-          const detail = cbInWX
-            ? ' — at least one callback lives in a W+X section'
-            : (hasAntiDebugImport ? ' — paired with anti-debug / sandbox-evasion imports' : '');
-          issues.push(`${n} TLS callback${n === 1 ? '' : 's'} registered — executed before EntryPoint (T1546.009)${detail}`);
-          riskScore += (severity === 'high') ? 2.5 : 1.5;
-          pushIOC(findings, {
-            type: IOC.PATTERN,
-            value: `TLS callbacks registered (${n}) [T1546.009]`,
-            severity,
-            note: `AddressOfCallBacks array @ RVA ${this._hex(pe.tls.callbackArrayRva, 8)} — ${n} callback${n === 1 ? '' : 's'} invoked by the Windows loader before the main entry point.${detail}`,
-            _noDomainSibling: true,
-          });
+
+          const isArm = /arm64|aarch/i.test(String(pe.coff.machineStr || ''));
+          const tlsInsp = this._inspectTlsCallbacks(bytes, pe.tls, pe.sections, pe.imports, isArm);
+          // Stash for renderer card (per-callback hint badges).
+          pe.tlsInspection = tlsInsp;
+
+          // Score: weight the hints. tinyStub does NOT contribute.
+          const h = tlsInsp.hints;
+          const score =
+              h.pebAccess       * 3
+            + h.antiDebugImport * 3
+            + h.decryptStub     * 3
+            + h.dynApi          * 2
+            + h.inWX            * 2
+            + h.largeCallback   * 1;
+
+          // Suppression rule: large signed-trusted media-SDK / system-utility
+          // binary with only tiny-stub callbacks → metadata only, no IOC,
+          // no risk bump. This is the C++ runtime case.
+          const allTinyOrEmpty = tlsInsp.perCallback.every(p =>
+            p.hints.length === 0 || (p.hints.length === 1 && p.hints[0] === 'tiny-stub'));
+          const trusted = binaryClass && binaryClass.trust === 'signed-trusted';
+          const benignFamily = binaryClass && (
+            binaryClass.family === 'media-sdk' || binaryClass.family === 'system-utility' ||
+            binaryClass.family === 'compiler-toolchain');
+          if (score === 0 && (allTinyOrEmpty || (trusted && benignFamily))) {
+            // Render the callback list for analyst inspection but don't
+            // surface it as a finding.
+          } else {
+            const severity = score >= 4 ? 'high' : score >= 2 ? 'medium' : 'info';
+            const evidence = [];
+            if (h.pebAccess)       evidence.push(`PEB walk × ${h.pebAccess}`);
+            if (h.antiDebugImport) evidence.push(`anti-debug call × ${h.antiDebugImport}`);
+            if (h.decryptStub)     evidence.push(`decrypt-stub shape × ${h.decryptStub}`);
+            if (h.dynApi)          evidence.push(`dyn-API call × ${h.dynApi}`);
+            if (h.inWX)            evidence.push(`W+X callback × ${h.inWX}`);
+            if (h.largeCallback)   evidence.push(`large callback × ${h.largeCallback}`);
+            if (!evidence.length)  evidence.push(`${n} callback${n === 1 ? '' : 's'}, no specific shape`);
+
+            const headline = `${n} TLS callback${n === 1 ? '' : 's'} registered — executed before EntryPoint (T1546.009)`;
+            const detail = evidence.length ? ` — ${evidence.join(', ')}` : '';
+            // Only push the autoExec issue + IOC if the score warrants it
+            // (i.e. severity > info), so we don't flag every binary with a
+            // benign C++ TLS init slot.
+            if (severity !== 'info') {
+              issues.push(headline + detail);
+              riskScore += score >= 4 ? 2.5 : 1.5;
+              pushIOC(findings, {
+                type: IOC.PATTERN,
+                value: `TLS callbacks registered (${n}) [T1546.009]`,
+                severity,
+                note: `AddressOfCallBacks array @ RVA ${this._hex(pe.tls.callbackArrayRva, 8)} — ${detail.replace(/^ — /, '')}.`,
+                _noDomainSibling: true,
+              });
+            }
+          }
         }
       } catch (_) { /* TLS risk analysis is best-effort */ }
 
@@ -3857,7 +4182,59 @@ class PeRenderer {
           : [];
         findings.capabilities = caps;
         const sevWeight = { critical: 3, high: 2, medium: 1, low: 0.5, info: 0 };
+        // Map capability id → category for `_weight` / `_surface`. Only
+        // ubiquitous-API capabilities are listed here; everything else
+        // gets full weight.
+        const capCategory = {
+          'anti-debug-winapi':       'anti-debug',
+          'anti-debug-ptrace':       'anti-debug',
+          'anti-debug-macos':        'anti-debug',
+          'sandbox-sleep-skip':      'timing',
+          'network-winhttp':         'networking',
+          'network-sockets':         'networking',
+          'proc-injection-classic':  'injection',
+          'proc-hollowing':          'injection',
+          'proc-injection-apc':      'injection',
+          'proc-injection-reflective':'injection',
+          'proc-inject-ptrace':      'injection',
+          'proc-inject-mach':        'injection',
+          'creds-lsa':               'cred-theft',
+          'creds-sam':               'cred-theft',
+          'creds-dpapi':             'cred-theft',
+          'creds-keychain':          'cred-theft',
+          'creds-shadow':            'cred-theft',
+          'ransomware-crypto':       'ransomware',
+          'shadow-copy-delete':      'ransomware',
+          'persist-run-key':         'persistence',
+          'persist-schtasks':        'persistence',
+          'persist-service':         'persistence',
+          'persist-launchd':         'persistence',
+          'persist-cron':            'persistence',
+          'persist-systemd':         'persistence',
+          'persist-ld-preload':      'persistence',
+          'fileless-memfd':          'execution',
+        };
         for (const c of caps) {
+          const cat = capCategory[c.id] || 'other';
+          // Suppress low-severity ubiquitous-API rows on signed-trusted
+          // system-class binaries — exposes a metadata row instead so the
+          // analyst can audit if needed.
+          if ((c.severity === 'medium' || c.severity === 'low' || c.severity === 'info')
+              && !_surface(cat)) {
+            findings.metadata['Suppressed Capability'] =
+              (findings.metadata['Suppressed Capability'] || '') +
+              (findings.metadata['Suppressed Capability'] ? ', ' : '') + c.name;
+            continue;
+          }
+          const w = _weight(c.severity, cat);
+          // Drop the IOC entirely when weight is 0 (signed-trusted media-SDK
+          // hitting a low-severity cluster).
+          if (w === 0) {
+            findings.metadata['Suppressed Capability'] =
+              (findings.metadata['Suppressed Capability'] || '') +
+              (findings.metadata['Suppressed Capability'] ? ', ' : '') + c.name;
+            continue;
+          }
           pushIOC(findings, {
             type: IOC.PATTERN,
             value: `${c.name} [${c.mitre}]`,
@@ -3866,7 +4243,7 @@ class PeRenderer {
             _noDomainSibling: true,
           });
           issues.push(`${c.name} (${c.mitre})`);
-          riskScore += sevWeight[c.severity] || 0;
+          riskScore += (sevWeight[c.severity] || 0) * w;
         }
       } catch (_) { /* capability detection is best-effort */ }
 

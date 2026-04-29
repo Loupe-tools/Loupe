@@ -784,6 +784,83 @@ hand-rolling `findings.interestingStrings.push({...})`:
    warning banner. Renderer-seeded IOCs are **not** subject to this cap
    — renderers own their own truncation (item 4).
 
+### Native-binary capability rolls and the `binaryClass` gate
+
+Native-binary renderers (PE / ELF / Mach-O) produce most of Loupe's
+false positives because the same Win32 / POSIX APIs that show up in
+malware also show up in benign infrastructure (media SDKs, system
+utilities, compiler toolchains). The contract for noise reduction is:
+
+1. **Capability rolls go through `Capabilities.detect()`.** Don't push
+   bare `IOC.PATTERN` rows for "imports `WriteProcessMemory`" — wire
+   the API into a rule in `src/capabilities.js` so the cluster fires
+   only when the *named behaviour* is present (typically with a
+   `quorum`, `splitQuorum`, or full-AND rule body — never `any: true`
+   for a low-severity API). The capability id you pick must be stable;
+   the per-renderer `capCategory` map keys off it.
+
+2. **Compute `findings.binaryClass` exactly once per analyze pass.**
+   Call `BinaryClass.classify(...)` after the trust tier is known
+   (`TrustedCAs.classifyTrustTier(certs)` for PE / Mach-O, always
+   `'unsigned'` for ELF), stash the result on `findings.binaryClass`,
+   and surface a one-line `findings.metadata['Binary Class']` so the
+   Summary builder can show it.
+
+3. **Weight every per-cluster `riskScore` bump through the gate.** The
+   canonical pattern is two in-scope helpers at the top of
+   `analyzeForSecurity`:
+   ```js
+   const _weight  = (sev, cat) => BinaryClass.weightFor(binaryClass, sev, cat);
+   const _surface = (cat)      => BinaryClass.shouldSurfaceLowSeverity(binaryClass, cat);
+   ```
+   Use `_surface(cat)` to gate whether a low-severity cluster issue
+   gets emitted at all (returns `false` for ubiquitous-API noise on
+   signed-trusted system / media / compiler binaries). Use `_weight`
+   to scale the riskScore contribution.
+
+4. **Critical clusters keep full weight regardless of trust.**
+   `BinaryClass.weightFor` returns `1` for `severity: 'critical' |
+   'high'` and `≥ 0.75` for the BAD category set (`injection`,
+   `cred-theft`, `ransomware`, `hooking`, `persistence`). Don't paper
+   over this with a renderer-local override; a stolen / leaked
+   code-signing cert that legitimately scores `signed-trusted` must
+   never suppress an injection capability.
+
+5. **Capabilities suppressed by the gate go to `metadata['Suppressed
+   Capability']`.** Don't drop them silently — analysts auditing the
+   output need to see what was demoted and why.
+
+6. **YARA detections are NEVER demoted.** The `binaryClass` gate is
+   only consulted for renderer-emitted clusters and `Capabilities.detect`
+   results; YARA hits flow through `findings.detections` →
+   `IOC.PATTERN` mirror unchanged.
+
+### Nicelist tagging is centralised — read tags, don't recompute
+
+`annotateNicelist(findings)` (in `src/nicelist-annotate.js`) is the
+single canonical place that walks `findings.externalRefs` /
+`findings.interestingStrings` and stamps each entry with
+`_nicelisted` (boolean) and `_nicelistSource` (string | null). It is
+called once at the end of `_loadFile` (after the renderer's
+`analyzeForSecurity` resolves and the IOC worker's deferred patcher
+finishes) so every consumer — sidebar IOC table, Copy Analysis
+Summary builder, STIX bundle, MISP event, IOC CSV — sees the same
+view.
+
+Renderers do **not** call `annotateNicelist` themselves and **must
+not** read or set `_nicelisted` / `_nicelistSource` on the refs they
+push. The flags are added later, after `analyzeForSecurity` returns.
+A renderer that wants to suppress a benign cloud / CDN hostname
+should add an entry to the built-in `NICELIST` (`src/nicelist.js`),
+not pre-tag the ref.
+
+Downstream export consumers (`_collectIocs` in `app-ui.js`, the
+Summary builder, etc.) include a defensive `annotateNicelist` call
+guarded on `typeof r._nicelisted === 'undefined'` so synthetic
+findings shapes (test harnesses, future "report from saved JSON"
+paths) still get tagged correctly. The cost is one property read per
+ref when the tags are already present.
+
 ### RowStore container contract
 
 Every renderer that feeds a tabular view (csv, tsv, evtx, sqlite,
@@ -1107,6 +1184,7 @@ filter, and (c) auditable against this table.
 | `loupe_summary_target` | string | `_setSummaryTarget()` in `src/app/app-settings.js` | `default` / `large` / `unlimited`. Drives the build-full → measure → shrink-to-fit assembler. Char budgets `64 000` / `200 000` / `Infinity`. |
 | `loupe_uploaded_yara` | string | `setUploadedYara()` in `src/app/app-yara.js` | Raw concatenated `.yar` rule text. Merged with the default ruleset at scan time. |
 | `loupe_ioc_hide_nicelisted` | string | `_setHideNicelisted()` in `src/app/app-sidebar.js` | `"0"` (show, dimmed — default) or `"1"` (hide). |
+| `loupe_summary_include_nicelisted` | string | Settings → Copy Analysis (TBD) — read by Summary builder in `src/app/app-ui.js` | `"group"` (separate `### Nicelisted IOCs` sub-table — default), `"omit"` (drop nicelisted rows entirely), or `"inline"` (single combined table, no marker). |
 | `loupe_nicelist_builtin_enabled` | string | `setBuiltinEnabled()` in `src/nicelist-user.js` | `"1"` (on — default) or `"0"` (off). Master switch for the Default Nicelist. |
 | `loupe_nicelists_user` | string (JSON) | `save()` in `src/nicelist-user.js` | `{version:1, lists:[{id,name,enabled,createdAt,updatedAt,entries}]}`. Capped at 64 lists × 10 000 entries × 1 MB. |
 | `loupe_plaintext_highlight` | string | `PlainTextRenderer._writeHighlightPref()` | `"on"` (default) / `"off"`. Syntax-highlighting master switch for the plaintext / catch-all renderer. Hidden — and highlighting skipped — by the shared rich-render gate described under `loupe_plaintext_wrap` below, plus an extra requirement that hljs is loaded in this build. |

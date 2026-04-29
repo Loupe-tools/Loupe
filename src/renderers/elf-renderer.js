@@ -2020,6 +2020,44 @@ class ElfRenderer {
       } catch (_) { /* best-effort */ }
 
 
+      // ── Binary classification (size · trust · family · kind) ───────
+      // ELFs don't carry an Authenticode-equivalent we can parse offline,
+      // so trust always defaults to `unsigned`. The classifier is still
+      // useful: it gives us size + kind + family hints so per-cluster
+      // riskScore bumps for ubiquitous-API noise (network sockets) can
+      // demote on large dynamically-linked SDK binaries / system tools.
+      const _capImportsForClass = (elf.dynsyms || [])
+        .filter(s => s && s.name && s.shndx === 0)
+        .map(s => String(s.name).toLowerCase());
+      const _capDylibsForClass = (elf.neededLibs || []).map(s => String(s || '').toLowerCase());
+      const binaryClass = (typeof BinaryClass !== 'undefined' && BinaryClass.classify)
+        ? BinaryClass.classify({
+            sizeBytes: bytes.length,
+            format: 'elf',
+            kind: elf.isDyn && !elf.interpreter ? 'library' : (elf.isExec || elf.isDyn) ? 'exe' : 'library',
+            trustTier: 'unsigned',
+            metadata: findings.metadata,
+            imports: _capImportsForClass,
+            dylibs: _capDylibsForClass,
+            flags: {
+              isGoBinary: !!elf.isGoBinary,
+              hasDebugInfo: !!(elf.sections && elf.sections.some(s => s.name === '.debug_info')),
+            },
+          })
+        : null;
+      if (binaryClass) {
+        findings.binaryClass = binaryClass;
+        findings.metadata['Binary Class'] = binaryClass.summary;
+      }
+      const _weight = (severity, category) => {
+        if (typeof BinaryClass === 'undefined' || !BinaryClass.weightFor || !binaryClass) return 1;
+        return BinaryClass.weightFor(binaryClass, severity, category);
+      };
+      const _surface = (category) => {
+        if (typeof BinaryClass === 'undefined' || !BinaryClass.shouldSurfaceLowSeverity || !binaryClass) return true;
+        return BinaryClass.shouldSurfaceLowSeverity(binaryClass, category);
+      };
+
       // ── Security feature checks ────────────────────────────────────
       if (elf.security.relro === 'None') {
         issues.push('No RELRO — GOT is writable, vulnerable to GOT overwrite attacks');
@@ -2081,7 +2119,10 @@ class ElfRenderer {
       );
 
       if (suspiciousImports.length > 0) {
-        riskScore += Math.min(suspiciousImports.length * 0.3, 4);
+        // Per-API noise bump scaled by binary class — large dynamically-linked
+        // SDKs / system utilities will hit dozens of "suspicious" libc imports
+        // legitimately.
+        riskScore += Math.min(suspiciousImports.length * 0.3, 4) * _weight('low', 'dynamic-loading');
 
         // Categorize suspicious patterns
         const hasExec = suspiciousImports.some(s =>
@@ -2101,13 +2142,19 @@ class ElfRenderer {
         const hasAntiForensic = suspiciousImports.some(s =>
           /forensic|deletion|self.*delet/i.test(suspMap[s.name]));
 
-        if (hasExec) { issues.push('Imports command execution functions (execve/system/popen)'); riskScore += 1; }
-        if (hasInjection) { issues.push('Imports process memory manipulation APIs'); riskScore += 2; }
-        if (hasNetwork) { issues.push('Imports network socket APIs — potential C2/backdoor capability'); riskScore += 1; }
-        if (hasPrivesc) { issues.push('Imports privilege escalation functions (setuid/setgid)'); riskScore += 1.5; }
-        if (hasAntiDebug) { issues.push('Imports anti-debugging function (ptrace)'); riskScore += 1; }
+        if (hasExec) { issues.push('Imports command execution functions (execve/system/popen)'); riskScore += 1 * _weight('medium', 'execution'); }
+        if (hasInjection) { issues.push('Imports process memory manipulation APIs'); riskScore += 2 * _weight('high', 'injection'); }
+        if (hasNetwork && _surface('networking')) {
+          issues.push('Imports network socket APIs — potential C2/backdoor capability');
+          riskScore += 1 * _weight('medium', 'networking');
+        }
+        if (hasPrivesc) { issues.push('Imports privilege escalation functions (setuid/setgid)'); riskScore += 1.5 * _weight('medium', 'persistence'); }
+        if (hasAntiDebug && _surface('anti-debug')) {
+          issues.push('Imports anti-debugging function (ptrace)');
+          riskScore += 1 * _weight('low', 'anti-debug');
+        }
         if (hasRootkit) { issues.push('Imports kernel module loading functions — potential rootkit'); riskScore += 3; }
-        if (hasFileless) { issues.push('Imports fileless execution functions (memfd_create/fexecve)'); riskScore += 2; }
+        if (hasFileless) { issues.push('Imports fileless execution functions (memfd_create/fexecve)'); riskScore += 2 * _weight('high', 'execution'); }
         if (hasAntiForensic) { issues.push('Imports file deletion functions — potential self-deletion'); riskScore += 0.5; }
 
         // Check for reverse shell pattern: socket + dup2 + execve
@@ -2379,7 +2426,54 @@ class ElfRenderer {
           : [];
         findings.capabilities = caps;
         const sevWeight = { critical: 3, high: 2, medium: 1, low: 0.5, info: 0 };
+        // Same id → category map as PE; suppresses ubiquitous-API rows on
+        // signed-trusted system-class binaries (rare for ELF — there's no
+        // Authenticode equivalent we read offline — but kept for parity).
+        const capCategory = {
+          'anti-debug-winapi':       'anti-debug',
+          'anti-debug-ptrace':       'anti-debug',
+          'anti-debug-macos':        'anti-debug',
+          'sandbox-sleep-skip':      'timing',
+          'network-winhttp':         'networking',
+          'network-sockets':         'networking',
+          'proc-injection-classic':  'injection',
+          'proc-hollowing':          'injection',
+          'proc-injection-apc':      'injection',
+          'proc-injection-reflective':'injection',
+          'proc-inject-ptrace':      'injection',
+          'proc-inject-mach':        'injection',
+          'creds-lsa':               'cred-theft',
+          'creds-sam':               'cred-theft',
+          'creds-dpapi':             'cred-theft',
+          'creds-keychain':          'cred-theft',
+          'creds-shadow':            'cred-theft',
+          'ransomware-crypto':       'ransomware',
+          'shadow-copy-delete':      'ransomware',
+          'persist-run-key':         'persistence',
+          'persist-schtasks':        'persistence',
+          'persist-service':         'persistence',
+          'persist-launchd':         'persistence',
+          'persist-cron':            'persistence',
+          'persist-systemd':         'persistence',
+          'persist-ld-preload':      'persistence',
+          'fileless-memfd':          'execution',
+        };
         for (const c of caps) {
+          const cat = capCategory[c.id] || 'other';
+          if ((c.severity === 'medium' || c.severity === 'low' || c.severity === 'info')
+              && !_surface(cat)) {
+            findings.metadata['Suppressed Capability'] =
+              (findings.metadata['Suppressed Capability'] || '') +
+              (findings.metadata['Suppressed Capability'] ? ', ' : '') + c.name;
+            continue;
+          }
+          const w = _weight(c.severity, cat);
+          if (w === 0) {
+            findings.metadata['Suppressed Capability'] =
+              (findings.metadata['Suppressed Capability'] || '') +
+              (findings.metadata['Suppressed Capability'] ? ', ' : '') + c.name;
+            continue;
+          }
           pushIOC(findings, {
             type: IOC.PATTERN,
             value: `${c.name} [${c.mitre}]`,
@@ -2388,7 +2482,7 @@ class ElfRenderer {
             _noDomainSibling: true,
           });
           issues.push(`${c.name} (${c.mitre})`);
-          riskScore += sevWeight[c.severity] || 0;
+          riskScore += (sevWeight[c.severity] || 0) * w;
         }
       } catch (_) { /* capability detection is best-effort */ }
 
