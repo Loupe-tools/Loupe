@@ -541,7 +541,14 @@ extendApp({
     // in that case force-open so the originating card is visible/focusable.
     const hasHigh = encodedFindings.some(f => f.severity === 'high' || f.severity === 'critical');
     const hasDecoded = encodedFindings.some(f => f.decodedBytes);
-    const hasIOCs = encodedFindings.some(f => f.iocs && f.iocs.length);
+    // `hasIOCs` is the auto-open trigger for the Deobfuscation section. Keep
+    // it consistent with the per-card "real IOC" filter applied below: a
+    // finding whose only IOCs are `IOC.PATTERN` (Detection mirrors) or
+    // `IOC.INFO` (truncation/stats markers) does not represent an extracted
+    // indicator and must not auto-expand the section as if it had.
+    const hasIOCs = encodedFindings.some(f => (f.iocs || []).some(
+      i => i && i.type !== IOC.PATTERN && i.type !== IOC.INFO
+    ));
     const defaultOpen = hasHigh || hasDecoded || hasIOCs;
     // Force-open the section when we're returning from a Deobfuscation
     // drill-down (the originating card is about to be scrolled into view
@@ -632,6 +639,29 @@ extendApp({
       // reassign `[]` here unconditionally, that would wipe the rows the
       // earlier sections already registered for this finding.
       finding._iocRows ||= [];
+
+      // ── "Real" IOC filter ─────────────────────────────────────────────
+      // `IOC.PATTERN` rows attached to encoded-content findings are
+      // Detection→IOC mirrors emitted by `cmd-obfuscation.js` (and similar
+      // future decoders) per CONTRIBUTING.md rule #5. They describe the
+      // obfuscation/code shape ("for /f … do call %X — captured command
+      // output is executed as a shell command", ClickFix wrappers, finger
+      // LOLBin targets) — they are NOT extracted indicators of compromise.
+      // `IOC.INFO` rows are truncation / stats markers, also non-actionable.
+      //
+      // Neither belongs in:
+      //   • the card's "IOCs: …" footer count (would mis-cast a Detection
+      //     as an IOC),
+      //   • the purple "all the way" preview block (reserved for
+      //     embedded/deobfuscated/decoded *content*, not descriptions of
+      //     what fired).
+      //
+      // Both types DO continue to surface in the main Signatures & IOCs
+      // section via the `app-load.js` IOC merge — which is their canonical
+      // home — so the information is not lost, just routed correctly.
+      const _realIocs = (finding.iocs || []).filter(
+        i => i && i.type !== IOC.PATTERN && i.type !== IOC.INFO
+      );
 
       // ── Compute the FULL deobfuscation lineage up-front ─────────────
       // Every downstream UI element (header depth badge, chain pill row,
@@ -815,7 +845,10 @@ extendApp({
       // finding produced IOCs. An IOC-only finding (single-layer encoding
       // that yielded a URL, etc.) still gets a purple block because the
       // IOCs themselves are what an analyst cares about seeing.
-      const _hasIOCs = finding.iocs && finding.iocs.length > 0;
+      // Use the filtered "real IOC" set (see `_realIocs` above) — Pattern /
+      // Info Detection-mirrors must not trigger the purple "all the way"
+      // tier, which is reserved for actual decoded payload content.
+      const _hasIOCs = _realIocs.length > 0;
       const _hasDeepPath = finding.innerFindings && finding.innerFindings.length;
       if (_hasDeepPath || _hasIOCs) {
         // Reuse `_deepest` computed earlier (line ~607) instead of re-traversing.
@@ -836,16 +869,19 @@ extendApp({
             : (deepest.encoding || 'deeper layer');
           sepLabel = `\u2193 ${extraLayers} more layer${extraLayers !== 1 ? 's' : ''} \u00b7 ${chainStr}`;
         } else if (_hasIOCs) {
-          sepLabel = `\u2193 all the way \u00b7 ${finding.iocs.length} IOC${finding.iocs.length !== 1 ? 's' : ''} extracted`;
+          sepLabel = `\u2193 all the way \u00b7 ${_realIocs.length} IOC${_realIocs.length !== 1 ? 's' : ''} extracted`;
         }
 
         // Helper: format IOCs as one-per-line text for the purple block.
         // Deduped (type+value), capped at 20 entries / 800 chars for sanity.
+        // Iterates `_realIocs` (Pattern / Info filtered out) so the purple
+        // tier never displays Detection descriptions as if they were the
+        // deobfuscated payload.
         const _iocsAsText = () => {
           if (!_hasIOCs) return null;
           const seen = new Set();
           const lines = [];
-          for (const ioc of finding.iocs) {
+          for (const ioc of _realIocs) {
             const key = (ioc.type || '') + '\u0000' + (ioc.url || '');
             if (seen.has(key)) continue;
             seen.add(key);
@@ -1184,13 +1220,20 @@ extendApp({
       if (metaStrip.children.length) details.appendChild(metaStrip);
 
 
-      // IOCs found in decoded content — clickable to flash IOC rows
-      if (finding.iocs && finding.iocs.length) {
+      // IOCs found in decoded content — clickable to flash IOC rows.
+      // `_realIocs` excludes `IOC.PATTERN` (Detection→IOC mirrors describing
+      // the obfuscation shape) and `IOC.INFO` (truncation/stats markers);
+      // those types are not extracted indicators and would mis-cast a
+      // Detection as an IOC if counted here. They still appear in the main
+      // Signatures & IOCs section via `app-load.js`. When no real IOCs
+      // remain, the footer is hidden entirely — the chain pills + header +
+      // Signatures table already convey the Detection information.
+      if (_realIocs.length) {
         const iocLine = document.createElement('div');
         iocLine.className = 'enc-finding-iocs';
         iocLine.setAttribute('data-clickable', '');
         const counts = {};
-        for (const ioc of finding.iocs) counts[ioc.type] = (counts[ioc.type] || 0) + 1;
+        for (const ioc of _realIocs) counts[ioc.type] = (counts[ioc.type] || 0) + 1;
         iocLine.textContent = 'IOCs: ' + Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ');
         iocLine.title = 'Click to highlight related IOC rows';
         iocLine.addEventListener('click', (e) => {
