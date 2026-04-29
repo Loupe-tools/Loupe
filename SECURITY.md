@@ -33,11 +33,16 @@ threat model is deliberately narrow:
 
 Most user state lives in `localStorage` under the `loupe_` prefix
 (themes, sidebar widths, per-file extracted columns, etc.). One
-exception: the **GeoIP MMDB override**.
+exception: the **GeoIP MMDB overrides**.
 
 If you upload a MaxMind-format MMDB via ⚙ Settings → "GeoIP database",
-the file is stored in IndexedDB under database name `loupe-geoip`,
-object store `mmdb`. Storage is per-browser-profile and per-origin:
+the file is stored in IndexedDB under database name `loupe-geoip`
+(version 2). Two independent slots are exposed — `geo` (Country / City
+/ Region) and `asn` (Autonomous System / Organisation) — keyed as
+`mmdb-geo` / `mmdb-asn` plus their `*-meta` siblings. Both blobs are
+parsed by the same hand-rolled reader, share the same 256 MB cap, and
+neither path performs network I/O or `eval`. Storage is per-browser-
+profile and per-origin:
 
 - The DB is opaque to the network — there is no API or extension that
   can read it; the CSP `default-src 'none'` rule means even Loupe
@@ -47,9 +52,12 @@ object store `mmdb`. Storage is per-browser-profile and per-origin:
 - There is no telemetry on which database is loaded; provider info
   (filename, vintage, build epoch) appears only in the in-page Settings
   dialog and the affected column's tooltip.
-- Click "Remove" in Settings to delete it. The bundled IPv4-country
-  binary (vendored in the HTML file itself, ≈830 KB) is the fallback
-  and is **not** stored in IndexedDB — it cannot be removed at runtime.
+- Click "✕ Remove" on the appropriate slot in Settings to delete it
+  independently — removing the geo slot reverts to the bundled IPv4-
+  country fallback; removing the ASN slot disables ASN enrichment until
+  another ASN MMDB is uploaded. The bundled IPv4-country binary
+  (vendored in the HTML file itself, ≈830 KB) is **not** stored in
+  IndexedDB — it cannot be removed at runtime.
 
 The bundled binary is regenerated monthly by
 `.github/workflows/refresh-geoip.yml`, which opens a PR with a fresh

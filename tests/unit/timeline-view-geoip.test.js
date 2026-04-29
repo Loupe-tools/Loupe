@@ -80,6 +80,7 @@ const MIXIN_METHODS = [
   '_enrichSingleIpCol',
   '_geoipDuplicateFor',
   '_dropAllGeoipCols',
+  '_insertColAfterInDisplay',
 ];
 
 // ── Mixin shape ────────────────────────────────────────────────────────────
@@ -185,16 +186,16 @@ test('_runGeoipEnrichment writes the per-file done-marker via the persist mixin'
 });
 
 test('_runGeoipEnrichment skips writing the marker on forced refresh', () => {
-  // The forced-refresh path (`force` / `forceCol`) must NOT stamp the
-  // marker — otherwise a right-click "Look up GeoIP" on a forensic
-  // file would prevent future natural detection on that file. The
-  // contract is: marker stamps only on the natural-detect path.
+  // The forced-refresh path (`force` / `forceKind` / `forceCol`) must
+  // NOT stamp the marker — otherwise a right-click "Enrich IP" on a
+  // forensic file would prevent future natural detection on that file.
+  // The contract is: marker stamps only on the natural-detect path.
   // Pin via a structural check that the save call is guarded by a
-  // negative force/forceCol predicate.
+  // negative force/forceKind/forceCol predicate.
   assert.match(
     MIXIN,
-    /if\s*\(\s*!\s*force\s*&&\s*forceCol\s*<\s*0\s*\)\s*\{[^}]*_saveAutoExtractDoneFor/,
-    '_runGeoipEnrichment must guard _saveAutoExtractDoneFor behind `!force && forceCol < 0`',
+    /if\s*\(\s*!\s*force\s*&&\s*!\s*forceKind\s*&&\s*forceCol\s*<\s*0\s*\)\s*\{[^}]*_saveAutoExtractDoneFor/,
+    '_runGeoipEnrichment must guard _saveAutoExtractDoneFor behind `!force && !forceKind && forceCol < 0`',
   );
 });
 
@@ -245,19 +246,67 @@ test('_classifyColumnNeighbourhood walks a ±3 window', () => {
   );
 });
 
-// ── Enrichment column shape ───────────────────────────────────────────────
-
-test('_enrichSingleIpCol stamps the column with kind:"geoip"', () => {
-  // The kind tag drives the dedup, the persist filter (geoip cols are
-  // explicitly NOT persisted by `_persistRegexExtracts`), and the
-  // forced-refresh drop pass. A regression that stamped a different
-  // kind (e.g. 'auto') would cause geo cols to be saved to localStorage
-  // and never reconciled with provider changes.
+test('_classifyColumnNeighbourhood accepts a kind argument and dispatches geo / asn vocabularies', () => {
+  // Dual-emit: each kind has its own header / cell heuristic.
+  // Confirm the function takes a `kind` parameter and routes to the
+  // right vocabulary so a refactor that loses the per-kind dispatch
+  // surfaces here.
   assert.match(
     MIXIN,
-    /kind:\s*['"]geoip['"]/,
-    '_enrichSingleIpCol must stamp the column with kind: "geoip"',
+    /_classifyColumnNeighbourhood\s*\(\s*colIdx\s*,\s*kind\s*\)/,
+    '_classifyColumnNeighbourhood must accept (colIdx, kind)',
   );
+  assert.match(
+    MIXIN,
+    /kind\s*===\s*['"]asn['"]/,
+    '_classifyColumnNeighbourhood must branch on kind === "asn"',
+  );
+  // ASN vocabulary tokens.
+  assert.match(MIXIN, /'asn'/, 'ASN_HEADER_TOKENS must include "asn"');
+  assert.match(MIXIN, /'autonomous'/, 'ASN_HEADER_TOKENS must include "autonomous"');
+  // ASN value shape — bare AS number.
+  assert.match(
+    MIXIN,
+    /\^AS\?\\d/,
+    'ASN_BARE_RE must recognise bare AS-numbers',
+  );
+});
+
+// ── Enrichment column shape ───────────────────────────────────────────────
+
+test('_enrichSingleIpCol emits both kinds: "geoip" (geo) and "geoip-asn" (ASN)', () => {
+  // The kind tag drives the dedup, the persist filter (these cols are
+  // explicitly NOT persisted by `_persistRegexExtracts`), and the
+  // forced-refresh drop pass. Dual-emit needs distinct kinds so a
+  // selective drop ("only refresh ASN") leaves geo cols intact.
+  assert.match(
+    MIXIN,
+    /['"]geoip-asn['"]/,
+    '_enrichSingleIpCol must use kind: "geoip-asn" for ASN cols',
+  );
+  assert.match(
+    MIXIN,
+    /kind\s*===\s*['"]asn['"]/,
+    '_enrichSingleIpCol must dispatch on `kind === "asn"`',
+  );
+});
+
+test('_enrichSingleIpCol picks the right provider methods per kind', () => {
+  // Geo path uses lookupIPv4 + formatRow; ASN path uses lookupAsn +
+  // formatAsnRow. Both surfaces are required on the supplied provider.
+  assert.match(MIXIN, /lookupAsn/, '_enrichSingleIpCol must reference provider.lookupAsn');
+  assert.match(MIXIN, /formatAsnRow/, '_enrichSingleIpCol must reference provider.formatAsnRow');
+  assert.match(MIXIN, /lookupIPv4/, '_enrichSingleIpCol must reference provider.lookupIPv4');
+  assert.match(MIXIN, /formatRow/, '_enrichSingleIpCol must reference provider.formatRow');
+});
+
+test('_enrichSingleIpCol suffix differs per kind: ".geo" vs ".asn"', () => {
+  // The grid column name is `<src>.geo` for geo and `<src>.asn` for
+  // ASN. A regression that suffixed both with ".geo" would silently
+  // collide — _uniqueColName would pick `.geo (1)` and the analyst
+  // gets a confusing duplicate label.
+  assert.match(MIXIN, /\.asn/, 'ASN suffix `.asn` missing from _enrichSingleIpCol');
+  assert.match(MIXIN, /\.geo/, 'geo suffix `.geo` missing from _enrichSingleIpCol');
 });
 
 test('_enrichSingleIpCol caches lookups per-IP', () => {
@@ -291,6 +340,21 @@ test('_dropAllGeoipCols walks back-to-front', () => {
     MIXIN,
     /for\s*\(\s*let\s+i\s*=\s*cols\.length\s*-\s*1;\s*i\s*>=\s*0;\s*i--\s*\)/,
     '_dropAllGeoipCols must walk back-to-front so splice indices stay stable',
+  );
+});
+
+test('_dropAllGeoipCols accepts a `kinds` array for selective drop', () => {
+  // Refresh paths can target one slot ("only redo ASN cols"). Pin
+  // the signature + the membership check.
+  assert.match(
+    MIXIN,
+    /_dropAllGeoipCols\s*\(\s*kinds\s*\)/,
+    '_dropAllGeoipCols must accept a `kinds` parameter',
+  );
+  assert.match(
+    MIXIN,
+    /\['geoip',\s*'geoip-asn'\]/,
+    '_dropAllGeoipCols default `kinds` array must include both `geoip` and `geoip-asn`',
   );
 });
 
@@ -331,12 +395,12 @@ test('timeline-router.js re-triggers _runGeoipEnrichment after _app stamping', (
 
 // ── Right-click "Look up GeoIP" override ──────────────────────────────────
 
-test('column header menu offers "Look up GeoIP" on IPv4 columns', () => {
-  // Pin the menu entry exists, gates on `this._app.geoip` (no menu
-  // when GeoIP isn't ready), and uses `data-act="geoip"` for the click
-  // handler. A regression that loses any of these breaks the override
-  // path that lets analysts force enrichment on auto-detect-rejected
-  // columns.
+test('column header menu offers single "Enrich IP" entry on IPv4 columns', () => {
+  // Pin the menu entry exists, gates on EITHER provider being wired
+  // (`this._app.geoip || this._app.geoipAsn`), and uses
+  // `data-act="geoip"` for the click handler. A regression that loses
+  // any of these breaks the override path that lets analysts force
+  // enrichment on auto-detect-rejected columns.
   assert.match(
     POPOVERS,
     /data-act="geoip"/,
@@ -344,13 +408,18 @@ test('column header menu offers "Look up GeoIP" on IPv4 columns', () => {
   );
   assert.match(
     POPOVERS,
-    /this\._app\s*&&\s*this\._app\.geoip/,
-    'column menu must gate the GeoIP entry on `this._app.geoip` being non-null',
+    /this\._app\.geoip\s*\|\|\s*this\._app\.geoipAsn/,
+    'column menu must gate the Enrich-IP entry on EITHER `this._app.geoip` OR `this._app.geoipAsn`',
+  );
+  assert.match(
+    POPOVERS,
+    /Enrich IP/,
+    'column menu label must be "Enrich IP" (single entry that fires both providers)',
   );
   assert.match(
     POPOVERS,
     /_runGeoipEnrichment\s*\(\s*\{\s*forceCol/,
-    'column menu Look-up-GeoIP click must call _runGeoipEnrichment({ forceCol: … })',
+    'column menu Enrich-IP click must call _runGeoipEnrichment({ forceCol: … })',
   );
 });
 
@@ -368,14 +437,24 @@ test('App.init() sets app.geoip = BundledGeoip synchronously', () => {
   );
 });
 
-test('App.init() async-hydrates an MMDB override via GeoipStore.load()', () => {
-  // Pin both the call AND the swap: a regression that calls load()
-  // but forgets to swap `this.geoip` would leave users with no MMDB
-  // even after upload.
+test('App.init() async-hydrates BOTH MMDB slots (geo + asn) via GeoipStore.load()', () => {
+  // Pin the slot-named calls AND the swap: a regression that calls
+  // load() but forgets to swap `this.geoip` / `this.geoipAsn` would
+  // leave users with no MMDB even after upload.
   assert.match(
     APP_CORE,
-    /GeoipStore\.load\s*\(/,
-    'App.init() must call GeoipStore.load() to hydrate any saved MMDB',
+    /GeoipStore\.load\(['"]geo['"]\)/,
+    'App.init() must call GeoipStore.load("geo") to hydrate any saved geo MMDB',
+  );
+  assert.match(
+    APP_CORE,
+    /GeoipStore\.load\(['"]asn['"]\)/,
+    'App.init() must call GeoipStore.load("asn") to hydrate any saved ASN MMDB',
+  );
+  assert.match(
+    APP_CORE,
+    /this\.geoipAsn\s*=/,
+    'App.init() must assign `this.geoipAsn` after the asn-slot hydrate completes',
   );
   assert.match(
     APP_CORE,

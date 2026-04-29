@@ -30,6 +30,25 @@
 //   provider.vintage           → 'GeoLite2-City built 2026-04-01'
 //   provider.providerKind      → 'mmdb'
 //
+// ── ASN secondary surface ───────────────────────────────────────────────────
+// MMDBs also come in ASN flavour (GeoLite2-ASN, DB-IP-ASN, IP2Location-ASN).
+// Their record shape is `autonomous_system_number` (uint32) plus
+// `autonomous_system_organization` (utf8). The same `MmdbReader` instance
+// can answer ASN queries via:
+//
+//   provider.lookupAsn(ipStr)    → { asn, org } | null
+//   provider.formatAsnRow(rec)   → 'Google LLC (AS15169)'  /  'AS15169'  /  ''
+//   provider.getAsnFieldName()   → 'asn'  (suffix appended to source col)
+//   provider.detectSchema()      → 'geo' | 'asn' | 'unknown'
+//
+// `detectSchema` does ONE record decode against a known-good IPv4 (8.8.8.8 →
+// falls back through 1.1.1.1, 208.67.222.222 if the first misses) and
+// classifies the resulting record by which key set is present. Used by the
+// Settings dialog to reject a clearly-wrong upload BEFORE the analyst
+// commits to "I uploaded an ASN DB into the geo slot, why are all the cells
+// empty?". Returns `'unknown'` when probe IPs all miss — caller saves the
+// blob anyway since some private / regional DBs lack global IPs.
+//
 // The reader supports `.mmdb` and `.mmdb.gz` blobs. Gzip is detected by
 // the 1f 8b magic, not by extension, so renamed files still work. The
 // decompression path goes through `Decompressor` (native
@@ -456,6 +475,75 @@ class MmdbReader {
 
   getFieldName() { return 'geo'; }
 
+  /** ASN lookup. Same IPv4 tree-walk + decode as `lookupIPv4`, but projects
+   *  a different field set. Null on miss / bad input / no ASN keys present. */
+  lookupAsn(ipStr) {
+    const ip = _parseIPv4(ipStr);
+    if (ip < 0) return null;
+    let dataOff;
+    try { dataOff = this._findIpv4(ip); }
+    catch (_) { return null; }
+    if (dataOff < 0) return null;
+    let data;
+    try { data = this._decoder.decode(dataOff, 0).value; }
+    catch (_) { return null; }
+    if (!data || typeof data !== 'object') return null;
+    return _projectAsnFields(data);
+  }
+
+  /** Format an ASN record into the displayable cell value.
+   *  Precedence: '<org> (AS<num>)' > '<org>' > 'AS<num>' > ''. */
+  formatAsnRow(rec) {
+    if (!rec) return '';
+    const org = (typeof rec.org === 'string' && rec.org.length > 0) ? rec.org : '';
+    const asn = (typeof rec.asn === 'number' && rec.asn > 0) ? rec.asn : 0;
+    if (org && asn) return `${org} (AS${asn})`;
+    if (org) return org;
+    if (asn) return `AS${asn}`;
+    return '';
+  }
+
+  getAsnFieldName() { return 'asn'; }
+
+  /** Probe a few well-known IPv4s and classify the record shape:
+   *    'geo' — country / city / subdivisions / iso_code keys present
+   *    'asn' — autonomous_system_number / _organization keys present
+   *    'unknown' — every probe missed (regional / private DBs); caller
+   *      decides whether to accept the upload anyway.
+   *
+   *  Used by Settings to reject obvious slot mismatches at upload time
+   *  without forcing the analyst to run a full timeline pass first. */
+  detectSchema() {
+    const probes = ['8.8.8.8', '1.1.1.1', '208.67.222.222'];
+    for (const ip of probes) {
+      const n = _parseIPv4(ip);
+      if (n < 0) continue;
+      let off;
+      try { off = this._findIpv4(n); }
+      catch (_) { continue; }
+      if (off < 0) continue;
+      let data;
+      try { data = this._decoder.decode(off, 0).value; }
+      catch (_) { continue; }
+      if (!data || typeof data !== 'object') continue;
+      // ASN check first — narrower key set, less likely to false-positive.
+      if (typeof data.autonomous_system_number === 'number'
+          || typeof data.autonomous_system_organization === 'string') {
+        return 'asn';
+      }
+      // Geo check — nested OR flat schema.
+      if ((data.country && typeof data.country === 'object')
+          || (data.city && typeof data.city === 'object')
+          || Array.isArray(data.subdivisions)
+          || typeof data.country_code === 'string'
+          || typeof data.country_name === 'string'
+          || typeof data.country === 'string') {
+        return 'geo';
+      }
+    }
+    return 'unknown';
+  }
+
   get vintage() {
     if (this._buildEpoch > 0) {
       const d = new Date(this._buildEpoch * 1000);
@@ -515,7 +603,20 @@ function _parseIPv4(s) {
  *    country.names.en, country.iso_code,
  *    subdivisions[0].names.en, city.names.en
  *  and the legacy "registered_country" fallback when no country block
- *  is present. */
+ *  is present.
+ *
+ *  ── Flat-schema fallback ─────────────────────────────────────────────
+ *  Some redistributions (DB-IP-City-Lite-CSV → MMDB conversions, the
+ *  test fixtures we ship, smaller commercial DBs) flatten the record
+ *  into top-level scalars instead of nested maps. Recognise:
+ *    country_code | country (string)        → iso
+ *    country_name | country (when string)   → countryName
+ *    state1 | region | state                → region
+ *    city  (string)                          → city
+ *  These are checked AFTER the nested paths so a hybrid DB still
+ *  prefers the canonical English name. The early-return
+ *  `if (!countryName && !iso)` guard runs after both passes — empty
+ *  records still return null so `formatRow(null)` writes ''. */
 function _projectGeoFields(data) {
   let countryName = null, iso = null, region = null, city = null;
   if (data.country && typeof data.country === 'object') {
@@ -541,8 +642,50 @@ function _projectGeoFields(data) {
   if (data.city && data.city.names && typeof data.city.names === 'object') {
     city = _firstString(data.city.names.en, data.city.names);
   }
+  // Flat-schema fallbacks — only fill what nested pass left empty.
+  if (!iso && typeof data.country_code === 'string' && data.country_code.length > 0) {
+    iso = data.country_code;
+  }
+  if (!countryName && typeof data.country_name === 'string' && data.country_name.length > 0) {
+    countryName = data.country_name;
+  }
+  if ((!countryName || !iso) && typeof data.country === 'string' && data.country.length > 0) {
+    // Heuristic: 2-char uppercase → iso; otherwise country name.
+    if (data.country.length === 2 && data.country === data.country.toUpperCase()) {
+      if (!iso) iso = data.country;
+    } else if (!countryName) {
+      countryName = data.country;
+    }
+  }
+  if (!region) {
+    if (typeof data.state1 === 'string' && data.state1.length > 0) region = data.state1;
+    else if (typeof data.region === 'string' && data.region.length > 0) region = data.region;
+    else if (typeof data.state === 'string' && data.state.length > 0) region = data.state;
+  }
+  if (!city && typeof data.city === 'string' && data.city.length > 0) {
+    city = data.city;
+  }
   if (!countryName && !iso) return null;
   return { country: countryName || '', iso: iso || '', region: region || '', city: city || '' };
+}
+
+/** Project an ASN MMDB record into { asn, org }. ASN sentinel `0` is
+ *  treated as "no ASN assigned" → null. Returns null when neither key is
+ *  usable (so `formatAsnRow(null)` writes '' for unenriched cells). */
+function _projectAsnFields(data) {
+  let asn = null;
+  let org = null;
+  if (typeof data.autonomous_system_number === 'number'
+      && Number.isFinite(data.autonomous_system_number)
+      && data.autonomous_system_number > 0) {
+    asn = data.autonomous_system_number | 0;
+  }
+  if (typeof data.autonomous_system_organization === 'string'
+      && data.autonomous_system_organization.length > 0) {
+    org = data.autonomous_system_organization;
+  }
+  if (asn == null && org == null) return null;
+  return { asn: asn || 0, org: org || '' };
 }
 
 function _firstString(preferred, fallback) {

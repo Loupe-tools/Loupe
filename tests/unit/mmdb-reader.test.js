@@ -58,13 +58,14 @@ const path = require('node:path');
 const { loadModules, REPO_ROOT } = require('../helpers/load-bundle.js');
 
 const FIXTURE = path.join(REPO_ROOT, 'tests', 'fixtures', 'test-country.mmdb');
+const ASN_FIXTURE = path.join(REPO_ROOT, 'tests', 'fixtures', 'test-asn.mmdb');
 
-// Read the fixture once. If it's missing, fail loudly — unlike the
-// optional DB-IP fixture this used to point at, the hand-crafted
-// fixture is committed and CI must always have it. A missing fixture
+// Read both fixtures once. Missing fixtures fail the test loudly —
+// they're committed, and CI must always have them. A missing fixture
 // here means the file got deleted or the path moved; both are
 // regressions.
 const FIXTURE_BYTES = fs.readFileSync(FIXTURE);
+const ASN_FIXTURE_BYTES = fs.readFileSync(ASN_FIXTURE);
 const FIXTURE_AVAILABLE = true;
 
 function loadReader() {
@@ -88,6 +89,13 @@ function realmBytes(ctx) {
   const SandboxU8 = ctx.Uint8Array || Uint8Array;
   const out = new SandboxU8(FIXTURE_BYTES.length);
   out.set(FIXTURE_BYTES);
+  return out;
+}
+
+function realmAsnBytes(ctx) {
+  const SandboxU8 = ctx.Uint8Array || Uint8Array;
+  const out = new SandboxU8(ASN_FIXTURE_BYTES.length);
+  out.set(ASN_FIXTURE_BYTES);
   return out;
 }
 
@@ -250,4 +258,105 @@ test('constructor — non-MMDB bytes throw MmdbInvalidError', () => {
     () => new ctx.MmdbReader(garbage),
     (err) => err instanceof ctx.MmdbInvalidError && /no metadata marker/.test(err.message),
   );
+});
+
+// ── ASN surface ─────────────────────────────────────────────────────────────
+
+test('lookupAsn — every prefix in the ASN fixture resolves to its AS record', () => {
+  const ctx = loadReader();
+  const reader = new ctx.MmdbReader(realmAsnBytes(ctx));
+  assert.equal(reader.databaseType, 'Loupe-Test-ASN');
+  assert.equal(reader.getAsnFieldName(), 'asn');
+
+  const google = reader.lookupAsn('8.8.8.8');
+  assert.ok(google, '8.8.8.8 should resolve');
+  assert.equal(google.asn, 15169);
+  assert.equal(google.org, 'Google LLC');
+
+  const cf = reader.lookupAsn('1.1.1.1');
+  assert.ok(cf);
+  assert.equal(cf.asn, 13335);
+  assert.equal(cf.org, 'Cloudflare, Inc.');
+
+  // Verify off-tree IPs miss without throwing — same path as
+  // lookupIPv4's null-on-miss contract.
+  assert.equal(reader.lookupAsn('10.0.0.1'), null);
+  assert.equal(reader.lookupAsn('not.an.ip'), null);
+  assert.equal(reader.lookupAsn(null), null);
+});
+
+test('formatAsnRow — precedence and edge cases', () => {
+  const ctx = loadReader();
+  const reader = new ctx.MmdbReader(realmAsnBytes(ctx));
+
+  // Both present → 'Org (ASn)' canonical shape.
+  assert.equal(reader.formatAsnRow({ asn: 15169, org: 'Google LLC' }), 'Google LLC (AS15169)');
+  // Org-only → just the org.
+  assert.equal(reader.formatAsnRow({ asn: 0, org: 'Some ISP' }), 'Some ISP');
+  // ASN-only → 'ASn'.
+  assert.equal(reader.formatAsnRow({ asn: 64512, org: '' }), 'AS64512');
+  // Both missing → empty string (so empty cells render blank).
+  assert.equal(reader.formatAsnRow({ asn: 0, org: '' }), '');
+  assert.equal(reader.formatAsnRow(null), '');
+  assert.equal(reader.formatAsnRow(undefined), '');
+});
+
+test('detectSchema — geo fixture classifies as geo, ASN fixture as asn', () => {
+  const ctx = loadReader();
+  const geoReader = new ctx.MmdbReader(realmBytes(ctx));
+  const asnReader = new ctx.MmdbReader(realmAsnBytes(ctx));
+
+  // 8.8.8.8 hits both fixtures, so the probe walks ONE record on each.
+  assert.equal(geoReader.detectSchema(), 'geo');
+  assert.equal(asnReader.detectSchema(), 'asn');
+});
+
+test('lookupIPv4 — flat-schema fallback (top-level country_code etc.)', () => {
+  // Hand-craft a record so we don't have to extend the fixture builder
+  // for one shape variant. The full reader is tested above; here we
+  // exercise just `_projectGeoFields` via a fake `_decoder.decode` that
+  // returns the flat-schema map.
+  const ctx = loadReader();
+  const reader = new ctx.MmdbReader(realmBytes(ctx));
+
+  // Monkey-patch to inject a flat-schema record. `_findIpv4` returns a
+  // valid offset for 8.8.8.8 in the geo fixture, so we override the
+  // decoder for one call and verify projection picks up the flat keys.
+  const realDecode = reader._decoder.decode.bind(reader._decoder);
+  reader._decoder.decode = () => ({ value: {
+    country_code: 'GB',
+    country_name: 'United Kingdom',
+    state1: 'England',
+    city: 'London',
+  }, offset: 0 });
+  try {
+    const rec = reader.lookupIPv4('8.8.8.8');
+    assert.ok(rec, 'flat-schema record should project to non-null');
+    assert.equal(rec.iso, 'GB');
+    assert.equal(rec.country, 'United Kingdom');
+    assert.equal(rec.region, 'England');
+    assert.equal(rec.city, 'London');
+  } finally {
+    reader._decoder.decode = realDecode;
+  }
+});
+
+test('lookupIPv4 — flat-schema fallback (bare `country` string as ISO)', () => {
+  const ctx = loadReader();
+  const reader = new ctx.MmdbReader(realmBytes(ctx));
+
+  // Stub the decoder for a single record where `country` is a 2-char
+  // uppercase string (DB-IP-CSV → MMDB conversions sometimes do this).
+  // The projection should treat it as ISO, not as a country name.
+  const realDecode = reader._decoder.decode.bind(reader._decoder);
+  reader._decoder.decode = () => ({ value: { country: 'FR', region: 'Île-de-France' }, offset: 0 });
+  try {
+    const rec = reader.lookupIPv4('8.8.8.8');
+    assert.ok(rec);
+    assert.equal(rec.iso, 'FR');
+    assert.equal(rec.country, '');           // no country name in this record
+    assert.equal(rec.region, 'Île-de-France');
+  } finally {
+    reader._decoder.decode = realDecode;
+  }
 });

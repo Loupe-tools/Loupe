@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""build_test_mmdb.py — emit a minimal valid MMDB fixture for unit tests.
+"""build_test_mmdb.py — emit minimal valid MMDB fixtures for unit tests.
 
-Used by tests/unit/mmdb-reader.test.js. The output goes to
-`tests/fixtures/test-country.mmdb` (committed) so CI can run the parser
-unit tests without requiring the 8 MB DB-IP fixture.
+Used by tests/unit/mmdb-reader.test.js. Outputs two committed fixtures:
+
+  • `tests/fixtures/test-country.mmdb` — geo (country-only) DB with
+    nested-schema records (`country.iso_code`, `country.names.en`).
+  • `tests/fixtures/test-asn.mmdb`     — ASN DB with
+    `autonomous_system_number` + `autonomous_system_organization` records.
+
+CI runs the parser unit tests against both without needing the 8 MB
+DB-IP fixture.
 
 Format reference:
   https://maxmind.github.io/MaxMind-DB/
@@ -65,9 +71,11 @@ def _control_byte(typ: int, payload_len: int) -> bytes:
     """Encode the control byte + (optional) length-extension bytes.
 
     Per spec, payload_len < 29 fits in the low 5 bits of the control
-    byte; 29..284 uses one extension byte (29 + extra); 285..65820 uses
-    two extension bytes; etc. This fixture only ever emits short
-    payloads (≤28 bytes), so we keep the length encoding minimal.
+    byte; 29..284 uses one extension byte holding `payload_len - 29`;
+    285..65820 uses two extension bytes; etc. We support the first two
+    ranges because the ASN fixture's key
+    `autonomous_system_organization` is 30 bytes — past the 5-bit
+    immediate range, but well under one extension byte's worth.
 
     Types 0..7 fit the high-3-bits field directly. Types 8..15 use the
     "extended" form: high 3 bits = 0, and one extra byte after the
@@ -75,23 +83,31 @@ def _control_byte(typ: int, payload_len: int) -> bytes:
     because this fixture uses MMDB_TYPE_ARRAY (11) for the `languages`
     metadata field.
     """
-    if payload_len >= 29:
-        raise NotImplementedError(
-            'test fixture stays under 29-byte payloads on purpose; '
-            'extend if you need longer strings/maps'
-        )
+    if payload_len < 0:
+        raise ValueError(f'negative payload_len: {payload_len}')
+    if payload_len < 29:
+        len_field = payload_len
+        ext_bytes = b''
+    elif payload_len <= 28 + 0xFF:
+        # One-byte extension: control len-field = 29, extra byte = (n - 29).
+        len_field = 29
+        ext_bytes = bytes([payload_len - 29])
+    elif payload_len <= 285 + 0xFFFF:
+        # Two-byte extension: control len-field = 30, two extra bytes BE.
+        len_field = 30
+        ext_bytes = (payload_len - 285).to_bytes(2, 'big')
+    else:
+        raise NotImplementedError(f'payload_len {payload_len} too large')
     if typ <= 7:
-        return bytes([(typ << 5) | payload_len])
-    # Extended type: high 3 bits = 0 (MMDB_TYPE_EXTENDED), payload_len
-    # in the low 5 bits, then one byte = typ - 7.
-    return bytes([payload_len, typ - 7])
+        return bytes([(typ << 5) | len_field]) + ext_bytes
+    # Extended type: high 3 bits = 0 (MMDB_TYPE_EXTENDED), len_field
+    # in the low 5 bits, then one byte = typ - 7, then ext bytes.
+    return bytes([len_field, typ - 7]) + ext_bytes
 
 
 def enc_utf8(s: str) -> bytes:
-    """UTF-8 string with a 5-bit-length control byte."""
+    """UTF-8 string with a (possibly extended) length control byte."""
     payload = s.encode('utf-8')
-    if len(payload) >= 29:
-        raise ValueError(f'string too long for minimal encoder: {s!r}')
     return _control_byte(T_UTF8, len(payload)) + payload
 
 
@@ -116,8 +132,6 @@ def enc_uint32(n: int) -> bytes:
 def enc_map(items: list[tuple[str, bytes]]) -> bytes:
     """A map is `<control-byte: type=7, payload_len = entry-count>`
     followed by `entry-count` (key, value) pairs. Keys are utf-8."""
-    if len(items) >= 29:
-        raise NotImplementedError('large maps not needed in test fixture')
     out = bytearray(_control_byte(T_MAP, len(items)))
     for key, val_bytes in items:
         out += enc_utf8(key)
@@ -126,8 +140,6 @@ def enc_map(items: list[tuple[str, bytes]]) -> bytes:
 
 
 def enc_array(elements: list[bytes]) -> bytes:
-    if len(elements) >= 29:
-        raise NotImplementedError('large arrays not needed in test fixture')
     out = bytearray(_control_byte(T_ARRAY, len(elements)))
     for el in elements:
         out += el
@@ -147,6 +159,19 @@ def country_record(country_name: str, iso2: str) -> bytes:
         ('names', names_map),
     ])
     return enc_map([('country', country_map)])
+
+
+# ── Record builder for one leaf "ASN" entry ──────────────────────────────
+def asn_record(asn: int, org: str) -> bytes:
+    """Produce the GeoLite2-ASN shaped data record for an ASN entry.
+
+    Shape:
+      { autonomous_system_number: <uint>, autonomous_system_organization: <utf8> }
+    """
+    return enc_map([
+        ('autonomous_system_number', enc_uint32(asn)),
+        ('autonomous_system_organization', enc_utf8(org)),
+    ])
 
 
 # ── 24-bit search-tree node encoder ───────────────────────────────────────
@@ -226,65 +251,33 @@ def build_tree(prefixes: list[tuple[int, int, int]]) -> tuple[bytes, dict[int, i
     return nodes, leaf_assignments
 
 
-def main() -> int:
-    out_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        'tests', 'fixtures',
-    )
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, 'test-country.mmdb')
+def _emit_mmdb(out_path: str,
+               prefixes: list[tuple[int, int]],
+               record_blobs: list[bytes],
+               database_type: str) -> int:
+    """Shared writer: turn a list of `(start_ip, prefix_len)` prefixes
+    plus a parallel list of pre-encoded data records into a complete
+    MMDB byte stream.
 
-    # ── Define the four prefix → country mappings ─────────────────────
-    # Each tuple: (start_ip_uint32, prefix_len, country_name, iso2)
-    #
-    # 8.8.8.0/24    = 0x08080800 / 24
-    # 1.1.1.0/24    = 0x01010100 / 24
-    # 193.0.0.0/24  = 0xC1000000 / 24
-    # 210.130.0.0/16 = 0xD2820000 / 16
-    mappings = [
-        (0x08080800, 24, 'United States', 'US'),
-        (0x01010100, 24, 'Australia', 'AU'),
-        (0xC1000000, 24, 'Netherlands', 'NL'),
-        (0xD2820000, 16, 'Japan', 'JP'),
-    ]
+    Returns the number of nodes (for diagnostics)."""
+    if len(prefixes) != len(record_blobs):
+        raise ValueError('prefix / record count mismatch')
 
-    # ── Encode each data record once ─────────────────────────────────
-    # We'll concatenate them with their offsets recorded so the tree
-    # leaves can point at them.
-    record_blobs: list[bytes] = []
     record_offsets: list[int] = []
     cursor = 0
-    for _start, _plen, country, iso in mappings:
-        record_blobs.append(country_record(country, iso))
+    for blob in record_blobs:
         record_offsets.append(cursor)
-        cursor += len(record_blobs[-1])
+        cursor += len(blob)
 
-    # ── Build the tree ───────────────────────────────────────────────
-    prefix_input = [(s, p, i) for i, (s, p, _c, _iso) in enumerate(mappings)]
+    prefix_input = [(s, p, i) for i, (s, p) in enumerate(prefixes)]
     nodes, leaf_assignments = build_tree(prefix_input)
-
     node_count = len(nodes)
-    # Leaf "value" stored in a tree branch when that branch resolves to
-    # a data record: value = node_count + 16 + data_byte_offset. The
-    # reader's `_findIpv4` adds the 16 bytes back when computing the
-    # data section offset; reading mmdb-reader.js::_findIpv4: data_off =
-    # rec - node_count - 16 + this._dataStart. So we encode
-    #   rec = data_byte_offset + node_count + 16.
-    NO_RECORD_VALUE = node_count  # reader treats `>= node_count` with
-                                  # value == node_count as miss only when
-                                  # data offset resolves to before data
-                                  # start. To guarantee miss, we point
-                                  # at the safe "no record" sentinel: the
-                                  # value `node_count` itself, which by
-                                  # MMDB convention means "no value".
+    NO_RECORD_VALUE = node_count
 
-    # Resolve placeholders → concrete branch values.
     LEAF_PLACEHOLDER = -2
     NO_RECORD_PLACEHOLDER = -1
 
-    # First pass: leaf_assignments tells us which (node, branch) pairs
-    # are leaves for which data record.
-    leaf_table: dict[tuple[int, int], int] = {}  # (node_idx, branch) → record_idx
+    leaf_table: dict[tuple[int, int], int] = {}
     for node_idx, branch, data_idx in leaf_assignments:
         leaf_table[(node_idx, branch)] = data_idx
 
@@ -304,30 +297,26 @@ def main() -> int:
             new_right = NO_RECORD_VALUE
         final_nodes.append((new_left, new_right))
 
-    # ── Encode tree bytes ────────────────────────────────────────────
     tree_bytes = bytearray()
     for left, right in final_nodes:
         tree_bytes += encode_node_24(left, right)
 
-    # ── Encode data section ──────────────────────────────────────────
     data_section = bytearray()
     for blob in record_blobs:
         data_section += blob
 
-    # ── Encode metadata block (decoded value: a map) ────────────────
     SOURCE_DATE_EPOCH = int(os.environ.get('SOURCE_DATE_EPOCH', '1761955200'))
     metadata_map = enc_map([
         ('binary_format_major_version', enc_uint16(2)),
         ('binary_format_minor_version', enc_uint16(0)),
         ('build_epoch', enc_uint32(SOURCE_DATE_EPOCH)),
-        ('database_type', enc_utf8('Loupe-Test-Country')),
+        ('database_type', enc_utf8(database_type)),
         ('ip_version', enc_uint16(4)),
         ('languages', enc_array([enc_utf8('en')])),
         ('node_count', enc_uint32(node_count)),
         ('record_size', enc_uint16(24)),
     ])
 
-    # ── Assemble ─────────────────────────────────────────────────────
     metadata_marker = bytes([
         0xAB, 0xCD, 0xEF,
         0x4D, 0x61, 0x78, 0x4D, 0x69, 0x6E, 0x64, 0x2E, 0x63, 0x6F, 0x6D,
@@ -338,7 +327,57 @@ def main() -> int:
         f.write(payload)
 
     print(f'OK  Wrote {out_path}  ({len(payload):,} bytes, '
-          f'{node_count} nodes, {len(mappings)} prefixes)')
+          f'{node_count} nodes, {len(prefixes)} prefixes)')
+    return node_count
+
+
+def main() -> int:
+    out_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'tests', 'fixtures',
+    )
+    os.makedirs(out_dir, exist_ok=True)
+
+    # ── Geo (country) fixture ─────────────────────────────────────────
+    # Each tuple: (start_ip_uint32, prefix_len, country_name, iso2)
+    #   8.8.8.0/24    = 0x08080800 / 24
+    #   1.1.1.0/24    = 0x01010100 / 24
+    #   193.0.0.0/24  = 0xC1000000 / 24
+    #   210.130.0.0/16 = 0xD2820000 / 16
+    geo_mappings = [
+        (0x08080800, 24, 'United States', 'US'),
+        (0x01010100, 24, 'Australia', 'AU'),
+        (0xC1000000, 24, 'Netherlands', 'NL'),
+        (0xD2820000, 16, 'Japan', 'JP'),
+    ]
+    _emit_mmdb(
+        os.path.join(out_dir, 'test-country.mmdb'),
+        prefixes=[(s, p) for (s, p, _c, _iso) in geo_mappings],
+        record_blobs=[country_record(c, iso) for (_s, _p, c, iso) in geo_mappings],
+        database_type='Loupe-Test-Country',
+    )
+
+    # ── ASN fixture ───────────────────────────────────────────────────
+    # Each tuple: (start_ip_uint32, prefix_len, asn, org)
+    # Real-world AS numbers for the same addresses the country fixture
+    # covers, so unit tests can exercise both readers off the same IPs:
+    #   8.8.8.0/24     → AS15169  Google LLC
+    #   1.1.1.0/24     → AS13335  Cloudflare, Inc.
+    #   193.0.0.0/24   → AS3333   RIPE NCC
+    #   210.130.0.0/16 → AS2516   KDDI CORPORATION
+    asn_mappings = [
+        (0x08080800, 24, 15169, 'Google LLC'),
+        (0x01010100, 24, 13335, 'Cloudflare, Inc.'),
+        (0xC1000000, 24,  3333, 'RIPE NCC'),
+        (0xD2820000, 16,  2516, 'KDDI CORP'),
+    ]
+    _emit_mmdb(
+        os.path.join(out_dir, 'test-asn.mmdb'),
+        prefixes=[(s, p) for (s, p, _a, _o) in asn_mappings],
+        record_blobs=[asn_record(a, o) for (_s, _p, a, o) in asn_mappings],
+        database_type='Loupe-Test-ASN',
+    )
+
     return 0
 
 

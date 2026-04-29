@@ -117,42 +117,61 @@ class App {
         }
       }
     } catch (_) { /* background is cosmetic */ }
-    // ── GeoIP provider resolver ─────────────────────────────────────────
-    // `app.geoip` is the single source of truth for IPv4 → location
-    // lookups consumed by the Timeline GeoIP enrichment mixin. Two
-    // providers, identical surface (`lookupIPv4`, `formatRow`,
-    // `getFieldName`, `vintage`, `providerKind`):
+    // ── GeoIP provider resolvers ────────────────────────────────────────
+    // Two parallel surfaces feed the Timeline GeoIP enrichment mixin:
+    //
+    //   `app.geoip`     — IPv4 → geo (country / iso / region / city).
+    //                     Always set; falls back to BundledGeoip when no
+    //                     MMDB has been uploaded.
+    //   `app.geoipAsn`  — IPv4 → ASN (asn / org). Null until the analyst
+    //                     uploads an ASN MMDB; no bundled fallback (the
+    //                     bundled provider is RIR-country only).
+    //
+    // Three providers share one contract (`lookupIPv4` / `formatRow` /
+    // `getFieldName` / `vintage` / `providerKind`); MmdbReader extends it
+    // with `lookupAsn` / `formatAsnRow` / `getAsnFieldName` / `detectSchema`:
     //
     //   • BundledGeoip — RIR-derived IPv4-country, embedded in the bundle
-    //     as `__GEOIP_BUNDLE_B64`. Always present (~140 K ranges).
-    //   • MmdbReader   — user-uploaded `.mmdb` / `.mmdb.gz` via the
-    //     Settings dialog. Persisted in IndexedDB via GeoipStore. When
-    //     present, takes precedence (richer data — adds region + city).
+    //     as `__GEOIP_BUNDLE_B64`. Always present (~140 K ranges). Geo only.
+    //   • MmdbReader (geo slot) — user-uploaded city / country MMDB via
+    //     Settings. Persisted in IndexedDB. Takes precedence over the
+    //     bundled provider when present (richer data — adds region + city).
+    //   • MmdbReader (asn slot) — user-uploaded ASN MMDB via Settings.
+    //     Independent slot in IndexedDB. When present, the timeline mixin
+    //     emits a SECOND column (`<ip>.asn`) alongside the geo column.
     //
     // The bundled provider is set synchronously so the Timeline view's
     // constructor (which fires shortly after init() returns) has a
-    // working provider on first paint. The MMDB hydrate is async; if
-    // it loads later than first paint, the Timeline mixin re-runs
-    // enrichment when Settings notifies it (see app-settings.js
-    // upload-success path).
+    // working provider on first paint. Both MMDB hydrates are async and
+    // run in parallel; if either lands later than first paint, the
+    // Timeline mixin re-runs enrichment when the hydrate resolves.
     if (typeof BundledGeoip !== 'undefined') {
       this.geoip = BundledGeoip;
-      // Best-effort async hydrate from IndexedDB. Failures are silent
-      // — the bundled fallback already covers the common case.
+      this.geoipAsn = null;
+      // Best-effort async hydrate of BOTH slots from IndexedDB. Failures
+      // are silent per-slot — the bundled fallback already covers the
+      // common geo case, and ASN is purely additive.
       if (typeof GeoipStore !== 'undefined' && typeof MmdbReader !== 'undefined') {
+        const reEnrich = () => {
+          if (this._timelineCurrent && typeof this._timelineCurrent._runGeoipEnrichment === 'function') {
+            try { this._timelineCurrent._runGeoipEnrichment(); } catch (_) { /* noop */ }
+          }
+        };
         (async () => {
           try {
-            const rec = await GeoipStore.load();
+            const rec = await GeoipStore.load('geo');
             if (!rec || !rec.blob) return;
-            const reader = await MmdbReader.fromBlob(rec.blob);
-            this.geoip = reader;
-            // Re-run enrichment on the open Timeline view, if any.
-            // The view is stashed on `app._timelineCurrent` by the
-            // router (`src/app/timeline/timeline-router.js`).
-            if (this._timelineCurrent && typeof this._timelineCurrent._runGeoipEnrichment === 'function') {
-              try { this._timelineCurrent._runGeoipEnrichment(); } catch (_) { /* noop */ }
-            }
-          } catch (_) { /* MMDB hydrate is best-effort */ }
+            this.geoip = await MmdbReader.fromBlob(rec.blob);
+            reEnrich();
+          } catch (_) { /* geo MMDB hydrate is best-effort */ }
+        })();
+        (async () => {
+          try {
+            const rec = await GeoipStore.load('asn');
+            if (!rec || !rec.blob) return;
+            this.geoipAsn = await MmdbReader.fromBlob(rec.blob);
+            reEnrich();
+          } catch (_) { /* asn MMDB hydrate is best-effort */ }
         })();
       }
     }

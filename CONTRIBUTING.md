@@ -1238,7 +1238,7 @@ is fronted by a tiny accessor module under `src/<feature>/` so the
 
 | Database | Object store | Accessor | What it holds | Quota considerations |
 |---|---|---|---|---|
-| `loupe-geoip` | `mmdb` (key: `'active'`) | `src/geoip/geoip-store.js` (`GeoipStore.load()` / `save({name, bytes})` / `clear()`) | A user-uploaded MaxMind-format MMDB binary (Country / City / ASN). Loaded asynchronously by `App.init()` after the synchronous bundled provider is in place; the timeline re-fires GeoIP enrichment when it resolves. Survives reloads, never touches the network. | MMDB files are typically 8–80 MB. Settings shows the filename + size + build epoch from the file's metadata block. |
+| `loupe-geoip` (v2) | `db` (keys: `mmdb-geo` / `mmdb-asn` + `*-meta`) | `src/geoip/geoip-store.js` (`GeoipStore.save(slot, blob, meta)` / `load(slot)` / `getMeta(slot)` / `getAllMeta()` / `clear(slot)`) | Two independent user-uploaded MMDB slots: `geo` (Country / City / Region) and `asn` (Autonomous System / Organisation). Both are loaded in parallel by `App.init()` after the synchronous bundled provider is in place; the timeline re-fires enrichment when either resolves. v1→v2 migration in `onupgradeneeded` moves the legacy single `mmdb` key into the geo slot. Survives reloads, never touches the network. | MMDB files are typically 8–80 MB each. Settings shows filename + vintage + database type + sniffed schema per slot. |
 
 **Adding a new IndexedDB store**
 

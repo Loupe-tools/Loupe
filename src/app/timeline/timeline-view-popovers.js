@@ -320,18 +320,18 @@ Object.assign(TimelineView.prototype, {
     const showTimeBtn = this._columnLooksLikeTimestamp(colIdx)
       && colIdx !== this._timeCol;
 
-    // Show the "🌍 Look up GeoIP" entry only when the column actually
-    // contains IPv4 addresses. Walks up to 30 sampled cells via `_cellAt`
-    // so it works on both base and extracted (auto-extracted IP) columns.
-    // Hidden on geoip-output columns themselves (`<src>.geo`) — enriching
-    // an enrichment column makes no sense. The IPv4 shape check matches
-    // `isStrictIPv4` in `timeline-view-geoip.js` (intentionally inlined
-    // here so this file doesn't pull on the mixin's internals).
+    // Show the "🌍 Enrich IP" entry only when the column actually
+    // contains IPv4 addresses AND at least one provider (geo or ASN) is
+    // wired. Walks up to 30 sampled cells via `_cellAt` so it works on
+    // both base and extracted (auto-extracted IP) columns. Hidden on
+    // enrichment-output columns themselves (`<src>.geo` / `<src>.asn`).
+    // The IPv4 shape check matches `isStrictIPv4` in
+    // `timeline-view-geoip.js` (intentionally inlined here).
     let showGeoipBtn = false;
-    if (this._app && this._app.geoip) {
+    if (this._app && (this._app.geoip || this._app.geoipAsn)) {
       const ext = this._isExtractedCol(colIdx) ? this._extractedColFor(colIdx) : null;
-      // Suppress on geoip output columns (`kind: 'geoip'`).
-      if (!(ext && ext.kind === 'geoip')) {
+      // Suppress on enrichment-output columns (`kind: 'geoip' | 'geoip-asn'`).
+      if (!(ext && (ext.kind === 'geoip' || ext.kind === 'geoip-asn'))) {
         const sample = Math.min(this.store.rowCount, 30);
         let nonEmpty = 0;
         let hits = 0;
@@ -378,7 +378,7 @@ Object.assign(TimelineView.prototype, {
         <button class="tl-tb-btn" data-act="extract">ƒx Extract values</button>
         <button class="tl-tb-btn" data-act="autopivot">🧮 Auto pivot on this column</button>
         ${showGeoipBtn
-          ? '<button class="tl-tb-btn" data-act="geoip" title="Force GeoIP enrichment for this column (bypasses auto-detect)">🌍 Look up GeoIP</button>'
+          ? '<button class="tl-tb-btn" data-act="geoip" title="Force enrichment for this column — emits geo and/or ASN columns from the configured providers">🌍 Enrich IP</button>'
           : ''}
       </div>
       <div class="tl-colmenu-foot">
@@ -526,10 +526,11 @@ Object.assign(TimelineView.prototype, {
       this._removeExtractedCol(colIdx);
       this._closePopover();
     });
-    // 🌍 Look up GeoIP — bypass the IPv4-detection threshold AND the skip
-    // heuristic for this specific column. Same provider the auto-detect
-    // path uses (`this._app.geoip`). The mixin's per-source-col dedup
-    // means a click on an already-enriched column is a no-op.
+    // 🌍 Enrich IP — bypass the IPv4-detection threshold AND the skip
+    // heuristic for this specific column. Fires every wired provider
+    // (`this._app.geoip` and/or `this._app.geoipAsn`); the mixin's
+    // per-source-col + per-kind dedup means a click on an already-
+    // enriched column is a no-op.
     const geoipBtn = menu.querySelector('[data-act="geoip"]');
     if (geoipBtn) geoipBtn.addEventListener('click', () => {
       this._closePopover();

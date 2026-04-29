@@ -241,18 +241,25 @@ extendApp({
     }
   },
 
-  // Surface for the GeoIP MMDB override. Three states share one row:
+  // Surface for the GeoIP MMDB overrides. Two independent slots share
+  // one row, with a single bundled-summary line at the top:
   //
-  //   1. No override — only the bundled provider is loaded. Show the
-  //      bundled vintage and an "Upload .mmdb / .mmdb.gz" button.
-  //   2. Override loaded — show database type, build date, filename, and
-  //      a "Remove" button that reverts to bundled.
-  //   3. Override loading / failed — transient toasts (no inline state).
+  //   geo  — IPv4 → country / region / city (overrides the bundled
+  //          provider when present; falls back to bundled when empty).
+  //   asn  — IPv4 → AS number / organisation. Optional, no fallback.
   //
-  // The bundled provider is always present so analysts get useful country
-  // data with zero configuration; the override exists for users who want
-  // GeoLite2-City accuracy or DB-IP daily updates. See SECURITY.md for
-  // the rationale (no network → no licence-protected DB shipped).
+  // Each slot has its own state line + Upload / Replace / Remove
+  // buttons. Uploads are schema-sniffed via `reader.detectSchema()` and
+  // rejected when the analyst pushes an obviously-wrong DB into the
+  // wrong slot ("ASN MMDB into the geo slot" → toast, no save). DBs
+  // whose schema can't be probed (every probe IP misses) are accepted
+  // — some private / regional DBs lack global coverage.
+  //
+  // The bundled provider is always present so analysts get useful
+  // country data with zero configuration; the overrides exist for
+  // users who want GeoLite2-City accuracy or AS-level enrichment. See
+  // SECURITY.md for the rationale (no network → no licence-protected
+  // DB shipped).
   _renderGeoipRow(body) {
     const row = document.createElement('div');
     row.className = 'settings-row';
@@ -260,15 +267,9 @@ extendApp({
       <div class="settings-row-label">🌍 GeoIP database</div>
       <div class="settings-geoip" id="settings-geoip"></div>`;
     body.appendChild(row);
-    this._refreshGeoipRow(row.querySelector('#settings-geoip'));
-  },
+    const host = row.querySelector('#settings-geoip');
 
-  _refreshGeoipRow(host) {
-    if (!host) return;
-    host.innerHTML = '';
-    const app = this;
-
-    // Bundled summary line — always shown.
+    // Bundled summary — shared by both slots, rendered once.
     const bundled = document.createElement('div');
     bundled.className = 'settings-geoip-bundled';
     const bundledVintage = (typeof BundledGeoip !== 'undefined' && BundledGeoip.vintage)
@@ -276,8 +277,30 @@ extendApp({
     bundled.textContent = `Bundled: ${bundledVintage}`;
     host.appendChild(bundled);
 
-    // Override state — async fetch via GeoipStore.getMeta(). While we're
-    // resolving, show a hint placeholder so the row never renders empty.
+    // Two slot panels.
+    const geoSlot = document.createElement('div');
+    geoSlot.className = 'settings-geoip-slot';
+    host.appendChild(geoSlot);
+    this._refreshGeoipSlot(geoSlot, 'geo', 'Geo MMDB (country / region / city)');
+
+    const asnSlot = document.createElement('div');
+    asnSlot.className = 'settings-geoip-slot';
+    host.appendChild(asnSlot);
+    this._refreshGeoipSlot(asnSlot, 'asn', 'ASN MMDB (autonomous system / organisation)');
+  },
+
+  // Render one slot panel. Re-entrant: every Upload / Remove handler
+  // calls back into this function with the same `host` to refresh.
+  _refreshGeoipSlot(host, slot, label) {
+    if (!host) return;
+    host.innerHTML = '';
+    const app = this;
+
+    const head = document.createElement('div');
+    head.className = 'settings-geoip-slot-label';
+    head.textContent = label;
+    host.appendChild(head);
+
     const stateLine = document.createElement('div');
     stateLine.className = 'settings-geoip-state';
     stateLine.textContent = '…';
@@ -302,35 +325,43 @@ extendApp({
           ? `saved ${new Date(meta.savedAt).toISOString().slice(0, 10)}`
           : '');
         const fname = meta.filename ? ` (${meta.filename})` : '';
-        stateLine.textContent = `Override: ${what}${when ? ' — ' + when : ''}${fname}`;
+        stateLine.textContent = `Loaded: ${what}${when ? ' — ' + when : ''}${fname}`;
         const remove = document.createElement('button');
         remove.type = 'button';
         remove.className = 'nicelist-btn';
-        remove.textContent = '✕ Remove override';
+        remove.textContent = '✕ Remove';
         remove.addEventListener('click', async () => {
-          const ok = await GeoipStore.clear();
+          const ok = await GeoipStore.clear(slot);
           if (ok) {
-            // Snap `app.geoip` back to bundled and notify the open
-            // Timeline view to re-run enrichment with the new provider.
-            if (typeof BundledGeoip !== 'undefined') app.geoip = BundledGeoip;
+            if (slot === 'geo') {
+              // Geo slot reverts to bundled provider.
+              if (typeof BundledGeoip !== 'undefined') app.geoip = BundledGeoip;
+            } else {
+              // ASN slot has no fallback.
+              app.geoipAsn = null;
+            }
             if (app._timelineCurrent && typeof app._timelineCurrent._runGeoipEnrichment === 'function') {
               try { app._timelineCurrent._runGeoipEnrichment(); } catch (_) { /* noop */ }
             }
-            app._toast('GeoIP override removed — using bundled IPv4 → country');
+            app._toast(slot === 'geo'
+              ? 'Geo MMDB removed — using bundled IPv4 → country'
+              : 'ASN MMDB removed');
           } else {
-            app._toast('Could not remove override (storage blocked?)');
+            app._toast('Could not remove (storage blocked?)');
           }
-          this._refreshGeoipRow(host);
+          this._refreshGeoipSlot(host, slot, label);
         });
         btnRow.appendChild(remove);
       } else {
-        stateLine.textContent = 'No override loaded';
+        stateLine.textContent = 'No MMDB loaded';
       }
       const upload = document.createElement('button');
       upload.type = 'button';
       upload.className = 'nicelist-btn';
       upload.textContent = meta ? '⬆ Replace…' : '⬆ Upload .mmdb / .mmdb.gz';
-      upload.title = 'Use a MaxMind / DB-IP MMDB file for richer (region + city) lookups';
+      upload.title = (slot === 'geo')
+        ? 'MaxMind / DB-IP city or country MMDB — richer than bundled (region + city)'
+        : 'MaxMind / DB-IP ASN MMDB — emits a second column with AS number + organisation';
       upload.addEventListener('click', () => fileInput.click());
       btnRow.appendChild(upload);
     };
@@ -343,9 +374,16 @@ extendApp({
       try {
         reader = await MmdbReader.fromBlob(f);
       } catch (e) {
-         
         console.warn('[geoip] mmdb load failed:', e);
         app._toast(`MMDB rejected: ${e && e.message ? e.message : 'invalid file'}`);
+        return;
+      }
+      // Schema sniff — reject obvious slot mismatches at upload time.
+      // Accept 'unknown' (regional / private DBs whose probe IPs miss).
+      let schema = 'unknown';
+      try { schema = reader.detectSchema(); } catch (_) { schema = 'unknown'; }
+      if (schema !== 'unknown' && schema !== slot) {
+        app._toast(`This looks like a ${schema.toUpperCase()} MMDB — upload it into the ${schema.toUpperCase()} slot instead`);
         return;
       }
       const meta = {
@@ -354,24 +392,25 @@ extendApp({
         savedAt: Date.now(),
         vintage: reader.vintage,
         databaseType: reader.databaseType,
+        schema,
       };
-      const ok = await GeoipStore.save(f, meta);
+      const ok = await GeoipStore.save(slot, f, meta);
       if (!ok) {
         app._toast('Could not save MMDB (storage quota or blocked)');
         return;
       }
-      app.geoip = reader;
-      app._toast(`MMDB loaded: ${reader.vintage}`);
-      // Push the new provider into the open Timeline view, if any.
+      if (slot === 'geo') app.geoip = reader;
+      else app.geoipAsn = reader;
+      app._toast(`${slot === 'geo' ? 'Geo' : 'ASN'} MMDB loaded: ${reader.vintage}`);
       if (app._timelineCurrent && typeof app._timelineCurrent._runGeoipEnrichment === 'function') {
         try { app._timelineCurrent._runGeoipEnrichment(); } catch (_) { /* noop */ }
       }
-      this._refreshGeoipRow(host);
+      this._refreshGeoipSlot(host, slot, label);
     });
 
     // Kick off the meta fetch and render the appropriate state.
     if (typeof GeoipStore !== 'undefined') {
-      GeoipStore.getMeta().then(renderState).catch(() => renderState(null));
+      GeoipStore.getMeta(slot).then(renderState).catch(() => renderState(null));
     } else {
       renderState(null);
     }

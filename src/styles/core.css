@@ -4653,6 +4653,38 @@ body.dark .settings-geoip-state {
   flex-wrap: wrap;
 }
 
+/* Dual-slot wrapper. Two `.settings-geoip-slot` blocks live inside
+   `.settings-geoip` (one per slot — geo + asn) under a shared
+   `.settings-geoip-bundled` summary line. Each slot is its own visually
+   distinct subgroup with a small label, state line, and button row.
+   Border-top separator (only on the second slot via `+` sibling) makes
+   the boundary readable without a heavy box. */
+.settings-geoip-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+}
+
+.settings-geoip-slot + .settings-geoip-slot {
+  border-top: 1px solid rgba(0, 0, 0, .08);
+  margin-top: 4px;
+}
+
+body.dark .settings-geoip-slot + .settings-geoip-slot {
+  border-top-color: rgba(255, 255, 255, .12);
+}
+
+.settings-geoip-slot-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+}
+
+body.dark .settings-geoip-slot-label {
+  color: rgba(255, 255, 255, .85);
+}
+
 /* ── Theme picker — 3×2 grid of preview cards ───────────────────────────
    Six themes, always laid out 3 across × 2 down so the picker feels
    deliberate regardless of dialog width. Each card is a vertical stack:
