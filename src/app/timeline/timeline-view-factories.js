@@ -51,7 +51,7 @@ Object.assign(TimelineView, {
   // normalisation so we never allocate a single string anywhere near
   // V8's ~512 M-character limit. For smaller files the whole buffer is
   // decoded in one shot (fast path — no overhead).
-  async fromCsvAsync(file, buffer, explicitDelim) {
+  async fromCsvAsync(file, buffer, explicitDelim, kindHint) {
     const bytes = new Uint8Array(buffer);
     const DECODE_CHUNK = RENDER_LIMITS.DECODE_CHUNK_BYTES; // 16 MB
 
@@ -96,6 +96,58 @@ Object.assign(TimelineView, {
       });
     }
     const r = new CsvRenderer();
+    const isLog = kindHint === 'log';
+
+    // ── CLF (`.log`) sync path — bypass CsvRenderer entirely ───────────
+    //
+    // The worker-first path in the router does the same thing in
+    // `timeline.worker.js::_parseCsv` (the `if (isLog)` block). This
+    // sync fallback fires when workers are unavailable (Firefox
+    // file://). See `_tlTokenizeClfLine` for the rationale: Apache /
+    // Nginx CLF uses backslash-escaped quotes, not RFC4180 doubled
+    // quotes, so the generic CSV parser corrupts state on ~6 % of
+    // real lines. We tokenise per-line instead.
+    if (isLog) {
+      const rowsLog = [];
+      let columnsLog = [];
+      let lineStart = 0;
+      let truncatedLog = false;
+      const lenLog = norm.length;
+      while (lineStart < lenLog && rowsLog.length < TIMELINE_MAX_ROWS) {
+        const nl = norm.indexOf('\n', lineStart);
+        const lineEnd = nl < 0 ? lenLog : nl;
+        const line = norm.slice(lineStart, lineEnd);
+        lineStart = nl < 0 ? lenLog : nl + 1;
+        if (!line) continue;
+        const cells = _tlTokenizeClfLine(line);
+        if (!cells) continue;
+        if (!columnsLog.length) {
+          columnsLog = _tlCanonicalLogColumns(cells.length);
+        }
+        // Pad / trim to the canonical width so RowStore receives a
+        // dense matrix (mirrors the CSV path's `padOrTrim`).
+        const width = columnsLog.length;
+        if (cells.length < width) {
+          while (cells.length < width) cells.push('');
+        } else if (cells.length > width) {
+          cells.length = width;
+        }
+        rowsLog.push(cells);
+      }
+      truncatedLog = rowsLog.length >= TIMELINE_MAX_ROWS && lineStart < lenLog;
+      const originalRowCountLog = truncatedLog
+        ? Math.round(rowsLog.length * (lenLog / Math.max(1, lineStart)))
+        : rowsLog.length;
+      const storeLog = RowStore.fromStringMatrix(columnsLog, rowsLog);
+      rowsLog.length = 0;
+      return new TimelineView({
+        file, columns: columnsLog, store: storeLog,
+        formatLabel: 'LOG',
+        truncated: truncatedLog,
+        originalRowCount: originalRowCountLog,
+      });
+    }
+
     let delim = explicitDelim;
     if (!delim) {
       try { delim = r._delim(norm); } catch (_) { delim = ','; }
@@ -105,12 +157,12 @@ Object.assign(TimelineView, {
     // includes a multi-line quoted cell parses correctly (the legacy
     // `norm.indexOf('\n')` slice would chop the header in half on the
     // first embedded newline). Same parser drives the body loop below.
+    let columns = [];
+    let bodyStartIdx;
     const headerState = CsvRenderer.initParserState();
     const headerResult = CsvRenderer.parseChunk(norm, 0, headerState, delim, {
       baseOffset: 0, maxRows: 1, flush: false,
     });
-    let columns = [];
-    let bodyStartIdx;
     if (headerResult.rows.length) {
       columns = headerResult.rows[0];
       bodyStartIdx = headerResult.endIdx;

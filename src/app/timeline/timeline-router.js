@@ -65,9 +65,14 @@ extendApp({
   },
 
   // Content sniff for extensionless (or mis-named) timeline files. Returns
-  // the ext to use (`'evtx'`, `'csv'`, `'tsv'`) or null.
+  // the ext to use (`'evtx'`, `'csv'`, `'tsv'`, `'log'`) or null.
   //
   // * EVTX: first 8 bytes = `ElfFile\0`.
+  // * Apache / Nginx CLF: ≥ 60 % of the first 5 non-empty lines contain
+  //   the bracketed CLF date token `[DD/Mon/YYYY:HH:MM:SS ±ZZZZ]`. This
+  //   is unambiguous — the bracketed-date+timezone shape is essentially
+  //   a magic string. Returned as `'log'` so the router applies the
+  //   space delimiter and CLF cell-merge.
   // * CSV / TSV: decode the first ~4 KB as UTF-8, reject blobs that look
   //   like JSON / XML / shebangs, then try each of `,\t;|` and keep the
   //   delimiter that yields ≥ 2 consistent columns across ≥ 80% of the
@@ -136,6 +141,21 @@ extendApp({
 
     const lines = text.split(/\r\n|\r|\n/).map(l => l).filter(l => l.length > 0).slice(0, 20);
     if (lines.length < 2) return null;
+    // Apache / Nginx CLF sniff. The bracketed `[DD/Mon/YYYY:HH:MM:SS ±ZZZZ]`
+    // token is essentially a magic signature — when ≥ 60 % of the first
+    // 5 non-empty lines carry it the file is a web access log. Runs
+    // before the delimiter-confidence loop because space-delimited
+    // CLF lines would otherwise be rejected outright (the `,\t;|`
+    // candidates all yield 1 column on a CLF line).
+    const _CLF_LINE_RE = /\[\d{1,2}\/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\/\d{4}:\d{2}:\d{2}:\d{2}\s+[+-]\d{4}\]/i;
+    {
+      const head = lines.slice(0, 5);
+      let hits = 0;
+      for (let i = 0; i < head.length; i++) {
+        if (_CLF_LINE_RE.test(head[i])) hits++;
+      }
+      if (head.length >= 2 && hits / head.length >= 0.6) return 'log';
+    }
     const candidates = [',', '\t', ';', '|'];
     let best = { delim: null, cols: 0, confidence: 0 };
     for (const d of candidates) {
@@ -273,7 +293,7 @@ extendApp({
       let view = null;
       let workerKind = null;
       if (ext === 'evtx') workerKind = 'evtx';
-      else if (ext === 'csv' || ext === 'tsv') workerKind = 'csv';
+      else if (ext === 'csv' || ext === 'tsv' || ext === 'log') workerKind = 'csv';
       else if (ext === 'sqlite' || ext === 'db') workerKind = 'sqlite';
 
       if (workerKind && window.WorkerManager
@@ -364,8 +384,16 @@ extendApp({
             Math.max(baseTimeout, ((file && file.size) || 0) / 1_000_000 * 500)
           );
 
+          // `.log` (Apache / Nginx CLF) is space-delimited; pass the
+          // delimiter explicitly because `CsvRenderer._delim` only
+          // probes `, ; \t |`. `kindHint: 'log'` switches the worker
+          // into log-mode: the bracketed CLF date cell is re-merged
+          // post-parse, the first row is treated as data (CLF has no
+          // header), and canonical column names are applied when the
+          // row width matches 9 (Combined) or 7 (Common).
           const opts = (workerKind === 'csv')
-            ? { explicitDelim: ext === 'tsv' ? '\t' : null,
+            ? { explicitDelim: ext === 'tsv' ? '\t' : (ext === 'log' ? ' ' : null),
+                kindHint:    ext === 'log' ? 'log' : null,
                 onBatch, timeoutMs: sizeTimeout }
             : { onBatch, timeoutMs: sizeTimeout };
           const msg = await window.WorkerManager.runTimeline(transfer, workerKind, opts);
@@ -446,8 +474,10 @@ extendApp({
         }
         if (ext === 'evtx') {
           view = await TimelineView.fromEvtx(file, buffer);
-        } else if (ext === 'csv' || ext === 'tsv') {
-          view = await TimelineView.fromCsvAsync(file, buffer, ext === 'tsv' ? '\t' : null);
+        } else if (ext === 'csv' || ext === 'tsv' || ext === 'log') {
+          const explicit = ext === 'tsv' ? '\t' : (ext === 'log' ? ' ' : null);
+          view = await TimelineView.fromCsvAsync(
+            file, buffer, explicit, ext === 'log' ? 'log' : null);
         } else if (ext === 'sqlite' || ext === 'db') {
           view = TimelineView.fromSqlite(file, buffer);
         } else {

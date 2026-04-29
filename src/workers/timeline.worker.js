@@ -41,9 +41,17 @@
 //
 // postMessage protocol
 // --------------------
-// in:  { kind: 'csv', buffer: ArrayBuffer (transferred), explicitDelim?: string }
+// in:  { kind: 'csv', buffer: ArrayBuffer (transferred),
+//        explicitDelim?: string, kindHint?: 'log' | null }
 //      { kind: 'evtx', buffer: ArrayBuffer (transferred) }
 //      { kind: 'sqlite', buffer: ArrayBuffer (transferred) }
+//
+// `kindHint: 'log'` switches the CSV path into Apache / Nginx CLF mode:
+// the bracketed-date pair is re-merged into a single timestamp cell
+// (CLF separates `[20/Jun/2012:19:05:12` and `+0200]` with a space —
+// our delimiter), the first physical row is treated as data not
+// header, and canonical column names are synthesised when the row
+// width is 9 (combined) or 7 (common).
 //
 // out (CSV/TSV/EVTX/SQLite) — STREAMING:
 //   Zero or more intermediate packed-chunk events. Each chunk is the
@@ -165,7 +173,7 @@ function _postRowsChunk(rows, colCount) {
 // The `explicitDelim` argument lets the host force a delimiter (TSV
 // uses `\t`); when omitted we sniff using `CsvRenderer._delim` over the
 // first decoded chunk only — sufficient signal for any real CSV.
-async function _parseCsv(buffer, explicitDelim) {
+async function _parseCsv(buffer, explicitDelim, kindHint) {
   const bytes = new Uint8Array(buffer);
   const DECODE_CHUNK = RENDER_LIMITS.DECODE_CHUNK_BYTES;
 
@@ -180,6 +188,13 @@ async function _parseCsv(buffer, explicitDelim) {
   // row IS the tail, so we never re-scan or copy text across chunks.
   const parserState = CsvRenderer.initParserState();
 
+  // `kindHint === 'log'` switches into a dedicated CLF tokeniser
+  // path that bypasses CsvRenderer entirely (see the `if (isLog)`
+  // block below for the rationale and `_tlTokenizeClfLine` for the
+  // line-level parser). `_tlTokenizeClfLine` and
+  // `_tlCanonicalLogColumns` live in `timeline-worker-shim.js` and
+  // are bundled ahead of this file.
+  const isLog = kindHint === 'log';
   // True once we've consumed and parsed the header row.
   let headerSeen = false;
   let columns = [];
@@ -246,6 +261,95 @@ async function _parseCsv(buffer, explicitDelim) {
     }
     return false;
   };
+
+  // ── CLF (`.log`) path — bypass CsvRenderer entirely ──────────────────
+  //
+  // Apache / Nginx Common (and Combined) Log Format uses backslash-
+  // escaped quotes, not RFC4180 doubled quotes. Feeding it through the
+  // generic CSV parser corrupts state on roughly 6 % of real lines
+  // (the `\"` in any User-Agent string ends the quoted cell prematurely)
+  // and the rest of the file gets glued onto a single mega-cell. We
+  // run a fixed-shape CLF tokeniser per physical line instead — see
+  // `_tlTokenizeClfLine` in `timeline-worker-shim.js` (and the
+  // canonical impl in `src/app/timeline/timeline-helpers.js`).
+  //
+  // The chunked-decode loop below mirrors the CSV path's structure so
+  // memory stays bounded on multi-hundred-MB drops: we keep a `tail`
+  // string for the unterminated last line of each chunk, parse only
+  // complete lines, and stream packed batches via `flushBatch()`.
+  if (isLog) {
+    let tail = '';
+    let firstChunkLog = true;
+    formatLabel = 'LOG';
+    outerLog:
+    for (let pos = 0; pos < bytes.length; pos += DECODE_CHUNK) {
+      const end = Math.min(pos + DECODE_CHUNK, bytes.length);
+      const stream = end < bytes.length;
+      let chunk = decoder.decode(bytes.subarray(pos, end), { stream });
+      if (firstChunkLog) {
+        if (chunk.charCodeAt(0) === 0xFEFF) chunk = chunk.slice(1);
+        firstChunkLog = false;
+      }
+      if (chunk.indexOf('\r') !== -1) chunk = chunk.replace(/\r\n?/g, '\n');
+      bytesConsumed = end;
+      const text = tail + chunk;
+      let lineStart = 0;
+      while (lineStart < text.length) {
+        const nl = text.indexOf('\n', lineStart);
+        if (nl < 0) {
+          // Partial last line — stash for the next chunk. (At EOF
+          // this gets flushed below.)
+          tail = text.slice(lineStart);
+          break;
+        }
+        const line = text.slice(lineStart, nl);
+        lineStart = nl + 1;
+        if (!line) continue;
+        const cells = _tlTokenizeClfLine(line);
+        if (!cells) continue;             // skip malformed lines
+        if (!headerSeen) {
+          columns = _tlCanonicalLogColumns(cells.length);
+          colLen = columns.length;
+          headerSeen = true;
+        }
+        if (rowCount >= TIMELINE_MAX_ROWS) {
+          truncated = true;
+          break outerLog;
+        }
+        pendingRows.push(padOrTrimCells(cells));
+        rowCount++;
+        if (pendingRows.length >= WORKER_CHUNK_ROWS) flushBatch();
+      }
+      if (lineStart >= text.length) tail = '';
+    }
+    // Flush trailing partial line (no newline at EOF).
+    if (!truncated && tail) {
+      const cells = _tlTokenizeClfLine(tail);
+      if (cells) {
+        if (!headerSeen) {
+          columns = _tlCanonicalLogColumns(cells.length);
+          colLen = columns.length;
+          headerSeen = true;
+        }
+        if (rowCount < TIMELINE_MAX_ROWS) {
+          pendingRows.push(padOrTrimCells(cells));
+          rowCount++;
+        }
+      }
+    }
+    flushBatch();
+    if (!headerSeen) { columns = []; colLen = 0; }
+    const originalRowCountLog = truncated
+      ? Math.round(rowCount * (bytes.length / Math.max(1, bytesConsumed)))
+      : rowCount;
+    return {
+      columns,
+      rows: [],
+      formatLabel,
+      truncated,
+      originalRowCount: originalRowCountLog,
+    };
+  }
 
   outer:
   for (let pos = 0; pos < bytes.length; pos += DECODE_CHUNK) {
@@ -501,7 +605,7 @@ self.onmessage = async function (ev) {
         self.postMessage({ event: 'error', message: 'CsvRenderer missing from worker bundle' });
         return;
       }
-      out = await _parseCsv(buffer, msg.explicitDelim);
+      out = await _parseCsv(buffer, msg.explicitDelim, msg.kindHint);
     } else if (kind === 'evtx') {
       if (typeof EvtxRenderer === 'undefined') {
         self.postMessage({ event: 'error', message: 'EvtxRenderer missing from worker bundle' });

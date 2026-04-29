@@ -54,7 +54,191 @@ const TIMELINE_KEYS = Object.freeze({
 const TIMELINE_MAX_ROWS = RENDER_LIMITS.MAX_TIMELINE_ROWS;
 
 // File extensions that always open in the Timeline view.
-const TIMELINE_EXTS = new Set(['csv', 'tsv', 'evtx', 'sqlite', 'db']);
+//
+// `.log` is treated as a first-class space-delimited tabular format
+// (Apache / Nginx access logs in Common / Combined Log Format). The
+// router passes `kindHint: 'log'` and `explicitDelim: ' '` through to
+// the CSV parse path so the bracketed `[DD/Mon/YYYY:HH:MM:SS ±ZZZZ]`
+// timestamp can be re-merged across the embedded space, and so the
+// canonical CLF column names (ip / ident / auth / time / request /
+// status / bytes / referer / user_agent) are applied when the row
+// width matches. Files without a `.log` extension can still be
+// detected via `_sniffTimelineContent` (see timeline-router.js).
+const TIMELINE_EXTS = new Set(['csv', 'tsv', 'evtx', 'sqlite', 'db', 'log']);
+
+// ── CLF (Common / Combined Log Format) helpers ─────────────────────────────
+// Apache / Nginx access logs use a bracketed date token containing a
+// single space: `[20/Jun/2012:19:05:12 +0200]`. A naive single-space
+// CSV split chops it into two cells — the open bracket + date and the
+// timezone + close bracket — so we re-merge them post-parse before
+// `_tlAutoDetectTimestampCol` and `_tlParseTimestamp` see the row.
+// The merge is invoked only on the `.log` parse path (and on
+// extensionless files the CLF sniffer matches), never on plain
+// CSV / TSV — so even a freak false positive can't reach unrelated
+// files.
+// `_tlTokenizeClfLine(line)` — dedicated parser for one Apache / Nginx
+// Common (or Combined) Log Format physical line. Returns an array of
+// cells (length 7 = common, 9 = combined) or `null` for any line whose
+// shape doesn't match.
+//
+// Why a custom tokeniser rather than reusing `CsvRenderer.parseChunk`
+// with `delim=' '`: CLF uses **backslash-escaped quotes** (`\"`) inside
+// quoted fields, not RFC4180-style doubled quotes (`""`). Roughly 6 %
+// of real Apache logs contain `\"` (think User-Agent strings that
+// quote a sub-token); RFC4180 sees `\"` as `\` then end-of-quoted-cell
+// and the parser then loses synchronisation for the rest of the file
+// — every subsequent line gets glued onto a single mega-cell. A
+// fixed-shape lexer is the only correct answer.
+//
+// CLF shape, combined:
+//   %h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-agent}i\"
+//   = 3 unquoted, 1 bracketed `[…]`, 1 quoted, 2 unquoted, 2 quoted
+//
+// CLF shape, common (CLF proper, no Combined):
+//   %h %l %u %t \"%r\" %>s %b
+//   = 3 unquoted, 1 bracketed, 1 quoted, 2 unquoted
+//
+// Whitespace inside quoted / bracketed runs is preserved verbatim.
+// Backslash escapes are decoded: `\"` → `"`, `\\` → `\`. Other
+// `\X` are passed through as `\X` (Apache itself doesn't define
+// further escapes; passing-through is closer to mod_log_config's
+// actual behaviour than silently dropping the backslash).
+function _tlTokenizeClfLine(line) {
+  if (!line) return null;
+  const len = line.length;
+  let i = 0;
+  // Skip leading spaces (rare but harmless).
+  while (i < len && line.charCodeAt(i) === 0x20) i++;
+  if (i >= len) return null;
+  const out = [];
+
+  // Reads a run of non-space characters, advances `i` past the
+  // trailing space (or to EOL). Returns the captured text.
+  const readUnquoted = () => {
+    const start = i;
+    while (i < len && line.charCodeAt(i) !== 0x20) i++;
+    const tok = line.slice(start, i);
+    while (i < len && line.charCodeAt(i) === 0x20) i++;
+    return tok;
+  };
+
+  // Reads `[…]`. Caller has already verified `line[i] === '['`. The
+  // closing `]` is matched literally — bracketed dates contain no
+  // nested brackets, so we don't need backslash handling here.
+  const readBracketed = () => {
+    const start = i;                       // include the `[`
+    i++;                                   // step past `[`
+    while (i < len && line.charCodeAt(i) !== 0x5D /* ] */) i++;
+    if (i >= len) return null;             // unterminated → caller bails
+    i++;                                   // step past `]`
+    const tok = line.slice(start, i);
+    while (i < len && line.charCodeAt(i) === 0x20) i++;
+    return tok;
+  };
+
+  // Reads `"…"` with `\\` / `\"` decoded. Caller has already verified
+  // `line[i] === '"'`. The closing `"` is the first un-escaped `"` we
+  // see. Returns the inner text (quotes stripped, escapes decoded).
+  const readQuoted = () => {
+    i++;                                   // step past opening `"`
+    let result = '';
+    let runStart = i;
+    while (i < len) {
+      const c = line.charCodeAt(i);
+      if (c === 0x5C /* \\ */ && i + 1 < len) {
+        const next = line.charCodeAt(i + 1);
+        // Decode `\\` and `\"`; pass other `\X` through unchanged.
+        if (next === 0x22 /* " */ || next === 0x5C) {
+          if (i > runStart) result += line.slice(runStart, i);
+          result += String.fromCharCode(next);
+          i += 2;
+          runStart = i;
+          continue;
+        }
+        i += 2;                            // skip the pair, leave runStart
+        continue;
+      }
+      if (c === 0x22 /* " */) {
+        if (i > runStart) result += line.slice(runStart, i);
+        i++;                               // step past closing `"`
+        while (i < len && line.charCodeAt(i) === 0x20) i++;
+        return result;
+      }
+      i++;
+    }
+    return null;                           // unterminated → caller bails
+  };
+
+  // 1. host (`%h`)        — unquoted
+  out.push(readUnquoted());
+  if (i >= len) return null;
+  // 2. ident (`%l`)       — unquoted (`-` if absent)
+  out.push(readUnquoted());
+  if (i >= len) return null;
+  // 3. authuser (`%u`)    — unquoted (`-` if absent)
+  out.push(readUnquoted());
+  if (i >= len) return null;
+  // 4. time (`%t`)        — bracketed `[20/Jun/2012:19:05:12 +0200]`
+  if (line.charCodeAt(i) !== 0x5B /* [ */) return null;
+  const time = readBracketed();
+  if (time === null) return null;
+  out.push(time);
+  if (i >= len) return null;
+  // 5. request (`\"%r\"`) — quoted
+  if (line.charCodeAt(i) !== 0x22 /* " */) return null;
+  const request = readQuoted();
+  if (request === null) return null;
+  out.push(request);
+  if (i >= len) return null;
+  // 6. status (`%>s`)     — unquoted
+  out.push(readUnquoted());
+  // 7. bytes (`%b`)       — unquoted (last common-format field)
+  if (i >= len) {
+    // Common Log Format — return 7 cells if we got here cleanly.
+    // (`%b` was consumed by readUnquoted on field 6 above? No — it
+    // wasn't, fall through.) But the standard ordering is fields
+    // 6 = status, 7 = bytes. If `i` ran out *before* field 7, the
+    // line is malformed.
+    return null;
+  }
+  out.push(readUnquoted());
+  // CLF Common stops here. CLF Combined adds two more quoted fields.
+  if (i >= len) return out;                // 7 cells — Common
+  // 8. referer            — quoted
+  if (line.charCodeAt(i) === 0x22 /* " */) {
+    const referer = readQuoted();
+    if (referer === null) return out;      // unterminated tail — keep 7
+    out.push(referer);
+  } else {
+    return out;                            // unexpected — keep 7
+  }
+  if (i >= len) return out;                // some logs omit user-agent
+  // 9. user-agent         — quoted
+  if (line.charCodeAt(i) === 0x22 /* " */) {
+    const ua = readQuoted();
+    if (ua === null) return out;
+    out.push(ua);
+  }
+  return out;                              // 9 cells — Combined
+}
+
+// Canonical Apache CLF column names. The Combined Log Format (Apache
+// `LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-agent}i\""`)
+// emits 9 fields; the older Common Log Format (no referer / UA) emits 7.
+// Anything else falls back to synthetic `col N` names. The `time`
+// column lands at index 3 — `_tlAutoDetectTimestampCol` will pick it
+// up automatically thanks to the header hint regex (`time|timestamp|...`).
+const _TL_CLF_COMBINED_COLS = ['ip', 'ident', 'auth', 'time', 'request',
+                               'status', 'bytes', 'referer', 'user_agent'];
+const _TL_CLF_COMMON_COLS   = ['ip', 'ident', 'auth', 'time', 'request',
+                               'status', 'bytes'];
+function _tlCanonicalLogColumns(width) {
+  if (width === 9) return _TL_CLF_COMBINED_COLS.slice();
+  if (width === 7) return _TL_CLF_COMMON_COLS.slice();
+  const cols = [];
+  for (let i = 0; i < width; i++) cols.push(`col ${i + 1}`);
+  return cols;
+}
 
 
 // Bucket presets.
@@ -193,6 +377,27 @@ function _tlParseTimestamp(s) {
   if (/^\d{4}$/.test(str)) {
     const y = +str;
     if (y >= 1000 && y <= 9999) return Date.UTC(y, 0, 1);
+  }
+  // Apache / Nginx CLF: `20/Jun/2012:19:05:12 +0200` (with optional
+  // surrounding `[ ]`). The `.log` parse path runs `_tlMergeClfCells`
+  // so the bracketed token reaches us as a single cell; the optional
+  // brackets here also let extensionless drops where the merge didn't
+  // fire (or partial logs without a timezone) still parse.
+  const clf = /^\[?(\d{1,2})\/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\/(\d{4}):(\d{2}):(\d{2}):(\d{2})(?:\s+([+-]\d{4}))?\]?$/i.exec(str);
+  if (clf) {
+    const CLF_M = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,
+                    jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+    const d  = +clf[1], mo = CLF_M[clf[2].toLowerCase()], y = +clf[3];
+    const hh = +clf[4], mm = +clf[5], ss = +clf[6];
+    let clfMs = Date.UTC(y, mo, d, hh, mm, ss);
+    if (clf[7]) {
+      // Timezone offset is the wallclock displacement from UTC; subtract
+      // it to recover the absolute UTC instant the wallclock represents.
+      const sign   = clf[7][0] === '-' ? 1 : -1;
+      const offMin = (+clf[7].slice(1, 3)) * 60 + (+clf[7].slice(3, 5));
+      clfMs += sign * offMin * 60_000;
+    }
+    return clfMs;
   }
   // Fallback: anything Date.parse() will take (locale / RFC 2822 / etc.)
   const ms = Date.parse(str);

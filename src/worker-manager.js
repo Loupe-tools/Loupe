@@ -527,14 +527,23 @@ window.WorkerManager = (function () {
    *  @param {ArrayBuffer} buffer  bytes to parse; will be transferred
    *  @param {string}      kind    'csv' | 'evtx' | 'sqlite'
    *  @param {object}      [opts]  kind-specific options:
-   *                                 csv: { explicitDelim?: ','|';'|'\t'|'|' } */
+   *                                 csv: { explicitDelim?: ','|';'|'\t'|'|'|' ',
+   *                                        kindHint?: 'log' | null }
+   *
+   *  `kindHint: 'log'` is passed by the Timeline router for `.log` drops
+   *  (and extensionless drops the CLF sniffer matched). It activates
+   *  Apache / Nginx Common Log Format handling in the worker's CSV path
+   *  — the bracketed-date pair is re-merged, the first row is treated
+   *  as data, and canonical column names are applied. */
   function runTimeline(buffer, kind, opts) {
     if (kind !== 'csv' && kind !== 'evtx' && kind !== 'sqlite') {
       return Promise.reject(new Error('runTimeline: unknown kind ' + kind));
     }
     const explicitDelim = (opts && opts.explicitDelim) || undefined;
+    const kindHint = (opts && opts.kindHint) || undefined;
     const payload = { kind, buffer };
     if (explicitDelim) payload.explicitDelim = explicitDelim;
+    if (kindHint)      payload.kindHint = kindHint;
     // `opts.onBatch(msg)` — optional sink for `{event:'rows', batch:[...]}`
     // streaming events from the worker. The CSV path uses this to ship rows
     // back in 50_000-row batches instead of one giant structured-clone

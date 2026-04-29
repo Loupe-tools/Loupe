@@ -117,3 +117,103 @@ function safeRegex(pattern, flags) {
 // keeps the worker bundle small (the real ~3 KB table is dead code in
 // the worker) while preventing ReferenceError.
 const EVTX_EVENT_DESCRIPTIONS = {};
+
+// ── CLF (Common / Combined Log Format) helpers — worker-side ───────────────
+//
+// Mirrors `_tlTokenizeClfLine` and `_tlCanonicalLogColumns` in
+// `src/app/timeline/timeline-helpers.js`. Helpers must live here too
+// because the main-bundle helpers file isn't concatenated into the
+// worker bundle. **Keep in lockstep with the main-bundle copy** — see
+// the canonical implementation (and rationale: backslash-escaped
+// quotes vs RFC4180) in `timeline-helpers.js`.
+function _tlTokenizeClfLine(line) {
+  if (!line) return null;
+  const len = line.length;
+  let i = 0;
+  while (i < len && line.charCodeAt(i) === 0x20) i++;
+  if (i >= len) return null;
+  const out = [];
+  const readUnquoted = () => {
+    const start = i;
+    while (i < len && line.charCodeAt(i) !== 0x20) i++;
+    const tok = line.slice(start, i);
+    while (i < len && line.charCodeAt(i) === 0x20) i++;
+    return tok;
+  };
+  const readBracketed = () => {
+    const start = i;
+    i++;
+    while (i < len && line.charCodeAt(i) !== 0x5D) i++;
+    if (i >= len) return null;
+    i++;
+    const tok = line.slice(start, i);
+    while (i < len && line.charCodeAt(i) === 0x20) i++;
+    return tok;
+  };
+  const readQuoted = () => {
+    i++;
+    let result = '';
+    let runStart = i;
+    while (i < len) {
+      const c = line.charCodeAt(i);
+      if (c === 0x5C && i + 1 < len) {
+        const next = line.charCodeAt(i + 1);
+        if (next === 0x22 || next === 0x5C) {
+          if (i > runStart) result += line.slice(runStart, i);
+          result += String.fromCharCode(next);
+          i += 2;
+          runStart = i;
+          continue;
+        }
+        i += 2;
+        continue;
+      }
+      if (c === 0x22) {
+        if (i > runStart) result += line.slice(runStart, i);
+        i++;
+        while (i < len && line.charCodeAt(i) === 0x20) i++;
+        return result;
+      }
+      i++;
+    }
+    return null;
+  };
+  out.push(readUnquoted()); if (i >= len) return null;
+  out.push(readUnquoted()); if (i >= len) return null;
+  out.push(readUnquoted()); if (i >= len) return null;
+  if (line.charCodeAt(i) !== 0x5B) return null;
+  const time = readBracketed(); if (time === null) return null;
+  out.push(time); if (i >= len) return null;
+  if (line.charCodeAt(i) !== 0x22) return null;
+  const request = readQuoted(); if (request === null) return null;
+  out.push(request); if (i >= len) return null;
+  out.push(readUnquoted());
+  if (i >= len) return null;
+  out.push(readUnquoted());
+  if (i >= len) return out;                   // 7 — Common
+  if (line.charCodeAt(i) === 0x22) {
+    const referer = readQuoted();
+    if (referer === null) return out;
+    out.push(referer);
+  } else {
+    return out;
+  }
+  if (i >= len) return out;
+  if (line.charCodeAt(i) === 0x22) {
+    const ua = readQuoted();
+    if (ua === null) return out;
+    out.push(ua);
+  }
+  return out;                                 // 9 — Combined
+}
+const _TL_CLF_COMBINED_COLS = ['ip', 'ident', 'auth', 'time', 'request',
+                               'status', 'bytes', 'referer', 'user_agent'];
+const _TL_CLF_COMMON_COLS   = ['ip', 'ident', 'auth', 'time', 'request',
+                               'status', 'bytes'];
+function _tlCanonicalLogColumns(width) {
+  if (width === 9) return _TL_CLF_COMBINED_COLS.slice();
+  if (width === 7) return _TL_CLF_COMMON_COLS.slice();
+  const cols = [];
+  for (let i = 0; i < width; i++) cols.push(`col ${i + 1}`);
+  return cols;
+}

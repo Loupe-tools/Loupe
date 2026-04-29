@@ -80,4 +80,15 @@ test.describe('forensics / Timeline-routed renderers', () => {
   test('JSON-shaped CSV loads via Timeline', async () => {
     await assertTimelineLoaded('examples/forensics/json-example.csv');
   });
+
+  test('Apache CLF .log loads via Timeline', async () => {
+    // `.log` is space-delimited Apache / Nginx Common (or Combined)
+    // Log Format. The Timeline router passes `kindHint: 'log'` so the
+    // CSV worker uses a dedicated CLF tokeniser (handles backslash-
+    // escaped quotes that RFC4180 mishandles), then synthesises
+    // canonical column names (`ip ident auth time request status
+    // bytes referer user_agent`). See `_tlTokenizeClfLine` in
+    // `src/app/timeline/timeline-helpers.js`.
+    await assertTimelineLoaded('examples/forensics/access-example.log');
+  });
 });
