@@ -214,11 +214,42 @@ Object.assign(TimelineView.prototype, {
         && Number.isFinite(this._app._fileMeta.size))
         ? this._app._fileMeta.size : 0;
       const HUGE_FILE_CAP = 12;
-      const ranked = (fileSize >= RENDER_LIMITS.LARGE_FILE_THRESHOLD)
+      const capped = (fileSize >= RENDER_LIMITS.LARGE_FILE_THRESHOLD)
         ? eligible.slice(0, HUGE_FILE_CAP)
         : eligible;
+
+      // Group proposals by `sourceCol` (stable — preserves rank order
+      // within each group). Every proposal touches its source column
+      // once per row via `_cellAt` → `RowStore._decodeAsciiSlice`; on a
+      // 100k-row CSV with ~30 cols this single pass dominates the apply
+      // budget (it shows up as the `_decodeAsciiSlice` hotspot in the
+      // tab profile). Grouping lets `applyStep` decode each source
+      // column ONCE per group and reuse the materialised `string[]`
+      // across every proposal targeting that column.
+      //
+      // `Map` iteration is insertion-ordered, so the first proposal
+      // (highest match-pct globally) keeps its leading slot and the
+      // analyst sees the strongest column appear first — the user-
+      // visible cascade ordering survives the regrouping.
+      const bySource = new Map();
+      for (const p of capped) {
+        let bucket = bySource.get(p.sourceCol);
+        if (!bucket) { bucket = []; bySource.set(p.sourceCol, bucket); }
+        bucket.push(p);
+      }
+      const ranked = [];
+      for (const bucket of bySource.values()) {
+        for (const p of bucket) ranked.push(p);
+      }
       let added = 0;
       let idx = 0;
+      // Cache of decoded source columns. Populated lazily on the first
+      // proposal of each `sourceCol` group and dropped at the group
+      // boundary so we never hold onto more than one materialised
+      // column at a time (each is `rowCount` strings — keeping all 30
+      // would balloon memory on big files for no win).
+      let cachedSrcCol = -1;
+      let cachedSrcValues = null;
 
       const applyStep = () => {
         this._autoExtractIdleHandle = null;
@@ -283,8 +314,20 @@ Object.assign(TimelineView.prototype, {
 
         const p = ranked[idx++];
         const before = this._extractedCols.length;
+        // Materialise the source column on the first proposal of each
+        // group, then reuse for every subsequent proposal in the
+        // group. The lookahead at the group boundary (below) drops the
+        // cache so we never carry it across to a new sourceCol — keeps
+        // peak memory bounded to one extra `rowCount`-sized array.
+        if (cachedSrcCol !== p.sourceCol) {
+          cachedSrcCol = p.sourceCol;
+          const n = this.store.rowCount;
+          const buf = new Array(n);
+          for (let i = 0; i < n; i++) buf[i] = this._cellAt(i, p.sourceCol);
+          cachedSrcValues = buf;
+        }
         try {
-          this._applyAutoProposal(p);
+          this._applyAutoProposal(p, cachedSrcValues);
         } catch (e) {
           // Skip on error, keep going. Surface to console only when
           // the analyst has set `app.debug = true` so a regression in
@@ -317,6 +360,17 @@ Object.assign(TimelineView.prototype, {
           }
         }
 
+        // Drop the source-column cache once the next proposal targets
+        // a different column. `idx` has already been advanced, so
+        // `ranked[idx]` is the next proposal (if any). Releasing the
+        // reference keeps memory bounded to one cached column at a
+        // time even on grids where the apply pump runs unbounded.
+        const next = ranked[idx];
+        if (!next || next.sourceCol !== cachedSrcCol) {
+          cachedSrcValues = null;
+          cachedSrcCol = -1;
+        }
+
         // Yield between proposals — each `_applyAutoProposal` is itself
         // an O(rows) hot loop and will register as a LongTask on big
         // files, but the browser gets a paint frame and idle-callback
@@ -346,10 +400,17 @@ Object.assign(TimelineView.prototype, {
   // Dedup is handled inside `_addJsonExtractedColNoRender` /
   // `_addRegexExtractNoRender` via `_findDuplicateExtractedCol`, so
   // re-running this for an already-extracted proposal is a silent no-op.
-  _applyAutoProposal(p) {
+  _applyAutoProposal(p, srcValues) {
+    // Optional `srcValues` is a pre-decoded `string[]` of the proposal's
+    // source column (length === store.rowCount). Threaded through from
+    // `applyStep`, where the apply pump groups proposals by `sourceCol`
+    // so a single decode pass amortises across every proposal in the
+    // group. Helpers fall back to `_cellAt` when undefined / mismatched
+    // — preserves the contract for direct callers (test fixtures,
+    // future invocations).
     if (!p) return;
     if (p.kind === 'json-url' || p.kind === 'json-host' || p.kind === 'json-leaf') {
-      this._addJsonExtractedColNoRender(p.sourceCol, p.path, p.proposedName, { autoKind: p.kind });
+      this._addJsonExtractedColNoRender(p.sourceCol, p.path, p.proposedName, { autoKind: p.kind, srcValues });
     } else if (p.kind === 'text-url' || p.kind === 'text-host') {
       this._addRegexExtractNoRender({
         name: p.proposedName,
@@ -358,6 +419,7 @@ Object.assign(TimelineView.prototype, {
         flags: 'i',
         group: (p.kind === 'text-host') ? 1 : 0,
         kind: 'auto',
+        srcValues,
       });
     } else if (p.kind === 'kv-field') {
       const esc = String(p.fieldName || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -370,6 +432,7 @@ Object.assign(TimelineView.prototype, {
         group: 1,
         kind: 'auto',
         trim: true,
+        srcValues,
       });
     } else if (p.kind === 'url-part') {
       this._addRegexExtractNoRender({
@@ -379,6 +442,7 @@ Object.assign(TimelineView.prototype, {
         flags: '',
         group: p.group,
         kind: 'auto',
+        srcValues,
       });
     }
   },

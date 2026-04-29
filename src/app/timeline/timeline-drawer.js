@@ -79,9 +79,20 @@ Object.assign(TimelineView.prototype, {
     if (this._findDuplicateExtractedCol({ kind: 'json', sourceCol: colIdx, path }) >= 0) return;
     const name = this._uniqueColName(label || _tlJsonPathLabel(path));
     const values = new Array(this.store.rowCount);
+    // Optional pre-decoded source-column cache. The auto-extract apply
+    // pump groups proposals by `sourceCol` and decodes the column once,
+    // then passes the resulting `string[]` through `opts.srcValues` so
+    // every proposal in the group shares the same materialised view of
+    // the column instead of hammering `_cellAt` (which delegates into
+    // `RowStore._decodeAsciiSlice` — the dominant cost on 100k-row
+    // CSVs). The fallback path (no `srcValues`) is the legacy behaviour
+    // used by every non-pump caller (Extract dialog click, JSON-tree
+    // pick, regex tab, persisted-regex replay).
+    const srcValues = (opts && Array.isArray(opts.srcValues)
+      && opts.srcValues.length === this.store.rowCount) ? opts.srcValues : null;
 
     for (let i = 0; i < this.store.rowCount; i++) {
-      const raw = this._cellAt(i, colIdx);
+      const raw = srcValues ? srcValues[i] : this._cellAt(i, colIdx);
       if (!raw) { values[i] = ''; continue; }
       let parsed = this._jsonCache.get(i);
       if (parsed === undefined) {
@@ -137,8 +148,16 @@ Object.assign(TimelineView.prototype, {
     // authored Regex-tab extractors keep their raw capture bytes.
     const doTrim = !!spec.trim;
     const values = new Array(this.store.rowCount);
+    // Optional pre-decoded source-column cache (mirrors
+    // `_addJsonExtractedColNoRender`). Populated by the auto-extract
+    // apply pump for proposals that share a `sourceCol`, sidestepping
+    // ~rowCount calls to `_cellAt` per proposal. Manual regex extracts,
+    // persisted-regex replay, and dialog interactions never set this
+    // and stay on the legacy `_cellAt` path.
+    const srcValues = (Array.isArray(spec.srcValues)
+      && spec.srcValues.length === this.store.rowCount) ? spec.srcValues : null;
     for (let i = 0; i < this.store.rowCount; i++) {
-      const v = this._cellAt(i, col);
+      const v = srcValues ? srcValues[i] : this._cellAt(i, col);
       if (!v) { values[i] = ''; continue; }
       // Reset lastIndex if global flag used
       if (re.global) re.lastIndex = 0;
