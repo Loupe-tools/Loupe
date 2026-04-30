@@ -30,14 +30,14 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **Office (legacy)** | `.doc` `.xls` `.ppt` |
 | **OpenDocument** | `.odt` (text) · `.odp` (presentation) |
 | **RTF** | `.rtf` — text extraction + OLE/exploit analysis |
-| **Document attack vectors** | `.iqy` (Internet Query — phishing-pulled URL → worksheet) · `.slk` (SYLK — DDE-injection / formula attack vector) — Excel-readable script-like formats abused as macro-warning bypass |
+| **Document attack vectors** | `.iqy` (Internet Query — phishing-pulled URL → worksheet) · `.slk` (SYLK — DDE-injection / formula attack vector) · `.xsl` `.xslt` (XSLT — T1220 SquiblyTwo signed-binary proxy execution via wmic.exe / msxsl.exe) — Excel-readable script-like formats abused as macro-warning bypass |
 | **PDF** | `.pdf` |
 | **Email** | `.eml` `.msg` |
 | **HTML** | `.html` `.htm` `.mht` `.mhtml` `.xhtml` — sandboxed preview + source view |
 | **Archives** | `.zip` `.gz` `.gzip` `.tar` `.tar.gz` / `.tgz` `.rar` `.7z` `.cab` |
 | **Disk images** | `.iso` `.img` — ISO 9660 filesystem listing; click any entry to extract and re-analyse |
 | **OneNote** | `.one` — embedded object extraction + phishing detection |
-| **Windows** | `.lnk` · `.hta` · `.url` `.webloc` `.website` · `.reg` · `.inf` · `.sct` · `.msi` · PE executables (`.exe` `.dll` `.sys` `.scr` `.cpl` `.ocx` `.drv` `.com`) · `.xll` (Excel add-in DLL) · `.application` `.manifest` (ClickOnce) · `.msix` `.msixbundle` `.appx` `.appxbundle` · `.appinstaller` |
+| **Windows** | `.lnk` · `.hta` · `.url` `.webloc` `.website` · `.scf` (Explorer command — T1187 forced authentication) · `.library-ms` `.searchConnector-ms` (Library / Search Connector — T1187) · `.mof` `.mfl` (WMI schema — T1546.003 Event Subscription persistence) · `.reg` · `.inf` · `.sct` · `.msi` · PE executables (`.exe` `.dll` `.sys` `.scr` `.cpl` `.ocx` `.drv` `.com`) · `.xll` (Excel add-in DLL) · `.application` `.manifest` (ClickOnce) · `.msix` `.msixbundle` `.appx` `.appxbundle` · `.appinstaller` |
 | **Browser extensions** | `.crx` (Chrome / Chromium / Edge) · `.xpi` (Firefox / Thunderbird) |
 | **npm packages** | `.tgz` (npm-packed tarball) · `package.json` · `package-lock.json` / `npm-shrinkwrap.json` |
 | **Linux / IoT** | ELF binaries — `.so`, `.o`, `.elf`, extensionless executables (ELF32 / ELF64, LE/BE) |
@@ -76,10 +76,13 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 
 | Capability | What you get |
 |---|---|
-| **Classic IOCs** | URLs, email addresses, IPs, file paths, UNC paths, registry keys, command lines, hostnames — pulled from document content, VBA source, binary strings, decoded payloads, and format-specific metadata. |
+| **Classic IOCs** | URLs, email addresses, IPv4 + IPv6 addresses (compressed, full, and bracketed-with-port; reserved ranges dropped), file paths, UNC paths, registry keys, command lines, hostnames — pulled from document content, VBA source, binary strings, decoded payloads, and format-specific metadata. |
 | **Defanged-indicator refanging** | `hxxp://`, `1[.]2[.]3[.]4`, and similar obfuscations are refanged automatically before extraction. |
 | **Registrable-domain pivots** | Every extracted URL auto-emits a sibling registrable domain (via the public-suffix list) so you get a domain-level pivot without double-entering the URL. |
 | **Punycode & IDN homograph flags** | URL hosts in punycode (`xn--`) or mixed-script IDN form emit a sibling Hostname IOC with the decoded Unicode label so homograph lookalikes surface in plain sight. |
+| **Trojan Source / bidi unicode flags** | Flags Unicode bidi controls (CVE-2021-42574), zero-width characters splitting identifiers, and mixed-script Latin / Cyrillic / Greek identifiers — each emits a medium Pattern row with the offending codepoint. |
+| **Crypto / dark-web / IPFS addresses** | Detects BTC (legacy P2PKH/P2SH and bech32 / taproot), ETH and other EVM-chain addresses, Monero (standard + integrated), Tor onion v3 hostnames, and IPFS CIDv0 / CIDv1 — each emits a medium Crypto Address IOC with the variant in the note for STIX / MISP / CSV pivot. |
+| **Exposed credentials** | Flags AWS access key IDs (AKIA / ASIA / AGPA / AROA / AIDA), GitHub tokens (`ghp_` / `gho_` / `ghu_` / `ghs_` / `ghr_` / `github_pat_`), Slack bot/app/user tokens, Stripe live secret + restricted keys, Google API keys, eight PEM private-key armours (RSA / DSA / EC / DH / OPENSSH / PGP / PRIVATE / ENCRYPTED), and JWTs — each emits a high-severity Secret IOC (JWT downgraded to medium) which escalates `findings.risk` automatically. |
 | **Abuse-TLD & dynamic-DNS flags** | URLs pointing at dynamic-DNS suffixes and high-abuse TLDs (`.tk`, `.gq`, `.ml`, `.cf`, `.xyz`, `.top`, DuckDNS, no-ip, ngrok, trycloudflare, …) auto-emit a Pattern row with the suffix. |
 | **GUID pivots** | LNK DROID file/volume IDs, MSI ProductCodes, PDF XMP DocumentID / InstanceID, Mach-O LC_UUID. |
 | **Fingerprint pivots** | X.509 SHA-1 / SHA-256 thumbprints and OpenPGP key fingerprints / key IDs. |
@@ -92,15 +95,19 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | Capability | What you get |
 |---|---|
 | **VBA / macro analysis** | Extracts and syntax-highlights VBA source; flags auto-execute entry points (`AutoOpen`, `Workbook_Open`, `Shell`, etc.). Download decoded VBA as `.txt`, or the raw `vbaProject.bin` for offline analysis with olevba / oledump. |
+| **VBA stomping (T1564.007)** | Heuristic flag when a VBA project carries compiled P-code (`_VBA_PROJECT`) but no source-module markers (`Attribute VB_`) — covers both legacy `.doc`/`.ppt` and OOXML `.docm`/`.xlsm`/`.pptm`. |
 | **OOXML relationship scan** | Deep walk of `_rels/*.rels` — surfaces external targets, remote-template injection (`attachedTemplate`), and embedded `oleObject` references that classic metadata extraction misses. |
 | **OOXML DDE / field code analysis** | Field-code walker flags `DDEAUTO`, `DDE`, `INCLUDETEXT`, `INCLUDEPICTURE`, `IMPORT`, `QUOTE` in `w:instrText` / `w:fldSimple`; extracts URLs from field codes. |
 | **OOXML custom property scanning** | Iterates `docProps/custom.xml` property values for stashed URLs, IP addresses, and Base64 blobs — a common second-stage hiding spot scanners miss. |
 | **Excel formula scan** | Per-cell formula walker flags `WEBSERVICE`, `IMPORTDATA`, `CALL`, `REGISTER`, `EXEC`, `HYPERLINK`, `RTD`, `DDE` — catches formula-only droppers in pure `.xlsx` without needing macros. |
+| **Excel external connections** | Parses `xl/connections.xml` for OLEDB / ODBC / web / text connections; surfaces remote `odcFile` references, web-query URLs, and `Data Source=` URLs from `connectionString`. `refreshOnLoad="1"` escalates one severity rank — open-and-execute bypass of the macro warning. |
+| **Power Query DataMashup** | Detects M-language scripts embedded in `xl/customXml/item*.xml`; extracts `Web.Contents` / `File.Contents` URL and UNC references from the envelope. M code runs on workbook refresh without macro consent. |
 | **Hidden sheets & Auto_Open names** | Surfaces `hidden` / `veryHidden` sheet states and `Auto_Open` / `Workbook_Open` / `Auto_Close` defined names — the classic Excel 4.0 macro trigger that still works today. |
 | **PDF detection** | Flags `/JavaScript`, `/OpenAction`, `/Launch`, `/EmbeddedFile`, URIs, XFA forms, XMP metadata, and other risky operators via YARA. Surfaces `Movie` / `Sound` / `Screen` / `FileAttachment` / `RichMedia` / `3D` annotations and restrictive permission flags. |
 | **PDF AcroForm credential sniff** | Form-field names matching `pass` / `pwd` / `ssn` / `cvv` / credential regex push a medium Pattern so weaponised pre-filled forms can't hide as benign templates. |
 | **PDF extraction** | Pulls JavaScript bodies from `/JS` actions (literal, hex, and indirect-stream with `/FlateDecode`) with per-script trigger, size, SHA-256, and suspicious-API hints; extracts `/EmbeddedFile` attachments (recursively analysable in-place); extracts XFA form packets. |
 | **EML / email analysis** | Full RFC 5322 / MIME parser — headers, multipart body, attachments, SPF / DKIM / DMARC auth results, tracking pixel detection. |
+| **Phishing pretext detection** | EML and MSG flag display-name / sender-domain mismatch against a curated brand list (PayPal, Microsoft, Apple, banks, shippers, …) — catches the "PayPal Support &lt;attacker@evil.tld&gt;" pattern; also fires when the display-name embeds a domain literal that disagrees with the actual sender domain. |
 | **OneNote analysis** | FileDataStoreObject parsing with MIME-sniffed embedded blobs, phishing-lure detection. |
 | **RTF analysis** | Text extraction plus OLE-object and exploit-pattern detection. |
 
@@ -124,6 +131,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **Security features** | PE: ASLR, DEP, CFG, SEH, Authenticode. ELF: RELRO, Stack Canary, NX, PIE, FORTIFY_SOURCE. Mach-O: PIE, NX, Stack Canary, ARC, Hardened Runtime, Library Validation, Encrypted. |
 | **MITRE ATT&CK rollup** | Capabilities, anomalies, and signer checks that carry a technique ID are grouped by tactic (Execution → Persistence → Privilege Escalation → Defense Evasion → Credential Access → …) in a dedicated sidebar section and in the Summarize output, with clickable `attack.mitre.org` links per technique. |
 | **Capability tagging** | Behavioural clusters flagged across PE / ELF / Mach-O with MITRE ATT&CK IDs: process injection, reverse shell, keylogging, credential theft, persistence, anti-debug, crypto/ransomware, network C2. |
+| **LOLBAS → ATT&CK** | Bundled lookup for ~30 high-signal Living-Off-The-Land binaries (mshta, rundll32, regsvr32, certutil, msbuild, wmic, msxsl, hh, msdt, …) returning the canonical T1218.* / T1059.* / T1105 / T1220 / T1127 sub-techniques for any renderer that surfaces a Windows command-line. |
 | **YARA coverage** | Rules for packers and malware toolkits across the three formats: Cobalt Strike, Mimikatz, Metasploit (PE); Mirai, cryptominers, reverse shells, LD_PRELOAD hijacking, rootkits, container escapes, packers (ELF); Atomic / AMOS stealers, RATs, reverse shells, persistence, anti-debug / VM detection (Mach-O). |
 | **TLS callbacks + entry-point anomalies (PE)** | Lists every TLS callback with clickable hex-dump drill-down; flags anomalous entry points (orphan, W+X section). Callbacks paired with anti-debug imports escalate severity (T1546.009). |
 | **Resource drill-down (PE)** | Lists every PE resource leaf with size and magic sniff. Clickable entries open in a fresh analysis. Embedded PE / ELF / Mach-O payloads flag as T1027.009 (high); embedded archives flag as medium; large high-entropy blobs flag as T1027.002. |
@@ -192,7 +200,7 @@ Accepts three input shapes — an `npm pack` gzip tarball (`.tgz`), a bare `pack
 
 Click any entry inside a ZIP / TAR / ISO / MSI / PKG / CRX / XPI / JAR / CAB listing to open and re-analyse it with Back navigation. ZipCrypto-encrypted entries get a lock icon; unsupported formats fall back to a hex dump but still feed YARA and IOC scanning.
 
-ZIP listings additionally surface per-entry risk signals classic archive viewers hide: archive-level and per-entry `.comment` fields, Unix permission bits (suid / sgid / world-writable = medium), zip-bomb compression ratios (>1000× = high), and stale / future mtimes (< 1995 or > 1 year ahead = medium).
+ZIP listings additionally surface per-entry risk signals classic archive viewers hide: archive-level and per-entry `.comment` fields, Unix permission bits (suid / sgid / world-writable = medium), zip-bomb compression ratios (>1000× = high), stale / future mtimes (< 1995 or > 1 year ahead = medium), and Zip Slip / Tar Slip traversal entries (`..` segments, absolute prefixes, or symlink targets escaping the archive root = high, CWE-22).
 
 | Format | What you get |
 |---|---|
@@ -348,7 +356,7 @@ The size is user-configurable in ⚙ Settings — **Default** (~16 K tokens / 64
 | `Email` | `email-addr` | `[email-addr:value = '…']` |
 | `Hash` (MD5 / SHA-1 / SHA-256) | `file` | `[file:hashes.'MD5' = '…']` / `SHA-1` / `SHA-256` |
 | `File Path` / `UNC Path` | `file` | `[file:name = '<basename>']` |
-| Other (command lines, registry keys, usernames, MAC) | — | omitted from STIX (still included in CSV / JSON / MISP as text) |
+| Other (command lines, registry keys, usernames, MAC, `Crypto Address`, `Secret`) | — | omitted from STIX (still included in CSV / JSON / MISP) |
 
 ### MISP IOC → attribute mapping
 
@@ -360,6 +368,9 @@ The size is user-configurable in ⚙ Settings — **Default** (~16 K tokens / 64
 | `Email` | `email-src` | Payload delivery | true |
 | `Hash` (md5 / sha1 / sha256) | `md5` / `sha1` / `sha256` | Payload delivery | true |
 | `File Path` / `UNC Path` | `filename` | Payload delivery | false |
+| `Crypto Address` (BTC / XMR) | `btc` / `xmr` | Financial fraud | true |
+| `Crypto Address` (ETH / onion / IPFS) | `text` | Other | false |
+| `Secret` (AWS / GitHub / Stripe / Google / PEM / JWT / Slack) | `text` | Payload delivery | false |
 | YARA rule name | `yara` | Payload delivery | false |
 | Any other type | `text` | Other | false |
 
