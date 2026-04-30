@@ -829,7 +829,7 @@ Object.assign(TimelineView.prototype, {
           // visible rows will get the class re-applied on the next
           // `renderRows()` via the `_pendingCtrlSelect.values` check.
           for (const val of visibleVals) {
-            const liveRow = sizer.querySelector(`.tl-col-row[data-value="${(window.CSS && CSS.escape) ? CSS.escape(String(val)) : String(val).replace(/"/g, '\\"')}"]`);
+            const liveRow = sizer.querySelector(`.tl-col-row[data-value="${(window.CSS && CSS.escape) ? CSS.escape(String(val)) : String(val).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
             const stand = liveRow || document.createElement('div');
             this._accumulateCtrlSelect(c, val, stand);
           }
