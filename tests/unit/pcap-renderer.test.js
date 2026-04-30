@@ -520,6 +520,37 @@ test('pcapng: bad byte-order magic → parse error', () => {
   assert.match(parsed.error, /byte-order/);
 });
 
+test('pcapng: hostile non-packet block padding bounded by MAX_PCAPNG_BLOCKS', () => {
+  // SHB + N minimal "unknown" 12-byte blocks (type=0xff, body-less).
+  // Without the block-walk cap a hostile file padded with billions of
+  // zero-payload non-packet blocks could spin past MAX_PACKETS — the
+  // packet counter never advances on these blocks. Test that the cap
+  // fires by lowering it to something small.
+  const origCap = PcapRenderer.MAX_PCAPNG_BLOCKS;
+  PcapRenderer.MAX_PCAPNG_BLOCKS = 32;
+  try {
+    const shb = [
+      0x0a, 0x0d, 0x0d, 0x0a,
+      ...u32le(28),
+      0x4d, 0x3c, 0x2b, 0x1a,
+      0x01, 0x00, 0x00, 0x00,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      ...u32le(28),
+    ];
+    // Each padding block: type=0x000000ff, length=12, trailer=12.
+    const filler = [];
+    const ONE = [0xff, 0x00, 0x00, 0x00, ...u32le(12), ...u32le(12)];
+    for (let i = 0; i < 200; i++) filler.push(...ONE);
+    const bytes = new Uint8Array([...shb, ...filler]);
+    const parsed = PcapRenderer._parse(bytes);
+    assert.equal(parsed.kind, 'pcapng');
+    assert.equal(parsed.truncated, true);
+    assert.match(parsed.error, /block walk capped/);
+  } finally {
+    PcapRenderer.MAX_PCAPNG_BLOCKS = origCap;
+  }
+});
+
 // ── analyzeForSecurity ────────────────────────────────────────────────────
 
 test('analyze: empty PCAP → low risk + format banner only', () => {

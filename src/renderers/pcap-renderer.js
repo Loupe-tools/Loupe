@@ -73,6 +73,15 @@ class PcapRenderer {
   // JIT. A hostile billion-packet file is bounded at 50k iterations.
   static MAX_PACKETS = 50000;
 
+  // PCAPNG-only iteration cap. The PCAPNG walk visits every block
+  // (SHB / IDB / EPB / SPB / NRB / ISB / DSB / custom), but we only
+  // *count* EPB/SPB toward MAX_PACKETS. A hostile file padded with
+  // billions of zero-length NRB blocks could otherwise spin past the
+  // packet cap. We bound the block walk at 4× MAX_PACKETS — leaves
+  // plenty of headroom for legitimate decorator blocks while killing
+  // the pathological case.
+  static MAX_PCAPNG_BLOCKS = 200000;
+
   // Per-packet incl_len sanity ceiling. Real-world snaplen is ~65535
   // (jumbo frames at most); anything wildly larger means the file is
   // corrupt or the byte-order detection got wrong. 262144 = 256 KiB
@@ -419,11 +428,18 @@ class PcapRenderer {
 
     let p = 0;
     let n = 0;
+    let blocks = 0;
     while (p + 8 <= bytes.length) {
       if (n >= PcapRenderer.MAX_PACKETS) {
         result.truncated = true;
         break;
       }
+      if (blocks >= PcapRenderer.MAX_PCAPNG_BLOCKS) {
+        result.truncated = true;
+        result.error = result.error || `PCAPNG block walk capped at ${PcapRenderer.MAX_PCAPNG_BLOCKS}`;
+        break;
+      }
+      blocks += 1;
       const blockType = dv.getUint32(p, le);
       const blockLen = dv.getUint32(p + 4, le);
       if (blockLen < 12 || (blockLen & 3) !== 0 || p + blockLen > bytes.length) {
