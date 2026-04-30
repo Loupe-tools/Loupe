@@ -1251,6 +1251,37 @@ class ZipRenderer {
       else if (w.sev === 'medium' && f.risk !== 'high') escalateRisk(f, 'medium');
     }
 
+    // ── Per-entry path-traversal IOCs (Zip Slip / Tar Slip) ────────────────
+    // Aggregate Zip-Slip warning is emitted by `_checkWarnings` for the
+    // sidebar summary; here we surface every offending entry as its own
+    // IOC.FILE_PATH so an analyst can pivot/click each one. CWE-22 class;
+    // tracked under MITRE T1140 (deobfuscate/decode files into a path the
+    // archive author chose, not the analyst). Capped at 40 to mirror the
+    // forensic-surface caps elsewhere in this renderer.
+    const traversalEntries = ZipRenderer._findTraversalEntries(entries);
+    if (traversalEntries.length) {
+      const cap = 40;
+      for (const t of traversalEntries.slice(0, cap)) {
+        const note = t.kind === 'symlink-traversal'
+          ? `tar symlink target escapes archive root → ${t.target}`
+          : (t.kind === 'absolute-path' ? 'absolute path inside archive' : 'parent-dir traversal in entry name');
+        f.externalRefs.push({
+          type: IOC.FILE_PATH,
+          url: t.path,
+          severity: 'high',
+          note: `Zip Slip — ${note} (CWE-22)`,
+        });
+      }
+      if (traversalEntries.length > cap) {
+        f.externalRefs.push({
+          type: IOC.INFO,
+          url: `+${traversalEntries.length - cap} more path-traversal entry/entries truncated`,
+          severity: 'info',
+        });
+      }
+      escalateRisk(f, 'high');
+    }
+
     // Count dangerous files
     const dangerous = entries.filter(e => !e.dir && ZipRenderer.EXEC_EXTS.has((e.path || '').split('.').pop().toLowerCase()));
     if (dangerous.length) {
@@ -1280,6 +1311,52 @@ class ZipRenderer {
     }
 
     return f;
+  }
+
+  // ── Path-traversal classifier ──────────────────────────────────────────
+  // Returns `[ { path, kind, target? }, … ]` for every entry whose path
+  // (or, for tar entries, symlink target) escapes the archive root.
+  //
+  //   kind:
+  //     'parent-traversal'   path contains a literal `..` segment after
+  //                          slash-normalisation (e.g. `../etc/passwd`,
+  //                          `foo/../../bar`, `..\\..\\evil`)
+  //     'absolute-path'      path begins with `/`, `\`, `\\` (UNC), or a
+  //                          drive-letter prefix (`C:\…`)
+  //     'symlink-traversal'  tar entry whose `linkName` is itself an
+  //                          absolute path or contains a `..` segment
+  //
+  // Static so `_checkWarnings` and `_analyzeArchiveEntries` see exactly
+  // the same set of offenders.
+  static _findTraversalEntries(entries) {
+    const hits = [];
+    for (const e of entries || []) {
+      const rawPath = e.path || e.name || '';
+      const p = rawPath.replace(/\\/g, '/');
+      // Absolute paths — Unix, UNC, or drive-letter prefixed.
+      if (rawPath.startsWith('/') || rawPath.startsWith('\\') || /^[A-Za-z]:[\\/]/.test(rawPath)) {
+        hits.push({ path: rawPath, kind: 'absolute-path' });
+        continue;
+      }
+      // Parent-dir segment (avoids matching e.g. `foo..bar.txt`).
+      if (p === '..' || p.startsWith('../') || p.endsWith('/..') || p.includes('/../')) {
+        hits.push({ path: rawPath, kind: 'parent-traversal' });
+        continue;
+      }
+      // Tar symlink targets.
+      const ln = e.linkName;
+      if (ln) {
+        const lnNorm = String(ln).replace(/\\/g, '/');
+        const lnAbs = ln.startsWith('/') || /^[A-Za-z]:[\\/]/.test(ln);
+        const lnEscape = lnAbs
+          || lnNorm === '..' || lnNorm.startsWith('../')
+          || lnNorm.endsWith('/..') || lnNorm.includes('/../');
+        if (lnEscape) {
+          hits.push({ path: rawPath, kind: 'symlink-traversal', target: ln });
+        }
+      }
+    }
+    return hits;
   }
 
   // Return a Set of unique `.app` bundle root paths (e.g. "Foo.app",
@@ -1321,12 +1398,21 @@ class ZipRenderer {
     const htas = files.filter(e => /\.hta$/i.test(e.path || e.name || ''));
     if (htas.length) w.push({ sev: 'high', msg: `⚠ HTA file(s) — can execute arbitrary scripts` });
 
-    // Path traversal detection (Zip Slip vulnerability)
-    const traversal = entries.filter(e => {
-      const p = e.path || e.name || '';
-      return p.includes('../') || p.includes('..\\') || p.startsWith('/') || /^[A-Za-z]:/.test(p);
-    });
-    if (traversal.length) w.push({ sev: 'high', msg: `⚠ Path traversal attempt detected (Zip Slip) — ${traversal.length} entry/entries with suspicious paths` });
+    // Path traversal detection (Zip Slip vulnerability — CWE-22).
+    // Stricter than a substring check: we require a literal `..` *segment*
+    // (so a filename like `foo..bar.txt` doesn't false-positive), an
+    // absolute Unix or Windows path, or a tar symlink whose target itself
+    // escapes the archive root. Per-entry IOCs are emitted by
+    // `_analyzeArchiveEntries` from the same helper.
+    const traversal = ZipRenderer._findTraversalEntries(entries);
+    if (traversal.length) {
+      const samplePaths = traversal.slice(0, 3).map(t => t.path).join(', ');
+      const more = traversal.length > 3 ? ' …' : '';
+      w.push({
+        sev: 'high',
+        msg: `⚠ Zip Slip / Tar Slip — ${traversal.length} entry/entries escape the archive root: ${samplePaths}${more}`,
+      });
+    }
 
     // ── macOS .app bundle detection ────────────────────────────────────────
     // Flag ZIP-wrapped `.app` bundles — the common delivery shape for
