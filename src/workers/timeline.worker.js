@@ -475,6 +475,14 @@ const STRUCTURED_LOG_KINDS = {
     makeTokenizer: () => _tlMakeJsonlTokenizer(),
     label: 'JSONL',
   },
+  cloudtrail: {
+    // Stateful — JSONL with a canonical CloudTrail schema seeded
+    // up front. The router unwraps `{"Records":[...]}` documents
+    // into a JSONL byte stream before dispatch, so this branch
+    // sees one event per line in both code paths.
+    makeTokenizer: () => _tlMakeCloudTrailTokenizer(),
+    label: 'AWS CloudTrail',
+  },
 };
 
 async function _parseCsv(buffer, explicitDelim, kindHint) {

@@ -222,8 +222,9 @@ function _tlCanonicalLogColumns(width) {
 //
 // Mirrors `_tlDecodePri`, `_tlInferYear`, `_tlTokenizeSyslog3164`,
 // `_tlTokenizeSyslog5424`, `_tlMakeJsonlTokenizer`,
-// `_tlMakeZeekTokenizer`, the `_TL_SYSLOG{3164,5424}_COLS` constants,
-// `_TL_JSONL_*` constants, and `_TL_ZEEK_STACK_BY_PATH` in
+// `_tlMakeCloudTrailTokenizer`, `_tlMakeZeekTokenizer`, the
+// `_TL_SYSLOG{3164,5424}_COLS` constants, `_TL_JSONL_*` constants,
+// `_TL_CLOUDTRAIL_CANONICAL_COLS`, and `_TL_ZEEK_STACK_BY_PATH` in
 // `src/app/timeline/timeline-helpers.js`.
 // Helpers must live here too because the main-bundle helpers file isn't
 // concatenated into the worker bundle. **Keep in lockstep with the
@@ -485,6 +486,40 @@ function _tlMakeJsonlTokenizer() {
   };
   const getFormatLabel = () => 'JSONL';
   return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}
+
+// ── AWS CloudTrail mirror ──
+// Canonical implementation lives in
+// `src/app/timeline/timeline-helpers.js::_tlMakeCloudTrailTokenizer`.
+// Cross-realm parity is enforced by
+// `tests/unit/timeline-cloudtrail.test.js`.
+const _TL_CLOUDTRAIL_CANONICAL_COLS = [
+  'eventTime', 'eventName', 'eventSource', 'awsRegion',
+  'sourceIPAddress', 'userIdentity.type', 'userIdentity.userName',
+  'userIdentity.arn', 'userIdentity.accountId', 'userAgent',
+  'eventID', 'eventType', 'recipientAccountId', 'requestID',
+  'errorCode', 'errorMessage', 'readOnly', 'managementEvent',
+];
+function _tlMakeCloudTrailTokenizer() {
+  const inner = _tlMakeJsonlTokenizer();
+  const seed = {};
+  for (let i = 0; i < _TL_CLOUDTRAIL_CANONICAL_COLS.length; i++) {
+    const path = _TL_CLOUDTRAIL_CANONICAL_COLS[i].split('.');
+    let cur = seed;
+    for (let j = 0; j < path.length - 1; j++) {
+      const seg = path[j];
+      if (!cur[seg] || typeof cur[seg] !== 'object') cur[seg] = {};
+      cur = cur[seg];
+    }
+    cur[path[path.length - 1]] = '';
+  }
+  inner.tokenize(JSON.stringify(seed), 0);
+  return {
+    tokenize: (line, mtime) => inner.tokenize(line, mtime),
+    getColumns: (width) => inner.getColumns(width),
+    getDefaultStackColIdx: () => _TL_CLOUDTRAIL_CANONICAL_COLS.indexOf('eventName'),
+    getFormatLabel: () => 'AWS CloudTrail',
+  };
 }
 
 // ── Zeek TSV mirror ──

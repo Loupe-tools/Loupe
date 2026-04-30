@@ -55,6 +55,10 @@ TimelineView._STRUCTURED_LOG_KINDS = {
     makeTokenizer: () => _tlMakeJsonlTokenizer(),
     label: 'JSONL',
   },
+  cloudtrail: {
+    makeTokenizer: () => _tlMakeCloudTrailTokenizer(),
+    label: 'AWS CloudTrail',
+  },
 };
 
 Object.assign(TimelineView, {

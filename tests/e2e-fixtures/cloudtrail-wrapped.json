@@ -1,0 +1,225 @@
+{
+  "Records": [
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAEXAMPLE12345",
+        "arn": "arn:aws:iam::123456789012:user/alice",
+        "accountId": "123456789012",
+        "userName": "alice"
+      },
+      "eventTime": "2024-10-15T22:14:15Z",
+      "eventSource": "signin.amazonaws.com",
+      "eventName": "ConsoleLogin",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "203.0.113.42",
+      "userAgent": "Mozilla/5.0",
+      "responseElements": {
+        "ConsoleLogin": "Success"
+      },
+      "eventID": "a1b2c3d4-0001-90ab-cdef-1234567890ab",
+      "readOnly": false,
+      "eventType": "AwsConsoleSignIn",
+      "managementEvent": true,
+      "recipientAccountId": "123456789012"
+    },
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAEXAMPLE12345",
+        "arn": "arn:aws:iam::123456789012:user/alice",
+        "accountId": "123456789012",
+        "userName": "alice"
+      },
+      "eventTime": "2024-10-15T22:14:18Z",
+      "eventSource": "s3.amazonaws.com",
+      "eventName": "PutObject",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "203.0.113.42",
+      "userAgent": "aws-cli/2.13.0",
+      "requestParameters": {
+        "bucketName": "logs-prod",
+        "key": "app/2024-10-15.log"
+      },
+      "responseElements": null,
+      "eventID": "a1b2c3d4-0002-90ab-cdef-1234567890ab",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "123456789012",
+      "requestID": "REQ001"
+    },
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAEXAMPLE67890:reader-session",
+        "arn": "arn:aws:sts::123456789012:assumed-role/ReadOnlyRole/reader-session",
+        "accountId": "123456789012"
+      },
+      "eventTime": "2024-10-15T22:14:21Z",
+      "eventSource": "s3.amazonaws.com",
+      "eventName": "GetObject",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "198.51.100.7",
+      "userAgent": "aws-sdk-go/1.44.0",
+      "requestParameters": {
+        "bucketName": "logs-prod",
+        "key": "app/2024-10-14.log"
+      },
+      "responseElements": null,
+      "eventID": "a1b2c3d4-0003-90ab-cdef-1234567890ab",
+      "readOnly": true,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "123456789012",
+      "requestID": "REQ002"
+    },
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAEXAMPLE67890",
+        "arn": "arn:aws:iam::123456789012:user/bob",
+        "accountId": "123456789012",
+        "userName": "bob"
+      },
+      "eventTime": "2024-10-15T22:14:24Z",
+      "eventSource": "iam.amazonaws.com",
+      "eventName": "CreateUser",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "192.0.2.55",
+      "userAgent": "aws-cli/2.13.0",
+      "requestParameters": {
+        "userName": "new-service-account"
+      },
+      "responseElements": {
+        "user": {
+          "userName": "new-service-account",
+          "userId": "AIDAEXAMPLENEW01"
+        }
+      },
+      "eventID": "a1b2c3d4-0004-90ab-cdef-1234567890ab",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "123456789012",
+      "requestID": "REQ003"
+    },
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAEXAMPLE67890",
+        "arn": "arn:aws:iam::123456789012:user/bob",
+        "accountId": "123456789012",
+        "userName": "bob"
+      },
+      "eventTime": "2024-10-15T22:14:27Z",
+      "eventSource": "iam.amazonaws.com",
+      "eventName": "AttachUserPolicy",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "192.0.2.55",
+      "userAgent": "aws-cli/2.13.0",
+      "requestParameters": {
+        "userName": "new-service-account",
+        "policyArn": "arn:aws:iam::aws:policy/AdministratorAccess"
+      },
+      "responseElements": null,
+      "eventID": "a1b2c3d4-0005-90ab-cdef-1234567890ab",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "123456789012",
+      "requestID": "REQ004"
+    },
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAEXAMPLE99999",
+        "arn": "arn:aws:iam::123456789012:user/eve",
+        "accountId": "123456789012",
+        "userName": "eve"
+      },
+      "eventTime": "2024-10-15T22:14:30Z",
+      "eventSource": "signin.amazonaws.com",
+      "eventName": "ConsoleLogin",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "185.220.101.33",
+      "userAgent": "Mozilla/5.0",
+      "responseElements": {
+        "ConsoleLogin": "Failure"
+      },
+      "errorMessage": "Failed authentication",
+      "eventID": "a1b2c3d4-0006-90ab-cdef-1234567890ab",
+      "readOnly": false,
+      "eventType": "AwsConsoleSignIn",
+      "managementEvent": true,
+      "recipientAccountId": "123456789012"
+    },
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAEXAMPLE99999",
+        "arn": "arn:aws:iam::123456789012:user/eve",
+        "accountId": "123456789012",
+        "userName": "eve"
+      },
+      "eventTime": "2024-10-15T22:14:33Z",
+      "eventSource": "signin.amazonaws.com",
+      "eventName": "ConsoleLogin",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "185.220.101.33",
+      "userAgent": "Mozilla/5.0",
+      "responseElements": {
+        "ConsoleLogin": "Success"
+      },
+      "eventID": "a1b2c3d4-0007-90ab-cdef-1234567890ab",
+      "readOnly": false,
+      "eventType": "AwsConsoleSignIn",
+      "managementEvent": true,
+      "recipientAccountId": "123456789012"
+    },
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAEXAMPLE99999",
+        "arn": "arn:aws:iam::123456789012:user/eve",
+        "accountId": "123456789012",
+        "userName": "eve"
+      },
+      "eventTime": "2024-10-15T22:14:36Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "RunInstances",
+      "awsRegion": "us-east-1",
+      "sourceIPAddress": "185.220.101.33",
+      "userAgent": "aws-cli/2.13.0",
+      "requestParameters": {
+        "instancesSet": {
+          "items": [
+            {
+              "imageId": "ami-12345678",
+              "minCount": 10,
+              "maxCount": 10
+            }
+          ]
+        },
+        "instanceType": "p3.16xlarge"
+      },
+      "responseElements": null,
+      "errorCode": "Client.UnauthorizedOperation",
+      "errorMessage": "You are not authorized",
+      "eventID": "a1b2c3d4-0008-90ab-cdef-1234567890ab",
+      "readOnly": false,
+      "eventType": "AwsApiCall",
+      "managementEvent": true,
+      "recipientAccountId": "123456789012",
+      "requestID": "REQ005"
+    }
+  ]
+}

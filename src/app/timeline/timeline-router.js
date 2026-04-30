@@ -126,35 +126,69 @@ extendApp({
     const firstCh = trimmed.charAt(0);
     const _looksLikeSyslogHead =
       firstCh === '<' && /^<\d{1,3}>/.test(trimmed);
+    // CloudTrail wrapped probe — AWS writes CloudTrail logs as a
+    // single JSON document `{"Records":[{event}, {event}, …]}`. The
+    // file is one JSON value, NOT line-delimited, so the JSONL
+    // probe below would miss it. We detect the wrapper signature
+    // in the first 4 KB and return 'cloudtrail-wrapped' so the
+    // router can unwrap the bytes (decode → JSON.parse → re-emit
+    // each record on its own line) before dispatching as the
+    // 'cloudtrail' kind. Discriminator is intentionally tight:
+    // the literal `{"Records":[{` prefix (whitespace-tolerant) plus
+    // a CloudTrail-shaped key (`eventName` or `eventTime`) within
+    // the first 4 KB. Other JSON files with a top-level `Records`
+    // array are rare; the key gate keeps false positives near zero.
+    if (firstCh === '{') {
+      const _RE_CT_WRAP = /^\{\s*"Records"\s*:\s*\[\s*\{/;
+      if (_RE_CT_WRAP.test(trimmed)
+          && (text.indexOf('"eventName"') !== -1
+              || text.indexOf('"eventTime"') !== -1)) {
+        return 'cloudtrail-wrapped';
+      }
+    }
     // JSONL probe — runs BEFORE the JSON reject so newline-delimited
-    // JSON streams (CloudTrail, container logs, fluentd / vector
-    // sinks, application structured logging, etc.) get a dedicated
-    // route rather than being rejected as "looks like JSON". A
-    // single-line `[ ... ]` array or top-level `{ ... }` object is
-    // still rejected as before — the discriminator is multiple
-    // newline-separated `{...}` records each parseable on their own.
+    // JSON streams (CloudTrail JSONL, container logs, fluentd /
+    // vector sinks, application structured logging, etc.) get a
+    // dedicated route rather than being rejected as "looks like
+    // JSON". A single-line `[ ... ]` array or top-level `{ ... }`
+    // object is still rejected as before — the discriminator is
+    // multiple newline-separated `{...}` records each parseable on
+    // their own.
     //
     // Strategy: take the first 5 non-empty lines (after BOM
     // stripping) and try to `JSON.parse` each as an object. If
     // ≥60% succeed (matching the existing sniff threshold for
-    // CLF / syslog), return 'jsonl'. We do NOT call `JSON.parse`
-    // on the whole trimmed buffer — that would succeed for a single
-    // multi-line JSON value (a non-JSONL file the analyser pipeline
-    // would handle better).
+    // CLF / syslog), return 'jsonl' — or 'cloudtrail' if any of
+    // the parsed records carries CloudTrail-shaped keys
+    // (`eventName` + `eventTime`).
     if (firstCh === '{') {
       const head = text.split(/\r\n|\r|\n/)
         .filter(l => l.length > 0).slice(0, 5);
       if (head.length >= 2) {
         let hits = 0;
+        let cloudtrailHits = 0;
         for (let i = 0; i < head.length; i++) {
           const t = head[i].trimStart();
           if (t.charCodeAt(0) !== 0x7B) continue;
           try {
             const v = JSON.parse(t);
-            if (v && typeof v === 'object' && !Array.isArray(v)) hits++;
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+              hits++;
+              if (typeof v.eventName === 'string'
+                  && typeof v.eventTime === 'string') {
+                cloudtrailHits++;
+              }
+            }
           } catch (_) { /* not a complete object on this line */ }
         }
-        if (hits / head.length >= 0.6) return 'jsonl';
+        if (hits / head.length >= 0.6) {
+          // Promote to CloudTrail when ≥1 record carries the
+          // CloudTrail key pair. One hit is enough — the canonical
+          // schema seeded by the tokeniser handles records that
+          // happen to lack one of the keys (they leave the cell
+          // blank, same as any other missing-field event).
+          return cloudtrailHits >= 1 ? 'cloudtrail' : 'jsonl';
+        }
       }
     }
     if (firstCh === '{' || firstCh === '[') return null;
@@ -348,7 +382,10 @@ extendApp({
       // clear callback would call into the destroyed grid.
       this._yaraHighlightActiveView = null;
       this._iocCsvHighlightActiveView = null;
-      const buffer = prefetchedBuffer
+      // `let` — the CloudTrail wrapped-form unwrap below may
+      // replace this with a fresh ArrayBuffer carrying the
+      // line-delimited form before dispatch.
+      let buffer = prefetchedBuffer
         || await ParserWatchdog.run(() => file.arrayBuffer());
       // Perf marker — buffer is now available; the next sub-phase is
       // worker dispatch + parse. No-op in release builds (the global
@@ -384,10 +421,65 @@ extendApp({
         }
       } else if (ext === 'jsonl' || ext === 'ndjson') {
         // The `.jsonl` / `.ndjson` extensions both unambiguously mean
-        // newline-delimited JSON. Map them to the canonical `'jsonl'`
-        // kindHint without re-sniffing — the parser handles invalid
-        // lines gracefully (returns `null` and the line is skipped).
-        ext = 'jsonl';
+        // newline-delimited JSON. Re-sniff so CloudTrail JSONL
+        // (records carrying `eventName` + `eventTime`) gets promoted
+        // to the dedicated `'cloudtrail'` kind. Otherwise stay on
+        // generic JSONL — the parser handles invalid lines
+        // gracefully (returns `null` and the line is skipped).
+        const sniffed = this._sniffTimelineContent(buffer);
+        ext = (sniffed === 'cloudtrail') ? 'cloudtrail' : 'jsonl';
+      }
+      // CloudTrail wrapped form unwrap. The sniff returned
+      // 'cloudtrail-wrapped' for files shaped like
+      // `{"Records":[{event}, …]}` — a single JSON document, not
+      // line-delimited. Decode the buffer, parse the wrapper, and
+      // re-emit each record as its own line so the structured-log
+      // loop can ingest it via the same `'cloudtrail'` tokeniser
+      // used by the JSONL form. The decoded text is small enough
+      // (CloudTrail files are typically ≤10 MB) that a second
+      // encode-decode pass is acceptable; we keep the original
+      // bytes only as a fallback if the unwrap fails.
+      if (ext === 'cloudtrail-wrapped') {
+        try {
+          const txt = new TextDecoder('utf-8', { fatal: false })
+            .decode(new Uint8Array(buffer));
+          const obj = JSON.parse(
+            txt.charCodeAt(0) === 0xFEFF ? txt.slice(1) : txt);
+          if (obj && Array.isArray(obj.Records) && obj.Records.length) {
+            // Stringify each record on its own line. Skipping
+            // entries that aren't plain objects keeps a malformed
+            // record from poisoning the whole batch.
+            const lines = [];
+            for (let i = 0; i < obj.Records.length; i++) {
+              const rec = obj.Records[i];
+              if (rec && typeof rec === 'object' && !Array.isArray(rec)) {
+                try { lines.push(JSON.stringify(rec)); }
+                catch (_) { /* skip un-stringifiable record */ }
+              }
+            }
+            if (lines.length) {
+              const re = new TextEncoder().encode(lines.join('\n'));
+              // Replace the buffer with a fresh ArrayBuffer carrying
+              // the JSONL form. `re.buffer` has the right shape
+              // (ArrayBuffer of the encoded bytes); the worker will
+              // transfer it just like the original.
+              buffer = re.buffer.slice(re.byteOffset,
+                re.byteOffset + re.byteLength);
+              ext = 'cloudtrail';
+            } else {
+              ext = 'cloudtrail';   // unwrap produced 0 rows — let the parser report empty
+            }
+          } else {
+            ext = 'cloudtrail';     // wrapper missing / empty — proceed; parser yields 0 rows
+          }
+        } catch (_) {
+          // Malformed JSON: bail out of Timeline and let the regular
+          // pipeline (JsonRenderer / PlainTextRenderer) render it.
+          this._skipTimelineRoute = true;
+          try { await this._loadFile(file, buffer); }
+          finally { this._skipTimelineRoute = false; }
+          return;
+        }
       }
 
       this._fileMeta = {
@@ -411,7 +503,8 @@ extendApp({
       if (ext === 'evtx') workerKind = 'evtx';
       else if (ext === 'csv' || ext === 'tsv' || ext === 'log'
             || ext === 'syslog3164' || ext === 'syslog5424'
-            || ext === 'zeek' || ext === 'jsonl') workerKind = 'csv';
+            || ext === 'zeek' || ext === 'jsonl'
+            || ext === 'cloudtrail') workerKind = 'csv';
       else if (ext === 'sqlite' || ext === 'db') workerKind = 'sqlite';
 
       if (workerKind && window.WorkerManager
@@ -568,7 +661,8 @@ extendApp({
           // also pass `fileLastModified` so the parser can infer the
           // year for RFC 3164 timestamps deterministically.
           const _structuredLog = (ext === 'syslog3164' || ext === 'syslog5424'
-                                  || ext === 'zeek' || ext === 'jsonl');
+                                  || ext === 'zeek' || ext === 'jsonl'
+                                  || ext === 'cloudtrail');
           const opts = (workerKind === 'csv')
             ? { explicitDelim: ext === 'tsv' ? '\t'
                   : (ext === 'log' ? ' ' : null),
@@ -709,7 +803,8 @@ extendApp({
           view = await TimelineView.fromCsvAsync(
             file, buffer, explicit, ext === 'log' ? 'log' : null);
         } else if (ext === 'syslog3164' || ext === 'syslog5424'
-                || ext === 'zeek' || ext === 'jsonl') {
+                || ext === 'zeek' || ext === 'jsonl'
+                || ext === 'cloudtrail') {
           // Structured-log fallback — mirrors the worker's
           // `_parseStructuredLog` for environments where workers
           // can't spawn (Firefox `file://`).

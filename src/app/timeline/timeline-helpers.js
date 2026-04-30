@@ -766,6 +766,84 @@ function _tlMakeJsonlTokenizer() {
   return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }
 
+// ── AWS CloudTrail tokeniser (JSONL with canonical projection) ────
+// AWS CloudTrail emits one of two shapes:
+//   • Wrapped:  `{"Records":[{event}, {event}, ...]}` — single JSON
+//     document. The router unwraps this into a JSONL byte stream
+//     before dispatch (`Records[i]` → one line each).
+//   • JSONL:    one event per line, no wrapper. The router sniffs
+//     this directly via the JSONL probe + a CloudTrail-key gate
+//     (presence of `eventName` and `eventTime` in ≥1 of the first
+//     5 records).
+//
+// Both routes converge on this tokeniser, which is a thin wrapper
+// over `_tlMakeJsonlTokenizer`:
+//   • Pre-seeds the schema with the CloudTrail canonical column
+//     order so the most useful columns (Time · Name · Source ·
+//     Region · IP · User) appear left-aligned regardless of the
+//     order they happen to occur in the first record.
+//   • Overrides the default stack column to `eventName` (rather
+//     than the generic JSONL priority list).
+//   • Labels the view `AWS CloudTrail`.
+//
+// Unknown keys still spill into `_extra`; events missing canonical
+// keys leave their cell blank — the schema width is fixed.
+const _TL_CLOUDTRAIL_CANONICAL_COLS = [
+  'eventTime', 'eventName', 'eventSource', 'awsRegion',
+  'sourceIPAddress', 'userIdentity.type', 'userIdentity.userName',
+  'userIdentity.arn', 'userIdentity.accountId', 'userAgent',
+  'eventID', 'eventType', 'recipientAccountId', 'requestID',
+  'errorCode', 'errorMessage', 'readOnly', 'managementEvent',
+];
+function _tlMakeCloudTrailTokenizer() {
+  // Build a JSONL tokeniser, but pre-seed the schema by feeding a
+  // synthetic record with all canonical keys present. After the
+  // first real record, any keys it carries that aren't in the
+  // canonical list will spill to `_extra` — that's intentional:
+  // CloudTrail records have ~30-50 keys, most of them service-
+  // specific `requestParameters.*` / `responseElements.*` blobs
+  // that don't belong in the headline grid.
+  //
+  // To pre-seed without losing real data, we manually populate the
+  // JSONL helper's `schema`/`schemaIndex` via a controlled first
+  // call. Easiest path: synthesise a record with every canonical
+  // key and feed it through `tokenize`, then DISCARD that row by
+  // returning `null` to the caller. The schema persists for the
+  // lifetime of the closure.
+  const inner = _tlMakeJsonlTokenizer();
+  // Pre-seed the schema. Build a JSON line with canonical keys —
+  // the inner tokeniser will resolve them in order on its first
+  // call. Use empty-string values; they survive the JSONL
+  // flattener (strings render verbatim) and lock the schema.
+  const seed = {};
+  for (let i = 0; i < _TL_CLOUDTRAIL_CANONICAL_COLS.length; i++) {
+    // Nested keys (`userIdentity.type`) need to be reified as an
+    // actual nested object so the JSONL flattener emits the
+    // dotted-path key. Walk the dotted segments and build the
+    // tree.
+    const path = _TL_CLOUDTRAIL_CANONICAL_COLS[i].split('.');
+    let cur = seed;
+    for (let j = 0; j < path.length - 1; j++) {
+      const seg = path[j];
+      if (!cur[seg] || typeof cur[seg] !== 'object') cur[seg] = {};
+      cur = cur[seg];
+    }
+    cur[path[path.length - 1]] = '';
+  }
+  inner.tokenize(JSON.stringify(seed), 0);
+
+  return {
+    tokenize: (line, mtime) => inner.tokenize(line, mtime),
+    getColumns: (width) => inner.getColumns(width),
+    getDefaultStackColIdx: () => {
+      // Always stack on `eventName` for CloudTrail. It's the second
+      // canonical column (index 1).
+      return _TL_CLOUDTRAIL_CANONICAL_COLS.indexOf('eventName');
+    },
+    getFormatLabel: () => 'AWS CloudTrail',
+  };
+}
+
 function _tlMakeZeekTokenizer() {
   // Defaults match the Zeek convention; overridden on the fly if the
   // file's preamble carries a `#set_separator` / `#unset_field` /
