@@ -191,7 +191,18 @@ extendApp({
         }
       }
     }
-    if (firstCh === '{' || firstCh === '[') return null;
+    // Apache HTTP Server `error_log` lines start with a literal
+    // `[` (bracketed timestamp + day-name + month-name +
+    // 4-digit year). The generic `[`-reject below targets JSON
+    // arrays — let an Apache error head through ahead of it so
+    // the sniff loop further down can promote to
+    // `'apache-error'`. Discriminator is intentionally tight:
+    // the day-name + month-name + 4-digit-year combo is a
+    // magic signature, nothing else in the wild emits it.
+    const _looksLikeApacheErrHead = firstCh === '['
+      && /^\[(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\d{1,2} \d{2}:\d{2}:\d{2}(?:\.\d+)? \d{4}\]/
+        .test(trimmed);
+    if (firstCh === '{' || (firstCh === '[' && !_looksLikeApacheErrHead)) return null;
     if (firstCh === '<' && !_looksLikeSyslogHead) return null;
     if (trimmed.startsWith('#!') || trimmed.startsWith('<?')) return null;
     // C-family line comments (`//`) are a strong signal of source code
@@ -344,6 +355,31 @@ extendApp({
         if (_SYSLOG3164_LINE_RE.test(head[i])) hits++;
       }
       if (head.length >= 2 && hits / head.length >= 0.6) return 'syslog3164';
+    }
+    // Apache error_log sniff. Apache HTTP Server's error log
+    // (the `ErrorLog` directive output, distinct from access
+    // logs which we cover via CLF) starts every line with a
+    // bracketed timestamp + day-name token. The full prefix is:
+    //   [Day Mon DD HH:MM:SS[.usec] YYYY] [module:level]
+    // The day-name + month-name + 4-digit year combo is highly
+    // specific — nothing else in the wild emits this exact
+    // shape. Threshold matches the other structured-log sniffs
+    // (≥60 % of first 5 non-empty lines). Returned as
+    // `'apache-error'` so the router passes a dedicated
+    // `kindHint` through to the worker.
+    //
+    // Sits AFTER syslog 3164 because syslog's `<PRI>` magic byte
+    // is more specific (and the two regexes never both match
+    // the same line: syslog starts with `<`, Apache with `[`).
+    const _APACHE_ERR_LINE_RE =
+      /^\[(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\d{1,2} \d{2}:\d{2}:\d{2}(?:\.\d+)? \d{4}\] \[\w+:\w+\]/;
+    {
+      const head = lines.slice(0, 5);
+      let hits = 0;
+      for (let i = 0; i < head.length; i++) {
+        if (_APACHE_ERR_LINE_RE.test(head[i])) hits++;
+      }
+      if (head.length >= 2 && hits / head.length >= 0.6) return 'apache-error';
     }
     // logfmt sniff. Lines look like `key=value key="quoted" k=v`
     // — Heroku, Logrus, Hashicorp tools, many Go services. The
@@ -623,7 +659,7 @@ extendApp({
             || ext === 'zeek' || ext === 'jsonl'
             || ext === 'cloudtrail' || ext === 'cef'
             || ext === 'leef' || ext === 'logfmt'
-            || ext === 'w3c') workerKind = 'csv';
+            || ext === 'w3c' || ext === 'apache-error') workerKind = 'csv';
       else if (ext === 'sqlite' || ext === 'db') workerKind = 'sqlite';
 
       if (workerKind && window.WorkerManager
@@ -783,7 +819,7 @@ extendApp({
                                   || ext === 'zeek' || ext === 'jsonl'
                                   || ext === 'cloudtrail' || ext === 'cef'
                                   || ext === 'leef' || ext === 'logfmt'
-                                  || ext === 'w3c');
+                                  || ext === 'w3c' || ext === 'apache-error');
           const opts = (workerKind === 'csv')
             ? { explicitDelim: ext === 'tsv' ? '\t'
                   : (ext === 'log' ? ' ' : null),
@@ -927,7 +963,7 @@ extendApp({
                 || ext === 'zeek' || ext === 'jsonl'
                 || ext === 'cloudtrail' || ext === 'cef'
                 || ext === 'leef' || ext === 'logfmt'
-                || ext === 'w3c') {
+                || ext === 'w3c' || ext === 'apache-error') {
           // Structured-log fallback — mirrors the worker's
           // `_parseStructuredLog` for environments where workers
           // can't spawn (Firefox `file://`).

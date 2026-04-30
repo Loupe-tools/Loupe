@@ -75,6 +75,10 @@ TimelineView._STRUCTURED_LOG_KINDS = {
     makeTokenizer: () => _tlMakeW3CTokenizer(),
     label: 'W3C Extended',
   },
+  'apache-error': {
+    makeTokenizer: () => _tlMakeApacheErrorTokenizer(),
+    label: 'Apache error_log',
+  },
 };
 
 Object.assign(TimelineView, {

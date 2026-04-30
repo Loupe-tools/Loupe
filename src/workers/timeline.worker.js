@@ -525,6 +525,18 @@ const STRUCTURED_LOG_KINDS = {
     // are observed.
     label: 'W3C Extended',
   },
+  'apache-error': {
+    // Stateless — Apache HTTP Server's error log (the
+    // `ErrorLog` directive output, distinct from access logs).
+    // Bracketed metadata + free-text message:
+    //   [Tue Apr 30 14:23:11.123456 2024] [core:error]
+    //   [pid 12345] [client 10.0.0.5:51234] AH00037: ...
+    // Fixed 8-column schema (Timestamp · Module · Severity ·
+    // PID · TID · Client · ErrorCode · Message). Stack column
+    // pinned to Severity.
+    makeTokenizer: () => _tlMakeApacheErrorTokenizer(),
+    label: 'Apache error_log',
+  },
 };
 
 async function _parseCsv(buffer, explicitDelim, kindHint) {

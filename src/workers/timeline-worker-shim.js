@@ -223,7 +223,7 @@ function _tlCanonicalLogColumns(width) {
 // Mirrors `_tlDecodePri`, `_tlInferYear`, `_tlTokenizeSyslog3164`,
 // `_tlTokenizeSyslog5424`, `_tlMakeJsonlTokenizer`,
 // `_tlMakeCloudTrailTokenizer`, `_tlMakeCEFTokenizer`,
-// `_tlMakeLEEFTokenizer`, `_tlMakeLogfmtTokenizer`, `_tlMakeW3CTokenizer`, `_tlMakeZeekTokenizer`, the
+// `_tlMakeLEEFTokenizer`, `_tlMakeLogfmtTokenizer`, `_tlMakeW3CTokenizer`, `_tlMakeApacheErrorTokenizer`, `_tlMakeZeekTokenizer`, the
 // `_TL_SYSLOG{3164,5424}_COLS` constants, `_TL_JSONL_*` constants,
 // `_TL_CLOUDTRAIL_CANONICAL_COLS`, `_TL_CEF_HEADER_COLS`,
 // `_TL_LEEF_HEADER_COLS`, and `_TL_ZEEK_STACK_BY_PATH` in
@@ -1059,6 +1059,65 @@ function _tlMakeW3CTokenizer() {
     return null;
   };
   const getFormatLabel = () => label;
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}
+
+// ── Apache error_log mirror ──
+// Canonical implementation lives in
+// `src/app/timeline/timeline-helpers.js::_tlMakeApacheErrorTokenizer`.
+// Cross-realm parity is enforced by `tests/unit/timeline-apache-error.test.js`.
+const _TL_APACHE_ERROR_COLS = [
+  'Timestamp', 'Module', 'Severity', 'PID', 'TID', 'Client',
+  'ErrorCode', 'Message',
+];
+const _TL_APACHE_ERR_MON = {
+  jan:0, feb:1, mar:2, apr:3, may:4, jun:5,
+  jul:6, aug:7, sep:8, oct:9, nov:10, dec:11,
+};
+const _TL_APACHE_ERR_TS_RE =
+  /^\[(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d+))? (\d{4})\]/;
+/* safeRegex: builtin */
+const _TL_APACHE_ERR_LINE_RE = new RegExp(
+  '^' +
+  '\\[(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2} \\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)? \\d{4}\\] ' +
+  '\\[(\\w+):(\\w+)\\]' +
+  '(?: \\[pid (\\d+)(?::tid (\\d+))?\\])?' +
+  '(?: \\[client ([^\\]]+)\\])?' +
+  '(.*)$'
+);
+function _tlMakeApacheErrorTokenizer() {
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    let s = line;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    if (!s.length || s.charAt(0) !== '[') return null;
+    const tsMatch = _TL_APACHE_ERR_TS_RE.exec(s);
+    if (!tsMatch) return null;
+    const m = _TL_APACHE_ERR_LINE_RE.exec(s);
+    if (!m) return null;
+    const monIdx = _TL_APACHE_ERR_MON[tsMatch[1].toLowerCase()];
+    const day = String(+tsMatch[2]).padStart(2, '0');
+    const mon = String(monIdx + 1).padStart(2, '0');
+    const usec = tsMatch[6] ? '.' + tsMatch[6].padEnd(6, '0').slice(0, 6) : '';
+    const ts = tsMatch[7] + '-' + mon + '-' + day +
+               'T' + tsMatch[3] + ':' + tsMatch[4] + ':' + tsMatch[5] + usec;
+    const module_ = m[1] || '';
+    const severity = m[2] || '';
+    const pid = m[3] || '';
+    const tid = m[4] || '';
+    const client = m[5] || '';
+    let rest = (m[6] || '').replace(/^\s+/, '');
+    let errCode = '';
+    const ah = /^AH(\d{5}):\s*/.exec(rest);
+    if (ah) {
+      errCode = 'AH' + ah[1];
+      rest = rest.slice(ah[0].length);
+    }
+    return [ts, module_, severity, pid, tid, client, errCode, rest];
+  };
+  const getColumns = (_width) => _TL_APACHE_ERROR_COLS.slice();
+  const getDefaultStackColIdx = () => 2;
+  const getFormatLabel = () => 'Apache error_log';
   return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }
 

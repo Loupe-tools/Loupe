@@ -1658,6 +1658,114 @@ function _tlMakeW3CTokenizer() {
   return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }
 
+// ── Apache error_log tokeniser ────────────────────────────────────
+// Apache HTTP Server's error log (the `ErrorLog` directive output,
+// distinct from access logs which we already cover via CLF) has
+// a structured-but-not-quite-tabular shape:
+//
+//   [Tue Apr 30 14:23:11.123456 2024] [core:error] [pid 12345] [client 10.0.0.5:51234] AH00037: Symbolic link not allowed
+//   [Tue Apr 30 14:23:12 2024] [mpm_event:notice] [pid 12345:tid 140] AH00489: Apache/2.4.58 (Unix) configured -- resuming normal operations
+//   [Tue Apr 30 14:23:13 2024] [proxy_fcgi:error] [pid 12346] (70007)The timeout specified has expired: AH01075: Error dispatching request to :
+//
+// The format is bracketed metadata followed by a free-text
+// message. The first bracket is always the timestamp; subsequent
+// brackets are key=value-ish (`module:level`, `pid X[:tid Y]`,
+// `client IP[:PORT]`). After the brackets, an optional
+// `AH<5digits>:` token tags the canonical Apache error code,
+// then the human-readable message.
+//
+// Schema (fixed 8 columns):
+//   1 Timestamp  — parsed from the leading [...] block
+//   2 Module     — left half of `[module:level]`
+//   3 Severity   — right half (emerg/alert/crit/error/warn/
+//                  notice/info/debug/trace1..trace8)
+//   4 PID        — `[pid 12345]` or `[pid X:tid Y]`
+//   5 TID        — optional `[pid X:tid Y]`, blank otherwise
+//   6 Client     — optional `[client IP[:PORT]]`, blank otherwise
+//   7 ErrorCode  — optional `AH\\d{5}` token at message start
+//   8 Message    — everything else (preserves embedded brackets,
+//                  parens, status text)
+//
+// Default histogram stack is `Severity`. Stateless — schema is
+// fixed; no `_extra` column.
+const _TL_APACHE_ERROR_COLS = [
+  'Timestamp', 'Module', 'Severity', 'PID', 'TID', 'Client',
+  'ErrorCode', 'Message',
+];
+
+// Apache day / month abbreviations. The day-of-week is purely
+// informational (it's redundant with the date) and we ignore it.
+const _TL_APACHE_ERR_MON = {
+  jan:0, feb:1, mar:2, apr:3, may:4, jun:5,
+  jul:6, aug:7, sep:8, oct:9, nov:10, dec:11,
+};
+
+// `[Tue Apr 30 14:23:11.123456 2024]` — day name, month name,
+// day-of-month (1 or 2 digits), HH:MM:SS, optional `.usec`,
+// 4-digit year. Apache always emits the year so we don't need
+// the syslog-3164 mtime-roll trick.
+const _TL_APACHE_ERR_TS_RE =
+  /^\[(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d+))? (\d{4})\]/;
+
+/* safeRegex: builtin */
+const _TL_APACHE_ERR_LINE_RE = new RegExp(
+  '^' +
+  // Timestamp bracket.
+  '\\[(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2} \\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)? \\d{4}\\] ' +
+  // Module:level bracket.
+  '\\[(\\w+):(\\w+)\\]' +
+  // Optional pid bracket — `[pid N]` or `[pid N:tid M]`.
+  '(?: \\[pid (\\d+)(?::tid (\\d+))?\\])?' +
+  // Optional client bracket — `[client IP]` or `[client IP:PORT]`.
+  '(?: \\[client ([^\\]]+)\\])?' +
+  // The rest of the line is the message. We keep the leading
+  // space (if any) trimmed off in the parser.
+  '(.*)$'
+);
+
+function _tlMakeApacheErrorTokenizer() {
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    let s = line;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    if (!s.length || s.charAt(0) !== '[') return null;
+    const tsMatch = _TL_APACHE_ERR_TS_RE.exec(s);
+    if (!tsMatch) return null;
+    const m = _TL_APACHE_ERR_LINE_RE.exec(s);
+    if (!m) return null;
+    // Build ISO 8601 timestamp from the named groups in tsMatch.
+    const monIdx = _TL_APACHE_ERR_MON[tsMatch[1].toLowerCase()];
+    const day = String(+tsMatch[2]).padStart(2, '0');
+    const mon = String(monIdx + 1).padStart(2, '0');
+    const usec = tsMatch[6] ? '.' + tsMatch[6].padEnd(6, '0').slice(0, 6) : '';
+    const ts = tsMatch[7] + '-' + mon + '-' + day +
+               'T' + tsMatch[3] + ':' + tsMatch[4] + ':' + tsMatch[5] + usec;
+    const module_ = m[1] || '';
+    const severity = m[2] || '';
+    const pid = m[3] || '';
+    const tid = m[4] || '';
+    const client = m[5] || '';
+    let rest = (m[6] || '').replace(/^\s+/, '');
+    // Optional `AH\d{5}:` error-code token at message start.
+    let errCode = '';
+    const ah = /^AH(\d{5}):\s*/.exec(rest);
+    if (ah) {
+      errCode = 'AH' + ah[1];
+      rest = rest.slice(ah[0].length);
+    }
+    return [ts, module_, severity, pid, tid, client, errCode, rest];
+  };
+
+  const getColumns = (_width) => _TL_APACHE_ERROR_COLS.slice();
+
+  // Histogram stack column = Severity (column index 2).
+  const getDefaultStackColIdx = () => 2;
+
+  const getFormatLabel = () => 'Apache error_log';
+
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}
+
 function _tlMakeZeekTokenizer() {
   // Defaults match the Zeek convention; overridden on the fly if the
   // file's preamble carries a `#set_separator` / `#unset_field` /

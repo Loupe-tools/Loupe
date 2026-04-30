@@ -1,0 +1,10 @@
+[Tue Apr 30 14:23:11.123456 2024] [core:notice] [pid 12345:tid 140737488355072] AH00094: Command line: '/usr/sbin/apache2'
+[Tue Apr 30 14:23:11 2024] [mpm_event:notice] [pid 12345:tid 140737488355072] AH00489: Apache/2.4.58 (Unix) configured -- resuming normal operations
+[Tue Apr 30 14:23:11 2024] [core:notice] [pid 12345] AH00094: Server built: Mar 21 2024 09:15:30
+[Tue Apr 30 14:25:42 2024] [proxy_fcgi:error] [pid 12346:tid 140737479962368] [client 10.0.0.5:51234] (70007)The timeout specified has expired: AH01075: Error dispatching request to :, referer: https://example.com/admin
+[Tue Apr 30 14:25:43 2024] [core:error] [pid 12346:tid 140737479962368] [client 10.0.0.5:51234] AH00037: Symbolic link not allowed or link target not accessible: /var/www/html/private
+[Tue Apr 30 14:26:01 2024] [authz_core:error] [pid 12347:tid 140737479962368] [client 192.0.2.50:33891] AH01630: client denied by server configuration: /var/www/html/admin/
+[Tue Apr 30 14:27:15.987654 2024] [ssl:warn] [pid 12345:tid 140737488355072] AH01906: example.com:443:0 server certificate is a CA certificate (BasicConstraints: CA == TRUE !?)
+[Tue Apr 30 14:28:30 2024] [http2:trace3] [pid 12348:tid 140737479953920] [client 198.51.100.7:44210] h2_session: response submitted
+[Tue Apr 30 14:30:00 2024] [mpm_event:notice] [pid 12345:tid 140737488355072] AH00491: caught SIGTERM, shutting down
+[Tue Apr 30 14:30:00 2024] [core:warn] [pid 12345] some bare warning without an AH code
