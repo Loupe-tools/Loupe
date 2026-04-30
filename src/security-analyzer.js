@@ -211,6 +211,22 @@ class SecurityAnalyzer {
         }
       }
       // Pattern detection against VBA source is handled by YARA (auto-scan on file load)
+      // VBA stomping (T1564.007) — applies to vbaProject.bin extracted from
+      // .docx/.docm/.dotm. The outer YARA rule covers .doc only; this
+      // covers the OOXML path. Heuristic: P-code present, source absent.
+      if (parsed.macros.rawBin) {
+        const st = detectVbaStomping(parsed.macros.rawBin);
+        if (st.stomped) {
+          pushIOC(f, {
+            type: IOC.PATTERN,
+            value: 'VBA stomping detected — compiled P-code present without source modules (T1564.007)',
+            severity: 'critical',
+            note: 'Office may execute the cached P-code while static analysis sees only stripped source',
+            bucket: 'externalRefs',
+          });
+          escalateRisk(f, 'critical');
+        }
+      }
     }
     f.externalRefs.push(...this._externalRefs(parsed));
 

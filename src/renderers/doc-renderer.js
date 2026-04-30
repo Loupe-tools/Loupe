@@ -111,6 +111,23 @@ class DocBinaryRenderer {
         }
       }
       if (vbaStream) { f.macroSize = vbaStream.length; f.rawBin = vbaStream; }
+      // VBA stomping (T1564.007). For legacy .doc the outer file IS the OLE
+      // container, so we scan the whole buffer (covers the P-code marker
+      // even if our `vbaStream` selection missed the right substream).
+      if (f.hasMacros) {
+        const scanBuf = vbaStream || new Uint8Array(buffer);
+        const st = detectVbaStomping(scanBuf);
+        if (st.stomped) {
+          pushIOC(f, {
+            type: IOC.PATTERN,
+            value: 'VBA stomping detected — compiled P-code present without source modules (T1564.007)',
+            severity: 'critical',
+            note: 'Office may execute the cached P-code while static analysis sees only stripped source',
+            bucket: 'externalRefs',
+          });
+          escalateRisk(f, 'critical');
+        }
+      }
       const si = cfb.streams.get('\x05summaryinformation');
       if (si) f.metadata = this._si(si);
     } catch (e) { }

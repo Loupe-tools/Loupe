@@ -191,6 +191,18 @@ class PptxRenderer {
             const pats = autoExecPatterns(m.source);
             if (pats.length) { f.autoExec.push({ module: m.name, patterns: pats }); escalateRisk(f, 'high'); }
           }
+          // VBA stomping (T1564.007) — see vba-utils.js for the heuristic.
+          const st = detectVbaStomping(d);
+          if (st.stomped) {
+            pushIOC(f, {
+              type: IOC.PATTERN,
+              value: 'VBA stomping detected — compiled P-code present without source modules (T1564.007)',
+              severity: 'critical',
+              note: 'Office may execute the cached P-code while static analysis sees only stripped source',
+              bucket: 'externalRefs',
+            });
+            escalateRisk(f, 'critical');
+          }
         }
       }
       const core = await this._xml(zip, 'docProps/core.xml');

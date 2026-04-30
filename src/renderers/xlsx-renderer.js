@@ -258,6 +258,19 @@ class XlsxRenderer {
               const pats = autoExecPatterns(m.source);
               if (pats.length) { f.autoExec.push({ module: m.name, patterns: pats }); escalateRisk(f, 'high'); }
             }
+            // VBA stomping (T1564.007) — applies to vbaProject.bin extracted
+            // from .xlsm/.xltm/.xlam. The outer YARA rule covers .xls only.
+            const st = detectVbaStomping(vbaData);
+            if (st.stomped) {
+              pushIOC(f, {
+                type: IOC.PATTERN,
+                value: 'VBA stomping detected — compiled P-code present without source modules (T1564.007)',
+                severity: 'critical',
+                note: 'Office may execute the cached P-code while static analysis sees only stripped source',
+                bucket: 'externalRefs',
+              });
+              escalateRisk(f, 'critical');
+            }
           }
           if (!f.rawBin && wb.vbaraw)
             f.rawBin = wb.vbaraw instanceof Uint8Array ? wb.vbaraw : new Uint8Array(wb.vbaraw);

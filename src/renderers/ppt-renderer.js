@@ -109,6 +109,20 @@ class PptBinaryRenderer {
           for (const e of rawEntries) totalSize += e.data.length;
           f.macroSize = totalSize;
         }
+        // VBA stomping (T1564.007) — same heuristic as the OOXML and .doc
+        // paths. The outer file is the OLE container so scanning the whole
+        // buffer is safe and resilient to malformed substreams.
+        const st = detectVbaStomping(new Uint8Array(buffer));
+        if (st.stomped) {
+          pushIOC(f, {
+            type: IOC.PATTERN,
+            value: 'VBA stomping detected — compiled P-code present without source modules (T1564.007)',
+            severity: 'critical',
+            note: 'Office may execute the cached P-code while static analysis sees only stripped source',
+            bucket: 'externalRefs',
+          });
+          escalateRisk(f, 'critical');
+        }
       }
 
       // Metadata from DocumentSummaryInfo / SummaryInfo streams
