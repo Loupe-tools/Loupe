@@ -222,9 +222,10 @@ function _tlCanonicalLogColumns(width) {
 //
 // Mirrors `_tlDecodePri`, `_tlInferYear`, `_tlTokenizeSyslog3164`,
 // `_tlTokenizeSyslog5424`, `_tlMakeJsonlTokenizer`,
-// `_tlMakeCloudTrailTokenizer`, `_tlMakeZeekTokenizer`, the
-// `_TL_SYSLOG{3164,5424}_COLS` constants, `_TL_JSONL_*` constants,
-// `_TL_CLOUDTRAIL_CANONICAL_COLS`, and `_TL_ZEEK_STACK_BY_PATH` in
+// `_tlMakeCloudTrailTokenizer`, `_tlMakeCEFTokenizer`,
+// `_tlMakeZeekTokenizer`, the `_TL_SYSLOG{3164,5424}_COLS` constants,
+// `_TL_JSONL_*` constants, `_TL_CLOUDTRAIL_CANONICAL_COLS`,
+// `_TL_CEF_HEADER_COLS`, and `_TL_ZEEK_STACK_BY_PATH` in
 // `src/app/timeline/timeline-helpers.js`.
 // Helpers must live here too because the main-bundle helpers file isn't
 // concatenated into the worker bundle. **Keep in lockstep with the
@@ -520,6 +521,139 @@ function _tlMakeCloudTrailTokenizer() {
     getDefaultStackColIdx: () => _TL_CLOUDTRAIL_CANONICAL_COLS.indexOf('eventName'),
     getFormatLabel: () => 'AWS CloudTrail',
   };
+}
+
+// ── CEF (ArcSight) mirror ──
+// Canonical implementation lives in
+// `src/app/timeline/timeline-helpers.js::_tlMakeCEFTokenizer`.
+// Cross-realm parity is enforced by `tests/unit/timeline-cef.test.js`.
+const _TL_CEF_HEADER_COLS = [
+  'Version', 'Vendor', 'Product', 'ProductVersion',
+  'SignatureID', 'Name', 'Severity',
+];
+const _TL_CEF_MAX_EXT_COLUMNS = 256;
+function _tlMakeCEFTokenizer() {
+  let extSchema = null;
+  let extSchemaIndex = null;
+  const splitHeader = (line) => {
+    if (!line) return null;
+    const cefIdx = line.indexOf('CEF:');
+    if (cefIdx < 0) return null;
+    const cefBody = line.slice(cefIdx);
+    const fields = [];
+    let cur = '';
+    let i = 0;
+    const n = cefBody.length;
+    while (i < n && fields.length < 7) {
+      const ch = cefBody.charCodeAt(i);
+      if (ch === 0x5C && i + 1 < n) {
+        cur += cefBody.charAt(i + 1);
+        i += 2;
+        continue;
+      }
+      if (ch === 0x7C) {
+        fields.push(cur);
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += cefBody.charAt(i);
+      i++;
+    }
+    if (fields.length < 7) return null;
+    if (fields[0].slice(0, 4) === 'CEF:') fields[0] = fields[0].slice(4);
+    const ext = cefBody.slice(i);
+    return { fields, ext };
+  };
+  const _RE_EXT_KEY_BOUNDARY = /\s+([A-Za-z_][A-Za-z0-9_.]*)=/g;
+  const unescapeExtValue = (s) => {
+    if (s.indexOf('\\') < 0) return s;
+    let out = '';
+    let i = 0;
+    const n = s.length;
+    while (i < n) {
+      const ch = s.charCodeAt(i);
+      if (ch === 0x5C && i + 1 < n) {
+        const nx = s.charAt(i + 1);
+        if (nx === 'n') out += '\n';
+        else if (nx === 'r') out += '\r';
+        else if (nx === 't') out += '\t';
+        else out += nx;
+        i += 2;
+        continue;
+      }
+      out += s.charAt(i);
+      i++;
+    }
+    return out;
+  };
+  const parseExt = (s) => {
+    const out = Object.create(null);
+    if (!s) return out;
+    let str = s.replace(/^\s+/, '');
+    if (!str) return out;
+    const firstEq = str.indexOf('=');
+    if (firstEq < 0) return out;
+    let k = str.slice(0, firstEq);
+    let rest = str.slice(firstEq + 1);
+    while (true) {
+      _RE_EXT_KEY_BOUNDARY.lastIndex = 0;
+      const m = _RE_EXT_KEY_BOUNDARY.exec(rest);
+      if (!m) {
+        out[k] = unescapeExtValue(rest);
+        break;
+      }
+      out[k] = unescapeExtValue(rest.slice(0, m.index));
+      k = m[1];
+      rest = rest.slice(m.index + m[0].length);
+    }
+    return out;
+  };
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    let s = line;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    const parts = splitHeader(s);
+    if (!parts) return null;
+    const ext = parseExt(parts.ext);
+    if (!extSchema) {
+      extSchema = Object.keys(ext).slice(0, _TL_CEF_MAX_EXT_COLUMNS);
+      extSchemaIndex = Object.create(null);
+      for (let i = 0; i < extSchema.length; i++) extSchemaIndex[extSchema[i]] = i;
+    }
+    const cells = new Array(_TL_CEF_HEADER_COLS.length + extSchema.length + 1).fill('');
+    for (let i = 0; i < _TL_CEF_HEADER_COLS.length; i++) {
+      cells[i] = parts.fields[i] || '';
+    }
+    let extras = null;
+    const keys = Object.keys(ext);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      const idx = extSchemaIndex[k];
+      if (idx !== undefined) {
+        cells[_TL_CEF_HEADER_COLS.length + idx] = ext[k];
+      } else {
+        if (!extras) extras = Object.create(null);
+        extras[k] = ext[k];
+      }
+    }
+    if (extras) {
+      try { cells[cells.length - 1] = JSON.stringify(extras); }
+      catch (_) { cells[cells.length - 1] = ''; }
+    }
+    return cells;
+  };
+  const getColumns = (_width) => {
+    const cols = _TL_CEF_HEADER_COLS.slice();
+    if (extSchema) {
+      for (let i = 0; i < extSchema.length; i++) cols.push(extSchema[i]);
+    }
+    cols.push('_extra');
+    return cols;
+  };
+  const getDefaultStackColIdx = () => _TL_CEF_HEADER_COLS.indexOf('Severity');
+  const getFormatLabel = () => 'CEF';
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }
 
 // ── Zeek TSV mirror ──

@@ -483,6 +483,14 @@ const STRUCTURED_LOG_KINDS = {
     makeTokenizer: () => _tlMakeCloudTrailTokenizer(),
     label: 'AWS CloudTrail',
   },
+  cef: {
+    // Stateful — header is fixed (7 cols), extension schema is
+    // locked from the first record's `key=value` block. New keys
+    // in later records spill to `_extra`. Strips any leading
+    // syslog wrapper before parsing.
+    makeTokenizer: () => _tlMakeCEFTokenizer(),
+    label: 'CEF',
+  },
 };
 
 async function _parseCsv(buffer, explicitDelim, kindHint) {

@@ -1,0 +1,10 @@
+CEF:0|FortiGate|FortiOS|7.4.1|22001|firewall accept|3|src=10.0.0.1 dst=8.8.8.8 spt=51234 dpt=443 proto=TCP act=allow
+CEF:0|FortiGate|FortiOS|7.4.1|22002|firewall deny|6|src=10.0.0.2 dst=9.9.9.9 spt=51235 dpt=80 proto=TCP act=block
+CEF:0|FortiGate|FortiOS|7.4.1|22003|ips alert|9|src=10.0.0.3 dst=8.8.8.8 spt=51236 dpt=53 proto=UDP act=detect
+CEF:0|PaloAlto|PAN-OS|11.0|TRAFFIC|allow|2|src=10.0.0.4 dst=1.1.1.1 spt=51237 dpt=443 proto=TCP act=allow user=alice
+CEF:0|CheckPoint|VPN-1|R81|2|firewall accept|3|src=10.0.0.5 dst=8.8.4.4 spt=51238 dpt=443 proto=TCP act=allow
+CEF:0|FortiGate|FortiOS|7.4.1|22004|application control|5|src=10.0.0.6 dst=192.0.2.10 spt=51239 dpt=443 proto=TCP act=block app=facebook
+<134>Oct 15 22:14:30 fw01 fortigate: CEF:0|FortiGate|FortiOS|7.4.1|22005|antivirus block|9|src=10.0.0.7 dst=185.220.101.33 spt=51240 dpt=80 proto=TCP act=block fname=malware.exe
+<134>Oct 15 22:14:32 fw01 fortigate: CEF:0|FortiGate|FortiOS|7.4.1|22006|web filter|7|src=10.0.0.8 dst=203.0.113.99 spt=51241 dpt=443 proto=TCP act=block url=https://malicious.example.com/payload
+CEF:0|McAfee|ESM|11.5|EVT|login success|3|src=10.0.0.9 dst=10.0.0.100 spt=0 dpt=22 proto=TCP act=allow user=admin
+CEF:0|McAfee|ESM|11.5|EVT|login failure|7|src=10.0.0.10 dst=10.0.0.100 spt=0 dpt=22 proto=TCP act=deny user=guest

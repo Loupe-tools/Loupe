@@ -59,6 +59,10 @@ TimelineView._STRUCTURED_LOG_KINDS = {
     makeTokenizer: () => _tlMakeCloudTrailTokenizer(),
     label: 'AWS CloudTrail',
   },
+  cef: {
+    makeTokenizer: () => _tlMakeCEFTokenizer(),
+    label: 'CEF',
+  },
 };
 
 Object.assign(TimelineView, {

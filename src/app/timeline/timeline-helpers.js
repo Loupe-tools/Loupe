@@ -102,7 +102,7 @@ const TIMELINE_MAX_ROWS = RENDER_LIMITS.MAX_TIMELINE_ROWS;
 // extensionless / mis-named JSONL files are caught by the JSONL
 // probe in `_sniffTimelineContent`.
 const TIMELINE_EXTS = new Set(['csv', 'tsv', 'evtx', 'sqlite', 'db', 'log',
-                               'jsonl', 'ndjson']);
+                               'jsonl', 'ndjson', 'cef']);
 
 // ── CLF (Common / Combined Log Format) helpers ─────────────────────────────
 // Apache / Nginx access logs use a bracketed date token containing a
@@ -842,6 +842,208 @@ function _tlMakeCloudTrailTokenizer() {
     },
     getFormatLabel: () => 'AWS CloudTrail',
   };
+}
+
+// ── CEF (Common Event Format — ArcSight) tokeniser ────────────────
+// CEF is the lingua franca of SIEM appliances: ArcSight, Splunk
+// HTTP-event-collector inputs, McAfee ESM, Imperva, Palo Alto,
+// Check Point, Fortinet, Juniper SRX, Trend Micro, F5 ASM, Cisco
+// firewalls, etc. Lines look like:
+//
+//   CEF:0|Vendor|Product|Version|SignatureID|Name|Severity|ext
+//
+// where the first 7 fields are pipe-delimited and the trailing
+// `ext` is a space-separated `key=value` extension block. The line
+// is OPTIONALLY prefixed by a syslog header (RFC 3164 or 5424) —
+// real-world deployments overwhelmingly tunnel CEF over syslog —
+// so the tokeniser strips any text before the literal `CEF:0|`.
+//
+// Escaping rules (RFC-CEF Section 4.4):
+//   • In header fields  : `\|`, `\\`
+//   • In ext values     : `\=`, `\\`, `\n` (newline), `\r` (CR)
+// Keys never contain spaces or `=`.
+//
+// Schema:
+//   • 7 fixed header columns: Version, Vendor, Product, Version2,
+//     SignatureID, Name, Severity. (`Version2` distinguishes the
+//     pipe-3 product-version field from the leading `CEF:0` -
+//     parsed-out-as `Version` - protocol version.)
+//   • Dynamic extension keys, locked from the first record's
+//     extension block (capped at MAX_COLUMNS - 7).
+//   • One trailing `_extra` column for keys not in the locked set
+//     (later records carrying new keys spill there as JSON).
+//
+// Histogram stack column: `Severity` (always present). CEF severity
+// is 0–10 (low → high) plus the legacy text values
+// `Unknown / Low / Medium / High / Very-High`; either form renders
+// fine as a categorical.
+const _TL_CEF_HEADER_COLS = [
+  'Version', 'Vendor', 'Product', 'ProductVersion',
+  'SignatureID', 'Name', 'Severity',
+];
+const _TL_CEF_MAX_EXT_COLUMNS = 256;
+function _tlMakeCEFTokenizer() {
+  // Extension schema is locked from the first valid record.
+  let extSchema = null;            // string[] | null
+  let extSchemaIndex = null;       // {key:string -> idx:number}
+
+  // Split a CEF line into [headerFields, extString]. Returns null
+  // for non-CEF input. Strips any leading syslog wrapper.
+  const splitHeader = (line) => {
+    if (!line) return null;
+    // Find the literal `CEF:` token (CEF version is always 0; we
+    // accept 0 or 1 to match the spec). Anything before it is a
+    // syslog wrapper and is discarded.
+    const cefIdx = line.indexOf('CEF:');
+    if (cefIdx < 0) return null;
+    const cefBody = line.slice(cefIdx);
+    // Walk the cefBody splitting on unescaped `|`. The 7 header
+    // fields end at the 7th `|`; everything after is the ext.
+    const fields = [];
+    let cur = '';
+    let i = 0;
+    const n = cefBody.length;
+    while (i < n && fields.length < 7) {
+      const ch = cefBody.charCodeAt(i);
+      if (ch === 0x5C /* \ */ && i + 1 < n) {
+        // Backslash-escape: copy the next char verbatim.
+        cur += cefBody.charAt(i + 1);
+        i += 2;
+        continue;
+      }
+      if (ch === 0x7C /* | */) {
+        fields.push(cur);
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += cefBody.charAt(i);
+      i++;
+    }
+    if (fields.length < 7) return null;   // malformed
+    // The first field is `CEF:N` — strip the `CEF:` prefix so the
+    // cell renders as just the version number.
+    if (fields[0].slice(0, 4) === 'CEF:') {
+      fields[0] = fields[0].slice(4);
+    }
+    const ext = cefBody.slice(i);
+    return { fields, ext };
+  };
+
+  // Parse the extension block. CEF extensions are space-separated
+  // `key=value` pairs where `value` may contain spaces UP TO the
+  // next `key=` token (keys can't contain `=` or whitespace, so
+  // we look ahead for the next ` <ident>=` boundary). Backslash
+  // escapes (`\=`, `\\`, `\n`, `\r`) are honoured inside values.
+  // Returns an object map.
+  const _RE_EXT_KEY_BOUNDARY = /\s+([A-Za-z_][A-Za-z0-9_.]*)=/g;
+  const parseExt = (s) => {
+    const out = Object.create(null);
+    if (!s) return out;
+    // Trim leading whitespace.
+    let str = s.replace(/^\s+/, '');
+    if (!str) return out;
+    // Scan for `key=` tokens at the start; the value runs until the
+    // next ` key=` boundary (or end of string).
+    const firstEq = str.indexOf('=');
+    if (firstEq < 0) return out;
+    // First key is everything up to the first `=`.
+    let k = str.slice(0, firstEq);
+    let rest = str.slice(firstEq + 1);
+    // Find subsequent ` <ident>=` boundaries in `rest`. We walk
+    // them in order, slicing values out at each boundary.
+    while (true) {
+      _RE_EXT_KEY_BOUNDARY.lastIndex = 0;
+      const m = _RE_EXT_KEY_BOUNDARY.exec(rest);
+      if (!m) {
+        // No further boundary — `rest` is the final value.
+        out[k] = unescapeExtValue(rest);
+        break;
+      }
+      // Value runs from start of `rest` up to (but not including)
+      // the matched whitespace.
+      out[k] = unescapeExtValue(rest.slice(0, m.index));
+      k = m[1];
+      rest = rest.slice(m.index + m[0].length);
+    }
+    return out;
+  };
+
+  const unescapeExtValue = (s) => {
+    if (s.indexOf('\\') < 0) return s;
+    let out = '';
+    let i = 0;
+    const n = s.length;
+    while (i < n) {
+      const ch = s.charCodeAt(i);
+      if (ch === 0x5C && i + 1 < n) {
+        const nx = s.charAt(i + 1);
+        if (nx === 'n') out += '\n';
+        else if (nx === 'r') out += '\r';
+        else if (nx === 't') out += '\t';
+        else out += nx;             // \=, \\, \|, \", etc.
+        i += 2;
+        continue;
+      }
+      out += s.charAt(i);
+      i++;
+    }
+    return out;
+  };
+
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    // Tolerate UTF-8 BOM on the first line.
+    let s = line;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    const parts = splitHeader(s);
+    if (!parts) return null;
+    const ext = parseExt(parts.ext);
+    if (!extSchema) {
+      extSchema = Object.keys(ext).slice(0, _TL_CEF_MAX_EXT_COLUMNS);
+      extSchemaIndex = Object.create(null);
+      for (let i = 0; i < extSchema.length; i++) extSchemaIndex[extSchema[i]] = i;
+    }
+    // Build the row: 7 header cells + N ext cells + 1 _extra cell.
+    const cells = new Array(_TL_CEF_HEADER_COLS.length + extSchema.length + 1).fill('');
+    for (let i = 0; i < _TL_CEF_HEADER_COLS.length; i++) {
+      cells[i] = parts.fields[i] || '';
+    }
+    let extras = null;
+    const keys = Object.keys(ext);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      const idx = extSchemaIndex[k];
+      if (idx !== undefined) {
+        cells[_TL_CEF_HEADER_COLS.length + idx] = ext[k];
+      } else {
+        if (!extras) extras = Object.create(null);
+        extras[k] = ext[k];
+      }
+    }
+    if (extras) {
+      try { cells[cells.length - 1] = JSON.stringify(extras); }
+      catch (_) { cells[cells.length - 1] = ''; }
+    }
+    return cells;
+  };
+
+  const getColumns = (_width) => {
+    const cols = _TL_CEF_HEADER_COLS.slice();
+    if (extSchema) {
+      for (let i = 0; i < extSchema.length; i++) cols.push(extSchema[i]);
+    }
+    cols.push('_extra');
+    return cols;
+  };
+
+  // Histogram stack — always Severity (column 6 in the canonical
+  // header).
+  const getDefaultStackColIdx = () => _TL_CEF_HEADER_COLS.indexOf('Severity');
+
+  const getFormatLabel = () => 'CEF';
+
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }
 
 function _tlMakeZeekTokenizer() {

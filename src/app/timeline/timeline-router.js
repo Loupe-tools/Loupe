@@ -244,6 +244,31 @@ extendApp({
     //     correctly via CsvRenderer but lose the schema-aware column
     //     names + `#path`-derived format label + NILVALUE handling).
     if (lines[0] && /^#separator\s/.test(lines[0])) return 'zeek';
+    // CEF (Common Event Format — ArcSight) sniff. CEF lines carry
+    // a `CEF:0|` (or `CEF:1|`) magic prefix; this marker also
+    // appears mid-line when CEF is tunneled inside a syslog
+    // wrapper (`<134>2024-… host vendor:CEF:0|...`). Test for the
+    // marker anywhere in the first ~120 chars of each line — that
+    // window is wide enough for the longest realistic syslog
+    // header (RFC 5424 with structured-data is bounded by ~100
+    // chars before the message body) and short enough that we
+    // can't false-positive on CEF mentioned in a freeform log
+    // message. Threshold matches the other structured-log sniffs.
+    // CEF runs BEFORE syslog 5424 / 3164 because real-world CEF
+    // is overwhelmingly tunneled over syslog and the more specific
+    // signal must win.
+    const _CEF_LINE_RE = /(?:^|\s)CEF:[01]\|/;
+    {
+      const head = lines.slice(0, 5);
+      let hits = 0;
+      for (let i = 0; i < head.length; i++) {
+        // Only consider the first 200 chars per line to bound
+        // worst-case regex cost on pathological inputs.
+        const probe = head[i].length > 200 ? head[i].slice(0, 200) : head[i];
+        if (_CEF_LINE_RE.test(probe)) hits++;
+      }
+      if (head.length >= 2 && hits / head.length >= 0.6) return 'cef';
+    }
     // Syslog RFC 5424 sniff — runs BEFORE 3164 because the 5424
     // shape (`<PRI>VER ` with a digit version field) is a strict
     // superset of 3164's `<PRI>` prefix and we want the more specific
@@ -428,6 +453,14 @@ extendApp({
         // gracefully (returns `null` and the line is skipped).
         const sniffed = this._sniffTimelineContent(buffer);
         ext = (sniffed === 'cloudtrail') ? 'cloudtrail' : 'jsonl';
+      } else if (ext === 'cef') {
+        // `.cef` is the explicit CEF extension. No re-sniff — the
+        // tokeniser handles non-CEF lines gracefully (returns
+        // `null` and the line is skipped). Most CEF in the wild
+        // arrives without this extension (it's tunneled through
+        // `.log` syslog files); the `.log` sniff promotes those
+        // up via the structured-log branch above.
+        ext = 'cef';
       }
       // CloudTrail wrapped form unwrap. The sniff returned
       // 'cloudtrail-wrapped' for files shaped like
@@ -504,7 +537,7 @@ extendApp({
       else if (ext === 'csv' || ext === 'tsv' || ext === 'log'
             || ext === 'syslog3164' || ext === 'syslog5424'
             || ext === 'zeek' || ext === 'jsonl'
-            || ext === 'cloudtrail') workerKind = 'csv';
+            || ext === 'cloudtrail' || ext === 'cef') workerKind = 'csv';
       else if (ext === 'sqlite' || ext === 'db') workerKind = 'sqlite';
 
       if (workerKind && window.WorkerManager
@@ -662,7 +695,7 @@ extendApp({
           // year for RFC 3164 timestamps deterministically.
           const _structuredLog = (ext === 'syslog3164' || ext === 'syslog5424'
                                   || ext === 'zeek' || ext === 'jsonl'
-                                  || ext === 'cloudtrail');
+                                  || ext === 'cloudtrail' || ext === 'cef');
           const opts = (workerKind === 'csv')
             ? { explicitDelim: ext === 'tsv' ? '\t'
                   : (ext === 'log' ? ' ' : null),
@@ -804,7 +837,7 @@ extendApp({
             file, buffer, explicit, ext === 'log' ? 'log' : null);
         } else if (ext === 'syslog3164' || ext === 'syslog5424'
                 || ext === 'zeek' || ext === 'jsonl'
-                || ext === 'cloudtrail') {
+                || ext === 'cloudtrail' || ext === 'cef') {
           // Structured-log fallback — mirrors the worker's
           // `_parseStructuredLog` for environments where workers
           // can't spawn (Firefox `file://`).
