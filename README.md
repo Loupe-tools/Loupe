@@ -31,8 +31,8 @@ No server, no uploads, no tracking — just drop a file and inspect it.
 SOC analysts, MDR responders, phishing teams, and DFIR practitioners need to inspect suspicious files **without uploading them anywhere**. Loupe runs entirely in your browser — nothing ever leaves your machine.
 
 - **Zero network, zero install.** A strict [Content-Security-Policy](SECURITY.md#full-content-security-policy) blocks every outbound request. One HTML file, double-click to open, works on any OS.
-- **Forensics-grade depth in a triage tool.** [50+ formats](FEATURES.md#-supported-formats) — scripts, Office, PDF, email, PE/ELF/Mach-O, archives, certificates, browser extensions, npm — each with format-specific parsers, [recursive deobfuscation](FEATURES.md#-security-analysis), 500+ bundled YARA rules, and one-click STIX/MISP/clipboard export.
-- **A timeline tool too.** Drop a CSV, TSV, EVTX, or browser-history SQLite and Loupe opens the [📈 Timeline viewer](FEATURES.md#-timeline) — virtual grid for 150 K rows, scrubber + stacked-bar histogram, DSL query language, EVTX detections with MITRE ATT&CK pivots, ƒx Extract for JSON/regex columns.
+- **Forensics-grade depth in a triage tool.** [50+ formats](FEATURES.md#-supported-formats) with format-specific parsers, [recursive deobfuscation](FEATURES.md#-security-analysis), 500+ bundled YARA rules, and one-click STIX / MISP / clipboard export.
+- **A timeline tool too.** CSV, TSV, EVTX, log files, and browser-history SQLite open in the [📈 Timeline viewer](FEATURES.md#-timeline) — virtual grid for 150 K rows, scrubber + stacked-bar histogram, DSL query language, EVTX detections with MITRE ATT&CK pivots.
 - **Verifiable supply chain.** Every release is [Sigstore-signed with SLSA v1.0 build provenance](SECURITY.md#verify-your-download), reproducible from source, and ships a CycloneDX SBOM.
 
 ---
@@ -53,9 +53,9 @@ SOC analysts, MDR responders, phishing teams, and DFIR practitioners need to ins
 
 ## 🎯 When to reach for Loupe
 
-- **Abuse-mailbox triage** — drop a `.eml` or `.msg`; headers, SPF/DKIM/DMARC verdicts, tracking pixels, and every embedded URL are inspectable without a single click firing. EML / MSG anchors are [rendered inert](FEATURES.md#-user-interface) so a hostile URL can't be navigated to by accident.
-- **ClickFix / `osascript` paste** — paste an obfuscated one-liner straight in with `Ctrl+V`. Loupe peels every nested Base64 / hex / gzip / zlib / XOR layer with the [full decode lineage](FEATURES.md#-security-analysis) on screen, surfacing C2 URLs, hashes, and paths as one-click MISP / STIX attributes.
-- **Host-triage timeline** — drop the `.evtx` from live response to auto-flag 4688 / 4624 / 1102 / 4104 with MITRE ATT&CK pills and a [Detections + Entities sidebar](FEATURES.md#-timeline). Browser `History.sqlite` opens straight into the same timeline for a compromise narrative on one page.
+- **Abuse-mailbox triage** — drop a `.eml` or `.msg`; headers, SPF/DKIM/DMARC verdicts, tracking pixels, and embedded URLs are all inspectable. Anchors are [rendered inert](FEATURES.md#-user-interface) so a hostile URL can't be navigated to by accident.
+- **ClickFix / `osascript` paste** — paste an obfuscated one-liner with `Ctrl+V`. Loupe peels every nested Base64 / hex / gzip / zlib / XOR layer and shows the [full decode lineage](FEATURES.md#-security-analysis), with C2 URLs, hashes, and paths exportable as MISP / STIX attributes.
+- **Host-triage timeline** — drop a `.evtx` from live response to auto-flag 4688 / 4624 / 1102 / 4104 with MITRE ATT&CK pills and a [Detections + Entities sidebar](FEATURES.md#-timeline). Browser `History.sqlite` opens into the same timeline.
 - **Airgap / SCIF analyst VM** — single HTML, zero network, usable where VirusTotal and Any.Run are off-limits.
 - **Detection-content authoring** — drag a candidate `.yar` onto Loupe to validate it against your sample corpus before promoting it to production.
 

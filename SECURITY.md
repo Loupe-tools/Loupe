@@ -36,34 +36,23 @@ Most user state lives in `localStorage` under the `loupe_` prefix
 exception: the **GeoIP MMDB overrides**.
 
 If you upload a MaxMind-format MMDB via ⚙ Settings → "GeoIP database",
-the file is stored in IndexedDB under database name `loupe-geoip`
-(version 2). Two independent slots are exposed — `geo` (Country / City
-/ Region) and `asn` (Autonomous System / Organisation) — keyed as
-`mmdb-geo` / `mmdb-asn` plus their `*-meta` siblings. Both blobs are
-parsed by the same hand-rolled reader, share the same 256 MB cap, and
-neither path performs network I/O or `eval`. Storage is per-browser-
-profile and per-origin:
+the file is stored in IndexedDB under database name `loupe-geoip` in
+two independent slots — `geo` (Country / City / Region) and `asn`
+(Autonomous System / Organisation), each capped at 256 MB. The DB is
+per-browser-profile, per-origin, and opaque to the network — the CSP
+`default-src 'none'` rule means even Loupe itself cannot exfiltrate
+it. It survives page reloads but is wiped if you clear site data, use
+a private window, or switch browser profiles. No telemetry; provider
+info (filename, vintage) appears only in the Settings dialog and the
+column tooltip. Each slot has its own "✕ Remove" button — removing
+the geo slot reverts to the bundled IPv4-country fallback; removing
+the ASN slot disables ASN enrichment.
 
-- The DB is opaque to the network — there is no API or extension that
-  can read it; the CSP `default-src 'none'` rule means even Loupe
-  itself cannot exfiltrate it.
-- It survives page reloads and full app rebuilds, but is wiped if you
-  clear site data, use a private window, or switch browser profiles.
-- There is no telemetry on which database is loaded; provider info
-  (filename, vintage, build epoch) appears only in the in-page Settings
-  dialog and the affected column's tooltip.
-- Click "✕ Remove" on the appropriate slot in Settings to delete it
-  independently — removing the geo slot reverts to the bundled IPv4-
-  country fallback; removing the ASN slot disables ASN enrichment until
-  another ASN MMDB is uploaded. The bundled IPv4-country binary
-  (vendored in the HTML file itself, ≈830 KB) is **not** stored in
-  IndexedDB — it cannot be removed at runtime.
-
-The bundled binary is regenerated monthly by
-`.github/workflows/refresh-geoip.yml`, which opens a PR with a fresh
-`vendor/geoip-country-ipv4.bin` and an updated SHA-256 in
-[`VENDORED.md`](VENDORED.md). The PR's CI rebuilds the bundle so the
-verified SHA-256 chain is preserved end-to-end.
+The bundled IPv4-country binary (vendored in the HTML file itself,
+≈830 KB) is **not** stored in IndexedDB and cannot be removed at
+runtime. It is regenerated monthly by
+`.github/workflows/refresh-geoip.yml` — see [`VENDORED.md`](VENDORED.md)
+for the SHA-256 pin and refresh recipe.
 
 ---
 
@@ -129,27 +118,17 @@ OS-level OOM-killer.
 
 The gate is also **Timeline-route only**: it lives in
 `_loadFileInTimeline` and never sees files that take the regular
-analyser pipeline (PE / ELF / Office / archive / image …). Those
-formats don't build a RowStore and have radically different memory
-profiles (binary buffers, parsed AST nodes, no UTF-16 expansion), so
-projecting `file.size × ROWSTORE_HEAP_OVERHEAD_FACTOR` would be both
-too loose for some (e.g. archives that decompress 100×) and too
-strict for others. The non-Timeline path is bounded by the coarser
-`LARGE_FILE_THRESHOLD` (200 MB → switch to chunked decode) and the
-per-dispatch `MAX_FILE_BYTES_BY_DISPATCH` ceiling defined in
-[§ Parser Limits](#parser-limits).
+analyser pipeline (PE / ELF / Office / archive / image …), which have
+radically different memory profiles. The non-Timeline path is bounded
+by `LARGE_FILE_THRESHOLD` (200 MB → switch to chunked decode) and the
+per-dispatch `MAX_FILE_BYTES_BY_DISPATCH` ceiling.
 
-When the gate fires the load is cancelled (the worker is never
-spawned and no `RowStore` is built) and the user sees an error toast:
+When the gate fires the load is cancelled before the worker spawns,
+no partial RowStore is built, and the user sees an error toast:
 
 > "File too large for available memory: <file MB> MB needs
 >  ~<projected MB> MB but only ~<budget MB> MB heap is available.
 >  Close other tabs or split the file before loading."
-
-The user can then close other tabs to free heap and retry, switch to
-a Chromium build with a higher per-renderer budget, or split the
-file. Backpressure is enforced before the worker decodes its first
-chunk; partial RowStores are never observable.
 
 ---
 
