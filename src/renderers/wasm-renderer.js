@@ -242,7 +242,12 @@ class WasmRenderer {
     const htBody = document.createElement('tbody');
     addRow(htBody, 'Magic', '\\0asm (0x00 0x61 0x73 0x6d)');
     addRow(htBody, 'Version', String(parsed.version || '?'));
-    addRow(htBody, 'Module hash (modulehash)', parsed.modulehash || '(deferred)');
+    // `_modulehash` is set by analyzeForSecurity(), which app-load.js
+    // dispatches before render(). For direct render-only callers (e.g.
+    // tests, or an integration that skips the analyser) we show the
+    // short-form "—" rather than blocking on a synchronous hash here.
+    addRow(htBody, 'Module hash (modulehash)',
+      (this._modulehash || parsed.modulehash) || '—');
     ht.appendChild(htBody);
     headerCard.appendChild(ht);
     wrap.appendChild(headerCard);
@@ -445,7 +450,12 @@ class WasmRenderer {
     }
 
     // ── Module-shape hash (modulehash) ───────────────────────────────────
+    // Cached on the renderer instance so `render()` can read it back
+    // (it re-parses the buffer and so loses the in-flight `parsed`
+    // local). app-load.js dispatches `analyzeForSecurity` before
+    // `render` on the same instance.
     parsed.modulehash = await WasmRenderer._modulehash(parsed.imports);
+    this._modulehash = parsed.modulehash;
     pushIOC(f, {
       type: IOC.HASH,
       value: parsed.modulehash,
@@ -500,7 +510,7 @@ class WasmRenderer {
       if (parsed.memory.initial >= WasmRenderer.MEMORY_LARGE_INITIAL) {
         f.externalRefs.push({
           type: IOC.PATTERN,
-          url: `Large initial memory — ${parsed.memory.initial} pages (${parsed.memory.initial * 64} KiB) — possible memory-mining or buffer-allocation attack primitive`,
+          url: `Large initial memory — ${parsed.memory.initial} pages (${this._fmtBytes(parsed.memory.initial * 65536)}) — possible memory-mining or buffer-allocation attack primitive`,
           severity: 'medium',
         });
         if (f.risk === 'low') escalateRisk(f, 'medium');
@@ -527,9 +537,9 @@ class WasmRenderer {
       }
     }
 
-    // ── Producer chain (custom 'producers' section) — not a security ────
-    // signal on its own but useful for clustering. Skipped here; left to
-    // the `producers` row in the UI.
+    // The `producers` custom section is not a security signal on its
+    // own; if present it shows up generically in the Custom Sections
+    // card alongside any other custom name. No separate IOC emission.
 
     return f;
   }

@@ -154,7 +154,9 @@ class EmailSpoof {
       seen.add(cand);
       // Match if addrDomain ENDS in the literal or vice-versa — the
       // mismatch fires only when neither contains the other (so
-      // `mail.paypal.com` versus `paypal.com` is benign).
+      // `mail.paypal.com` versus `paypal.com` is benign, and the
+      // self-referential `acme.evil.com` from a sender on `evil.com`
+      // is also benign because both share the same registrable domain).
       if (addrDomain.endsWith(cand) || cand.endsWith(addrDomain)) continue;
       out.push({
         kind: 'domain-literal-mismatch',

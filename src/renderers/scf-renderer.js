@@ -97,10 +97,11 @@ class ScfRenderer {
     // Format banner — always emit so the analyst sees an SCF was identified
     // even when no UNC payload is present (legitimate SCFs are extremely
     // rare in user-supplied files, so the format alone is suspicious).
-    f.externalRefs.push({
+    pushIOC(f, {
       type: IOC.PATTERN,
-      url: 'Windows Explorer Command (.scf) — text shell command, often weaponised for T1187 forced authentication',
+      value: 'Windows Explorer Command (.scf) — text shell command, often weaponised for T1187 forced authentication',
       severity: 'medium',
+      bucket: 'externalRefs',
     });
 
     // Key=Value scan for IconFile / Command. We intentionally don't
@@ -116,13 +117,14 @@ class ScfRenderer {
 
       // UNC path — primary T1187 vector. \\host\share or \\?\UNC\host\share.
       if (/^\\\\[^\\?][^\\]*\\/.test(val) || /^\\\\\?\\UNC\\/i.test(val)) {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: `${key} points at UNC path — T1187 forced authentication / NTLM hash leak`,
+          value: `${key} points at UNC path — T1187 forced authentication / NTLM hash leak`,
           severity: 'high',
-          _highlightText: val,
-          _sourceOffset: offset,
-          _sourceLength: length,
+          highlightText: val,
+          sourceOffset: offset,
+          sourceLength: length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.UNC_PATH,
@@ -137,13 +139,14 @@ class ScfRenderer {
       // HTTP(S) URL — anomalous in a shell command file. Lower
       // confidence than UNC but still worth flagging.
       if (/^https?:\/\//i.test(val)) {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: `${key} points at HTTP URL — anomalous in a shell command file`,
+          value: `${key} points at HTTP URL — anomalous in a shell command file`,
           severity: 'medium',
-          _highlightText: val,
-          _sourceOffset: offset,
-          _sourceLength: length,
+          highlightText: val,
+          sourceOffset: offset,
+          sourceLength: length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.URL,

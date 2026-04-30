@@ -88,10 +88,11 @@ class MofRenderer {
 
     // Format banner — always emitted. MOF is rare enough in user-supplied
     // files that the format alone justifies analyst attention.
-    f.externalRefs.push({
+    pushIOC(f, {
       type: IOC.PATTERN,
-      url: 'Managed Object Format (.mof) — WMI schema, often weaponised for T1546.003 persistence',
+      value: 'Managed Object Format (.mof) — WMI schema, often weaponised for T1546.003 persistence',
       severity: 'medium',
+      bucket: 'externalRefs',
     });
 
     // ── CommandLineEventConsumer — most dangerous: arbitrary command on event ──
@@ -100,13 +101,14 @@ class MofRenderer {
     // appearance of CommandLineEventConsumer is itself a high-signal IOC.
     const cleRe = /\binstance\s+of\s+CommandLineEventConsumer\b/gi;
     for (const m of normalized.matchAll(cleRe)) {
-      f.externalRefs.push({
+      pushIOC(f, {
         type: IOC.PATTERN,
-        url: 'CommandLineEventConsumer — T1546.003 WMI persistence with arbitrary command execution',
+        value: 'CommandLineEventConsumer — T1546.003 WMI persistence with arbitrary command execution',
         severity: 'critical',
-        _highlightText: m[0],
-        _sourceOffset: m.index,
-        _sourceLength: m[0].length,
+        highlightText: m[0],
+        sourceOffset: m.index,
+        sourceLength: m[0].length,
+        bucket: 'externalRefs',
       });
     }
 
@@ -128,13 +130,14 @@ class MofRenderer {
     // ── ActiveScriptEventConsumer — VBScript/JScript on event ──
     const aseRe = /\binstance\s+of\s+ActiveScriptEventConsumer\b/gi;
     for (const m of normalized.matchAll(aseRe)) {
-      f.externalRefs.push({
+      pushIOC(f, {
         type: IOC.PATTERN,
-        url: 'ActiveScriptEventConsumer — T1546.003 WMI persistence with script execution',
+        value: 'ActiveScriptEventConsumer — T1546.003 WMI persistence with script execution',
         severity: 'high',
-        _highlightText: m[0],
-        _sourceOffset: m.index,
-        _sourceLength: m[0].length,
+        highlightText: m[0],
+        sourceOffset: m.index,
+        sourceLength: m[0].length,
+        bucket: 'externalRefs',
       });
     }
 
@@ -145,39 +148,42 @@ class MofRenderer {
     for (const m of normalized.matchAll(scriptRe)) {
       const body = m[1] || '';
       if (body.length < 4) continue;
-      f.externalRefs.push({
+      pushIOC(f, {
         type: IOC.PATTERN,
-        url: 'ScriptText present — inline script payload in WMI consumer',
+        value: 'ScriptText present — inline script payload in WMI consumer',
         severity: 'medium',
-        _highlightText: m[0].slice(0, 80),
-        _sourceOffset: m.index,
-        _sourceLength: m[0].length,
+        highlightText: m[0].slice(0, 80),
+        sourceOffset: m.index,
+        sourceLength: m[0].length,
+        bucket: 'externalRefs',
       });
     }
 
     // ── __FilterToConsumerBinding — the wiring that makes persistence live ──
     const bindRe = /\binstance\s+of\s+__FilterToConsumerBinding\b/gi;
     for (const m of normalized.matchAll(bindRe)) {
-      f.externalRefs.push({
+      pushIOC(f, {
         type: IOC.PATTERN,
-        url: '__FilterToConsumerBinding — wires WMI EventFilter to EventConsumer (T1546.003)',
+        value: '__FilterToConsumerBinding — wires WMI EventFilter to EventConsumer (T1546.003)',
         severity: 'high',
-        _highlightText: m[0],
-        _sourceOffset: m.index,
-        _sourceLength: m[0].length,
+        highlightText: m[0],
+        sourceOffset: m.index,
+        sourceLength: m[0].length,
+        bucket: 'externalRefs',
       });
     }
 
     // ── __EventFilter — the trigger query ──
     const filtRe = /\binstance\s+of\s+__EventFilter\b/gi;
     for (const m of normalized.matchAll(filtRe)) {
-      f.externalRefs.push({
+      pushIOC(f, {
         type: IOC.PATTERN,
-        url: '__EventFilter — WMI event-trigger query',
+        value: '__EventFilter — WMI event-trigger query',
         severity: 'medium',
-        _highlightText: m[0],
-        _sourceOffset: m.index,
-        _sourceLength: m[0].length,
+        highlightText: m[0],
+        sourceOffset: m.index,
+        sourceLength: m[0].length,
+        bucket: 'externalRefs',
       });
     }
 
@@ -187,13 +193,14 @@ class MofRenderer {
     for (const m of normalized.matchAll(queryRe)) {
       const q = m[1];
       if (!q) continue;
-      f.externalRefs.push({
+      pushIOC(f, {
         type: IOC.PATTERN,
-        url: `WQL Query: ${q.slice(0, 100)}`,
+        value: `WQL Query: ${q.slice(0, 100)}`,
         severity: 'medium',
-        _highlightText: q,
-        _sourceOffset: m.index + m[0].indexOf(q),
-        _sourceLength: q.length,
+        highlightText: q,
+        sourceOffset: m.index + m[0].indexOf(q),
+        sourceLength: q.length,
+        bucket: 'externalRefs',
       });
     }
 
@@ -204,13 +211,14 @@ class MofRenderer {
     for (const m of normalized.matchAll(includeRe)) {
       const target = m[1];
       if (/^https?:\/\//i.test(target)) {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: `#pragma include points at remote URL — remote MOF compilation`,
+          value: `#pragma include points at remote URL — remote MOF compilation`,
           severity: 'high',
-          _highlightText: target,
-          _sourceOffset: m.index + m[0].indexOf(target),
-          _sourceLength: target.length,
+          highlightText: target,
+          sourceOffset: m.index + m[0].indexOf(target),
+          sourceLength: target.length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.URL,
@@ -220,13 +228,14 @@ class MofRenderer {
           highlightText: target,
         });
       } else if (/^\\\\[^\\?]/.test(target)) {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: `#pragma include points at UNC path — remote MOF compilation`,
+          value: `#pragma include points at UNC path — remote MOF compilation`,
           severity: 'high',
-          _highlightText: target,
-          _sourceOffset: m.index + m[0].indexOf(target),
-          _sourceLength: target.length,
+          highlightText: target,
+          sourceOffset: m.index + m[0].indexOf(target),
+          sourceLength: target.length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.UNC_PATH,
@@ -244,7 +253,6 @@ class MofRenderer {
     const hasCrit = refs.some(r => r.severity === 'critical');
     const hasMed = refs.some(r => r.severity === 'medium');
     if (hasCrit) escalateRisk(f, 'critical');
-    else if (highs >= 2) escalateRisk(f, 'high');
     else if (highs >= 1) escalateRisk(f, 'high');
     else if (hasMed) escalateRisk(f, 'medium');
     return f;

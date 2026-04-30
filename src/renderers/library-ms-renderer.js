@@ -104,23 +104,25 @@ class LibraryMsRenderer {
     const isLibrary = /<libraryDescription/i.test(text);
     const formatLabel = isLibrary ? 'Windows Library (.library-ms)' : 'Search Connector (.searchConnector-ms)';
 
-    f.externalRefs.push({
+    pushIOC(f, {
       type: IOC.PATTERN,
-      url: `${formatLabel} — XML descriptor often weaponised for T1187 forced authentication`,
+      value: `${formatLabel} — XML descriptor often weaponised for T1187 forced authentication`,
       severity: 'medium',
+      bucket: 'externalRefs',
     });
 
     // Scan extracted <url> / <simpleLocation> / iconReference values.
     const locations = LibraryMsRenderer._extractLocations(normalized);
     for (const loc of locations) {
       if (loc.kind === 'unc') {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: `<${loc.tag}> points at UNC path — T1187 forced authentication / NTLM hash leak`,
+          value: `<${loc.tag}> points at UNC path — T1187 forced authentication / NTLM hash leak`,
           severity: 'high',
-          _highlightText: loc.value,
-          _sourceOffset: loc.offset,
-          _sourceLength: loc.value.length,
+          highlightText: loc.value,
+          sourceOffset: loc.offset,
+          sourceLength: loc.value.length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.UNC_PATH,
@@ -130,13 +132,14 @@ class LibraryMsRenderer {
           highlightText: loc.value,
         });
       } else if (loc.kind === 'http') {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: `<${loc.tag}> points at HTTP URL — remote location in a search/library descriptor`,
+          value: `<${loc.tag}> points at HTTP URL — remote location in a search/library descriptor`,
           severity: 'medium',
-          _highlightText: loc.value,
-          _sourceOffset: loc.offset,
-          _sourceLength: loc.value.length,
+          highlightText: loc.value,
+          sourceOffset: loc.offset,
+          sourceLength: loc.value.length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.URL,

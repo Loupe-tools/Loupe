@@ -446,8 +446,16 @@ class PcapRenderer {
         result.error = `PCAPNG block at offset ${p}: invalid length ${blockLen}`;
         break;
       }
-      // SHB resets endianness; we don't bother re-detecting on multi-
-      // section files, which are exceptionally rare.
+      // PCAPNG spec § 4.1: each section's SHB declares its own
+      // Byte-Order Magic; sections may legally have different
+      // endianness within a single file. For triage we deliberately
+      // do NOT re-read BOM on subsequent SHBs and keep the first
+      // section's `le` — multi-section files are vanishingly rare in
+      // malware artefacts and the spec violation is bounded
+      // (counters/timestamps in later sections may be wrong, but
+      // block-walking still terminates because blockLen is read with
+      // the stale endianness consistently and is sanity-checked
+      // against bytes.length on every iteration).
       if (blockType === PcapRenderer.PCAPNG_BLOCK_SHB) {
         // body already consumed for the first SHB; subsequent ones
         // start a new section but we keep the same endianness.

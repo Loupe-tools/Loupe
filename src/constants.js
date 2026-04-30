@@ -784,6 +784,8 @@ function throwIfAborted() {
  * @param {string}  [opts.highlightText] click-to-focus needle (defaults to `value`)
  * @param {string}  [opts.note]       short human context
  * @param {string}  [opts.bucket]     'externalRefs' | 'interestingStrings' (default 'interestingStrings')
+ * @param {number}  [opts.sourceOffset] byte/char offset into `_rawText` (for click-to-focus precision)
+ * @param {number}  [opts.sourceLength] length at `sourceOffset` (paired with above)
  */
 function pushIOC(findings, opts) {
   if (!findings || !opts || !opts.type || !opts.value) return;
@@ -797,6 +799,14 @@ function pushIOC(findings, opts) {
   };
   if (opts.highlightText) entry._highlightText = String(opts.highlightText);
   if (opts.note) entry.note = String(opts.note);
+  // sourceOffset/sourceLength: numeric byte/char range into the
+  // renderer's `_rawText` for sidebar click-to-focus precision. Both
+  // must be set together; a sourceOffset of 0 is a real value (start
+  // of file), so use `typeof === 'number'` rather than truthiness.
+  if (typeof opts.sourceOffset === 'number' && typeof opts.sourceLength === 'number') {
+    entry._sourceOffset = opts.sourceOffset;
+    entry._sourceLength = opts.sourceLength;
+  }
   findings[bucket].push(entry);
 
   // Auto-emit host-derived sibling IOCs when a URL lands and tldts is loaded.

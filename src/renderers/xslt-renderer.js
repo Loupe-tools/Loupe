@@ -92,45 +92,55 @@ class XsltRenderer {
       signatureMatches: [],
     };
 
-    f.externalRefs.push({
+    pushIOC(f, {
       type: IOC.PATTERN,
-      url: 'XSLT Stylesheet — XML transform language, often weaponised for T1220 SquiblyTwo signed-binary proxy execution',
+      value: 'XSLT Stylesheet — XML transform language, often weaponised for T1220 SquiblyTwo signed-binary proxy execution',
       severity: 'medium',
+      bucket: 'externalRefs',
     });
 
     // ── <msxsl:script> blocks — canonical SquiblyTwo payload ─────────────
     // Pattern: `<msxsl:script ... language="JScript|VBScript|C#">` open
     // tag. The content is opaque to us (could be JScript with eval, C#
     // System.Diagnostics.Process.Start, etc.); the mere presence is high.
-    const scriptRe = /<msxsl:script\b[^>]*\blanguage\s*=\s*"([^"]+)"[^>]*>/gi;
+    // SAFETY: bounded — quoted-attr alternation accepts both `"…"` and
+    // `'…'` (XML allows either) so `<msxsl:script language='JScript'>`
+    // does not evade detection. Greedy `[^"]+` / `[^']+` are bounded by
+    // their own delimiter; the trailing `[^>]*` is bounded by `>`.
+    const scriptRe = /<msxsl:script\b[^>]*\blanguage\s*=\s*(?:"([^"]+)"|'([^']+)')[^>]*>/gi;
     for (const m of normalized.matchAll(scriptRe)) {
-      const lang = m[1];
-      f.externalRefs.push({
+      const lang = m[1] || m[2];
+      pushIOC(f, {
         type: IOC.PATTERN,
-        url: `<msxsl:script language="${lang}"> — T1220 inline script payload in XSLT`,
+        value: `<msxsl:script language="${lang}"> — T1220 inline script payload in XSLT`,
         severity: 'high',
-        _highlightText: m[0],
-        _sourceOffset: m.index,
-        _sourceLength: m[0].length,
+        highlightText: m[0],
+        sourceOffset: m.index,
+        sourceLength: m[0].length,
+        bucket: 'externalRefs',
       });
     }
 
     // ── xsl:import / xsl:include with remote href ────────────────────────
     // <xsl:include href="http://…"/> pulls additional XSL at transform
     // time. Same risk class as document(); we surface it as high.
-    const includeRe = /<xsl:(include|import)\b[^>]*\bhref\s*=\s*"([^"]+)"/gi;
+    // SAFETY: bounded — quoted-attr alternation accepts both `"…"` and
+    // `'…'` to match XML attribute syntax; greedy charclass bounded by
+    // its own delimiter.
+    const includeRe = /<xsl:(include|import)\b[^>]*\bhref\s*=\s*(?:"([^"]+)"|'([^']+)')/gi;
     for (const m of normalized.matchAll(includeRe)) {
       const tag = m[1];
-      const href = m[2];
+      const href = m[2] || m[3];
       const offset = m.index + m[0].indexOf(href);
       if (/^https?:\/\//i.test(href)) {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: `<xsl:${tag} href="…"> remote URL — T1220 remote-XSL load`,
+          value: `<xsl:${tag} href="…"> remote URL — T1220 remote-XSL load`,
           severity: 'high',
-          _highlightText: href,
-          _sourceOffset: offset,
-          _sourceLength: href.length,
+          highlightText: href,
+          sourceOffset: offset,
+          sourceLength: href.length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.URL,
@@ -140,13 +150,14 @@ class XsltRenderer {
           highlightText: href,
         });
       } else if (/^\\\\[^\\?]/.test(href)) {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: `<xsl:${tag} href="…"> UNC path — T1220 remote-XSL load via SMB`,
+          value: `<xsl:${tag} href="…"> UNC path — T1220 remote-XSL load via SMB`,
           severity: 'high',
-          _highlightText: href,
-          _sourceOffset: offset,
-          _sourceLength: href.length,
+          highlightText: href,
+          sourceOffset: offset,
+          sourceLength: href.length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.UNC_PATH,
@@ -167,13 +178,14 @@ class XsltRenderer {
       const uri = m[1];
       const offset = m.index + m[0].indexOf(uri);
       if (/^https?:\/\//i.test(uri)) {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: 'document() with remote URL — XSLT remote-document load',
+          value: 'document() with remote URL — XSLT remote-document load',
           severity: 'medium',
-          _highlightText: uri,
-          _sourceOffset: offset,
-          _sourceLength: uri.length,
+          highlightText: uri,
+          sourceOffset: offset,
+          sourceLength: uri.length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.URL,
@@ -183,13 +195,14 @@ class XsltRenderer {
           highlightText: uri,
         });
       } else if (/^\\\\[^\\?]/.test(uri)) {
-        f.externalRefs.push({
+        pushIOC(f, {
           type: IOC.PATTERN,
-          url: 'document() with UNC path — XSLT remote-document load via SMB',
+          value: 'document() with UNC path — XSLT remote-document load via SMB',
           severity: 'medium',
-          _highlightText: uri,
-          _sourceOffset: offset,
-          _sourceLength: uri.length,
+          highlightText: uri,
+          sourceOffset: offset,
+          sourceLength: uri.length,
+          bucket: 'externalRefs',
         });
         pushIOC(f, {
           type: IOC.UNC_PATH,
@@ -217,14 +230,17 @@ class XsltRenderer {
     const remoteList = [];
     let scripts = 0;
 
-    const scriptRe = /<msxsl:script\b[^>]*>/gi;
-    for (const _ of text.matchAll(scriptRe)) scripts++;
+    // Mirror the analyzer's `language=…` gate so the UI script-block
+    // count agrees with the IOC count.
+    const scriptRe = /<msxsl:script\b[^>]*\blanguage\s*=\s*(?:"[^"]+"|'[^']+')[^>]*>/gi;
+    for (const _m of text.matchAll(scriptRe)) scripts++;
 
-    const includeRe = /<xsl:(include|import)\b[^>]*\bhref\s*=\s*"([^"]+)"/gi;
+    const includeRe = /<xsl:(include|import)\b[^>]*\bhref\s*=\s*(?:"([^"]+)"|'([^']+)')/gi;
     let m;
     while ((m = includeRe.exec(text)) !== null) {
-      if (/^(https?:\/\/|\\\\)/i.test(m[2])) {
-        remoteList.push({ context: `<xsl:${m[1]} href>`, value: m[2] });
+      const href = m[2] || m[3];
+      if (/^(https?:\/\/|\\\\)/i.test(href)) {
+        remoteList.push({ context: `<xsl:${m[1]} href>`, value: href });
       }
     }
     const docRe = /\bdocument\s*\(\s*['"]([^'"]+)['"]/gi;

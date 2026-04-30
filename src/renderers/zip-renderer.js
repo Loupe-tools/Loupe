@@ -1270,6 +1270,10 @@ class ZipRenderer {
           url: t.path,
           severity: 'high',
           note: `Zip Slip — ${note} (CWE-22)`,
+          // `_highlightText` enables click-to-focus from the sidebar
+          // into the entry-list `_rawText`. Without it the IOC row
+          // is unclickable.
+          _highlightText: t.path,
         });
       }
       if (traversalEntries.length > cap) {
