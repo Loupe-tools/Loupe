@@ -1228,7 +1228,31 @@ class X509Renderer {
       }
 
       if (certs.length === 0) {
-        findings.summary = 'No certificates could be parsed';
+        // Mirror any accumulated detections (e.g. "Private Key Detected"
+        // from the PEM scan above) into externalRefs before the early
+        // return — without this, the post-loop mirror at line ~1424 is
+        // skipped and a private-key-only PEM produces zero exportable
+        // IOCs in Summary / Share / STIX / MISP / sidebar surfaces.
+        // Same shape as the post-loop mirror and the PKCS#12 branch.
+        const hasPrivateKey = findings.detections.some(d => d.name === 'Private Key Detected');
+        findings.summary = hasPrivateKey
+          ? 'Private key only — no certificates'
+          : 'No certificates could be parsed';
+        findings.metadata = {};
+        for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
+        findings.externalRefs = findings.detections.map(d => ({
+          type: IOC.PATTERN,
+          url: `${d.name} — ${d.description}`,
+          severity: d.severity,
+        }));
+        // Set risk level from accumulated riskScore so escalateRisk has
+        // the right starting point (matches the post-loop block at
+        // line ~1415).
+        if (findings.riskScore >= 50) findings.riskLevel = 'critical';
+        else if (findings.riskScore >= 30) findings.riskLevel = 'high';
+        else if (findings.riskScore >= 10) findings.riskLevel = 'medium';
+        else findings.riskLevel = 'low';
+        escalateRisk(findings, findings.riskLevel);
         return findings;
       }
 
