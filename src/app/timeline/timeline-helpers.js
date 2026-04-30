@@ -1455,6 +1455,209 @@ function _tlMakeLogfmtTokenizer() {
   return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }
 
+// ── W3C Extended Log Format tokeniser (IIS / AWS ELB / ALB /
+//    CloudFront / generic W3C) ────────────────────────────────────
+// W3C Extended Log File Format (https://www.w3.org/TR/WD-logfile)
+// is the schema-on-disk format used by Microsoft IIS, AWS ELB
+// (classic), AWS ALB (Application Load Balancer), AWS CloudFront,
+// AWS NLB (TCP variant), and a long tail of HTTP-adjacent
+// services. Files start with `#`-prefixed directives that
+// describe the per-file column layout; data rows are delimited
+// by either single ASCII space (IIS) or tab (ALB / CloudFront).
+//
+// Directive set:
+//   #Software, #Version, #Date, #Start-Date, #End-Date, #Remark
+//   are metadata and produce no row data.
+//   #Fields:  defines (or resets) the schema. Cap 256 cols.
+//
+// Schema-driven projection:
+//   - Column names may include parentheses (`cs(User-Agent)`,
+//     `cs(Referer)`, `cs(Cookie)`); these are passed through
+//     verbatim. Aside from `(`/`)`/`-` the W3C identifier set
+//     is conservative.
+//   - Empty values are encoded as `-` (literal hyphen) per spec
+//     — substituted for the empty string.
+//   - IIS encodes spaces inside field values as `+` (URL-encode-
+//     style); decoded back to space at parse time. ALB and
+//     CloudFront use `%20` instead, which we leave untouched
+//     (the tokeniser does NOT do general URL decoding — only
+//     the `+`→space substitution that IIS conventions require).
+//
+// Synthesised Timestamp column:
+//   IIS, CloudFront: `date` + `time` are joined into ISO 8601
+//     (`YYYY-MM-DDTHH:MM:SSZ`) at synthetic column index 0.
+//   ALB: `time` field is already ISO 8601 — pass through.
+//   ELB: `timestamp` field is already ISO 8601 — pass through.
+//   Generic: if both `date` and `time` columns exist, synthesise.
+//   The synthesised column is always named `Timestamp` and sits
+//   at index 0 ahead of the parsed schema, matching what the
+//   Timeline grid auto-detects on first paint.
+//
+// Format-label discrimination — the tokeniser inspects the
+// `#Software` directive (if any) and the first observed
+// `#Fields:` schema to pick a label:
+//   IIS:        `#Software` contains "Microsoft Internet
+//               Information Services".
+//   AWS ALB:    schema contains `target_status_code` or
+//               `request_processing_time`.
+//   AWS ELB:    schema contains `backend_status_code` (without
+//               `target_*` keys).
+//   CloudFront: schema contains `x-edge-location`.
+//   Generic:    `#Fields:` present but no source match → the
+//               label is `W3C Extended`.
+//
+// Delimiter detection:
+//   On the first data row after a `#Fields:` directive, count
+//   tabs vs spaces. Whichever delimiter has at least
+//   `fields - 1` occurrences becomes the row delimiter for this
+//   schema. This handles IIS (space) and ALB / CloudFront (tab)
+//   from the same parser without requiring a static table.
+const _TL_W3C_MAX_COLUMNS = 256;
+function _tlMakeW3CTokenizer() {
+  let schema = null;          // string[] — set by `#Fields:` directive
+  let schemaIndex = null;     // Object<string, number>
+  let delim = null;           // ' ' | '\t' — locked on first data row
+  let label = 'W3C Extended'; // refined by #Software / schema content
+  let dateIdx = -1;           // index of `date` in schema, -1 if absent
+  let timeIdx = -1;           // index of `time` in schema
+  let synthesisedTimestamp = false; // true when col 0 = synthesised
+  let softwareLineSeen = false;     // tracks #Software for IIS detect
+
+  const refineLabel = () => {
+    // Order: most specific first.
+    if (softwareLineSeen) return;          // IIS already locked
+    if (!schema) return;
+    const has = (k) => schemaIndex && schemaIndex[k] !== undefined;
+    if (has('x-edge-location')) { label = 'AWS CloudFront'; return; }
+    if (has('target_status_code') || has('request_processing_time')) {
+      label = 'AWS ALB'; return;
+    }
+    if (has('backend_status_code')) { label = 'AWS ELB'; return; }
+    label = 'W3C Extended';
+  };
+
+  // Decode IIS-style `+` → space inside a field value. ALB /
+  // CloudFront use `%20` for spaces; we leave those untouched
+  // (general URL decoding is out of scope and would corrupt
+  // legitimate `%` chars in cookies / referers).
+  const decodeIIS = (s) => {
+    if (!s || s.indexOf('+') < 0) return s;
+    let out = '';
+    for (let i = 0; i < s.length; i++) {
+      out += s.charAt(i) === '+' ? ' ' : s.charAt(i);
+    }
+    return out;
+  };
+
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    let s = line;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    if (!s.length) return null;
+
+    // Directive lines start with `#`. Handle the spec set; ignore
+    // unknown directives so future W3C extensions don't break the
+    // parse.
+    if (s.charCodeAt(0) === 0x23 /* '#' */) {
+      // `#Fields:` — schema definition / reset.
+      const fm = /^#Fields:\s*(.+)$/i.exec(s);
+      if (fm) {
+        const raw = fm[1].trim();
+        // Fields are whitespace-separated in the directive.
+        const fields = raw.split(/\s+/).slice(0, _TL_W3C_MAX_COLUMNS);
+        schema = fields;
+        schemaIndex = Object.create(null);
+        for (let i = 0; i < fields.length; i++) schemaIndex[fields[i]] = i;
+        dateIdx = schemaIndex['date'] !== undefined
+          ? schemaIndex['date'] : -1;
+        timeIdx = schemaIndex['time'] !== undefined
+          ? schemaIndex['time'] : -1;
+        synthesisedTimestamp = (dateIdx >= 0 && timeIdx >= 0);
+        delim = null;             // re-detect on next data row
+        refineLabel();
+        return null;
+      }
+      // `#Software:` — used for IIS label detection.
+      const sm = /^#Software:\s*(.+)$/i.exec(s);
+      if (sm) {
+        if (/Microsoft\s+Internet\s+Information\s+Services/i.test(sm[1])) {
+          label = 'IIS W3C';
+          softwareLineSeen = true;
+        }
+        return null;
+      }
+      // Other comment / metadata directives — silently ignore.
+      return null;
+    }
+
+    // Data row. Need a schema; without one we can't project.
+    if (!schema || !schema.length) return null;
+
+    // Lock delimiter on the first data row.
+    if (delim === null) {
+      const tabs = (s.match(/\t/g) || []).length;
+      const spaces = (s.match(/ /g) || []).length;
+      if (tabs >= schema.length - 1) delim = '\t';
+      else if (spaces >= schema.length - 1) delim = ' ';
+      else delim = (tabs > spaces) ? '\t' : ' ';
+    }
+
+    // Split. W3C does not define quoting; values can't contain
+    // the delimiter (consumers must encode them — IIS uses `+` for
+    // space, AWS uses `%20`).
+    const parts = s.split(delim);
+    // Width-mismatched rows: pad short / truncate long. Don't
+    // emit `_extra` — W3C is fixed-width per `#Fields:` directive.
+    const cells = new Array(schema.length).fill('');
+    const upTo = Math.min(parts.length, schema.length);
+    for (let i = 0; i < upTo; i++) {
+      let v = parts[i];
+      if (v === '-') v = '';
+      else if (v && v.indexOf('+') >= 0) v = decodeIIS(v);
+      cells[i] = v;
+    }
+
+    // Synthesise leading Timestamp column when both `date` and
+    // `time` were declared. ISO 8601, UTC convention (matches
+    // IIS `u_ex*.log` and CloudFront documented behaviour).
+    if (synthesisedTimestamp) {
+      const d = cells[dateIdx];
+      const t = cells[timeIdx];
+      const ts = (d && t) ? (d + 'T' + t + 'Z') : '';
+      return [ts].concat(cells);
+    }
+    return cells;
+  };
+
+  // Columns: prepend `Timestamp` when synthesised. No `_extra`.
+  const getColumns = (_width) => {
+    if (!schema) return [];
+    const cols = schema.slice();
+    if (synthesisedTimestamp) cols.unshift('Timestamp');
+    return cols;
+  };
+
+  // Histogram stack candidates spanning IIS + AWS variants.
+  const _STACK_CANDIDATES = [
+    'sc-status', 'elb_status_code', 'target_status_code',
+    'sc-status-code', 'status', 'cs-method', 'method',
+    'cs-uri-stem', 's-sitename',
+  ];
+  const getDefaultStackColIdx = () => {
+    if (!schema) return null;
+    const offset = synthesisedTimestamp ? 1 : 0;
+    for (let i = 0; i < _STACK_CANDIDATES.length; i++) {
+      const idx = schemaIndex[_STACK_CANDIDATES[i]];
+      if (idx !== undefined) return idx + offset;
+    }
+    return null;
+  };
+
+  const getFormatLabel = () => label;
+
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}
+
 function _tlMakeZeekTokenizer() {
   // Defaults match the Zeek convention; overridden on the fly if the
   // file's preamble carries a `#set_separator` / `#unset_field` /

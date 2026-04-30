@@ -244,6 +244,35 @@ extendApp({
     //     correctly via CsvRenderer but lose the schema-aware column
     //     names + `#path`-derived format label + NILVALUE handling).
     if (lines[0] && /^#separator\s/.test(lines[0])) return 'zeek';
+    // W3C Extended Log File Format sniff. Used by IIS,
+    // AWS ELB / ALB / CloudFront, and any tool emitting
+    // `#Fields:`-driven access logs. Two magic-marker signals:
+    //   - line 0 carries `#Software: Microsoft Internet Information
+    //     Services` (IIS) — locked by the tokeniser to the
+    //     `IIS W3C` label.
+    //   - any of the first 20 non-empty lines starts with
+    //     `#Fields:` — defines the schema. Sufficient on its
+    //     own; AWS exports often omit `#Software` entirely.
+    // Both probes are line-anchored (`^#`) and do not collide
+    // with Zeek (`#separator`), CEF / LEEF (`CEF:` / `LEEF:` mid-
+    // line), or syslog (`<PRI>` magic byte). Placed AFTER Zeek
+    // because Zeek's `#separator` is the most specific marker;
+    // placed BEFORE the structured-log + delimiter-confidence
+    // probes so W3C files don't fall through to `'log'` or
+    // delimiter-sniffing CSV / TSV.
+    {
+      // `#Software` test is a fast O(1) check on line 0.
+      if (lines[0] && /^#Software:\s+Microsoft\s+Internet\s+Information\s+Services/i.test(lines[0])) {
+        return 'w3c';
+      }
+      // `#Fields:` test scans the first 20 non-empty lines —
+      // some AWS exports place `#Version:` and `#Date:` ahead
+      // of `#Fields:`.
+      const head = lines.slice(0, 20);
+      for (let i = 0; i < head.length; i++) {
+        if (/^#Fields:\s+/i.test(head[i])) return 'w3c';
+      }
+    }
     // LEEF (Log Event Extended Format — IBM QRadar) sniff. Same
     // priority position as CEF — both are SIEM-vendor formats
     // overwhelmingly tunnelled through syslog, and we want the
@@ -593,7 +622,8 @@ extendApp({
             || ext === 'syslog3164' || ext === 'syslog5424'
             || ext === 'zeek' || ext === 'jsonl'
             || ext === 'cloudtrail' || ext === 'cef'
-            || ext === 'leef' || ext === 'logfmt') workerKind = 'csv';
+            || ext === 'leef' || ext === 'logfmt'
+            || ext === 'w3c') workerKind = 'csv';
       else if (ext === 'sqlite' || ext === 'db') workerKind = 'sqlite';
 
       if (workerKind && window.WorkerManager
@@ -752,7 +782,8 @@ extendApp({
           const _structuredLog = (ext === 'syslog3164' || ext === 'syslog5424'
                                   || ext === 'zeek' || ext === 'jsonl'
                                   || ext === 'cloudtrail' || ext === 'cef'
-                                  || ext === 'leef' || ext === 'logfmt');
+                                  || ext === 'leef' || ext === 'logfmt'
+                                  || ext === 'w3c');
           const opts = (workerKind === 'csv')
             ? { explicitDelim: ext === 'tsv' ? '\t'
                   : (ext === 'log' ? ' ' : null),
@@ -895,7 +926,8 @@ extendApp({
         } else if (ext === 'syslog3164' || ext === 'syslog5424'
                 || ext === 'zeek' || ext === 'jsonl'
                 || ext === 'cloudtrail' || ext === 'cef'
-                || ext === 'leef' || ext === 'logfmt') {
+                || ext === 'leef' || ext === 'logfmt'
+                || ext === 'w3c') {
           // Structured-log fallback — mirrors the worker's
           // `_parseStructuredLog` for environments where workers
           // can't spawn (Firefox `file://`).

@@ -71,6 +71,10 @@ TimelineView._STRUCTURED_LOG_KINDS = {
     makeTokenizer: () => _tlMakeLogfmtTokenizer(),
     label: 'logfmt',
   },
+  w3c: {
+    makeTokenizer: () => _tlMakeW3CTokenizer(),
+    label: 'W3C Extended',
+  },
 };
 
 Object.assign(TimelineView, {

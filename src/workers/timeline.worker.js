@@ -509,6 +509,22 @@ const STRUCTURED_LOG_KINDS = {
     makeTokenizer: () => _tlMakeLogfmtTokenizer(),
     label: 'logfmt',
   },
+  w3c: {
+    // Stateful — W3C Extended Log File Format. Schema is
+    // declared by `#Fields:` directives at the top of the file
+    // (and may reset mid-file). Source-specific labelling:
+    // `IIS W3C`, `AWS ALB`, `AWS ELB`, `AWS CloudFront`, or
+    // generic `W3C Extended` when no fingerprint matches.
+    // Delimiter (space vs tab) auto-detected per `#Fields:`
+    // block; `+` decoded to space inside values per IIS
+    // convention; synthesised `Timestamp` column at index 0
+    // when both `date` and `time` are declared.
+    makeTokenizer: () => _tlMakeW3CTokenizer(),
+    // Default label; runtime tokeniser refines via
+    // `getFormatLabel()` once `#Fields:` and `#Software` lines
+    // are observed.
+    label: 'W3C Extended',
+  },
 };
 
 async function _parseCsv(buffer, explicitDelim, kindHint) {

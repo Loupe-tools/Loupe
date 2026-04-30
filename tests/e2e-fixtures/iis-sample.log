@@ -1,0 +1,14 @@
+#Software: Microsoft Internet Information Services 10.0
+#Version: 1.0
+#Date: 2024-04-30 00:00:00
+#Fields: date time s-ip cs-method cs-uri-stem cs-uri-query s-port cs-username c-ip cs(User-Agent) cs(Referer) sc-status sc-substatus sc-win32-status time-taken
+2024-04-30 12:34:56 10.0.0.5 GET /default.aspx - 443 - 10.0.0.20 Mozilla/5.0+(Windows+NT+10.0;+Win64) - 200 0 0 42
+2024-04-30 12:34:57 10.0.0.5 POST /api/login - 443 alice 10.0.0.21 curl/7.81 - 401 0 1326 8
+2024-04-30 12:34:58 10.0.0.5 GET /static/app.css - 443 - 10.0.0.20 Mozilla/5.0+(Windows+NT+10.0;+Win64) https://www.example.com/ 304 0 0 2
+2024-04-30 12:35:01 10.0.0.5 POST /api/login - 443 alice 185.220.101.33 curl/7.81 - 200 0 0 12
+2024-04-30 12:35:05 10.0.0.5 GET /admin/users - 443 admin 10.0.0.22 Mozilla/5.0+(Macintosh) - 200 0 0 28
+2024-04-30 12:35:06 10.0.0.5 GET /api/v1/orders id=42 443 admin 10.0.0.22 Mozilla/5.0+(Macintosh) - 200 0 0 18
+2024-04-30 12:35:09 10.0.0.5 PUT /api/v1/orders/42 - 443 admin 10.0.0.22 Mozilla/5.0+(Macintosh) - 204 0 0 6
+2024-04-30 12:35:12 10.0.0.5 GET /robots.txt - 443 - 203.0.113.99 Googlebot/2.1 - 200 0 0 1
+2024-04-30 12:35:14 10.0.0.5 GET /wp-admin/ - 443 - 198.51.100.42 sqlmap/1.6 - 404 0 2 3
+2024-04-30 12:35:18 10.0.0.5 GET /index.html - 443 - 10.0.0.23 Mozilla/5.0+(X11;+Linux) - 500 0 5 102

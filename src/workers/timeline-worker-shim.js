@@ -223,7 +223,7 @@ function _tlCanonicalLogColumns(width) {
 // Mirrors `_tlDecodePri`, `_tlInferYear`, `_tlTokenizeSyslog3164`,
 // `_tlTokenizeSyslog5424`, `_tlMakeJsonlTokenizer`,
 // `_tlMakeCloudTrailTokenizer`, `_tlMakeCEFTokenizer`,
-// `_tlMakeLEEFTokenizer`, `_tlMakeLogfmtTokenizer`, `_tlMakeZeekTokenizer`, the
+// `_tlMakeLEEFTokenizer`, `_tlMakeLogfmtTokenizer`, `_tlMakeW3CTokenizer`, `_tlMakeZeekTokenizer`, the
 // `_TL_SYSLOG{3164,5424}_COLS` constants, `_TL_JSONL_*` constants,
 // `_TL_CLOUDTRAIL_CANONICAL_COLS`, `_TL_CEF_HEADER_COLS`,
 // `_TL_LEEF_HEADER_COLS`, and `_TL_ZEEK_STACK_BY_PATH` in
@@ -947,6 +947,118 @@ function _tlMakeLogfmtTokenizer() {
     return null;
   };
   const getFormatLabel = () => 'logfmt';
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}
+
+// ── W3C Extended (IIS / AWS ELB / ALB / CloudFront) mirror ──
+// Canonical implementation lives in
+// `src/app/timeline/timeline-helpers.js::_tlMakeW3CTokenizer`.
+// Cross-realm parity is enforced by `tests/unit/timeline-w3c.test.js`.
+const _TL_W3C_MAX_COLUMNS = 256;
+function _tlMakeW3CTokenizer() {
+  let schema = null;
+  let schemaIndex = null;
+  let delim = null;
+  let label = 'W3C Extended';
+  let dateIdx = -1;
+  let timeIdx = -1;
+  let synthesisedTimestamp = false;
+  let softwareLineSeen = false;
+  const refineLabel = () => {
+    if (softwareLineSeen) return;
+    if (!schema) return;
+    const has = (k) => schemaIndex && schemaIndex[k] !== undefined;
+    if (has('x-edge-location')) { label = 'AWS CloudFront'; return; }
+    if (has('target_status_code') || has('request_processing_time')) {
+      label = 'AWS ALB'; return;
+    }
+    if (has('backend_status_code')) { label = 'AWS ELB'; return; }
+    label = 'W3C Extended';
+  };
+  const decodeIIS = (s) => {
+    if (!s || s.indexOf('+') < 0) return s;
+    let out = '';
+    for (let i = 0; i < s.length; i++) {
+      out += s.charAt(i) === '+' ? ' ' : s.charAt(i);
+    }
+    return out;
+  };
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    let s = line;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    if (!s.length) return null;
+    if (s.charCodeAt(0) === 0x23) {
+      const fm = /^#Fields:\s*(.+)$/i.exec(s);
+      if (fm) {
+        const raw = fm[1].trim();
+        const fields = raw.split(/\s+/).slice(0, _TL_W3C_MAX_COLUMNS);
+        schema = fields;
+        schemaIndex = Object.create(null);
+        for (let i = 0; i < fields.length; i++) schemaIndex[fields[i]] = i;
+        dateIdx = schemaIndex['date'] !== undefined ? schemaIndex['date'] : -1;
+        timeIdx = schemaIndex['time'] !== undefined ? schemaIndex['time'] : -1;
+        synthesisedTimestamp = (dateIdx >= 0 && timeIdx >= 0);
+        delim = null;
+        refineLabel();
+        return null;
+      }
+      const sm = /^#Software:\s*(.+)$/i.exec(s);
+      if (sm) {
+        if (/Microsoft\s+Internet\s+Information\s+Services/i.test(sm[1])) {
+          label = 'IIS W3C';
+          softwareLineSeen = true;
+        }
+        return null;
+      }
+      return null;
+    }
+    if (!schema || !schema.length) return null;
+    if (delim === null) {
+      const tabs = (s.match(/\t/g) || []).length;
+      const spaces = (s.match(/ /g) || []).length;
+      if (tabs >= schema.length - 1) delim = '\t';
+      else if (spaces >= schema.length - 1) delim = ' ';
+      else delim = (tabs > spaces) ? '\t' : ' ';
+    }
+    const parts = s.split(delim);
+    const cells = new Array(schema.length).fill('');
+    const upTo = Math.min(parts.length, schema.length);
+    for (let i = 0; i < upTo; i++) {
+      let v = parts[i];
+      if (v === '-') v = '';
+      else if (v && v.indexOf('+') >= 0) v = decodeIIS(v);
+      cells[i] = v;
+    }
+    if (synthesisedTimestamp) {
+      const d = cells[dateIdx];
+      const t = cells[timeIdx];
+      const ts = (d && t) ? (d + 'T' + t + 'Z') : '';
+      return [ts].concat(cells);
+    }
+    return cells;
+  };
+  const getColumns = (_width) => {
+    if (!schema) return [];
+    const cols = schema.slice();
+    if (synthesisedTimestamp) cols.unshift('Timestamp');
+    return cols;
+  };
+  const _STACK_CANDIDATES = [
+    'sc-status', 'elb_status_code', 'target_status_code',
+    'sc-status-code', 'status', 'cs-method', 'method',
+    'cs-uri-stem', 's-sitename',
+  ];
+  const getDefaultStackColIdx = () => {
+    if (!schema) return null;
+    const offset = synthesisedTimestamp ? 1 : 0;
+    for (let i = 0; i < _STACK_CANDIDATES.length; i++) {
+      const idx = schemaIndex[_STACK_CANDIDATES[i]];
+      if (idx !== undefined) return idx + offset;
+    }
+    return null;
+  };
+  const getFormatLabel = () => label;
   return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }
 
