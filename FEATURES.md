@@ -48,6 +48,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **Certificates** | `.pem` `.der` `.crt` `.cer` · `.p12` `.pfx` (PKCS#12) |
 | **OpenPGP** | `.pgp` `.gpg` `.asc` `.sig` — ASCII-armored & binary packet streams; `.key` auto-disambiguated against X.509 |
 | **Java** | `.jar` `.war` `.ear` · `.class` |
+| **WebAssembly** | `.wasm` — sections / imports / exports / memory parsed; suspicious WASI and JS-bridge imports plus cryptominer / keylogger exports flagged; `modulehash` (SHA-256 over normalised import vector) for cluster pivoting. |
 | **Scripts** | `.wsf` `.wsc` `.wsh` (parsed) · `.vbs` `.ps1` `.bat` `.cmd` `.js` |
 | **Logs** | `.evtx` (Windows Event Log — binary EVTX parser) · `.log` (Apache CLF default + syslog / Zeek / JSONL / CEF / LEEF / logfmt / Apache error sniff) · `.cef` `.leef` |
 | **Data** | `.csv` `.tsv` · `.json` `.ndjson` `.jsonl` (array-shaped → tabular grid) · `.sqlite` `.db` (Chrome / Firefox / Edge history auto-detect) |

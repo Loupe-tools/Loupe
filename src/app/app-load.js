@@ -1180,6 +1180,14 @@ extendApp({
       this.findings = r.analyzeForSecurity(buffer, file.name);
       return { docEl: r.render(buffer, file.name) };
     },
+    async wasm(file, buffer) {
+      const r = new WasmRenderer();
+      // analyzeForSecurity is async — modulehash awaits crypto.subtle.
+      // Mirror the eml/pdf/onenote pattern: await before render() so the
+      // sidebar snapshot of `findings` is complete.
+      this.findings = await r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
     reg(file, buffer) {
       const r = new RegRenderer();
       this.findings = r.analyzeForSecurity(buffer, file.name);

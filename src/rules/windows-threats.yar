@@ -425,21 +425,6 @@ rule Info_Contains_DotNet_Assembly
         $mz and ($mscoree or $clr or $clr2 or 2 of ($metadata, $metadata2))
 }
 
-rule Info_Contains_WebAssembly
-{
-    meta:
-        description = "File contains WebAssembly (WASM) binary module"
-        severity    = "info"
-        category    = "file-type"
-        mitre       = ""
-
-    strings:
-        $magic = { 00 61 73 6D }
-
-    condition:
-        $magic
-}
-
 rule Info_Contains_DLL_Export
 {
     meta:

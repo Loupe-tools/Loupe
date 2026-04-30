@@ -150,6 +150,7 @@ YARA_FILES = [
     'src/rules/browserext-threats.yar',
     'src/rules/macos-installer-threats.yar',
     'src/rules/npm-threats.yar',
+    'src/rules/wasm-threats.yar',
 ]
 
 YARA_CATEGORIES = {
@@ -174,6 +175,7 @@ YARA_CATEGORIES = {
     'src/rules/browserext-threats.yar': 'Browser Extension',
     'src/rules/macos-installer-threats.yar': 'macOS Installer',
     'src/rules/npm-threats.yar': 'npm',
+    'src/rules/wasm-threats.yar': 'WebAssembly',
 }
 
 # ── File-level `applies_to` injection ──────────────────────────────────────
@@ -213,6 +215,12 @@ YARA_APPLIES_TO = {
     'src/rules/msix-threats.yar':            'msix',
     'src/rules/browserext-threats.yar':      'browserext',
     'src/rules/npm-threats.yar':             'npm',
+    # NB: `wasm-threats.yar` is intentionally NOT in YARA_APPLIES_TO. The
+    # `Info_Contains_WebAssembly` rule must fire on embedded WASM blobs in
+    # *any* container (script, PE overlay, archive entry, etc.); gating the
+    # whole file with `applies_to: wasm` would suppress that. Each rule
+    # already short-circuits on `uint32(0) == 0x6d736100`, so the cost on
+    # non-WASM input is one i32 read per rule.
     # Mixed files — the file-level value covers the majority case; the
     # exceptional rules carry their own `applies_to` in source which the
     # injector treats as a no-op (already-set ⇒ skip).
@@ -795,6 +803,7 @@ APP_JS_FILES = [
     'src/renderers/library-ms-renderer.js',
     'src/renderers/mof-renderer.js',
     'src/renderers/xslt-renderer.js',
+    'src/renderers/wasm-renderer.js',
     'src/renderers/wsf-renderer.js',
     'src/renderers/reg-renderer.js',
     'src/renderers/inf-renderer.js',

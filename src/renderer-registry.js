@@ -759,6 +759,21 @@ class RendererRegistry {
       description: 'XSLT Stylesheet (.xsl / .xslt)',
     },
     {
+      // WebAssembly binary module — magic-first dispatch on the canonical
+      // 0x00 'a' 's' 'm' header. WASM is platform-agnostic; the .wasm
+      // extension is also commonly present so we accept either signal.
+      // Tiny WASM modules (< 8 bytes) fail the parser cleanly and surface
+      // as a parse-error info IOC rather than a hard exception.
+      id: 'wasm',
+      className: 'WasmRenderer',
+      exts: ['wasm'],
+      magic: (ctx) => {
+        const b = ctx.bytes;
+        return b.length >= 4 && b[0] === 0x00 && b[1] === 0x61 && b[2] === 0x73 && b[3] === 0x6d;
+      },
+      description: 'WebAssembly Binary Module (.wasm)',
+    },
+    {
       id: 'wsf',
       className: 'WsfRenderer',
       exts: ['wsf', 'wsc', 'wsh'],
