@@ -265,6 +265,13 @@ extendApp({
       this._iocCsvHighlightActiveView = null;
       const buffer = prefetchedBuffer
         || await ParserWatchdog.run(() => file.arrayBuffer());
+      // Perf marker — buffer is now available; the next sub-phase is
+      // worker dispatch + parse. No-op in release builds (the global
+      // is only defined when `app-test-api.js` is concatenated into
+      // the bundle by `scripts/build.py --test-api`).
+      if (typeof window !== 'undefined' && window.__loupePerfMark) {
+        window.__loupePerfMark('fileBufferReady');
+      }
       // Resolve the effective extension — may come from the filename or,
       // for extensionless inputs, from the magic-byte / text sniff.
       let ext = (file.name && file.name.indexOf('.') !== -1)
@@ -344,9 +351,20 @@ extendApp({
           const pendingChunks = [];
           let rowsSeen = 0;
           let lastSubtitleAt = 0;
+          // Perf-marker latches — flipped on the FIRST observation of
+          // each event kind so the harness sees worker→host first-byte
+          // and first-row deltas separately. Subsequent events don't
+          // re-stamp (we want the FIRST arrival, not the last).
+          let perfColumnsSeen = false;
+          let perfFirstChunkSeen = false;
           const onBatch = (m) => {
             if (!m) return;
             if (m.event === 'columns') {
+              if (!perfColumnsSeen && typeof window !== 'undefined'
+                  && window.__loupePerfMark) {
+                window.__loupePerfMark('workerColumnsEvent');
+                perfColumnsSeen = true;
+              }
               // W4 early-mount path. Build the RowStoreBuilder NOW
               // and replay any chunks that snuck in before the
               // columns event (shouldn't happen with the current
@@ -366,6 +384,11 @@ extendApp({
               return;
             }
             if (m.event !== 'rows-chunk') return;
+            if (!perfFirstChunkSeen && typeof window !== 'undefined'
+                && window.__loupePerfMark) {
+              window.__loupePerfMark('workerFirstChunk');
+              perfFirstChunkSeen = true;
+            }
             // Wrap the transferred buffers as typed-array views.
             // Buffers are detached on the worker side post-transfer,
             // so this is a zero-copy view into the bytes we own now.
@@ -431,6 +454,17 @@ extendApp({
                 onBatch, timeoutMs: sizeTimeout }
             : { onBatch, timeoutMs: sizeTimeout };
           const msg = await window.WorkerManager.runTimeline(transfer, workerKind, opts);
+          // Perf markers — terminal `done` resolved. Also stamp the
+          // worker's self-reported `parseMs` (added in
+          // `timeline.worker.js::onmessage`) onto the dedicated
+          // perf-state slot.
+          if (typeof window !== 'undefined' && window.__loupePerfMark) {
+            window.__loupePerfMark('workerDone');
+            if (msg && typeof msg.parseMs === 'number'
+                && window.__loupePerfWorkerParseMs) {
+              window.__loupePerfWorkerParseMs(msg.parseMs);
+            }
+          }
           // Clear the live "N rows…" subtitle the moment the worker
           // hands back the terminal `done` — the build / mount phase
           // has its own dedicated phrases so a stale row-count would
@@ -474,8 +508,20 @@ extendApp({
             msg.rowStore = builder.finalize();
             builder = null;
           }
+          // Perf marker — `RowStore` is now sealed; next sub-phase is
+          // `TimelineView` construction (which runs the synchronous
+          // post-load passes: `_parseAllTimestamps`,
+          // `_buildStableStackColorMap`, `_rebuildSusBitmap`,
+          // `_rebuildDetectionBitmap`, `_recomputeFilter`, `_buildDOM`).
+          if (typeof window !== 'undefined' && window.__loupePerfMark) {
+            window.__loupePerfMark('rowStoreFinalized');
+            window.__loupePerfMark('timelineViewCtorStart');
+          }
           view = this._buildTimelineViewFromWorker(
             file, workerKind, msg, transferOriginal ? null : buffer);
+          if (typeof window !== 'undefined' && window.__loupePerfMark) {
+            window.__loupePerfMark('timelineViewCtorEnd');
+          }
         } catch (e) {
           // A newer file load has bumped the timeline-channel token and
           // aborted this parse. Bail out entirely — `_loadFile` has

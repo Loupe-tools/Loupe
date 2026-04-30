@@ -201,6 +201,48 @@ seen: `git checkout <suspect-parent>`, `python make.py build`, capture
 reproduces the "regressed" numbers, the variance is runtime-state, not
 source-level.
 
+### Performance harness — `python make.py perf`
+
+A scripted harness drives the file-picker path through a generated CSV
+(default 100 K rows × 30 cols, ≈160 MB) under Chromium and breaks the
+load → idle wall-time into five phases plus per-sub-phase markers from
+inside the page. Report-only — `make.py perf` is opt-in and never gates
+CI. Full runbook: [`tests/perf/README.md`](tests/perf/README.md).
+
+Sub-phase markers fire from the production code via a single global
+helper, `window.__loupePerfMark(name)`. The global is defined ONLY by
+the IIFE at the bottom of `src/app/app-test-api.js`, which the
+release build never includes — production cost is one undefined-property
+miss per call. Call sites short-circuit on the same property check:
+
+```js
+if (typeof window !== 'undefined' && window.__loupePerfMark) {
+  window.__loupePerfMark('parseTimestampsStart');
+}
+```
+
+The marker bag is read at the end of a perf run via the test-API
+`__loupeTest.perfState().marks` projection (a shallow copy of
+`app._perfMarks`); the harness computes per-sub-phase deltas and prints
+them as a Markdown table. Adding a new marker:
+
+1. Stamp it from a production code path with the global-helper guard
+   above.
+2. Append the new name to `PERF_MARKER_ORDER` in
+   `tests/perf/perf-helpers.ts`.
+3. Optionally add an entry to `PERF_SUBPHASES` so it appears as a row
+   in the Markdown summary.
+4. Extend `tests/unit/app-test-api-perf-state.test.js` if the marker
+   participates in a contract the harness depends on (e.g. the bundle
+   version → first-paint critical path).
+
+Worker-side parse time is plumbed separately. The CSV worker's
+terminal `done` event already includes `msg.parseMs`; the host-side
+handler in `src/app/timeline/timeline-router.js` forwards it to
+`window.__loupePerfWorkerParseMs(ms)`, which the IIFE writes to
+`app._perfWorkerParseMs`. The harness surfaces it in the Markdown
+summary as a separate row from the host-clock markers.
+
 ---
 
 ## Architecture & Signal Chain

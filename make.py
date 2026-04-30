@@ -81,6 +81,12 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
     'test-build': ('Build docs/index.test.html (--test-api)', 'scripts/build.py', ['--test-api']),
     'test-unit':  ('Run Node unit tests',         'scripts/run_tests_unit.py',     []),
     'test-e2e':   ('Run Playwright e2e tests',    'scripts/run_tests_e2e.py',      []),
+    # `perf` is opt-in (mirrors `sbom`). Wraps `scripts/run_perf.py`,
+    # which sets `LOUPE_PERF=1` and forwards default args; see
+    # `tests/perf/README.md` for the runbook. Excluded from
+    # DEFAULT_STEPS and TEST_STEPS — perf measurements should never
+    # be coupled to the build / test loop.
+    'perf':       ('Run Timeline perf harness',   'scripts/run_perf.py',           []),
 }
 
 DEFAULT_STEPS = ['verify', 'regex', 'parity', 'yara-lint', 'build', 'contract', 'codemap']

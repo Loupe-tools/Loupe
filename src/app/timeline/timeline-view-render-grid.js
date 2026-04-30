@@ -396,6 +396,15 @@ Object.assign(TimelineView.prototype, {
       viewer._tlRole = role;
       wrap.innerHTML = '';
       wrap.appendChild(viewer.root());
+      // Perf marker — first GridViewer mount for this TimelineView.
+      // The marker fires only on the FIRST `_renderGridInto` call for
+      // a given view (the `existing` branch above is the cheap
+      // re-render path used by filter / window changes; that one is
+      // not a "first paint"). No-op in release builds.
+      if (role === 'main' && typeof window !== 'undefined'
+          && window.__loupePerfMark) {
+        window.__loupePerfMark('firstGridPaint');
+      }
 
       // Left-click a row → move the red-line cursor on the histogram to
       // this row's timestamp. Uses the virtual row index from data-idx

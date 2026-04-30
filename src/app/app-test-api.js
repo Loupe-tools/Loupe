@@ -90,6 +90,11 @@ extendApp({
     // fast-path sees a fresh slate.
     this._skipTimelineRoute = false;
     this._isCalledByTimelineFallback = false;
+    // Drop perf-marks from the previous load so the next harness
+    // run starts fresh. Production builds never reach this path
+    // (the test-API is omitted from `docs/index.html` entirely).
+    this._testApiClearPerfMarks();
+    this._perfWorkerParseMs = null;
   },
 
   /** Construct a synthetic File around `bytesOrU8` and feed it through the
@@ -241,6 +246,140 @@ extendApp({
     };
   },
 
+  /** Stamp a perf sub-phase marker. Test-only — production code paths
+   *  invoke this through the `window.__loupePerfMark` global which is
+   *  ONLY defined in `--test-api` builds (see the IIFE at the bottom
+   *  of this file). The release bundle's call sites read
+   *  `window.__loupePerfMark` and short-circuit when undefined, so
+   *  the production cost is one property miss per call — no method
+   *  dispatch, no allocation.
+   *
+   *  Markers are stored on `this._perfMarks` (lazy-initialised) as
+   *  `{ name: performance.now() }`. They are surfaced read-only via
+   *  the perf-state projection's `.marks` field so the perf harness
+   *  can compute per-sub-phase deltas of the load → first-paint
+   *  critical path.
+   *
+   *  Each marker is overwritten on subsequent calls with the same
+   *  name; this is the desired semantics for the harness because a
+   *  fresh `_testApiResetCrossLoadState` cycle wipes the bag and the
+   *  next file load re-stamps every marker. The "first occurrence
+   *  wins" caller (e.g. `workerColumnsEvent`) is responsible for
+   *  guarding its own call site. */
+  _testApiPerfMark(name, value) {
+    if (typeof name !== 'string' || !name) return;
+    if (!this._perfMarks) this._perfMarks = Object.create(null);
+    const t = (typeof value === 'number' && Number.isFinite(value))
+      ? value
+      : ((typeof performance !== 'undefined' && performance.now)
+        ? performance.now() : Date.now());
+    this._perfMarks[name] = t;
+  },
+
+  /** Drop the perf-marks bag. Called from `_testApiResetCrossLoadState`
+   *  so consecutive harness loads don't see stale markers from the
+   *  previous file. Production paths never call this — markers are
+   *  observed once per file load via `perfState()` and the next
+   *  load's reset clears them. */
+  _testApiClearPerfMarks() {
+    this._perfMarks = null;
+  },
+
+  /** Read-only snapshot of the App + active TimelineView state used by
+   *  the performance harness (`tests/perf/`) to drive multi-phase
+   *  measurements without polling internal app state from outside.
+   *
+   *  Returns a small JSON-safe object — every field is a primitive or
+   *  primitive array. The harness polls this via `waitForFunction` to
+   *  wait on phase transitions (Timeline mounted → auto-extract pump
+   *  drained → GeoIP enrichment landed → fully idle).
+   *
+   *  Test-only contract: never mutates App / TimelineView state. The
+   *  whole method is a sequence of property reads with defensive
+   *  fallbacks for the brief windows where one structure exists but
+   *  another isn't yet stamped (e.g. between `_loadFile` returning
+   *  and the Timeline factory mounting). */
+  _testApiPerfState() {
+    const tl = this._timelineCurrent || null;
+    const extractedCols = (tl && Array.isArray(tl._extractedCols)) ? tl._extractedCols : [];
+    // Project per-extracted-column metadata cheaply — only the kind +
+    // row-count are needed by the perf harness's `geoip enriched`
+    // gate. Sample-values copying is deliberately avoided: the
+    // harness should never read enrichment payloads through this API
+    // (they belong in the existing `timeline-geoip.spec.ts` shape
+    // assertions, not in a perf snapshot polled at 25 ms).
+    const extractedSummary = extractedCols.map(c => ({
+      kind: (c && c.kind) || null,
+      name: (c && c.name) || null,
+      rowCount: (c && Array.isArray(c.values)) ? c.values.length : 0,
+    }));
+    const geoipColCount = extractedSummary.reduce(
+      (n, c) => n + (c.kind === 'geoip' ? 1 : 0), 0);
+    // Project the perf-marks bag into a fresh JSON-safe object — the
+    // harness reads `marks.workerDone` etc. as numbers (ms timestamps
+    // from `performance.now()`). When no marks have been stamped yet
+    // (e.g. between bundle load and the first file drop) `marks` is
+    // an empty object rather than `null` so harness predicates can
+    // treat absent keys as `undefined` without a null-guard. Spread
+    // makes a shallow copy — direct exposure of `_perfMarks` would
+    // let a perf-state consumer mutate live App state.
+    const perfMarks = this._perfMarks || null;
+    const marks = perfMarks ? Object.assign({}, perfMarks) : {};
+    // Worker `parseMs` (the worker's self-reported parse time) is
+    // surfaced separately when stamped. The host samples it from
+    // `msg.parseMs` on the terminal `done` event — see
+    // `src/app/timeline/timeline-router.js`. Held on a single slot
+    // (overwritten on each load) for the same lifecycle reason as
+    // `marks` above.
+    const parseMs = (typeof this._perfWorkerParseMs === 'number')
+      ? this._perfWorkerParseMs : null;
+    return {
+      // ── App stage flags ────────────────────────────────────────
+      hasCurrentResult: !!this.currentResult,
+      timelineMounted: !!tl,
+      yaraScanInProgress: !!this._yaraScanInProgress,
+      timelineLoadInFlight: !!this._timelineLoadInFlight,
+      // ── TimelineView stage flags ───────────────────────────────
+      autoExtractApplying: !!(tl && tl._autoExtractApplying),
+      // `_autoExtractIdleHandle` carries `{ cancel }` while a tick
+      // is scheduled and is nulled at the top of every tick body —
+      // so a `null` value with `_autoExtractApplying === false`
+      // means the apply pump has fully drained. Surface as a
+      // boolean rather than the handle itself so the projection
+      // stays JSON-safe.
+      autoExtractIdleHandlePending: !!(tl && tl._autoExtractIdleHandle),
+      // `null` = base GeoIP detect not yet run; `[]` = base detect
+      // ran AND found nothing (the auto-extract terminal hook may
+      // schedule a retry over extracted cols, then null it back);
+      // non-empty array = base detect found IPs and enriched them.
+      // The perf harness's "GeoIP done" gate combines this with
+      // `geoipColCount > 0`.
+      geoipBaseDetectKind: (tl && tl._geoipBaseDetectResult === null)
+        ? 'null'
+        : (Array.isArray(tl && tl._geoipBaseDetectResult)
+          ? (tl._geoipBaseDetectResult.length === 0 ? 'empty-array' : 'non-empty-array')
+          : 'absent'),
+      pendingTasksSize: (tl && tl._pendingTasks && typeof tl._pendingTasks.size === 'number')
+        ? tl._pendingTasks.size : 0,
+      // ── Cheap volumetric counters for the report ───────────────
+      timelineRowCount: (tl && tl.store && tl.store.rowCount) || 0,
+      baseColCount: (tl && Array.isArray(tl._baseColumns)) ? tl._baseColumns.length : 0,
+      extractedColCount: extractedCols.length,
+      geoipColCount,
+      extractedCols: extractedSummary,
+      // ── Perf sub-phase markers ─────────────────────────────────
+      // `marks[name] = performance.now()` for every `_perfMark`
+      // call since the last `_testApiClearPerfMarks`. Empty object
+      // until the first marker fires. See `_testApiPerfMark` above
+      // for the lifecycle.
+      marks,
+      // Worker's self-reported parse time from the terminal `done`
+      // event (`msg.parseMs`). `null` until stamped — the harness
+      // skips its sub-phase if absent, no error.
+      parseMs,
+    };
+  },
+
   /** Snapshot of `app.currentResult` minus the heavy buffers. Used by
    *  tests that need to assert the dispatched renderer / file metadata.
    *
@@ -328,6 +467,28 @@ extendApp({
     };
     probe();
   });
+  // Free-function entry point for in-app perf marker stamping. The
+  // release bundle does NOT ship this file, so `window.__loupePerfMark`
+  // is undefined and call sites short-circuit on a single property
+  // miss with no method dispatch. Test builds get the live function
+  // here. `value` is optional — when provided it overrides the default
+  // `performance.now()` timestamp (used for the worker-side
+  // `parseMs` plumbing).
+  window.__loupePerfMark = function (name, value) {
+    if (!window.app || typeof window.app._testApiPerfMark !== 'function') return;
+    window.app._testApiPerfMark(name, value);
+  };
+  // Dedicated slot for the worker's `parseMs` self-report. Surfaced
+  // separately on `perfState()` so the harness can attribute parse
+  // time to the worker without inferring it from the
+  // `workerFirstChunk → workerDone` delta (which includes the host's
+  // `RowStoreBuilder.addChunk` cost too).
+  window.__loupePerfWorkerParseMs = function (ms) {
+    if (!window.app) return;
+    if (typeof ms !== 'number' || !Number.isFinite(ms)) return;
+    window.app._perfWorkerParseMs = ms;
+  };
+
   window.__loupeTest = {
     ready,
     async loadBytes(name, bytes, opts) {
@@ -349,6 +510,23 @@ extendApp({
     dumpResult() {
       if (!window.app) return null;
       return window.app._testApiDumpResult();
+    },
+    // Read-only state observer for `tests/perf/`. Cheap synchronous
+    // call (no awaits, no allocations besides the result object) so
+    // the perf harness can poll it at 25 ms without skewing
+    // measurements.
+    perfState() {
+      if (!window.app) return null;
+      return window.app._testApiPerfState();
+    },
+    // Stamp a custom perf marker. Used by tests that want to mark a
+    // boundary the harness can't reach via the existing in-app
+    // markers (e.g. "harness saw the first .grid-row"). Production
+    // call sites use the `_perfMark` global helper which no-ops in
+    // release builds.
+    perfMark(name) {
+      if (!window.app) return;
+      window.app._testApiPerfMark(name);
     },
   };
 })();

@@ -36,6 +36,15 @@ Object.assign(TimelineView.prototype, {
   // directly and every downstream bucket / tick / label path consults
   // `_timeIsNumeric` to format as numbers rather than UTC dates.
   _parseAllTimestamps() {
+    // Perf-marker (test-API only — `window.__loupePerfMark` is undefined
+    // in release builds, so the property miss costs ~one cycle on every
+    // `_parseAllTimestamps` call). The marker pair brackets the entire
+    // typed-array fill, including format detection and the per-cell
+    // decode loop. Used by `tests/perf/` to attribute load → first-paint
+    // time to the timestamp-parse pass specifically.
+    if (typeof window !== 'undefined' && window.__loupePerfMark) {
+      window.__loupePerfMark('parseTimestampsStart');
+    }
     // The sorted index cache depends on _timeMs — invalidate it whenever
     // timestamps are re-parsed (time-column change, reset, etc.).
     this._invalidateGridCache();
@@ -45,6 +54,9 @@ Object.assign(TimelineView.prototype, {
     if (col == null) {
       out.fill(NaN);
       this._timeIsNumeric = false;
+      if (typeof window !== 'undefined' && window.__loupePerfMark) {
+        window.__loupePerfMark('parseTimestampsEnd');
+      }
       return;
     }
     const total = store ? store.rowCount : 0;
@@ -80,6 +92,9 @@ Object.assign(TimelineView.prototype, {
           out[i] = v === '' ? NaN : _tlParseTimestampFast(v, fmt);
         }
       }
+    }
+    if (typeof window !== 'undefined' && window.__loupePerfMark) {
+      window.__loupePerfMark('parseTimestampsEnd');
     }
   },
 

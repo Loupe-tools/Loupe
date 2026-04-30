@@ -9,6 +9,7 @@ that constraint while adding three independent layers of coverage:
 | `tests/unit/`    | Node `node:test`   | Pure modules from `src/` (no DOM, no App, no renderers).  |
 | `tests/e2e-fixtures/` | Playwright    | Real fixtures from `examples/` → real renderer dispatch.  |
 | `tests/e2e-ui/`  | Playwright         | UI ingress (file picker, drag-drop, paste) round-trips.   |
+| `tests/perf/`    | Playwright         | Opt-in (`LOUPE_PERF=1`) Timeline performance harness — see `tests/perf/README.md`. |
 
 Everything is wired through `make.py`:
 
@@ -262,6 +263,26 @@ Synthesises `Event('paste')` with a faked `clipboardData` shape
 matching the `DataTransfer` interface the handler reads. Covers all
 four forks (file → image → text/plain → text/html) plus the
 input/textarea focus gate.
+
+## Performance harness — `tests/perf/`
+
+Opt-in only — self-skips unless `LOUPE_PERF=1` is set. Drives a
+generated CSV (default 100 K rows) through the production
+file-picker path, splits the wall-time into four phases (load → grid
+paint → auto-extract → GeoIP enrichment → fully idle), and writes a
+JSON report plus a Markdown summary.
+
+```bash
+python scripts/run_perf.py                       # 100 K rows × 3 runs
+python scripts/run_perf.py --rows 10000 --runs 1 # smoke
+python make.py perf                              # equivalent
+```
+
+Full runbook: [tests/perf/README.md](perf/README.md).
+
+The harness reuses the `--test-api` build (`docs/index.test.html`)
+and the existing `dist/test-deps/` Playwright rig; cost when
+`LOUPE_PERF` is unset is one `test.skip` evaluation per perf spec.
 
 ## What the test suite still does NOT cover
 

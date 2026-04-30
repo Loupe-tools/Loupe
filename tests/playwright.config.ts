@@ -46,6 +46,12 @@ export default defineConfig({
     'e2e-fixtures/**/*.spec.ts',
     'e2e-ui/**/*.spec.ts',
     'explore/**/*.spec.ts',
+    // Perf suite. Self-skips unless `LOUPE_PERF=1`; included here so
+    // `scripts/run_perf.py` (which sets `LOUPE_PERF=1` and selects
+    // `tests/perf/`) finds the spec via the same Playwright config
+    // the rest of the e2e suite uses. Cost when `LOUPE_PERF` is unset
+    // is one `test.skip` evaluation per perf spec — negligible.
+    'perf/**/*.spec.ts',
   ],
 
   // Parallel by default. Each worker spins its own Chromium and
