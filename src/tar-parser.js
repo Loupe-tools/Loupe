@@ -33,6 +33,11 @@ const TarParser = {
     let globalPax = {};
 
     while (offset + 512 <= bytes.length && entries.length < cap) {
+      // Cooperative-cancel: poll the parser-watchdog signal every 64
+      // entries so a multi-thousand-entry archive can be aborted by a
+      // newer file load without burning CPU on bytes the user has
+      // already moved past.
+      if ((entries.length & 0x3F) === 0) throwIfAborted();
       const header = bytes.subarray(offset, offset + 512);
 
       // End-of-archive: two consecutive 512-byte zero blocks
@@ -367,6 +372,10 @@ const TarParser = {
 
     // Walk extended sparse blocks (each 512 bytes, 21 entries of 24 bytes)
     while (isExtended && extOffset + 512 <= bytes.length) {
+      // Sparse-extended chains are normally short (1-2 blocks) but a
+      // malformed archive can chain them indefinitely. Polling once per
+      // block is cheap and bounds worst-case CPU.
+      throwIfAborted();
       const extBlock = bytes.subarray(extOffset, extOffset + 512);
       for (let i = 0; i < 21; i++) {
         const base = i * 24;
@@ -527,7 +536,12 @@ const TarParser = {
     const rawData = bytes.subarray(dataOffset, dataOffset + dataLength);
 
     let readPos = 0;
+    let _i = 0;
     for (const chunk of (entry.sparseMap || [])) {
+      // Sparse maps with 100k+ chunks are a known DoS shape (test-tar
+      // sparse fuzzers emit them). Poll every 64 chunks — the inner
+      // body is just a `Uint8Array.set`, so this is the right cadence.
+      if ((_i++ & 0x3F) === 0) throwIfAborted();
       if (chunk.len <= 0) continue;
       if (chunk.off < 0) break;                         // reject negative offsets from malformed tar
       if (chunk.off + chunk.len > cappedSize) break;    // would overflow output

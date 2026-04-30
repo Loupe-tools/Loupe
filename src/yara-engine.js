@@ -528,6 +528,11 @@ class YaraEngine {
 
     const results = [];
     for (const rule of rules) {
+      // Cooperative-cancel: abort the YARA scan early when a newer file
+      // load supersedes this one. Per-rule granularity is the right
+      // cadence — string-search time per rule is bounded by an internal
+      // iter cap, so checking once per rule keeps latency under a few ms.
+      throwIfAborted();
       // ── meta: applies_to short-circuit ──────────────────────────────
       // Rules tagged with an `applies_to` meta value are skipped entirely
       // (string-matching included) when the current `formatTag` isn't one

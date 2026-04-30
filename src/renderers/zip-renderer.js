@@ -668,6 +668,12 @@ class ZipRenderer {
     if (dataOff + testEntry.compSize > bytes.length) return { success: false };
 
     for (const password of passwords) {
+      // Cooperative-cancel: a newer file load aborts the cracker before
+      // it grinds through the whole list. The header-match fast-reject
+      // is cheap, but the full _verifyPassword call (inflate + CRC) on
+      // a true header-match collision is not — and the password list
+      // grows over time.
+      throwIfAborted();
       try {
         // Fast reject via the 1-byte header check first.
         if (!this._headerMatches(bytes, dataOff, testEntry, password)) continue;
@@ -788,6 +794,12 @@ class ZipRenderer {
     let anyDecrypted = false;
 
     for (const entry of entries) {
+      // Per-entry abort check: a multi-thousand-entry archive can take
+      // tens of seconds to fully decrypt; this lets a newer file load
+      // abandon the work cleanly. The inner byte-decrypt loop is short
+      // (bounded by entry compSize), so once-per-entry granularity is
+      // plenty.
+      throwIfAborted();
       if (!entry.encrypted || entry.compSize === 0) continue;
       // AES entries are untouched — we can't decrypt them. Leave the
       // flag set and the data encrypted; JSZip will lock them in the
@@ -978,6 +990,11 @@ class ZipRenderer {
       (bytes[eocdOff + 18] << 16) | ((bytes[eocdOff + 19] << 24) >>> 0);
 
     for (let i = 0; i < cdEntries && cdOffset + 46 <= bytes.length; i++) {
+      // Poll abort every 256 central-dir entries. A malicious archive
+      // can declare 65,535 entries; this caps responsiveness latency
+      // at a few hundred microseconds without measurable per-iteration
+      // cost on well-formed archives.
+      if ((i & 0xFF) === 0) throwIfAborted();
       // Verify central dir signature PK\x01\x02
       if (bytes[cdOffset] !== 0x50 || bytes[cdOffset + 1] !== 0x4B ||
         bytes[cdOffset + 2] !== 0x01 || bytes[cdOffset + 3] !== 0x02) break;
