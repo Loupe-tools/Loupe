@@ -898,7 +898,7 @@ Object.assign(TimelineView.prototype, {
       const selN = _selection.size;
       autoCount.textContent = `${selN} of ${visN} selected`;
       autoExtractBtn.disabled = selN === 0;
-      autoExtractBtn.textContent = selN > 0 ? `Extract ${selN} selected` : 'Extract selected';
+      autoExtractBtn.textContent = selN > 0 ? `⚡ Extract ${selN} selected` : '⚡ Extract selected';
     };
 
 
