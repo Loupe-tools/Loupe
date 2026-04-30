@@ -276,6 +276,12 @@ class PcapRenderer {
       });
     }
 
+    // Stash full parsed-capture shape on the findings object so
+    // `_copyAnalysisPcap` (in app-copy-analysis.js) can render the
+    // header / DNS / HTTP host / TLS-SNI / top-talker tables without
+    // re-parsing. Mirrors the `findings.peInfo` pattern.
+    f.pcapInfo = parsed;
+
     return f;
   }
 

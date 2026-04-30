@@ -84,6 +84,9 @@ class MofRenderer {
       risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
       signatureMatches: [],
+      // Mirror the LF-normalised source so `_copyAnalysisMof` can
+      // re-run `MofRenderer._summarize` without re-decoding the buffer.
+      _rawText: normalized,
     };
 
     // Format banner — always emitted. MOF is rare enough in user-supplied

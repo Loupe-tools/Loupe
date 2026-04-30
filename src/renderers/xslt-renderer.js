@@ -90,6 +90,9 @@ class XsltRenderer {
       risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
       signatureMatches: [],
+      // Mirror the LF-normalised source so `_copyAnalysisXslt` can
+      // re-run `XsltRenderer._summarize` without re-decoding the buffer.
+      _rawText: normalized,
     };
 
     pushIOC(f, {

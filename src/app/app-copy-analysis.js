@@ -218,6 +218,12 @@ extendApp({
     this._copyAnalysisClickOnce(f, parts, tp);
     this._copyAnalysisMsix(f, parts, tp);
     this._copyAnalysisBrowserExt(f, parts, tp);
+    this._copyAnalysisLibraryMs(f, parts, tp);
+    this._copyAnalysisMof(f, parts, tp);
+    this._copyAnalysisPcap(f, parts, tp);
+    this._copyAnalysisScf(f, parts, tp);
+    this._copyAnalysisWasm(f, parts, tp);
+    this._copyAnalysisXslt(f, parts, tp);
 
     return parts.length ? parts.join('\n') + '\n' : '';
   },
@@ -1946,5 +1952,341 @@ extendApp({
       parts.push(`| ${(r.severity || 'info').toUpperCase()} | ${tp(r.note || '')} | \`${tp(r.url || '')}\` |`);
     }
     if (rels.length > N) parts.push(`… and ${rels.length - N} more`);
+  },
+
+
+  // ── WebAssembly module — full parsed shape ──────────────────────────
+  // Mirrors the WASM main-pane: header, sections, imports, exports,
+  // memory, custom sections. Caps are seeded high (rowCap(200)) so a
+  // typical sub-MB WASM module renders in full at the default 64 K
+  // budget; analysts on tight ticket templates fall back to the
+  // standard floor=5 row cap.
+  //
+  // Suspicious imports (those flagged by the analyser via
+  // SUSPICIOUS_IMPORTS) are marked with a leading "⚠" so a paste-up
+  // ticket has a one-glance picture of the capability surface.
+  _copyAnalysisWasm(f, parts, tp) {
+    const w = f && f.wasmInfo;
+    if (!w) return;
+
+    parts.push('\n## WASM Module Details');
+
+    parts.push('\n### Header');
+    parts.push('| Field | Value |');
+    parts.push('|-------|-------|');
+    parts.push(`| Magic | \\0asm (0x00 0x61 0x73 0x6d) |`);
+    parts.push(`| Version | ${tp(String(w.version || '?'))} |`);
+    if (w.modulehash) parts.push(`| Module hash (modulehash) | \`${tp(w.modulehash)}\` |`);
+    if (w.error) parts.push(`| Parse error | ${tp(w.error)} |`);
+    parts.push(`| Sections | ${(w.sections || []).length} |`);
+    parts.push(`| Imports | ${(w.imports || []).length} |`);
+    parts.push(`| Exports | ${(w.exports || []).length} |`);
+    parts.push(`| Type signatures | ${(w.types || []).length} |`);
+    if (w.memory) {
+      parts.push(`| Memory (initial) | ${w.memory.initial} pages |`);
+      parts.push(`| Memory (maximum) | ${w.memory.maximum != null ? w.memory.maximum + ' pages' : '∞'} |`);
+    }
+
+    // Sections — almost always ≤ 13 standard IDs plus a few customs;
+    // rowCap(60) is well above any real-world ceiling.
+    if (w.sections && w.sections.length) {
+      const SECN = this._sCaps.rowCap(60);
+      parts.push(`\n### Sections (${w.sections.length})`);
+      parts.push('| # | ID | Name | Size | Offset |');
+      parts.push('|---|----|------|------|--------|');
+      // SECTION_NAMES lookup mirrors the renderer's _sectionsCard.
+      const SECTION_NAMES = (typeof WasmRenderer !== 'undefined' && WasmRenderer.SECTION_NAMES) || {};
+      const sliced = w.sections.slice(0, SECN);
+      sliced.forEach((s, i) => {
+        const name = SECTION_NAMES[s.id] || `(unknown ${s.id})`;
+        parts.push(`| ${i} | ${s.id} | ${tp(name)} | ${s.size} | 0x${(s.offset || 0).toString(16)} |`);
+      });
+      if (w.sections.length > SECN) parts.push(`… and ${w.sections.length - SECN} more`);
+    }
+
+    // Imports — the capability surface. Cross-reference the analyser's
+    // SUSPICIOUS_IMPORTS hits via f.externalRefs (where notes carry the
+    // "module/field" path) so a row can be marked ⚠ inline. We pull
+    // module/field from the parsed entry and check membership in the
+    // hit-set we precompute below.
+    if (w.imports && w.imports.length) {
+      const IMPN = this._sCaps.rowCap(200);
+      const suspPaths = new Set();
+      // The analyser pushes entries shaped like `<module>/<field> — <note>`
+      // (see `WasmRenderer.analyzeForSecurity` suspicious-import block).
+      // Build a Set of "module.field" so the table can mark matching rows.
+      for (const r of (f.externalRefs || [])) {
+        if (!r || !r.url) continue;
+        const m = /^([^\s/]+)\/([^\s—]+)\s*—/.exec(r.url);
+        if (m) suspPaths.add(`${m[1]}.${m[2]}`);
+      }
+      parts.push(`\n### Imports (${w.imports.length})`);
+      parts.push('| # | Module | Field | Kind | Desc |');
+      parts.push('|---|--------|-------|------|------|');
+      const sliced = w.imports.slice(0, IMPN);
+      sliced.forEach((imp, i) => {
+        const path = `${imp.module}.${imp.field}`;
+        const mark = suspPaths.has(path) ? '⚠ ' : '';
+        parts.push(`| ${i} | ${mark}${tp(imp.module)} | ${tp(imp.field)} | ${tp(imp.kindName || '')} | ${tp(imp.desc || '')} |`);
+      });
+      if (w.imports.length > IMPN) parts.push(`… and ${w.imports.length - IMPN} more`);
+    }
+
+    if (w.exports && w.exports.length) {
+      const EXPN = this._sCaps.rowCap(200);
+      parts.push(`\n### Exports (${w.exports.length})`);
+      parts.push('| # | Name | Kind | Index |');
+      parts.push('|---|------|------|-------|');
+      const sliced = w.exports.slice(0, EXPN);
+      sliced.forEach((exp, i) => {
+        parts.push(`| ${i} | ${tp(exp.name || '')} | ${tp(exp.kindName || '')} | ${exp.index} |`);
+      });
+      if (w.exports.length > EXPN) parts.push(`… and ${w.exports.length - EXPN} more`);
+    }
+
+    if (w.customSections && w.customSections.length) {
+      const CN = this._sCaps.rowCap(40);
+      parts.push(`\n### Custom Sections (${w.customSections.length})`);
+      parts.push('| Name | Size |');
+      parts.push('|------|------|');
+      const sliced = w.customSections.slice(0, CN);
+      for (const cs of sliced) {
+        parts.push(`| \`${tp(cs.name || '')}\` | ${cs.size} |`);
+      }
+      if (w.customSections.length > CN) parts.push(`… and ${w.customSections.length - CN} more`);
+    }
+  },
+
+
+  // ── Network capture (libpcap / PCAPNG) — full parsed shape ──────────
+  // Mirrors the PCAP renderer's main-pane summary plus the IOC sets
+  // (DNS queries, HTTP hosts, TLS SNIs, top-talker IPs) extracted from
+  // packet payloads. Caps seeded high (rowCap(200)) so a typical
+  // few-MB capture renders in full at the default budget.
+  _copyAnalysisPcap(f, parts, tp) {
+    const p = f && f.pcapInfo;
+    if (!p) return;
+
+    parts.push('\n## Network Capture Details');
+
+    parts.push('\n### Header');
+    parts.push('| Field | Value |');
+    parts.push('|-------|-------|');
+    parts.push(`| Format | ${tp(p.formatLabel || (p.kind === 'pcapng' ? 'PCAPNG' : 'libpcap'))} |`);
+    if (p.version) parts.push(`| Version | ${tp(String(p.version))} |`);
+    if (p.linktype != null) parts.push(`| Linktype | ${p.linktype} (${tp(p.linktypeName || '?')}) |`);
+    if (p.snaplen != null) parts.push(`| Snaplen | ${p.snaplen} |`);
+    if (p.packetCount != null) parts.push(`| Packet count | ${p.packetCount} |`);
+    if (p.firstTs != null) parts.push(`| First packet (ts) | ${p.firstTs} |`);
+    if (p.lastTs != null) parts.push(`| Last packet (ts) | ${p.lastTs} |`);
+    if (p.truncated) parts.push(`| Truncated | yes (analysis cap reached) |`);
+    if (p.error) parts.push(`| Parse note | ${tp(p.error)} |`);
+
+    // DNS query names — IOC.DOMAIN entries with note "DNS query"
+    // already cover this in the External References block, but we
+    // surface them as their own list here so the capture summary is
+    // self-contained.
+    if (p.dnsNames && p.dnsNames.length) {
+      const DN = this._sCaps.rowCap(200);
+      parts.push(`\n### DNS Queries (${p.dnsNames.length}${p.dnsTruncated ? ', truncated' : ''})`);
+      const sliced = p.dnsNames.slice(0, DN);
+      for (const name of sliced) parts.push(`- \`${tp(name)}\``);
+      if (p.dnsNames.length > DN) parts.push(`… and ${p.dnsNames.length - DN} more`);
+    }
+
+    if (p.httpHosts && p.httpHosts.length) {
+      const HN = this._sCaps.rowCap(200);
+      parts.push(`\n### HTTP Host Headers — plaintext (${p.httpHosts.length})`);
+      const sliced = p.httpHosts.slice(0, HN);
+      for (const host of sliced) parts.push(`- \`${tp(host)}\``);
+      if (p.httpHosts.length > HN) parts.push(`… and ${p.httpHosts.length - HN} more`);
+      if (p.httpBasicAuthCount > 0) {
+        parts.push(`\n**HTTP Basic auth observed:** ${p.httpBasicAuthCount} request${p.httpBasicAuthCount === 1 ? '' : 's'} (T1040 plaintext credentials)`);
+      }
+    }
+
+    if (p.tlsSnis && p.tlsSnis.length) {
+      const SN = this._sCaps.rowCap(200);
+      parts.push(`\n### TLS SNI (${p.tlsSnis.length})`);
+      const sliced = p.tlsSnis.slice(0, SN);
+      for (const sni of sliced) parts.push(`- \`${tp(sni)}\``);
+      if (p.tlsSnis.length > SN) parts.push(`… and ${p.tlsSnis.length - SN} more`);
+    }
+
+    // Top-talker IPs — re-rank with the same comparator the renderer
+    // uses (count desc, key asc). We call the static directly when
+    // available, otherwise fall back to a local sort.
+    if (p.ipCounts && typeof p.ipCounts.entries === 'function' && p.ipCounts.size) {
+      let ranked;
+      if (typeof PcapRenderer !== 'undefined' && typeof PcapRenderer._rankTopN === 'function') {
+        ranked = PcapRenderer._rankTopN(p.ipCounts, this._sCaps.rowCap(40));
+      } else {
+        ranked = Array.from(p.ipCounts.entries())
+          .map(([key, count]) => ({ key, count }))
+          .sort((a, b) => b.count - a.count || (a.key < b.key ? -1 : 1))
+          .slice(0, this._sCaps.rowCap(40));
+      }
+      if (ranked.length) {
+        parts.push(`\n### Top Talkers (${ranked.length})`);
+        parts.push('| IP | Packets |');
+        parts.push('|----|---------|');
+        for (const { key, count } of ranked) {
+          parts.push(`| ${tp(key)} | ${count} |`);
+        }
+      }
+    }
+
+    // Sub-protocol callouts — single-line, always after the lists so
+    // the headline appears at the bottom of the capture block.
+    const proto = [];
+    if (p.telnetSeen) proto.push('Telnet (TCP/23) traffic observed');
+    if (p.ftpSeen) proto.push('FTP control-channel (TCP/21) traffic observed');
+    if (proto.length) {
+      parts.push('\n**Sub-protocol surfaces:** ' + proto.join('; '));
+    }
+  },
+
+
+  // ── MOF (Managed Object Format) — WMI persistence schema ────────────
+  // Re-runs `MofRenderer._summarize` on the stashed `f._rawText` to
+  // surface the parsed instance-of class list and binding count, then
+  // pulls WQL queries out of externalRefs.
+  _copyAnalysisMof(f, parts, tp) {
+    const ext = ((this._fileMeta && this._fileMeta.name) || '').toLowerCase().split('.').pop();
+    if (ext !== 'mof') return;
+    if (typeof MofRenderer === 'undefined' || typeof MofRenderer._summarize !== 'function') return;
+    const text = f && f._rawText;
+    if (!text) return;
+    const summary = MofRenderer._summarize(text);
+    parts.push('\n## MOF Details');
+    parts.push(`- **__FilterToConsumerBinding entries:** ${summary.bindings}`);
+
+    if (summary.classes && summary.classes.length) {
+      // Tally `instance of <Class>` occurrences (the same regex pulls
+      // every site, including duplicates).
+      const counts = new Map();
+      for (const cls of summary.classes) counts.set(cls, (counts.get(cls) || 0) + 1);
+      const ranked = Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+      const N = this._sCaps.rowCap(60);
+      parts.push(`\n### WMI Classes (${ranked.length} unique, ${summary.classes.length} instance${summary.classes.length === 1 ? '' : 's'})`);
+      parts.push('| Class | Count |');
+      parts.push('|-------|-------|');
+      const sliced = ranked.slice(0, N);
+      for (const [cls, count] of sliced) {
+        parts.push(`| \`${tp(cls)}\` | ${count} |`);
+      }
+      if (ranked.length > N) parts.push(`… and ${ranked.length - N} more`);
+    }
+
+    // WQL queries land in externalRefs with `WQL Query: ...` prefix.
+    const wqls = (f.externalRefs || []).filter(r => r && r.url && /^WQL Query:/i.test(r.url));
+    if (wqls.length) {
+      const N = this._sCaps.rowCap(40);
+      parts.push(`\n### WQL Queries (${wqls.length})`);
+      const sliced = wqls.slice(0, N);
+      for (const q of sliced) {
+        const body = String(q.url).replace(/^WQL Query:\s*/i, '');
+        parts.push(`- \`${tp(body)}\``);
+      }
+      if (wqls.length > N) parts.push(`… and ${wqls.length - N} more`);
+    }
+  },
+
+
+  // ── XSLT — T1220 SquiblyTwo signed-binary proxy execution ──────────
+  // Re-runs `XsltRenderer._summarize` on `f._rawText` to surface the
+  // <msxsl:script> count and remote-href list (xsl:include / xsl:import
+  // / document() with http(s) or UNC targets).
+  _copyAnalysisXslt(f, parts, tp) {
+    const ext = ((this._fileMeta && this._fileMeta.name) || '').toLowerCase().split('.').pop();
+    if (!['xsl', 'xslt'].includes(ext)) return;
+    if (typeof XsltRenderer === 'undefined' || typeof XsltRenderer._summarize !== 'function') return;
+    const text = f && f._rawText;
+    if (!text) return;
+    const summary = XsltRenderer._summarize(text);
+    parts.push('\n## XSLT Details');
+    parts.push(`- **<msxsl:script> blocks (with language=…):** ${summary.scripts}`);
+    parts.push(`- **Remote-load directives:** ${summary.remoteRefs}`);
+    if (summary.remoteList && summary.remoteList.length) {
+      const N = this._sCaps.rowCap(40);
+      parts.push(`\n### Remote References (${summary.remoteList.length})`);
+      parts.push('| Context | Target |');
+      parts.push('|---------|--------|');
+      const sliced = summary.remoteList.slice(0, N);
+      for (const r of sliced) {
+        parts.push(`| ${tp(r.context)} | \`${tp(r.value)}\` |`);
+      }
+      if (summary.remoteList.length > N) parts.push(`… and ${summary.remoteList.length - N} more`);
+    }
+  },
+
+
+  // ── SCF (Windows Explorer Command) — T1187 forced auth via UNC ─────
+  // Re-runs `ScfRenderer._parseIni` on `f._rawText` to surface the full
+  // INI tree. SCF files are typically < 1 KB; a generous rowCap(60)
+  // per section emits everything at the default budget.
+  _copyAnalysisScf(f, parts, tp) {
+    const ext = ((this._fileMeta && this._fileMeta.name) || '').toLowerCase().split('.').pop();
+    if (ext !== 'scf') return;
+    if (typeof ScfRenderer === 'undefined' || typeof ScfRenderer._parseIni !== 'function') return;
+    const text = f && f._rawText;
+    if (!text) return;
+    const parsed = ScfRenderer._parseIni(text);
+    const sections = Object.keys(parsed);
+    if (!sections.length) return;
+    parts.push('\n## SCF Details');
+    parts.push(`- **Sections:** ${sections.length}`);
+    for (const sec of sections) {
+      const entries = Object.entries(parsed[sec] || {});
+      if (!entries.length) continue;
+      const N = this._sCaps.rowCap(60);
+      parts.push(`\n### [${tp(sec)}]`);
+      parts.push('| Key | Value |');
+      parts.push('|-----|-------|');
+      const sliced = entries.slice(0, N);
+      for (const [k, v] of sliced) {
+        parts.push(`| ${tp(k)} | ${tp(String(v))} |`);
+      }
+      if (entries.length > N) parts.push(`… and ${entries.length - N} more`);
+    }
+  },
+
+
+  // ── Library / Search-Connector — T1187 forced auth via UNC ─────────
+  // Re-runs `LibraryMsRenderer._extractLocations` on `f._rawText` to
+  // surface every <url> / <simpleLocation> / iconReference value with
+  // its classified kind (unc / http / other). The heading switches on
+  // the root element so library-ms vs searchConnector-ms reads true.
+  _copyAnalysisLibraryMs(f, parts, tp) {
+    const ext = ((this._fileMeta && this._fileMeta.name) || '').toLowerCase().split('.').pop();
+    if (!['library-ms', 'searchconnector-ms'].includes(ext)) return;
+    if (typeof LibraryMsRenderer === 'undefined' || typeof LibraryMsRenderer._extractLocations !== 'function') return;
+    const text = f && f._rawText;
+    if (!text) return;
+    const isLibrary = /<libraryDescription/i.test(text);
+    const heading = isLibrary
+      ? 'Windows Library (.library-ms) Details'
+      : 'Search Connector (.searchConnector-ms) Details';
+    const locations = LibraryMsRenderer._extractLocations(text);
+    parts.push(`\n## ${heading}`);
+    if (!locations.length) {
+      parts.push('- _(no <url> / <simpleLocation> / iconReference values present)_');
+      return;
+    }
+    // Kind breakdown.
+    const counts = { unc: 0, http: 0, other: 0 };
+    for (const loc of locations) counts[loc.kind] = (counts[loc.kind] || 0) + 1;
+    parts.push(`- **Locations:** ${locations.length} (UNC ${counts.unc || 0}, HTTP ${counts.http || 0}, other ${counts.other || 0})`);
+
+    const N = this._sCaps.rowCap(60);
+    parts.push(`\n### Location Values (${locations.length})`);
+    parts.push('| Tag | Kind | Value |');
+    parts.push('|-----|------|-------|');
+    const sliced = locations.slice(0, N);
+    for (const loc of sliced) {
+      parts.push(`| \`<${tp(loc.tag)}>\` | ${tp(loc.kind || 'other')} | \`${tp(loc.value)}\` |`);
+    }
+    if (locations.length > N) parts.push(`… and ${locations.length - N} more`);
   },
 });

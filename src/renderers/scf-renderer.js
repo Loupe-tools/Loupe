@@ -92,6 +92,9 @@ class ScfRenderer {
       risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
       signatureMatches: [],
+      // Mirror the LF-normalised source so `_copyAnalysisScf` can
+      // re-run `ScfRenderer._parseIni` without re-decoding the buffer.
+      _rawText: normalized,
     };
 
     // Format banner — always emit so the analyst sees an SCF was identified

@@ -99,6 +99,10 @@ class LibraryMsRenderer {
       risk: 'low', hasMacros: false, macroSize: 0, macroHash: '',
       autoExec: [], modules: [], externalRefs: [], metadata: {},
       signatureMatches: [],
+      // Mirror the LF-normalised source so `_copyAnalysisLibraryMs`
+      // can re-run `LibraryMsRenderer._extractLocations` without
+      // re-decoding the buffer.
+      _rawText: normalized,
     };
 
     const isLibrary = /<libraryDescription/i.test(text);

@@ -456,6 +456,12 @@ class WasmRenderer {
     // `render` on the same instance.
     parsed.modulehash = await WasmRenderer._modulehash(parsed.imports);
     this._modulehash = parsed.modulehash;
+    // Stash full parsed-module shape on the findings object so
+    // `_copyAnalysisWasm` (in app-copy-analysis.js) can render the
+    // header/sections/imports/exports tables without re-parsing.
+    // Mirrors the `findings.peInfo` / `findings.elfInfo` /
+    // `findings.machoInfo` pattern.
+    f.wasmInfo = parsed;
     pushIOC(f, {
       type: IOC.HASH,
       value: parsed.modulehash,
