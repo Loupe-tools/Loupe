@@ -491,6 +491,15 @@ const STRUCTURED_LOG_KINDS = {
     makeTokenizer: () => _tlMakeCEFTokenizer(),
     label: 'CEF',
   },
+  leef: {
+    // Stateful — same idea as CEF: 5 fixed header cols, dynamic
+    // ext schema locked from first record. LEEF 1.0 always uses
+    // tab as the ext delimiter; LEEF 2.0 carries a 6th header
+    // field specifying the delimiter character (consumed, not
+    // emitted as a column). Strips any leading syslog wrapper.
+    makeTokenizer: () => _tlMakeLEEFTokenizer(),
+    label: 'LEEF',
+  },
 };
 
 async function _parseCsv(buffer, explicitDelim, kindHint) {

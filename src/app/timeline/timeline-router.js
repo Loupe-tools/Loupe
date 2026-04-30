@@ -244,6 +244,22 @@ extendApp({
     //     correctly via CsvRenderer but lose the schema-aware column
     //     names + `#path`-derived format label + NILVALUE handling).
     if (lines[0] && /^#separator\s/.test(lines[0])) return 'zeek';
+    // LEEF (Log Event Extended Format — IBM QRadar) sniff. Same
+    // priority position as CEF — both are SIEM-vendor formats
+    // overwhelmingly tunnelled through syslog, and we want the
+    // more specific signal to win against syslog 3164/5424. LEEF
+    // marker is `LEEF:1.0|` or `LEEF:2.0|`. Tested anywhere within
+    // the first 200 chars of each line (same window-bound as CEF).
+    const _LEEF_LINE_RE = /(?:^|\s)LEEF:[12]\.\d\|/;
+    {
+      const head = lines.slice(0, 5);
+      let hits = 0;
+      for (let i = 0; i < head.length; i++) {
+        const probe = head[i].length > 200 ? head[i].slice(0, 200) : head[i];
+        if (_LEEF_LINE_RE.test(probe)) hits++;
+      }
+      if (head.length >= 2 && hits / head.length >= 0.6) return 'leef';
+    }
     // CEF (Common Event Format — ArcSight) sniff. CEF lines carry
     // a `CEF:0|` (or `CEF:1|`) magic prefix; this marker also
     // appears mid-line when CEF is tunneled inside a syslog
@@ -461,6 +477,12 @@ extendApp({
         // `.log` syslog files); the `.log` sniff promotes those
         // up via the structured-log branch above.
         ext = 'cef';
+      } else if (ext === 'leef') {
+        // `.leef` — same shape as the `.cef` branch above. LEEF
+        // arrives in the wild via `.leef` files or tunnelled
+        // through syslog under a `.log` extension; the latter is
+        // promoted via the sniff branch.
+        ext = 'leef';
       }
       // CloudTrail wrapped form unwrap. The sniff returned
       // 'cloudtrail-wrapped' for files shaped like
@@ -537,7 +559,8 @@ extendApp({
       else if (ext === 'csv' || ext === 'tsv' || ext === 'log'
             || ext === 'syslog3164' || ext === 'syslog5424'
             || ext === 'zeek' || ext === 'jsonl'
-            || ext === 'cloudtrail' || ext === 'cef') workerKind = 'csv';
+            || ext === 'cloudtrail' || ext === 'cef'
+            || ext === 'leef') workerKind = 'csv';
       else if (ext === 'sqlite' || ext === 'db') workerKind = 'sqlite';
 
       if (workerKind && window.WorkerManager
@@ -695,7 +718,8 @@ extendApp({
           // year for RFC 3164 timestamps deterministically.
           const _structuredLog = (ext === 'syslog3164' || ext === 'syslog5424'
                                   || ext === 'zeek' || ext === 'jsonl'
-                                  || ext === 'cloudtrail' || ext === 'cef');
+                                  || ext === 'cloudtrail' || ext === 'cef'
+                                  || ext === 'leef');
           const opts = (workerKind === 'csv')
             ? { explicitDelim: ext === 'tsv' ? '\t'
                   : (ext === 'log' ? ' ' : null),
@@ -837,7 +861,8 @@ extendApp({
             file, buffer, explicit, ext === 'log' ? 'log' : null);
         } else if (ext === 'syslog3164' || ext === 'syslog5424'
                 || ext === 'zeek' || ext === 'jsonl'
-                || ext === 'cloudtrail' || ext === 'cef') {
+                || ext === 'cloudtrail' || ext === 'cef'
+                || ext === 'leef') {
           // Structured-log fallback — mirrors the worker's
           // `_parseStructuredLog` for environments where workers
           // can't spawn (Firefox `file://`).

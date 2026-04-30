@@ -1,0 +1,10 @@
+LEEF:1.0|IBM|QRadar|7.4|EVT100|	src=10.0.0.1	dst=8.8.8.8	sev=5	cat=auth	usrName=alice
+LEEF:1.0|IBM|QRadar|7.4|EVT101|	src=10.0.0.2	dst=9.9.9.9	sev=7	cat=firewall	act=block
+LEEF:1.0|IBM|QRadar|7.4|EVT102|	src=10.0.0.3	dst=1.1.1.1	sev=3	cat=traffic	proto=TCP
+<134>Oct 15 22:14:30 qr01 qradar: LEEF:1.0|IBM|QRadar|7.4|EVT103|	src=10.0.0.4	dst=185.220.101.33	sev=9	cat=ids	act=alert
+<134>Oct 15 22:14:32 qr01 qradar: LEEF:1.0|IBM|QRadar|7.4|EVT104|	src=10.0.0.5	dst=203.0.113.99	sev=8	cat=malware	fname=evil.exe
+LEEF:2.0|IBM|QRadar|7.4|EVT200|^|src=10.0.0.6^dst=8.8.4.4^sev=4^cat=auth^usrName=bob
+LEEF:2.0|IBM|QRadar|7.4|EVT201|^|src=10.0.0.7^dst=192.0.2.10^sev=6^cat=firewall^act=allow
+LEEF:2.0|IBM|QRadar|7.4|EVT202|\x09|src=10.0.0.8	dst=8.8.8.8	sev=2	cat=traffic	proto=UDP
+LEEF:1.0|Juniper|SRX|22.4|RT_FLOW_SESSION_CREATE|	src=10.0.0.9	dst=8.8.8.8	sev=3	cat=session	policy=allow-web
+LEEF:1.0|Juniper|SRX|22.4|RT_FLOW_SESSION_DENY|	src=10.0.0.10	dst=185.220.101.34	sev=8	cat=session	policy=block-tor

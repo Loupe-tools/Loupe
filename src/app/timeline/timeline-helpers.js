@@ -102,7 +102,7 @@ const TIMELINE_MAX_ROWS = RENDER_LIMITS.MAX_TIMELINE_ROWS;
 // extensionless / mis-named JSONL files are caught by the JSONL
 // probe in `_sniffTimelineContent`.
 const TIMELINE_EXTS = new Set(['csv', 'tsv', 'evtx', 'sqlite', 'db', 'log',
-                               'jsonl', 'ndjson', 'cef']);
+                               'jsonl', 'ndjson', 'cef', 'leef']);
 
 // ── CLF (Common / Combined Log Format) helpers ─────────────────────────────
 // Apache / Nginx access logs use a bracketed date token containing a
@@ -1042,6 +1042,252 @@ function _tlMakeCEFTokenizer() {
   const getDefaultStackColIdx = () => _TL_CEF_HEADER_COLS.indexOf('Severity');
 
   const getFormatLabel = () => 'CEF';
+
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}
+
+// ── LEEF (Log Event Extended Format — IBM QRadar) tokeniser ──────
+// LEEF is QRadar's analogue to CEF — same idea, slightly different
+// shape:
+//
+//   LEEF:1.0|Vendor|Product|Version|EventID|<TAB>k=v<TAB>k=v\u2026
+//   LEEF:2.0|Vendor|Product|Version|EventID|<delim>|k=v<delim>k=v\u2026
+//
+// LEEF 1.0 always separates extension key=value pairs with literal
+// tabs (`\\x09`). LEEF 2.0 adds an optional 6th pipe-delimited
+// header field carrying the extension delimiter character (a
+// single character or a `\\xXX` hex escape). When that 6th field
+// is empty / missing, the default is still tab.
+//
+// Like CEF, LEEF is overwhelmingly tunnelled inside syslog \u2014 the
+// tokeniser locates the literal `LEEF:` marker and discards
+// anything before it.
+//
+// Schema:
+//   \u2022 5 fixed header columns: Version, Vendor, Product,
+//     ProductVersion, EventID. (LEEF 2.0's 6th delimiter field is
+//     CONSUMED, not emitted as a column \u2014 it controls extension
+//     parsing only.)
+//   \u2022 Dynamic extension columns locked from the first record's
+//     key=value block.
+//   \u2022 Trailing `_extra` for unknown keys.
+//
+// LEEF has no severity column in its header; the de-facto stack-by
+// candidate is the `sev` extension key (1\u20139 in the LEEF
+// dictionary), with `cat` (event category) as a fallback. If
+// neither is in the locked schema we defer to the host-side
+// cardinality probe by returning null.
+const _TL_LEEF_HEADER_COLS = [
+  'Version', 'Vendor', 'Product', 'ProductVersion', 'EventID',
+];
+const _TL_LEEF_MAX_EXT_COLUMNS = 256;
+function _tlMakeLEEFTokenizer() {
+  let extSchema = null;
+  let extSchemaIndex = null;
+
+  const splitHeader = (line) => {
+    if (!line) return null;
+    const leefIdx = line.indexOf('LEEF:');
+    if (leefIdx < 0) return null;
+    const body = line.slice(leefIdx);
+    // Walk the body splitting on unescaped `|`. LEEF 1.0 has 5
+    // pipes; LEEF 2.0 has 6 (the 6th is the ext delimiter spec).
+    const fields = [];
+    let cur = '';
+    let i = 0;
+    const n = body.length;
+    // We need to know how many pipes to consume. Peek at the
+    // version: `LEEF:1.0` vs `LEEF:2.0`. The version field starts
+    // after `LEEF:` and runs until the first `|`.
+    let firstPipe = -1;
+    for (let j = 5; j < n; j++) {
+      const c = body.charCodeAt(j);
+      if (c === 0x5C && j + 1 < n) { j++; continue; }   // skip escape
+      if (c === 0x7C) { firstPipe = j; break; }
+    }
+    if (firstPipe < 0) return null;
+    const version = body.slice(5, firstPipe);
+    // LEEF 1.0 has 5 pipes after the LEEF: marker, producing 5
+    // header fields (Version · Vendor · Product · ProductVersion ·
+    // EventID); the body after the 5th pipe is the ext. LEEF 2.0
+    // has 6 pipes (the 6th carries the ext-delimiter spec).
+    //
+    // The loop walks pipes and pushes the left-hand side as a
+    // field at each one. When we've pushed `wantPipes` fields
+    // we've crossed `wantPipes` pipes and the cursor sits at the
+    // start of the ext block.
+    const wantPipes = (version.startsWith('2')) ? 6 : 5;
+    while (i < n && fields.length < wantPipes) {
+      const ch = body.charCodeAt(i);
+      if (ch === 0x5C && i + 1 < n) {
+        cur += body.charAt(i + 1);
+        i += 2;
+        continue;
+      }
+      if (ch === 0x7C) {
+        fields.push(cur);
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += body.charAt(i);
+      i++;
+    }
+    if (fields.length < wantPipes) return null;     // malformed
+    // First field is `LEEF:<ver>` \u2014 strip the prefix.
+    if (fields[0].slice(0, 5) === 'LEEF:') {
+      fields[0] = fields[0].slice(5);
+    }
+    // Determine the ext delimiter. LEEF 1.0 \u2192 always tab. LEEF 2.0
+    // \u2192 fields[5] is the delimiter spec; empty defaults to tab.
+    let delim = '\t';
+    if (wantPipes === 6) {
+      const spec = fields[5];
+      if (spec) {
+        // Hex escape: `\xHH` or `0xHH`. The header walker already
+        // stripped any literal backslash via its escape branch, so
+        // `\xHH` arrives here as `xHH`. Match either form for
+        // belt-and-braces compatibility with parsers that don't
+        // unescape the spec.
+        const m = /^(?:\\?x|0x)([0-9A-Fa-f]{1,2})$/i.exec(spec);
+        if (m) {
+          delim = String.fromCharCode(parseInt(m[1], 16));
+        } else {
+          delim = spec.charAt(0);
+        }
+      }
+      // Drop the delimiter spec from the emitted header columns
+      // (it's parser-internal).
+      fields.length = 5;
+    }
+    const ext = body.slice(i);
+    return { fields, ext, delim };
+  };
+
+  // Parse the extension. LEEF ext is `key=value<delim>key=value\u2026`
+  // \u2014 unlike CEF, the delimiter is NOT whitespace, so we can split
+  // straightforwardly. Backslash escapes (`\\=`, `\\\\`, `\\n`, `\\r`)
+  // and the literal delimiter as `\\<delim>` are honoured inside
+  // values.
+  const unescapeValue = (s) => {
+    if (s.indexOf('\\') < 0) return s;
+    let out = '';
+    let i = 0;
+    const n = s.length;
+    while (i < n) {
+      const ch = s.charCodeAt(i);
+      if (ch === 0x5C && i + 1 < n) {
+        const nx = s.charAt(i + 1);
+        if (nx === 'n') out += '\n';
+        else if (nx === 'r') out += '\r';
+        else if (nx === 't') out += '\t';
+        else out += nx;
+        i += 2;
+        continue;
+      }
+      out += s.charAt(i);
+      i++;
+    }
+    return out;
+  };
+
+  const parseExt = (s, delim) => {
+    const out = Object.create(null);
+    if (!s) return out;
+    // Split on the delimiter, honouring `\<delim>` as an escaped
+    // literal.
+    const pairs = [];
+    let cur = '';
+    let i = 0;
+    const n = s.length;
+    while (i < n) {
+      const ch = s.charAt(i);
+      if (ch === '\\' && i + 1 < n) {
+        cur += ch + s.charAt(i + 1);
+        i += 2;
+        continue;
+      }
+      if (ch === delim) {
+        if (cur.length) pairs.push(cur);
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += ch;
+      i++;
+    }
+    if (cur.length) pairs.push(cur);
+    for (let p = 0; p < pairs.length; p++) {
+      const pair = pairs[p];
+      const eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      const k = pair.slice(0, eq);
+      const v = pair.slice(eq + 1);
+      if (k) out[k] = unescapeValue(v);
+    }
+    return out;
+  };
+
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    let s = line;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    const parts = splitHeader(s);
+    if (!parts) return null;
+    const ext = parseExt(parts.ext, parts.delim);
+    if (!extSchema) {
+      extSchema = Object.keys(ext).slice(0, _TL_LEEF_MAX_EXT_COLUMNS);
+      extSchemaIndex = Object.create(null);
+      for (let i = 0; i < extSchema.length; i++) extSchemaIndex[extSchema[i]] = i;
+    }
+    const cells = new Array(_TL_LEEF_HEADER_COLS.length + extSchema.length + 1).fill('');
+    for (let i = 0; i < _TL_LEEF_HEADER_COLS.length; i++) {
+      cells[i] = parts.fields[i] || '';
+    }
+    let extras = null;
+    const keys = Object.keys(ext);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      const idx = extSchemaIndex[k];
+      if (idx !== undefined) {
+        cells[_TL_LEEF_HEADER_COLS.length + idx] = ext[k];
+      } else {
+        if (!extras) extras = Object.create(null);
+        extras[k] = ext[k];
+      }
+    }
+    if (extras) {
+      try { cells[cells.length - 1] = JSON.stringify(extras); }
+      catch (_) { cells[cells.length - 1] = ''; }
+    }
+    return cells;
+  };
+
+  const getColumns = (_width) => {
+    const cols = _TL_LEEF_HEADER_COLS.slice();
+    if (extSchema) {
+      for (let i = 0; i < extSchema.length; i++) cols.push(extSchema[i]);
+    }
+    cols.push('_extra');
+    return cols;
+  };
+
+  // Default stack column: prefer `sev` (LEEF's severity ext key),
+  // then `cat` (event category). Both live in the ext schema, not
+  // the fixed header.
+  const _STACK_CANDIDATES = ['sev', 'severity', 'cat', 'category'];
+  const getDefaultStackColIdx = () => {
+    if (!extSchema) return null;
+    for (let i = 0; i < _STACK_CANDIDATES.length; i++) {
+      const idx = extSchemaIndex[_STACK_CANDIDATES[i]];
+      if (idx !== undefined) {
+        return _TL_LEEF_HEADER_COLS.length + idx;
+      }
+    }
+    return null;
+  };
+
+  const getFormatLabel = () => 'LEEF';
 
   return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }

@@ -223,9 +223,10 @@ function _tlCanonicalLogColumns(width) {
 // Mirrors `_tlDecodePri`, `_tlInferYear`, `_tlTokenizeSyslog3164`,
 // `_tlTokenizeSyslog5424`, `_tlMakeJsonlTokenizer`,
 // `_tlMakeCloudTrailTokenizer`, `_tlMakeCEFTokenizer`,
-// `_tlMakeZeekTokenizer`, the `_TL_SYSLOG{3164,5424}_COLS` constants,
-// `_TL_JSONL_*` constants, `_TL_CLOUDTRAIL_CANONICAL_COLS`,
-// `_TL_CEF_HEADER_COLS`, and `_TL_ZEEK_STACK_BY_PATH` in
+// `_tlMakeLEEFTokenizer`, `_tlMakeZeekTokenizer`, the
+// `_TL_SYSLOG{3164,5424}_COLS` constants, `_TL_JSONL_*` constants,
+// `_TL_CLOUDTRAIL_CANONICAL_COLS`, `_TL_CEF_HEADER_COLS`,
+// `_TL_LEEF_HEADER_COLS`, and `_TL_ZEEK_STACK_BY_PATH` in
 // `src/app/timeline/timeline-helpers.js`.
 // Helpers must live here too because the main-bundle helpers file isn't
 // concatenated into the worker bundle. **Keep in lockstep with the
@@ -653,6 +654,179 @@ function _tlMakeCEFTokenizer() {
   };
   const getDefaultStackColIdx = () => _TL_CEF_HEADER_COLS.indexOf('Severity');
   const getFormatLabel = () => 'CEF';
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}
+
+// ── LEEF (IBM QRadar) mirror ──
+// Canonical implementation lives in
+// `src/app/timeline/timeline-helpers.js::_tlMakeLEEFTokenizer`.
+// Cross-realm parity is enforced by `tests/unit/timeline-leef.test.js`.
+const _TL_LEEF_HEADER_COLS = [
+  'Version', 'Vendor', 'Product', 'ProductVersion', 'EventID',
+];
+const _TL_LEEF_MAX_EXT_COLUMNS = 256;
+function _tlMakeLEEFTokenizer() {
+  let extSchema = null;
+  let extSchemaIndex = null;
+  const splitHeader = (line) => {
+    if (!line) return null;
+    const leefIdx = line.indexOf('LEEF:');
+    if (leefIdx < 0) return null;
+    const body = line.slice(leefIdx);
+    let firstPipe = -1;
+    for (let j = 5; j < body.length; j++) {
+      const c = body.charCodeAt(j);
+      if (c === 0x5C && j + 1 < body.length) { j++; continue; }
+      if (c === 0x7C) { firstPipe = j; break; }
+    }
+    if (firstPipe < 0) return null;
+    const version = body.slice(5, firstPipe);
+    const wantPipes = (version.startsWith('2')) ? 6 : 5;
+    const fields = [];
+    let cur = '';
+    let i = 0;
+    const n = body.length;
+    while (i < n && fields.length < wantPipes) {
+      const ch = body.charCodeAt(i);
+      if (ch === 0x5C && i + 1 < n) {
+        cur += body.charAt(i + 1);
+        i += 2;
+        continue;
+      }
+      if (ch === 0x7C) {
+        fields.push(cur);
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += body.charAt(i);
+      i++;
+    }
+    if (fields.length < wantPipes) return null;
+    if (fields[0].slice(0, 5) === 'LEEF:') fields[0] = fields[0].slice(5);
+    let delim = '\t';
+    if (wantPipes === 6) {
+      const spec = fields[5];
+      if (spec) {
+        const m = /^(?:\\?x|0x)([0-9A-Fa-f]{1,2})$/i.exec(spec);
+        if (m) {
+          delim = String.fromCharCode(parseInt(m[1], 16));
+        } else {
+          delim = spec.charAt(0);
+        }
+      }
+      fields.length = 5;
+    }
+    const ext = body.slice(i);
+    return { fields, ext, delim };
+  };
+  const unescapeValue = (s) => {
+    if (s.indexOf('\\') < 0) return s;
+    let out = '';
+    let i = 0;
+    const n = s.length;
+    while (i < n) {
+      const ch = s.charCodeAt(i);
+      if (ch === 0x5C && i + 1 < n) {
+        const nx = s.charAt(i + 1);
+        if (nx === 'n') out += '\n';
+        else if (nx === 'r') out += '\r';
+        else if (nx === 't') out += '\t';
+        else out += nx;
+        i += 2;
+        continue;
+      }
+      out += s.charAt(i);
+      i++;
+    }
+    return out;
+  };
+  const parseExt = (s, delim) => {
+    const out = Object.create(null);
+    if (!s) return out;
+    const pairs = [];
+    let cur = '';
+    let i = 0;
+    const n = s.length;
+    while (i < n) {
+      const ch = s.charAt(i);
+      if (ch === '\\' && i + 1 < n) {
+        cur += ch + s.charAt(i + 1);
+        i += 2;
+        continue;
+      }
+      if (ch === delim) {
+        if (cur.length) pairs.push(cur);
+        cur = '';
+        i++;
+        continue;
+      }
+      cur += ch;
+      i++;
+    }
+    if (cur.length) pairs.push(cur);
+    for (let p = 0; p < pairs.length; p++) {
+      const pair = pairs[p];
+      const eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      const k = pair.slice(0, eq);
+      const v = pair.slice(eq + 1);
+      if (k) out[k] = unescapeValue(v);
+    }
+    return out;
+  };
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    let s = line;
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    const parts = splitHeader(s);
+    if (!parts) return null;
+    const ext = parseExt(parts.ext, parts.delim);
+    if (!extSchema) {
+      extSchema = Object.keys(ext).slice(0, _TL_LEEF_MAX_EXT_COLUMNS);
+      extSchemaIndex = Object.create(null);
+      for (let i = 0; i < extSchema.length; i++) extSchemaIndex[extSchema[i]] = i;
+    }
+    const cells = new Array(_TL_LEEF_HEADER_COLS.length + extSchema.length + 1).fill('');
+    for (let i = 0; i < _TL_LEEF_HEADER_COLS.length; i++) {
+      cells[i] = parts.fields[i] || '';
+    }
+    let extras = null;
+    const keys = Object.keys(ext);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      const idx = extSchemaIndex[k];
+      if (idx !== undefined) {
+        cells[_TL_LEEF_HEADER_COLS.length + idx] = ext[k];
+      } else {
+        if (!extras) extras = Object.create(null);
+        extras[k] = ext[k];
+      }
+    }
+    if (extras) {
+      try { cells[cells.length - 1] = JSON.stringify(extras); }
+      catch (_) { cells[cells.length - 1] = ''; }
+    }
+    return cells;
+  };
+  const getColumns = (_width) => {
+    const cols = _TL_LEEF_HEADER_COLS.slice();
+    if (extSchema) {
+      for (let i = 0; i < extSchema.length; i++) cols.push(extSchema[i]);
+    }
+    cols.push('_extra');
+    return cols;
+  };
+  const _STACK_CANDIDATES = ['sev', 'severity', 'cat', 'category'];
+  const getDefaultStackColIdx = () => {
+    if (!extSchema) return null;
+    for (let i = 0; i < _STACK_CANDIDATES.length; i++) {
+      const idx = extSchemaIndex[_STACK_CANDIDATES[i]];
+      if (idx !== undefined) return _TL_LEEF_HEADER_COLS.length + idx;
+    }
+    return null;
+  };
+  const getFormatLabel = () => 'LEEF';
   return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
 }
 
