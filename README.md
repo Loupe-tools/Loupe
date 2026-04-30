@@ -62,7 +62,28 @@ SOC analysts, MDR responders, phishing teams, and DFIR practitioners need to ins
 
 ## 🛡 Supported Formats
 
-Office, PDF, email, archives, native binaries (PE / ELF / Mach-O), Windows installers, macOS `.app` / `.dmg` / `.pkg`, certificates, OpenPGP, Java, browser extensions, npm packages, EVTX, SQLite, and 30+ more. Extensionless and renamed files are routed by magic-byte sniff. Full reference: **[FEATURES.md § Supported Formats](FEATURES.md#-supported-formats)**.
+Extensionless and renamed files are auto-routed by magic-byte sniff. Per-format detail in [FEATURES.md](FEATURES.md#-supported-formats).
+
+| Category | Extensions |
+|---|---|
+| **Office** | `.docx` `.docm` `.xlsx` `.xlsm` `.pptx` `.pptm` `.doc` `.xls` `.ppt` `.ods` `.odt` `.odp` `.rtf` `.iqy` `.slk` |
+| **PDF** | `.pdf` |
+| **Email** | `.eml` `.msg` |
+| **Web** | `.html` `.htm` `.mht` `.mhtml` `.xhtml` `.svg` |
+| **Archives** | `.zip` `.gz` `.gzip` `.tar` `.tar.gz` `.tgz` `.rar` `.7z` `.cab` `.iso` `.img` |
+| **OneNote** | `.one` |
+| **Windows** | `.lnk` `.hta` `.url` `.webloc` `.website` `.reg` `.inf` `.sct` `.msi` `.exe` `.dll` `.sys` `.scr` `.cpl` `.ocx` `.drv` `.com` `.xll` `.application` `.manifest` `.msix` `.msixbundle` `.appx` `.appxbundle` `.appinstaller` |
+| **Browser extensions** | `.crx` `.xpi` |
+| **npm** | `.tgz` `package.json` `package-lock.json` `npm-shrinkwrap.json` |
+| **Linux / IoT** | `.so` `.o` `.elf` |
+| **macOS** | `.applescript` `.scpt` `.scptd` `.jxa` `.plist` `.dylib` `.bundle` `.dmg` `.pkg` `.mpkg` |
+| **Certificates** | `.pem` `.der` `.crt` `.cer` `.p12` `.pfx` |
+| **OpenPGP** | `.pgp` `.gpg` `.asc` `.sig` `.key` |
+| **Java** | `.jar` `.war` `.ear` `.class` |
+| **Scripts** | `.wsf` `.wsc` `.wsh` `.vbs` `.ps1` `.bat` `.cmd` `.js` |
+| **Logs** | `.log` `.cef` `.leef` `.evtx` |
+| **Data** | `.csv` `.tsv` `.json` `.ndjson` `.jsonl` `.sqlite` `.db` |
+| **Images** | `.jpg` `.jpeg` `.png` `.gif` `.bmp` `.webp` `.ico` `.tif` `.tiff` `.avif` |
 
 ---
 
@@ -72,9 +93,34 @@ The [`examples/`](examples/) directory has a sample file for every supported for
 
 ---
 
+## 🔍 What it looks like
+
+<table align="center">
+  <tr>
+    <td align="center" width="50%">
+      <a href="FEATURES.md#-security-sidebar"><img src="screenshots/analysis.png" alt="File analysis with security sidebar" width="400"></a><br>
+      <b>🔬 File analysis</b><br>
+      <sub>Security sidebar with format-specific findings, IOC clusters, and one-click STIX / MISP export.</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="FEATURES.md#-yara-rules"><img src="screenshots/yara.png" alt="YARA rule editor" width="400"></a><br>
+      <b>🔎 YARA rules</b><br>
+      <sub>500+ bundled rules plus a live editor for your own rule packs — all evaluated in-browser.</sub>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <a href="FEATURES.md#-timeline"><img src="screenshots/timeline.png" alt="Timeline view of a CSV with stacked-bar histogram" width="800"></a><br>
+  <b>📈 Timeline</b><br>
+  <sub>Million-row virtual grid for CSV / TSV / EVTX / log files / browser SQLite, with stacked-bar histogram and a query DSL.</sub>
+</p>
+
+---
+
 ## 🎨 Themes
 
-Six built-in themes, selectable from the **⚙ Settings** dialog — your choice persists.
+Six built-in themes, selectable from the **◐ Themes** tab (`T`) in the Settings dialog — your choice persists.
 
 <table align="center">
   <tr>

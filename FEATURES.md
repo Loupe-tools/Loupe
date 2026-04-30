@@ -30,6 +30,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **Office (legacy)** | `.doc` `.xls` `.ppt` |
 | **OpenDocument** | `.odt` (text) · `.odp` (presentation) |
 | **RTF** | `.rtf` — text extraction + OLE/exploit analysis |
+| **Document attack vectors** | `.iqy` (Internet Query — phishing-pulled URL → worksheet) · `.slk` (SYLK — DDE-injection / formula attack vector) — Excel-readable script-like formats abused as macro-warning bypass |
 | **PDF** | `.pdf` |
 | **Email** | `.eml` `.msg` |
 | **HTML** | `.html` `.htm` `.mht` `.mhtml` `.xhtml` — sandboxed preview + source view |
@@ -48,9 +49,8 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **OpenPGP** | `.pgp` `.gpg` `.asc` `.sig` — ASCII-armored & binary packet streams; `.key` auto-disambiguated against X.509 |
 | **Java** | `.jar` `.war` `.ear` · `.class` |
 | **Scripts** | `.wsf` `.wsc` `.wsh` (parsed) · `.vbs` `.ps1` `.bat` `.cmd` `.js` |
-| **Forensics** | `.evtx` · `.sqlite` `.db` (Chrome / Firefox / Edge history auto-detect) |
-| **Logs** | `.log` (Apache CLF default + syslog / Zeek / JSONL / CEF / LEEF / logfmt / Apache error sniff) · `.cef` `.leef` |
-| **Data** | `.csv` `.tsv` · `.json` `.ndjson` `.jsonl` (array-shaped → tabular grid) · `.iqy` (Internet Query) · `.slk` (Symbolic Link) |
+| **Logs** | `.evtx` (Windows Event Log — binary EVTX parser) · `.log` (Apache CLF default + syslog / Zeek / JSONL / CEF / LEEF / logfmt / Apache error sniff) · `.cef` `.leef` |
+| **Data** | `.csv` `.tsv` · `.json` `.ndjson` `.jsonl` (array-shaped → tabular grid) · `.sqlite` `.db` (Chrome / Firefox / Edge history auto-detect) |
 | **Images** | `.jpg` `.jpeg` `.png` `.gif` `.bmp` `.webp` `.ico` `.tif` `.tiff` `.avif` — preview + steganography / polyglot detection |
 | **SVG** | `.svg` — sandboxed preview + source view, deep SVG-specific security analysis |
 | **Catch-all** | *Any file* — line-numbered text view (encoding auto-detect, syntax highlighting toggle, soft-wraps minified single-line files) or hex dump for binary data |
@@ -255,16 +255,16 @@ Every `.csv` / `.tsv` / `.evtx` / `.log` / `.jsonl` / `.ndjson` / `.cef` / `.lee
 | Feature | What you get |
 |---|---|
 | **Hosted-mode privacy notice** | When Loupe is served via HTTP/HTTPS (e.g. GitHub Pages) instead of opened locally from `file://`, an amber-tinted drop-zone warning and a floating bar remind you to [download Loupe](https://github.com/Loupe-tools/Loupe/releases/latest/download/loupe.html) for full offline privacy. The bar is dismissable (persisted); the drop-zone tint stays as a gentle reminder. Your files never leave the browser either way. |
-| **Six-theme picker** | Light, Dark (default), Midnight OLED, Solarized, Mocha, Latte — chosen from the ⚙ Settings tile grid. Your choice persists and is applied before first paint so you never see a flash of the wrong palette. First-boot users are matched to their OS `prefers-color-scheme`. |
+| **Six-theme picker** | Light, Dark (default), Midnight OLED, Solarized, Mocha, Latte — chosen from the ◐ Themes tab. Your choice persists and is applied before first paint so you never see a flash of the wrong palette. First-boot users are matched to their OS `prefers-color-scheme`. |
 | **Subtle animated backdrop** | Per-theme drop-zone backdrop: an aperiodic Penrose rhombic tiling on Light, a slow wandering-node network on Dark, a whisper-low Penrose tiling on Solarized, floating kittens on Mocha, floating hearts on Latte, and nothing at all on Midnight (pure-black stays pure-black for OLED). The animation is cosmetic only — it lives behind every chrome surface, hides the moment a file loads, and is suppressed entirely under `prefers-reduced-motion`. |
-| **Settings / Nicelists / Help dialog** | `⚙` toolbar button (or `,` for Settings, `?` / `H` for Help) — a unified three-tabbed modal. ⚙ Settings carries the theme picker and the Summarize-size picker (Default / Large / Unlimited); 🛡 Nicelists toggles the built-in Default Nicelist and manages user-defined custom lists (create / import CSV-JSON-TXT / edit / export / delete); ? Help lists every keyboard shortcut and the offline / release links. |
+| **Settings / Themes / Nicelists / Help dialog** | `⚙` toolbar button (or `,` Settings, `T` Themes, `N` Nicelists, `?` / `H` Help) — a unified four-tabbed modal. ⚙ Settings carries the Summarize-size picker (Default / Large / Unlimited) and the GeoIP / ASN database row; ◐ Themes is the six-theme tile grid; 🛡 Nicelists toggles the built-in Default Nicelist and manages user-defined custom lists (create / import CSV-JSON-TXT / edit / export / delete); ? Help lists every keyboard shortcut and the offline / release links. |
 | **Floating zoom** | 50 – 200 % zoom via a floating control that stays out of the way. |
 | **Click-and-drag panning** | Grab and drag to pan around rendered documents. |
 | **Resizable sidebar** | Drag the sidebar edge to resize it between 33 % and 60 % of the viewport. |
 | **Collapsible sidebar sections** | Single-pane sidebar with collapsible `<details>`: File Info, Macros, Signatures & IOCs. |
 | **Breadcrumb navigation** | Drill-down path as a clickable crumb trail (e.g. `📦 archive.zip ▸ 📄 doc.docm ▸ 🔧 Module1.bas`). Overflow `… ▾` dropdown keeps long trails on one line; the close button is anchored so its position never shifts with filename length. |
 | **Archive browser** | Shared collapsible / searchable / sortable tree used by every archive-style renderer (ZIP, JAR / WAR / EAR, MSIX / APPX, CRX / XPI, TAR / `.tar.gz`, ISO / IMG, PKG / MPKG, CAB, RAR, 7z). Tree view with child counts and one-click drill-down; flat sortable table view; instant filter box; per-entry risk badges (executable, double-extension, ZipCrypto lock, tar-symlink target). |
-| **Keyboard shortcuts** | `Ctrl+Enter` Copy ⚡ Summary to clipboard · `S` sidebar · `Y` YARA dialog · `N` Nicelists · `,` Settings · `?` / `H` Help · `F` search document · `Ctrl+C` copy raw file (when nothing is selected) · `Ctrl+V` paste file for analysis · `Esc` close dialog / clear search. **Archive browser:** `/` focus filter · `↑ ↓` navigate rows · `← →` collapse / expand folder · `Enter` / `Space` open selected file. |
+| **Keyboard shortcuts** | `Ctrl+Enter` Copy ⚡ Summary to clipboard · `S` sidebar · `Y` YARA dialog · `N` Nicelists · `T` Themes · `,` Settings · `?` / `H` Help · `F` search document · `Ctrl+C` copy raw file (when nothing is selected) · `Ctrl+V` paste file for analysis · `Esc` close dialog / clear search. **Archive browser:** `/` focus filter · `↑ ↓` navigate rows · `← →` collapse / expand folder · `Enter` / `Space` open selected file. |
 | **Smart whole-token select** | Double-click in any monospace viewer selects the entire non-whitespace token — expanding past `/ . : = - _` and across visual line wraps — up to the nearest whitespace boundary. Great for URLs, hashes, base64 blobs, file paths, registry keys, PE imports, x509 fingerprints. |
 | **Tabular grid (CSV / TSV / EVTX / XLSX / SQLite / JSON-array)** | Fixed-row virtual scroller renders million-row files without stutter. Streaming parse paints the first 1 000 rows immediately and fills the rest in the background with a progress chip. |
 | **Row-details drawer** | Click any row to open a resizable right-hand drawer with per-column key/value view; drawer width persists per-browser and can be dragged almost to the full viewport width for wide EventData payloads. A top-bar search box (or `Ctrl+F` while the drawer is focused) smooth-scrolls and highlights matches within the drawer, with `Enter` / `Shift+Enter` to cycle hits and `Esc` to clear. JSON cells render as a first-class collapsible tree — every node has a ＋ pick button that promotes the leaf (or subtree) to a new virtual column in the grid. |
@@ -275,6 +275,27 @@ Every `.csv` / `.tsv` / `.evtx` / `.log` / `.jsonl` / `.ndjson` / `.cef` / `.lee
 | **Toast notifications** | Non-intrusive feedback for downloads, clipboard operations, and errors. |
 | **Click-to-highlight** | Clicking any IOC or YARA match in the sidebar jumps to (and cycles through) matching occurrences in the viewer with yellow / blue `<mark>` highlights. |
 | **Forensic-safe email links** | `<a href>` inside EML / MSG messages is rendered as an inert span — the visible anchor text and underlying URL (exposed as a hover tooltip) stay inspectable, but clicking does nothing. You can read and copy a phishing URL with zero risk of accidental navigation. |
+
+<table align="center">
+  <tr>
+    <td align="center" width="25%">
+      <img src="screenshots/settings.png" alt="Settings tab — Summarize target picker and GeoIP / ASN database row" width="240"><br>
+      <sub><b>⚙ Settings tab</b> — Summarize target + GeoIP / ASN database.</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="screenshots/themes.png" alt="Themes tab — six-theme tile grid" width="240"><br>
+      <sub><b>◐ Themes tab</b> — six-theme tile grid with live preview swatches.</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="screenshots/nicelist.png" alt="Nicelists tab — built-in toggle plus user-managed lists with CSV / JSON / TXT import and export" width="240"><br>
+      <sub><b>🛡 Nicelists tab</b> — built-in Default Nicelist + user-managed lists.</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="screenshots/help.png" alt="Help tab — keyboard shortcuts and offline / release links" width="240"><br>
+      <sub><b>? Help tab</b> — keyboard shortcuts and offline / release links.</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
