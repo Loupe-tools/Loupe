@@ -63,6 +63,8 @@ const IOC = Object.freeze({
   GUID: 'GUID',
   FINGERPRINT: 'Fingerprint',
   PACKAGE_NAME: 'Package Name',
+  CRYPTO_ADDRESS: 'Crypto Address',
+  SECRET: 'Secret',
 });
 
 // ── PARSER_LIMITS subset (Decompressor MAX_OUTPUT) ──────────────────────────
@@ -71,7 +73,7 @@ const IOC = Object.freeze({
 // load to set its zip-bomb expansion cap. Match the main-thread value
 // exactly — see `src/constants.js`.
 const PARSER_LIMITS = Object.freeze({
-  MAX_UNCOMPRESSED: 50 * 1024 * 1024,  // 50 MB
+  MAX_UNCOMPRESSED: 50 * 1024 * 1024,  // 50 MB — must match constants.js
 });
 
 // ── _trimPathExtGarbage (mirrors src/constants.js) ──────────────────────────

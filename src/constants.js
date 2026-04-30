@@ -460,10 +460,12 @@ const IOC = Object.freeze({
   GUID: 'GUID',
   FINGERPRINT: 'Fingerprint',
   PACKAGE_NAME: 'Package Name',
+  CRYPTO_ADDRESS: 'Crypto Address',
+  SECRET: 'Secret',
 });
 
 /** IOC types whose values are directly copyable in the sidebar. */
-const IOC_COPYABLE = new Set([IOC.URL, IOC.EMAIL, IOC.IP, IOC.FILE_PATH, IOC.UNC_PATH, IOC.HASH, IOC.COMMAND_LINE, IOC.PROCESS, IOC.HOSTNAME, IOC.USERNAME, IOC.REGISTRY_KEY, IOC.MAC, IOC.DOMAIN, IOC.GUID, IOC.FINGERPRINT, IOC.PACKAGE_NAME]);
+const IOC_COPYABLE = new Set([IOC.URL, IOC.EMAIL, IOC.IP, IOC.FILE_PATH, IOC.UNC_PATH, IOC.HASH, IOC.COMMAND_LINE, IOC.PROCESS, IOC.HOSTNAME, IOC.USERNAME, IOC.REGISTRY_KEY, IOC.MAC, IOC.DOMAIN, IOC.GUID, IOC.FINGERPRINT, IOC.PACKAGE_NAME, IOC.CRYPTO_ADDRESS, IOC.SECRET]);
 
 /**
  * Canonical severity floors per IOC type. These are the default severities
@@ -497,6 +499,8 @@ const IOC_CANONICAL_SEVERITY = Object.freeze({
   [IOC.GUID]:          'info',      // droid/bundle/product codes; pure pivot
   [IOC.FINGERPRINT]:   'info',      // cert/PGP key thumbprint; pure pivot
   [IOC.PACKAGE_NAME]:  'info',      // npm / dependency identifiers; pure pivot
+  [IOC.CRYPTO_ADDRESS]: 'medium',   // BTC/ETH/XMR/onion/IPFS — actionable C2/ransom pivot
+  [IOC.SECRET]:         'high',     // exposed credentials — AWS/GitHub/Stripe/SSH key etc.
 });
 
 // ── Shared IOC extractors ─────────────────────────────────────────────────────

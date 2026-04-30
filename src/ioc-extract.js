@@ -289,6 +289,116 @@ function extractInterestingStringsCore(text, opts) {
     add(IOC.IP, m[0], sev, port !== null ? 'With port' : null, { offset: m.index, length: m[0].length });
   }
 
+  // ── IPv6 extraction ────────────────────────────────────────────────────
+  // Two recognised shapes:
+  //   • bracketed-in-URL form: `[2001:db8::1]` (also covers `:port` suffix)
+  //   • bare RFC 5952 form: `2001:db8::1`, `fe80::1`, fully-spelled
+  //                         `2001:0db8:0000:0000:0000:ff00:0042:8329`
+  // Strict acceptance:
+  //   - must contain `::` OR exactly 8 hextet groups (no shorter forms);
+  //   - at least one hextet must be ≥ 2 hex digits (kills `1:2:3:4:5:6:7:8`-
+  //     style false positives from version strings, port pairs, MAC fragments);
+  //   - drop loopback (`::1`), unspecified (`::`), link-local (`fe80::/10`),
+  //     unique-local (`fc00::/7`), multicast (`ff00::/8`), documentation
+  //     (`2001:db8::/32`), and IPv4-mapped (`::ffff:0:0/96`);
+  //   - anti-version lookbehind on the preceding 16 chars matches the IPv4
+  //     scanner exactly.
+  // Bracketed matches are emitted as the bare address (without brackets);
+  // `_highlightText` carries the original literal so the click-to-focus
+  // path lands on the bracketed form the analyst sees.
+  const _ipv6CompressedRe = /(?<![:\w])((?:[0-9A-Fa-f]{1,4}:){0,7}:(?:[0-9A-Fa-f]{1,4}:){0,7}[0-9A-Fa-f]{0,4})(?![:\w.])/g;
+  const _ipv6FullRe = /(?<![:\w])((?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4})(?![:\w.])/g;
+  const _ipv6BracketRe = /\[((?:[0-9A-Fa-f]{1,4}:|:){2,}[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{1,4}){0,7})\](?::(\d{1,5}))?/g;
+
+  const _expandIpv6 = (addr) => {
+    // Returns the 8-hextet array on success, null on malformed input.
+    if (!addr) return null;
+    const a = addr.toLowerCase();
+    if ((a.match(/::/g) || []).length > 1) return null;
+    let head, tail;
+    if (a.includes('::')) {
+      const parts = a.split('::');
+      head = parts[0] ? parts[0].split(':') : [];
+      tail = parts[1] ? parts[1].split(':') : [];
+    } else {
+      head = a.split(':');
+      tail = [];
+    }
+    const groups = head.length + tail.length;
+    if (groups > 8) return null;
+    const fill = a.includes('::') ? new Array(8 - groups).fill('0') : [];
+    const all = [...head, ...fill, ...tail];
+    if (all.length !== 8) return null;
+    for (const g of all) {
+      if (g === '') return null;
+      if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+    }
+    return all.map(g => parseInt(g, 16));
+  };
+
+  const _isReservedIpv6 = (groups) => {
+    if (!groups) return true;
+    const [g0, g1] = groups;
+    // Unspecified (::) and loopback (::1)
+    if (groups.every(g => g === 0)) return true;
+    if (groups.slice(0, 7).every(g => g === 0) && groups[7] === 1) return true;
+    // Link-local fe80::/10
+    if ((g0 & 0xffc0) === 0xfe80) return true;
+    // Unique-local fc00::/7
+    if ((g0 & 0xfe00) === 0xfc00) return true;
+    // Multicast ff00::/8
+    if ((g0 & 0xff00) === 0xff00) return true;
+    // Documentation 2001:db8::/32
+    if (g0 === 0x2001 && g1 === 0x0db8) return true;
+    // IPv4-mapped ::ffff:0:0/96 — these are IPv4 addresses in disguise; the
+    // IPv4 scanner already handles them. Drop to avoid double-pivoting.
+    if (groups.slice(0, 5).every(g => g === 0) && groups[5] === 0xffff) return true;
+    return false;
+  };
+
+  const _candidateLooksLikeIpv6 = (candidate) => {
+    // Must contain `::` (compressed) or 8 colon-separated groups.
+    if (candidate.includes('::')) return true;
+    const groups = candidate.split(':');
+    if (groups.length !== 8) return false;
+    // Reject if every hextet is 1 char — almost certainly a version triplet
+    // ("1:2:3:4:5:6:7:8") rather than a real address.
+    if (groups.every(g => g.length <= 1)) return false;
+    return true;
+  };
+
+  const _processIpv6 = (literal, addr, port, offset, length, highlight) => {
+    if (!_candidateLooksLikeIpv6(addr)) return;
+    if (port !== null && (port < 1 || port > 65535)) return;
+    const groups = _expandIpv6(addr);
+    if (!groups) return;
+    if (_isReservedIpv6(groups)) return;
+    // Anti-version lookbehind — same posture as the IPv4 scanner.
+    const preceding = full.slice(Math.max(0, offset - 16), offset);
+    if (/\b(?:v|ver|version|build|release|rev|revision|compiled)\b[\s.:#=_-]*$/i.test(preceding)) return;
+    const value = port !== null ? `[${addr}]:${port}` : addr;
+    const sev = port !== null ? 'medium' : 'info';
+    const sourceInfo = { offset, length };
+    if (highlight) sourceInfo.highlightText = highlight;
+    add(IOC.IP, value, sev, port !== null ? 'IPv6 with port' : 'IPv6', sourceInfo);
+  };
+
+  /* safeRegex: builtin */
+  for (const m of full.matchAll(_ipv6BracketRe)) {
+    const port = m[2] ? Number(m[2]) : null;
+    _processIpv6(m[0], m[1], port, m.index, m[0].length, m[0]);
+  }
+  /* safeRegex: builtin */
+  for (const m of full.matchAll(_ipv6CompressedRe)) {
+    if (_insideUrl(m.index)) continue;
+    _processIpv6(m[0], m[1], null, m.index, m[0].length, null);
+  }
+  /* safeRegex: builtin */
+  for (const m of full.matchAll(_ipv6FullRe)) {
+    if (_insideUrl(m.index)) continue;
+    _processIpv6(m[0], m[1], null, m.index, m[0].length, null);
+  }
+
   // ── Windows file paths ─────────────────────────────────────────────────
   // ReDoS-hardened: per-segment length capped at NTFS-component max (255)
   // and depth capped at 32 (well above any real path). The original
@@ -419,6 +529,309 @@ function extractInterestingStringsCore(text, opts) {
       }
     }
   }
+
+  // ── Crypto-currency / dark-web / IPFS address pivots ───────────────────
+  // Shape-only validators — keccak256 / base58check / bech32 polymod
+  // verification would require either an async hop (crypto.subtle is
+  // async) or several KB of inline crypto. We rely on tight character-
+  // class bounds + length anchors + per-class caps instead. False-
+  // positive rate is acceptable for an analyst-facing surface; every hit
+  // emits with `note: '<variant>'` so an analyst can skim provenance.
+  //
+  // Each variant emits IOC.CRYPTO_ADDRESS at MEDIUM severity (canonical
+  // floor). Capped at 32 hits per scan to keep document-size files (which
+  // can have thousands of incidental base58-shaped strings) from drowning
+  // the sidebar. The `_insideUrl` guard avoids double-emitting addresses
+  // that already appear inside extracted URLs (e.g. block-explorer links).
+  try {
+    const CRYPTO_CAP = 32;
+    let cryptoHits = 0;
+
+    const _emitCrypto = (value, variant, offset, length) => {
+      if (cryptoHits++ >= CRYPTO_CAP) return;
+      add(IOC.CRYPTO_ADDRESS, value, 'medium', variant,
+        { offset, length, highlightText: value });
+    };
+
+    // BTC legacy P2PKH / P2SH — base58 starting with 1 or 3, 26-35 chars.
+    // The leading-version-byte constraint (1 = P2PKH mainnet, 3 = P2SH
+    // mainnet) plus the strict base58 alphabet (no 0OIl) makes the
+    // shape-only regex specific enough that random text rarely matches.
+    /* safeRegex: builtin */
+    const btcLegacyRe = /(?<![A-Za-z0-9])[13][1-9A-HJ-NP-Za-km-z]{25,34}(?![A-Za-z0-9])/g;
+    for (const m of full.matchAll(btcLegacyRe)) {
+      if (_insideUrl(m.index)) continue;
+      if (cryptoHits >= CRYPTO_CAP) break;
+      _emitCrypto(m[0], 'BTC (legacy P2PKH/P2SH)', m.index, m[0].length);
+    }
+
+    // BTC bech32 / bech32m — `bc1` lowercase, 39 / 59 char body. Bech32
+    // alphabet excludes `1`, `b`, `i`, `o` to avoid visual confusion.
+    /* safeRegex: builtin */
+    const btcBech32Re = /(?<![a-z0-9])bc1[02-9ac-hj-np-z]{6,87}(?![a-z0-9])/g;
+    for (const m of full.matchAll(btcBech32Re)) {
+      if (_insideUrl(m.index)) continue;
+      if (cryptoHits >= CRYPTO_CAP) break;
+      // Bech32 addresses are 42 chars (P2WPKH) or 62 chars (P2WSH);
+      // bech32m taproot addresses are 62 chars. Filter to those exact
+      // lengths to suppress base32-shaped noise.
+      if (m[0].length !== 42 && m[0].length !== 62) continue;
+      _emitCrypto(m[0], 'BTC (bech32 / taproot)', m.index, m[0].length);
+    }
+
+    // Ethereum — `0x` + 40 hex. Requires word-boundary isolation so 64-
+    // hex hashes preceded by `0x` don't match. Also drop the all-zero
+    // burn address (well-known, not a pivot).
+    /* safeRegex: builtin */
+    const ethRe = /(?<![A-Za-z0-9])0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/g;
+    for (const m of full.matchAll(ethRe)) {
+      if (_insideUrl(m.index)) continue;
+      if (cryptoHits >= CRYPTO_CAP) break;
+      const lower = m[0].toLowerCase();
+      if (lower === '0x' + '0'.repeat(40)) continue;
+      _emitCrypto(m[0], 'ETH (or EVM-chain) address', m.index, m[0].length);
+    }
+
+    // Monero — base58, 95 chars (standard) starting with `4`, or 106 chars
+    // (integrated, with payment ID) starting with `4`. The leading-`4`
+    // constraint corresponds to network byte 0x12 (mainnet standard
+    // address). Tight enough that random text rarely matches the exact
+    // length + leading-byte combo.
+    /* safeRegex: builtin */
+    const xmrRe = /(?<![A-Za-z0-9])4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}(?:[1-9A-HJ-NP-Za-km-z]{11})?(?![A-Za-z0-9])/g;
+    for (const m of full.matchAll(xmrRe)) {
+      if (_insideUrl(m.index)) continue;
+      if (cryptoHits >= CRYPTO_CAP) break;
+      if (m[0].length !== 95 && m[0].length !== 106) continue;
+      const variant = m[0].length === 106 ? 'XMR (integrated)' : 'XMR';
+      _emitCrypto(m[0], variant, m.index, m[0].length);
+    }
+
+    // Tor onion v3 — 56-char base32 (lowercase a-z + 2-7) ending in `.onion`.
+    // Requiring the `.onion` suffix drops the false-positive rate dramatically
+    // vs. raw 56-char base32 strings (which appear in many binary blobs).
+    /* safeRegex: builtin */
+    const onionRe = /(?<![a-z0-9])([a-z2-7]{56})\.onion(?![a-z0-9])/g;
+    for (const m of full.matchAll(onionRe)) {
+      if (cryptoHits >= CRYPTO_CAP) break;
+      _emitCrypto(m[0], 'Tor onion v3', m.index, m[0].length);
+    }
+
+    // IPFS CIDv0 — `Qm` + 44 base58 (multihash for SHA-256). Length is
+    // exact, leading bytes are fixed.
+    /* safeRegex: builtin */
+    const ipfsV0Re = /(?<![A-Za-z0-9])Qm[1-9A-HJ-NP-Za-km-z]{44}(?![A-Za-z0-9])/g;
+    for (const m of full.matchAll(ipfsV0Re)) {
+      if (_insideUrl(m.index)) continue;
+      if (cryptoHits >= CRYPTO_CAP) break;
+      _emitCrypto(m[0], 'IPFS CIDv0', m.index, m[0].length);
+    }
+
+    // IPFS CIDv1 (base32) — `bafy…` for sha256 dag-pb / dag-cbor; 59 chars
+    // is the canonical length for the most common SHA-256 multihash.
+    // Stricter than catching any `b…` base32 to keep the noise down.
+    /* safeRegex: builtin */
+    const ipfsV1Re = /(?<![a-z0-9])bafy[a-z2-7]{55}(?![a-z0-9])/g;
+    for (const m of full.matchAll(ipfsV1Re)) {
+      if (_insideUrl(m.index)) continue;
+      if (cryptoHits >= CRYPTO_CAP) break;
+      _emitCrypto(m[0], 'IPFS CIDv1', m.index, m[0].length);
+    }
+  } catch (_) { /* crypto-address scan is best-effort */ }
+
+  // ── Secret-leak detection ──────────────────────────────────────────────
+  // Vendor-specific credential patterns chosen for high precision: every
+  // family below has either a fixed prefix (AWS `AKIA`, GitHub `ghp_`,
+  // Google `AIza`, Slack `xox[a-z]-`, Stripe `sk_live_/rk_live_`) or a
+  // PEM `-----BEGIN …-----` armour, all of which are extremely rare
+  // outside the credential context. We deliberately exclude the
+  // contextual "AWS_SECRET_ACCESS_KEY = <40-base64>" pattern: the FP
+  // rate on bare 40-base64 strings is too high (PE digest tables, JSON
+  // signatures, etc.) without the surrounding key=value context, which
+  // is renderer-specific and belongs in a future targeted detector.
+  //
+  // Each hit emits `IOC.SECRET` at the canonical floor (`high` — these
+  // are exposed credentials) and is mirrored to `externalRefs` as an
+  // `IOC.PATTERN` so the existing risk-rollup escalates `findings.risk`.
+  // JWTs ship at `medium` because they're often non-sensitive (signed
+  // session tokens for public APIs, OIDC `id_token` shipped to logs).
+  //
+  // Per-family caps default to 8 — these are credentials, not pivots, so
+  // a flood of identical AKIA hits in a build artefact is more useful
+  // capped than enumerated.
+  try {
+    const SECRET_CAP = 8;
+    const seenSecrets = new Map(); // family → count
+
+    const _emitSecret = (value, family, severity, offset, length) => {
+      const c = (seenSecrets.get(family) || 0);
+      if (c >= SECRET_CAP) return;
+      seenSecrets.set(family, c + 1);
+      add(IOC.SECRET, value, severity, family,
+        { offset, length, highlightText: value });
+    };
+
+    // AWS access key IDs — five flavours by leading 4 chars, all 20-char
+    // total. AKIA = long-term IAM, ASIA = STS temp credential, AGPA =
+    // group key, AROA = IAM role, AIDA = IAM user.
+    /* safeRegex: builtin */
+    const awsRe = /(?<![A-Z0-9])(AKIA|ASIA|AGPA|AROA|AIDA)[0-9A-Z]{16}(?![A-Z0-9])/g;
+    for (const m of full.matchAll(awsRe)) {
+      _emitSecret(m[0], 'AWS access key ID', 'high', m.index, m[0].length);
+    }
+
+    // GitHub tokens — six prefixes (ghp_/gho_/ghu_/ghs_/ghr_/github_pat_)
+    // each followed by base62-with-underscore body. ghp_/gho_/ghu_/ghs_/ghr_
+    // are 36-char body; github_pat_ is the new fine-grained PAT format with
+    // 82-char body (3 segments separated by underscores).
+    /* safeRegex: builtin */
+    const githubRe = /(?<![A-Za-z0-9_])gh[opusr]_[A-Za-z0-9]{36}(?![A-Za-z0-9_])/g;
+    for (const m of full.matchAll(githubRe)) {
+      _emitSecret(m[0], 'GitHub token', 'high', m.index, m[0].length);
+    }
+    /* safeRegex: builtin */
+    const githubPatRe = /(?<![A-Za-z0-9_])github_pat_[A-Za-z0-9_]{82}(?![A-Za-z0-9_])/g;
+    for (const m of full.matchAll(githubPatRe)) {
+      _emitSecret(m[0], 'GitHub fine-grained PAT', 'high', m.index, m[0].length);
+    }
+
+    // Slack tokens — `xox[abprs]-` followed by digits and hyphens then a
+    // base62 secret. We require at least three hyphen-separated numeric
+    // segments before the secret to suppress matches against arbitrary
+    // `xoxsomething` text.
+    /* safeRegex: builtin */
+    const slackRe = /(?<![A-Za-z0-9])xox[abprs]-\d+-\d+-\d+-[A-Za-z0-9]{32,}(?![A-Za-z0-9])/g;
+    for (const m of full.matchAll(slackRe)) {
+      _emitSecret(m[0], 'Slack token', 'high', m.index, m[0].length);
+    }
+
+    // Stripe live API keys — `sk_live_` (secret) and `rk_live_` (restricted)
+    // followed by 24+ base62 chars. Stripe also issues `pk_live_` (publishable),
+    // which is intentionally not a secret and is excluded.
+    /* safeRegex: builtin */
+    const stripeRe = /(?<![A-Za-z0-9_])(?:sk|rk)_live_[A-Za-z0-9]{24,}(?![A-Za-z0-9])/g;
+    for (const m of full.matchAll(stripeRe)) {
+      _emitSecret(m[0], 'Stripe live API key', 'high', m.index, m[0].length);
+    }
+
+    // Google API keys — fixed `AIza` prefix + 35 base64url chars. Used for
+    // Maps / YouTube / Cloud APIs; equivalent to a credit-card on a public
+    // GitHub repo. Must be word-boundary isolated.
+    /* safeRegex: builtin */
+    const googleRe = /(?<![A-Za-z0-9_-])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/g;
+    for (const m of full.matchAll(googleRe)) {
+      _emitSecret(m[0], 'Google API key', 'high', m.index, m[0].length);
+    }
+
+    // PEM private-key armour — eight variants. We detect the BEGIN line
+    // and emit it as the IOC value (truncated to the armour string itself,
+    // not the body, to keep sidebar rows readable). The KEY-NAME class is
+    // tightly bound to known PEM types: RSA / DSA / EC / DH / OPENSSH /
+    // PGP / PRIVATE / ENCRYPTED PRIVATE.
+    /* safeRegex: builtin */
+    const pemRe = /-----BEGIN (?:RSA |DSA |EC |DH |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----/g;
+    for (const m of full.matchAll(pemRe)) {
+      _emitSecret(m[0], 'PEM private key', 'high', m.index, m[0].length);
+    }
+
+    // JWT — three base64url segments separated by `.`. The first segment
+    // must start `eyJ` (which is `{"` base64url-encoded — guaranteed by
+    // any JSON header object). We don't validate the header decodes to
+    // valid JSON; the prefix + tri-segment shape is specific enough.
+    // Severity is medium (not high) because OIDC `id_token` values are
+    // routinely logged and aren't a credential by themselves.
+    /* safeRegex: builtin */
+    const jwtRe = /(?<![A-Za-z0-9_=-])eyJ[A-Za-z0-9_=-]{10,}\.eyJ[A-Za-z0-9_=-]{10,}\.[A-Za-z0-9_=-]{10,}(?![A-Za-z0-9_=-])/g;
+    for (const m of full.matchAll(jwtRe)) {
+      _emitSecret(m[0], 'JWT', 'medium', m.index, m[0].length);
+    }
+  } catch (_) { /* secret-leak scan is best-effort */ }
+
+  // ── Trojan Source / Unicode bidi flag (CVE-2021-42574) ─────────────────
+  // Detects three classes of source-code-hostile Unicode use:
+  //
+  //   • Bidirectional control characters (LRE/RLE/PDF/LRO/RLO/LRI/RLI/FSI/PDI)
+  //     — the Trojan Source family. A single RLO inside a comment can flip
+  //     the rendered order of the rest of the line, so a reviewer sees one
+  //     thing while the compiler sees another. CVSS-rated medium per CERT.
+  //   • Invisible / zero-width formatting characters (ZWSP/ZWNJ/ZWJ/WJ/BOM
+  //     when not at file start) inside identifier-like runs — used to fork
+  //     two visually-identical identifiers into distinct symbols.
+  //   • Mixed-script identifiers — Latin + Cyrillic (`раypal` vs `paypal`)
+  //     or Latin + Greek (`scаle` Cyrillic-a). High-confidence homoglyph
+  //     attack signal in source / config / documentation.
+  //
+  // Each class surfaces as IOC.PATTERN at MEDIUM severity, capped at 8
+  // entries to keep a maliciously dense file from flooding the sidebar.
+  // The matched run is included verbatim in `_highlightText` so the
+  // sidebar's click-to-focus walks straight to the offending bytes.
+  //
+  // Caps are intentionally tight; the goal is "hey, look at this", not
+  // an exhaustive lint pass.
+  try {
+    const TROJAN_BIDI_CHARS = '\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069';
+    const INVIS_CHARS = '\u200B\u200C\u200D\u2060\uFEFF';
+    const TROJAN_CAP = 8;
+
+    // Bidi controls — flag every line that contains any.
+    let bidiHits = 0;
+    /* safeRegex: builtin */
+    const bidiLineRe = new RegExp(
+      `[^\\n]{0,200}[${TROJAN_BIDI_CHARS}][^\\n]{0,200}`, 'g'
+    );
+    for (const m of full.matchAll(bidiLineRe)) {
+      if (bidiHits++ >= TROJAN_CAP) break;
+      /* safeRegex: builtin */
+      const ch = m[0].match(new RegExp(`[${TROJAN_BIDI_CHARS}]`));
+      const cp = ch ? `U+${ch[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}` : 'U+????';
+      add(IOC.PATTERN, `Trojan Source — bidi control ${cp} in source (CVE-2021-42574)`, 'medium',
+        'Unicode bidi control character — text renders in a different order than parsers see',
+        { offset: m.index, length: m[0].length, highlightText: m[0] });
+    }
+
+    // Invisible characters embedded in identifier-like runs (≥ 2 word chars
+    // either side). Catches `pas\u200Bsword` shape splits without firing on
+    // legitimate ZWNJ inside Devanagari / Arabic text (which is bracketed
+    // by non-word chars).
+    let invisHits = 0;
+    /* safeRegex: builtin */
+    const invisRe = new RegExp(
+      `\\w{2,}[${INVIS_CHARS}]\\w{2,}`, 'g'
+    );
+    for (const m of full.matchAll(invisRe)) {
+      if (invisHits++ >= TROJAN_CAP) break;
+      /* safeRegex: builtin */
+      const ch = m[0].match(new RegExp(`[${INVIS_CHARS}]`));
+      const cp = ch ? `U+${ch[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}` : 'U+????';
+      add(IOC.PATTERN, `Invisible character ${cp} inside identifier "${m[0].replace(/[\u200B\u200C\u200D\u2060\uFEFF]/g, '·')}"`, 'medium',
+        'Zero-width / invisible character splits a visually-identical identifier',
+        { offset: m.index, length: m[0].length, highlightText: m[0] });
+    }
+
+    // Mixed-script identifier — Latin paired with Cyrillic OR Greek inside a
+    // single word-shaped run. Restrict the run to ≤ 64 chars so document-
+    // level mixed-language prose doesn't trigger.
+    let mixedHits = 0;
+    /* safeRegex: builtin */
+    const mixedRe = /[A-Za-z\u0400-\u04FF\u0370-\u03FF]{2,64}/g;
+    for (const m of full.matchAll(mixedRe)) {
+      if (mixedHits >= TROJAN_CAP) break;
+      const w = m[0];
+      const hasLatin = /[A-Za-z]/.test(w);
+      const hasCyrillic = /[\u0400-\u04FF]/.test(w);
+      const hasGreek = /[\u0370-\u03FF]/.test(w);
+      const scripts = (hasLatin ? 1 : 0) + (hasCyrillic ? 1 : 0) + (hasGreek ? 1 : 0);
+      if (scripts < 2) continue;
+      // Ignore scripts > 4 chars all the same script — already filtered.
+      mixedHits++;
+      const blend = hasLatin && hasCyrillic ? 'Latin + Cyrillic'
+        : hasLatin && hasGreek ? 'Latin + Greek'
+        : 'Cyrillic + Greek';
+      add(IOC.PATTERN, `Mixed-script identifier "${w}" (${blend}) — possible homoglyph`, 'medium',
+        'Identifier mixes alphabets that visually overlap — common phishing / typosquat shape',
+        { offset: m.index, length: w.length, highlightText: w });
+    }
+  } catch (_) { /* Unicode scan is best-effort */ }
 
   return { findings: results, droppedByType, totalSeenByType };
 }

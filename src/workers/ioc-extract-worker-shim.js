@@ -56,6 +56,8 @@ const IOC = Object.freeze({
   GUID: 'GUID',
   FINGERPRINT: 'Fingerprint',
   PACKAGE_NAME: 'Package Name',
+  CRYPTO_ADDRESS: 'Crypto Address',
+  SECRET: 'Secret',
 });
 
 // ── looksLikeIpVersionString (mirrors src/constants.js) ─────────────────────

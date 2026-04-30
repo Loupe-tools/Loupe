@@ -1623,6 +1623,8 @@ extendApp({
       return null;
     }
     if (iocType === IOC.FILE_PATH || iocType === IOC.UNC_PATH) return 'file-path';
+    if (iocType === IOC.CRYPTO_ADDRESS) return 'crypto-address';
+    if (iocType === IOC.SECRET) return 'secret';
     // Command-line, process, registry-key, username, MAC, attachment —
     // these don't have a clean STIX pattern. Returning null means the STIX
     // builder skips them (but CSV / JSON / MISP still include them as
@@ -1904,7 +1906,15 @@ extendApp({
     //  | hash-sha1   | sha1      | Payload delivery  | true   |
     //  | hash-sha256 | sha256    | Payload delivery  | true   |
     //  | file-path   | filename  | Payload delivery  | false  |
+    //  | crypto-*    | btc/xmr/  | Financial fraud   | true   |
+    //  |             | text      | Other (other variants — see below)        |
     //  | (unknown)   | text      | Other             | false  |
+    //
+    // Crypto branching: BTC and XMR have native MISP attribute types that
+    // make them queryable via dedicated correlations. Onion / IPFS / ETH
+    // (and other EVM-chain addresses) ship as `text` with the variant in
+    // the comment — MISP exposes a `text` attribute under "Other" that's
+    // still cross-correlated by value, just without a dedicated UI.
     const mapMisp = (ioc) => {
       const base = { value: ioc.value, comment: ioc.note || ioc.type, distribution: '5' };
       switch (ioc.stixType) {
@@ -1917,6 +1927,22 @@ extendApp({
         case 'hash-sha1': return { ...base, type: 'sha1', category: 'Payload delivery', to_ids: '1' };
         case 'hash-sha256': return { ...base, type: 'sha256', category: 'Payload delivery', to_ids: '1' };
         case 'file-path': return { ...base, type: 'filename', category: 'Payload delivery', to_ids: '0' };
+        case 'crypto-address': {
+          const note = (ioc.note || '').toLowerCase();
+          if (note.startsWith('btc')) return { ...base, type: 'btc', category: 'Financial fraud', to_ids: '1' };
+          if (note.startsWith('xmr')) return { ...base, type: 'xmr', category: 'Financial fraud', to_ids: '1' };
+          // ETH / onion / IPFS — no dedicated MISP type; ship as text+Other
+          // with the variant carried in the comment for analyst search.
+          return { ...base, type: 'text', category: 'Other', to_ids: '0' };
+        }
+        case 'secret':
+          // Exposed credentials. MISP has no native secret type; we emit
+          // under "Payload delivery" (the closest semantic match for
+          // attacker-actionable artefacts shipped inside the analysed
+          // file) with `to_ids:0` because a leaked AWS / GitHub key
+          // shouldn't be installed as a network blocklist rule — it's a
+          // remediation action item, not a perimeter signature.
+          return { ...base, type: 'text', category: 'Payload delivery', to_ids: '0' };
         default: return { ...base, type: 'text', category: 'Other', to_ids: '0' };
       }
     };
