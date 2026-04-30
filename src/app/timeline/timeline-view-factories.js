@@ -47,6 +47,10 @@ TimelineView._STRUCTURED_LOG_KINDS = {
     columns:  () => _TL_SYSLOG5424_COLS.slice(),
     label:    'Syslog (RFC 5424)',
   },
+  zeek: {
+    makeTokenizer: () => _tlMakeZeekTokenizer(),
+    label: 'Zeek',
+  },
 };
 
 Object.assign(TimelineView, {
@@ -317,6 +321,24 @@ Object.assign(TimelineView, {
     if (!cfg) {
       throw new Error('fromStructuredLogAsync: unknown kindHint: ' + kindHint);
     }
+    // Stateless kinds expose `tokenize` + `columns` on the config;
+    // stateful kinds (Zeek) expose `makeTokenizer()` returning the
+    // same pair (plus optional `getDefaultStackColIdx` /
+    // `getFormatLabel` for post-schema overrides). Resolve once per
+    // parse so state can't leak across files.
+    let tokenizeLine, getColumns;
+    let getDefaultStackColIdx = null;
+    let getFormatLabel = null;
+    if (typeof cfg.makeTokenizer === 'function') {
+      const tk = cfg.makeTokenizer();
+      tokenizeLine = tk.tokenize;
+      getColumns = tk.getColumns;
+      getDefaultStackColIdx = tk.getDefaultStackColIdx || null;
+      getFormatLabel = tk.getFormatLabel || null;
+    } else {
+      tokenizeLine = cfg.tokenize;
+      getColumns = cfg.columns;
+    }
     const bytes = new Uint8Array(buffer);
     const DECODE_CHUNK = RENDER_LIMITS.DECODE_CHUNK_BYTES;
     const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -369,10 +391,10 @@ Object.assign(TimelineView, {
         const line = text.slice(lineStart, nl);
         lineStart = nl + 1;
         if (!line) continue;
-        const cells = cfg.tokenize(line, nowMs);
+        const cells = tokenizeLine(line, nowMs);
         if (!cells) continue;
         if (!headerSeen) {
-          columns = cfg.columns(cells.length);
+          columns = getColumns(cells.length);
           colLen = columns.length;
           headerSeen = true;
         }
@@ -384,10 +406,10 @@ Object.assign(TimelineView, {
       if (end < bytes.length) await yieldTick();
     }
     if (!truncated && tail) {
-      const cells = cfg.tokenize(tail, nowMs);
+      const cells = tokenizeLine(tail, nowMs);
       if (cells) {
         if (!headerSeen) {
-          columns = cfg.columns(cells.length);
+          columns = getColumns(cells.length);
           colLen = columns.length;
           headerSeen = true;
         }
@@ -400,13 +422,21 @@ Object.assign(TimelineView, {
       : rows.length;
     const store = RowStore.fromStringMatrix(columns, rows);
     rows.length = 0;
+    // Stateful tokenisers can override label + default stack column
+    // after seeing the file's schema (Zeek picks the format label
+    // 'Zeek (<path>)' from `#path` and the stack column from
+    // `_TL_ZEEK_STACK_BY_PATH`).
+    const dynStack = (typeof getDefaultStackColIdx === 'function')
+      ? getDefaultStackColIdx() : null;
+    const dynLabel = (typeof getFormatLabel === 'function')
+      ? getFormatLabel() : null;
     return new TimelineView({
       file, columns, store,
-      formatLabel: cfg.label,
+      formatLabel: dynLabel || cfg.label,
       truncated,
       originalRowCount,
       defaultTimeColIdx: 0,
-      defaultStackColIdx: 1,
+      defaultStackColIdx: Number.isInteger(dynStack) ? dynStack : 1,
     });
   },
 

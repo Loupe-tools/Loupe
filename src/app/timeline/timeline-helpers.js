@@ -566,6 +566,123 @@ const _TL_SYSLOG5424_COLS = ['Timestamp', 'Severity', 'Facility', 'Host',
                              'App', 'ProcID', 'MsgID', 'StructuredData',
                              'Message'];
 
+// ── Zeek TSV tokeniser (stateful) ─────────────────────────────────
+// Zeek (formerly Bro) emits one log file per protocol/path
+// (`conn.log`, `dns.log`, `http.log`, `ssl.log`, …). Each file is
+// tab-separated with a 7-line `#`-prefixed header preamble:
+//
+//   #separator \x09
+//   #set_separator	,
+//   #empty_field	(empty)
+//   #unset_field	-
+//   #path	conn
+//   #open	2024-10-15-12-00-00
+//   #fields	ts	uid	id.orig_h	id.orig_p	...
+//   #types	time	string	addr	port	...
+//   <tab-separated data rows>
+//   #close	2024-10-15-13-00-00
+//
+// `ts` is a unix-epoch float ('1697371200.123456'). `-` and
+// `(empty)` are the sentinel NILVALUE strings (configurable via
+// `#unset_field` / `#empty_field` but in practice always those
+// defaults). The schema (column count) varies by `#path` — `conn.log`
+// has 21 fields, `dns.log` has 23, `http.log` has 28, etc. — so the
+// tokeniser MUST read the column list from the file's own `#fields`
+// header rather than hard-coding it.
+//
+// `_tlMakeZeekTokenizer()` returns `{tokenize, getColumns,
+// getDefaultStackColIdx, getFormatLabel}` closing over per-parse
+// state. The factory pattern ensures state can't leak between
+// files when the worker is reused.
+//
+// Default histogram stack column is chosen heuristically per `#path`:
+//   conn → 'proto' (TCP / UDP / ICMP)
+//   dns  → 'qtype_name' (A / AAAA / TXT / …)
+//   http → 'method'    (GET / POST / …)
+//   ssl  → 'version'   (TLSv1.2 / TLSv1.3 / …)
+//   else → col 1 (the auto-detect fallback)
+const _TL_ZEEK_STACK_BY_PATH = {
+  conn:  'proto',
+  dns:   'qtype_name',
+  http:  'method',
+  ssl:   'version',
+  weird: 'name',
+  files: 'mime_type',
+  notice: 'note',
+};
+function _tlMakeZeekTokenizer() {
+  // Defaults match the Zeek convention; overridden on the fly if the
+  // file's preamble carries a `#set_separator` / `#unset_field` /
+  // `#empty_field` directive with non-default values.
+  let unsetField = '-';
+  let emptyField = '(empty)';
+  let fieldsCols = null;     // resolved from `#fields`
+  let zeekPath = '';         // resolved from `#path`
+  let stackColIdx = null;    // resolved from `_TL_ZEEK_STACK_BY_PATH`
+
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    if (line.charCodeAt(0) === 0x23 /* '#' */) {
+      // Directive line. Tab-separated: `#name\tvalue\tvalue\t…`.
+      const parts = line.split('\t');
+      const name = parts[0];
+      switch (name) {
+        case '#fields':
+          // Slice off the leading `#fields` and keep the rest.
+          fieldsCols = parts.slice(1);
+          break;
+        case '#path':
+          zeekPath = parts[1] || '';
+          break;
+        case '#unset_field':
+          if (parts[1] !== undefined) unsetField = parts[1];
+          break;
+        case '#empty_field':
+          if (parts[1] !== undefined) emptyField = parts[1];
+          break;
+        // `#separator`, `#set_separator`, `#types`, `#open`, `#close`
+        // are recognised but ignored — we always tab-split (the sniff
+        // already verified `#separator \x09` at line 0) and we don't
+        // type-coerce cells (the grid renders strings).
+        default:
+          break;
+      }
+      return null;
+    }
+    // Data row. Split on tab and replace NILVALUEs with empty cells.
+    const cells = line.split('\t');
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] === unsetField || cells[i] === emptyField) cells[i] = '';
+    }
+    return cells;
+  };
+
+  const getColumns = (width) => {
+    if (Array.isArray(fieldsCols) && fieldsCols.length > 0) {
+      // Resolve the default stack column NOW (after the schema is
+      // known, before the host-side cardinality probe runs).
+      const stackName = _TL_ZEEK_STACK_BY_PATH[zeekPath] || null;
+      if (stackName) {
+        const idx = fieldsCols.indexOf(stackName);
+        if (idx >= 0) stackColIdx = idx;
+      }
+      return fieldsCols.slice();
+    }
+    // No `#fields` header — fall back to synthetic names. Shouldn't
+    // happen in practice (the sniff requires `#separator`, which is
+    // always paired with `#fields`), but stay defensive.
+    const cols = [];
+    for (let i = 0; i < width; i++) cols.push('col ' + (i + 1));
+    return cols;
+  };
+
+  const getDefaultStackColIdx = () => stackColIdx;
+  const getFormatLabel = () =>
+    zeekPath ? ('Zeek (' + zeekPath + ')') : 'Zeek';
+
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}
+
 // Canonical Apache CLF column names. The Combined Log Format (Apache
 // `LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-agent}i\""`)
 // emits 9 fields; the older Common Log Format (no referer / UA) emits 7.

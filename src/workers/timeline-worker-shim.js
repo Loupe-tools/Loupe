@@ -221,7 +221,8 @@ function _tlCanonicalLogColumns(width) {
 // ── Syslog (RFC 3164) helpers — worker-side ────────────────────────────────
 //
 // Mirrors `_tlDecodePri`, `_tlInferYear`, `_tlTokenizeSyslog3164`,
-// `_tlTokenizeSyslog5424` and the `_TL_SYSLOG{3164,5424}_COLS` constants
+// `_tlTokenizeSyslog5424`, `_tlMakeZeekTokenizer`, the
+// `_TL_SYSLOG{3164,5424}_COLS` constants, and `_TL_ZEEK_STACK_BY_PATH`
 // in `src/app/timeline/timeline-helpers.js`.
 // Helpers must live here too because the main-bundle helpers file isn't
 // concatenated into the worker bundle. **Keep in lockstep with the
@@ -396,3 +397,69 @@ function _tlTokenizeSyslog5424(line, _fileLastModifiedMs) {
 const _TL_SYSLOG5424_COLS = ['Timestamp', 'Severity', 'Facility', 'Host',
                              'App', 'ProcID', 'MsgID', 'StructuredData',
                              'Message'];
+
+// ── Zeek TSV mirror ──
+// Canonical implementation lives in
+// `src/app/timeline/timeline-helpers.js::_tlMakeZeekTokenizer`.
+// Cross-realm parity is enforced by `tests/unit/timeline-zeek.test.js`.
+const _TL_ZEEK_STACK_BY_PATH = {
+  conn:  'proto',
+  dns:   'qtype_name',
+  http:  'method',
+  ssl:   'version',
+  weird: 'name',
+  files: 'mime_type',
+  notice: 'note',
+};
+function _tlMakeZeekTokenizer() {
+  let unsetField = '-';
+  let emptyField = '(empty)';
+  let fieldsCols = null;
+  let zeekPath = '';
+  let stackColIdx = null;
+  const tokenize = (line, _mtime) => {
+    if (!line) return null;
+    if (line.charCodeAt(0) === 0x23) {
+      const parts = line.split('\t');
+      switch (parts[0]) {
+        case '#fields':
+          fieldsCols = parts.slice(1);
+          break;
+        case '#path':
+          zeekPath = parts[1] || '';
+          break;
+        case '#unset_field':
+          if (parts[1] !== undefined) unsetField = parts[1];
+          break;
+        case '#empty_field':
+          if (parts[1] !== undefined) emptyField = parts[1];
+          break;
+        default:
+          break;
+      }
+      return null;
+    }
+    const cells = line.split('\t');
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] === unsetField || cells[i] === emptyField) cells[i] = '';
+    }
+    return cells;
+  };
+  const getColumns = (width) => {
+    if (Array.isArray(fieldsCols) && fieldsCols.length > 0) {
+      const stackName = _TL_ZEEK_STACK_BY_PATH[zeekPath] || null;
+      if (stackName) {
+        const idx = fieldsCols.indexOf(stackName);
+        if (idx >= 0) stackColIdx = idx;
+      }
+      return fieldsCols.slice();
+    }
+    const cols = [];
+    for (let i = 0; i < width; i++) cols.push('col ' + (i + 1));
+    return cols;
+  };
+  const getDefaultStackColIdx = () => stackColIdx;
+  const getFormatLabel = () =>
+    zeekPath ? ('Zeek (' + zeekPath + ')') : 'Zeek';
+  return { tokenize, getColumns, getDefaultStackColIdx, getFormatLabel };
+}

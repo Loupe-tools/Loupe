@@ -1,0 +1,19 @@
+#separator \x09
+#set_separator	,
+#empty_field	(empty)
+#unset_field	-
+#path	conn
+#open	2024-10-15-12-00-00
+#fields	ts	uid	id.orig_h	id.orig_p	id.resp_h	id.resp_p	proto	service	duration	orig_bytes	resp_bytes	conn_state	missed_bytes	history	orig_pkts	orig_ip_bytes	resp_pkts	resp_ip_bytes
+#types	time	string	addr	port	addr	port	enum	string	interval	count	count	string	count	string	count	count	count	count
+1697371200.123456	CHEa1234abcd	10.0.0.42	51234	192.0.2.13	443	tcp	ssl	1.234	512	2048	SF	0	ShADadFf	5	820	4	2308
+1697371201.234567	CHEa2345bcde	10.0.0.42	51235	192.0.2.99	80	tcp	http	0.456	256	1024	SF	0	ShADadFf	3	412	2	1140
+1697371202.345678	CHEa3456cdef	10.0.0.42	51236	8.8.8.8	53	udp	dns	0.012	34	78	SF	0	Dd	1	62	1	106
+1697371203.456789	CHEa4567defg	10.0.0.42	51237	192.0.2.13	443	tcp	ssl	3.456	1024	4096	SF	0	ShADadFf	8	1340	6	4404
+1697371204.567890	CHEa5678efgh	10.0.0.99	51238	192.0.2.13	22	tcp	ssh	120.5	2048	8192	SF	0	ShADadFf	50	4748	45	10100
+1697371205.678901	CHEa6789fghi	10.0.0.42	51239	1.1.1.1	53	udp	dns	0.008	28	64	SF	0	Dd	1	56	1	92
+1697371206.789012	CHEa7890ghij	10.0.0.42	51240	192.0.2.99	80	tcp	-	0.234	-	-	S0	0	S	2	88	0	0
+1697371207.890123	CHEa8901hijk	10.0.0.42	51241	192.0.2.13	443	tcp	ssl	2.123	768	3072	SF	0	ShADadFf	6	1080	5	3340
+1697371208.901234	CHEa9012ijkl	10.0.0.99	51242	192.0.2.13	22	tcp	ssh	60.0	1024	4096	SF	0	ShADadFf	30	2474	28	5828
+1697371209.012345	CHEa0123jklm	10.0.0.42	51243	(empty)	0	icmp	-	0.001	8	8	OTH	0	-	1	36	1	36
+#close	2024-10-15-13-00-00

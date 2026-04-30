@@ -165,6 +165,20 @@ extendApp({
       }
       if (head.length >= 2 && hits / head.length >= 0.6) return 'log';
     }
+    // Zeek TSV sniff. Zeek files begin with a `#separator \x09`
+    // directive on line 0 (literally — the value is `\x09`, the
+    // 4-char escape sequence as written in the file, not an actual
+    // tab byte). This is a magic prefix; nothing else uses it. The
+    // Zeek sniff has to win against:
+    //   - the syslog 3164 / 5424 sniffs (they don't match `#`-prefixed
+    //     lines, so no conflict — we still place this first so the
+    //     `'log'` ext upgrade loop short-circuits on the strongest
+    //     signal first), and
+    //   - the delimiter-confidence loop (Zeek's tab-separated rows
+    //     would otherwise come back as `'tsv'`, which would parse
+    //     correctly via CsvRenderer but lose the schema-aware column
+    //     names + `#path`-derived format label + NILVALUE handling).
+    if (lines[0] && /^#separator\s/.test(lines[0])) return 'zeek';
     // Syslog RFC 5424 sniff — runs BEFORE 3164 because the 5424
     // shape (`<PRI>VER ` with a digit version field) is a strict
     // superset of 3164's `<PRI>` prefix and we want the more specific
@@ -359,7 +373,8 @@ extendApp({
       let workerKind = null;
       if (ext === 'evtx') workerKind = 'evtx';
       else if (ext === 'csv' || ext === 'tsv' || ext === 'log'
-            || ext === 'syslog3164' || ext === 'syslog5424') workerKind = 'csv';
+            || ext === 'syslog3164' || ext === 'syslog5424'
+            || ext === 'zeek') workerKind = 'csv';
       else if (ext === 'sqlite' || ext === 'db') workerKind = 'sqlite';
 
       if (workerKind && window.WorkerManager
@@ -515,7 +530,8 @@ extendApp({
           // `timeline.worker.js::_parseCsv`). Structured-log loads
           // also pass `fileLastModified` so the parser can infer the
           // year for RFC 3164 timestamps deterministically.
-          const _structuredLog = (ext === 'syslog3164' || ext === 'syslog5424');
+          const _structuredLog = (ext === 'syslog3164' || ext === 'syslog5424'
+                                  || ext === 'zeek');
           const opts = (workerKind === 'csv')
             ? { explicitDelim: ext === 'tsv' ? '\t'
                   : (ext === 'log' ? ' ' : null),
@@ -655,7 +671,8 @@ extendApp({
           const explicit = ext === 'tsv' ? '\t' : (ext === 'log' ? ' ' : null);
           view = await TimelineView.fromCsvAsync(
             file, buffer, explicit, ext === 'log' ? 'log' : null);
-        } else if (ext === 'syslog3164' || ext === 'syslog5424') {
+        } else if (ext === 'syslog3164' || ext === 'syslog5424'
+                || ext === 'zeek') {
           // Structured-log fallback — mirrors the worker's
           // `_parseStructuredLog` for environments where workers
           // can't spawn (Firefox `file://`).

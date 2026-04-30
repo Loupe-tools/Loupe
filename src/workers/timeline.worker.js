@@ -301,9 +301,31 @@ async function _parseStructuredLog(buffer, kindHint, fileLastModified) {
   _workerMark('structuredLogParseStart');
   const kindCfg = STRUCTURED_LOG_KINDS[kindHint];
   if (!kindCfg) throw new Error('unknown structured-log kindHint: ' + kindHint);
-  const tokenizeLine = kindCfg.tokenize;
-  const getColumns = kindCfg.columns;
   const formatLabel = kindCfg.label;
+
+  // Per-parse state. Stateless formats (3164/5424) use the static
+  // `tokenize` + `columns` pair on the kind config. Stateful formats
+  // (Zeek — schema is defined inline in a `#fields` header that
+  // precedes the data rows) provide a `makeTokenizer()` factory that
+  // returns `{tokenize, getColumns, getDefaultStackColIdx?, getFormatLabel?}`
+  // closing over per-parse state. The factory is called once per
+  // `_parseStructuredLog` invocation so state can't leak between
+  // files. `getColumns` is called on the first valid data row, after
+  // the tokeniser has already stashed schema bits from any `#`-prefixed
+  // header lines (which the tokeniser returns `null` for).
+  let tokenizeLine, getColumns;
+  let getDefaultStackColIdx = null;
+  let getFormatLabel = null;
+  if (typeof kindCfg.makeTokenizer === 'function') {
+    const tk = kindCfg.makeTokenizer();
+    tokenizeLine = tk.tokenize;
+    getColumns = tk.getColumns;
+    getDefaultStackColIdx = tk.getDefaultStackColIdx || null;
+    getFormatLabel = tk.getFormatLabel || null;
+  } else {
+    tokenizeLine = kindCfg.tokenize;
+    getColumns = kindCfg.columns;
+  }
 
   const bytes = new Uint8Array(buffer);
   const DECODE_CHUNK = RENDER_LIMITS.DECODE_CHUNK_BYTES;
@@ -399,18 +421,27 @@ async function _parseStructuredLog(buffer, kindHint, fileLastModified) {
   const originalRowCount = truncated
     ? Math.round(rowCount * (bytes.length / Math.max(1, bytesConsumed)))
     : rowCount;
+  // Stateful tokenisers can override the histogram defaults +
+  // format label after they've seen the file's schema (Zeek picks
+  // `proto` / `qtype_name` / `method` based on `#path`, and the
+  // formatLabel becomes 'Zeek (<path>)').
+  const dynStack = (typeof getDefaultStackColIdx === 'function')
+    ? getDefaultStackColIdx() : null;
+  const dynLabel = (typeof getFormatLabel === 'function')
+    ? getFormatLabel() : null;
   return {
     columns,
     rows: [],
-    formatLabel,
+    formatLabel: dynLabel || formatLabel,
     truncated,
     originalRowCount,
-    // Both syslog formats default to Severity (col 1) for the histogram
-    // stack — see `_TL_STACK_EXACT` in timeline-helpers.js, which would
-    // pick it up automatically too, but stating it explicitly skips the
-    // 2000-row cardinality probe on the host side.
+    // Stateless syslog formats default to Severity (col 1) for the
+    // histogram stack — see `_TL_STACK_EXACT` in timeline-helpers.js,
+    // which would pick it up automatically too, but stating it
+    // explicitly skips the 2000-row cardinality probe on the host
+    // side. Stateful kinds may override via `getDefaultStackColIdx()`.
     defaultTimeColIdx: 0,
-    defaultStackColIdx: 1,
+    defaultStackColIdx: Number.isInteger(dynStack) ? dynStack : 1,
   };
 }
 
@@ -428,6 +459,14 @@ const STRUCTURED_LOG_KINDS = {
     tokenize: (line, mtimeMs) => _tlTokenizeSyslog5424(line, mtimeMs),
     columns:  () => _TL_SYSLOG5424_COLS.slice(),
     label:    'Syslog (RFC 5424)',
+  },
+  zeek: {
+    // Stateful — schema lives inside the file's `#fields` header
+    // line. The factory closes over per-parse state; columns +
+    // formatLabel + default stack column resolve after the first
+    // header pass.
+    makeTokenizer: () => _tlMakeZeekTokenizer(),
+    label: 'Zeek',
   },
 };
 
