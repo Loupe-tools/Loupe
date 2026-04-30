@@ -868,7 +868,7 @@ extendApp({
         <tr><td><kbd class="help-kbd">,</kbd></td><td>Open Settings</td></tr>
         <tr><td><kbd class="help-kbd">?</kbd> / <kbd class="help-kbd">H</kbd></td><td>Open Help</td></tr>
         <tr><td><kbd class="help-kbd">F</kbd></td><td>Focus document search</td></tr>
-        <tr><td><kbd class="help-kbd">Ctrl+Enter</kbd></td><td>⚡ Copy AI/SOC summary to clipboard</td></tr>
+        <tr><td><kbd class="help-kbd">Ctrl+Enter</kbd></td><td>Copy ⚡ Summary to clipboard</td></tr>
         <tr><td><kbd class="help-kbd">Ctrl+C</kbd></td><td>Copy raw file content (when nothing is selected)</td></tr>
         <tr><td><kbd class="help-kbd">Ctrl+V</kbd></td><td>Paste file from clipboard</td></tr>
         <tr><td><kbd class="help-kbd">Esc</kbd></td><td>Close dialog / clear search</td></tr>
