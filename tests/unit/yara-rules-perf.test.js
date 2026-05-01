@@ -137,16 +137,17 @@ function row(label, ms, budget) {
 // ── Per-file scan budgets ─────────────────────────────────────────────────
 //
 // Slowest per-file measurements after the May 2026 Tier-1 rule
-// rewrites (Punycode_IDN_Homograph, JS_Bracket_Hex_Property_Execution,
-// JS_Comment_Injection_Obfuscation):
-//   • macho-threats.yar on base64_161k   ≈ 165 ms
-//   • windows-threats.yar on base64_161k ≈ 135 ms
-//   • document-threats.yar on base64_161k ≈ 93 ms
-//   • script-threats.yar on base64_161k  ≈ 60 ms (was 151 ms)
-//   • script-threats.yar on hex_8k       ≈  4 ms (was 906 ms)
-//   • script-threats.yar on x_8k         ≈  4 ms (was 593 ms)
-// 1.5 s per-file budget gives ~9× headroom on the slowest entry,
-// catches a future REDoS regression even on the smallest 8 KB inputs.
+// rewrites + Phase-2b parser-modifier-capture fix:
+//   • windows-threats.yar on base64_161k  ≈ 240–340 ms
+//   • npm-threats.yar on base64_161k      ≈ 350–400 ms
+//   • macho-threats.yar on base64_161k    ≈ 165 ms
+//   • document-threats.yar on base64_161k ≈  90 ms
+//   • script-threats.yar on hex_8k        ≈   4 ms (was 906 ms)
+//   • script-threats.yar on x_8k          ≈   4 ms (was 593 ms)
+// The parser fix activates dormant `nocase`/`wide`/`fullword`
+// modifiers across the corpus, roughly doubling per-file scan cost
+// on real-world inputs (this is the correct YARA behaviour). 1.5 s
+// per-file budget gives ~4× headroom on the slowest entry.
 const PER_FILE_BUDGET_MS = 1_500;
 
 for (const formatTag of ['plaintext', 'decoded-payload']) {
@@ -269,9 +270,11 @@ test('perf: full corpus, 161 KB base64 blob, formatTag=plaintext', { timeout: 30
   // user-reported symptom was ~60 s wall time on a 161 KB base64
   // blob (worker overhead + sequential-phase serialisation magnified
   // a ~300 ms in-process scan into the wall-clock figure). After
-  // Tier-1 rule rewrites this scan runs in 250–600 ms in Node with
-  // significant variance from JIT/GC. 2 s budget catches a >3×
-  // regression while tolerating cold-start jitter.
+  // Tier-1 rule rewrites and Phase-2b parser-modifier-capture fix
+  // this scan runs in ~900–1200 ms in Node (the parser fix activates
+  // dormant `nocase`/`wide`/`fullword` modifiers across the whole
+  // corpus, which is correct YARA behaviour and roughly doubles the
+  // scan cost on real-world inputs). 2 s budget gives ~2× headroom.
   assert.ok(ms < 2_000, `full corpus on base64 took ${ms.toFixed(0)} ms (budget 2000 ms)`);
 });
 

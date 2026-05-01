@@ -616,7 +616,16 @@ class YaraEngine {
     if (stringsMatch) {
       const stringsBlock = stringsMatch[1];
       // Match each string definition: $id = "text" or $id = { hex } or $id = /regex/
-      const strRx = /(\$\w+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"\s*(nocase|wide|ascii|fullword|\s)*|(\{[\s\S]*?\})\s*(nocase|wide|ascii|\s)*|\/((?:[^/\\]|\\.)*)\/\s*([is]*)\s*(nocase|wide|ascii|\s)*)/g;
+      // Modifier capture: the inner alternation is non-capturing
+      // (`(?:...)`) and the whole modifier run is captured in one group
+      // so that all keywords \u2014 not just the last \u2014 reach the parser.
+      // Earlier the capture group was `(nocase|wide|...|\s)*` which
+      // only retained the LAST iteration of the loop, almost always a
+      // whitespace char, silently turning every modifier in the corpus
+      // into a no-op. See ratchet test
+      // `parse: ratchet \u2014 modifier capture in canonical multi-line form`
+      // in tests/unit/yara-engine-parse.test.js.
+      const strRx = /(\$\w+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"\s*((?:nocase|wide|ascii|fullword|\s)*)|(\{[\s\S]*?\})\s*((?:nocase|wide|ascii|\s)*)|\/((?:[^/\\]|\\.)*)\/\s*([is]*)\s*((?:nocase|wide|ascii|\s)*))/g;
       let sm;
       while ((sm = strRx.exec(stringsBlock)) !== null) {
         if (sm[2] !== undefined) {

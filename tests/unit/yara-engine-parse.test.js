@@ -69,63 +69,56 @@ test('parseRules: text string with no modifiers', () => {
   assert.equal(r.condition, '$a');
 });
 
-test('parseRules: KNOWN BUG — text-string modifiers are silently dropped (multi-line form)', () => {
-  // ── KNOWN BUG, ratcheted ──────────────────────────────────────────────
-  // The `_parseRuleBody` regex's modifier tail is `(nocase|wide|ascii|
-  // fullword|\s)*`. Because `\s` is one of the alternatives and `*` only
-  // retains the LAST captured iteration, the captured group is whitespace
-  // when ANY whitespace follows the modifier — which is the canonical
-  // multi-line rule form (`$a = "x" nocase\n    $b = …`) used everywhere
-  // in `src/rules/`.
-  //
-  // Effect: every `nocase` / `wide` / `fullword` modifier in the bundled
-  // rule corpus is silently a no-op, and case-sensitive matching is the
-  // accidental default. The engine still recognises the modifier as
-  // syntax (no parse error), so rule authors can't tell their rule isn't
-  // doing what they wrote.
-  //
-  // This test pins the buggy behaviour so a Tier-2 fix flips it
-  // deliberately (and updates this test in the same commit). Removing
-  // this test without fixing the parser would let the bug regress
-  // silently again. See `src/yara-engine.js:619` (`strRx` regex) and the
-  // catch-all `else if (sm[6] !== undefined)` branch immediately below.
-  const src = rule(`rule R {
+test('parseRules: text-string modifiers are captured in canonical multi-line form', () => {
+  // Originally a ratchet pinning a bug — `(nocase|wide|...|\s)*` captured
+  // only the last iteration of the loop, almost always whitespace,
+  // silently dropping every modifier in the bundled corpus. The May 2026
+  // parser fix wraps the alternation in a non-capturing group inside a
+  // single outer capture (`((?:nocase|wide|...|\s)*)`) so the full
+  // modifier run reaches the parser. See `src/yara-engine.js`'s `strRx`.
+  const src = `rule R {
   strings:
     $a = "x" nocase
     $b = "y" wide
     $c = "z" fullword
+    $d = "w" nocase wide fullword
   condition: $a
-}`);
+}`;
   const { rules, errors } = YaraEngine.parseRules(src);
   assert.equal(errors.length, 0);
-  // ALL three modifiers are dropped — the parsed flags are false, false, false.
-  for (const s of rules[0].strings) {
-    assert.equal(s.nocase,   false, `${s.id}: nocase should be (buggily) false`);
-    assert.equal(s.wide,     false, `${s.id}: wide should be (buggily) false`);
-    assert.equal(s.fullword, false, `${s.id}: fullword should be (buggily) false`);
-  }
+  const byId = Object.fromEntries(rules[0].strings.map(s => [s.id, s]));
+  assert.equal(byId.$a.nocase, true,   '$a should have nocase=true');
+  assert.equal(byId.$a.wide, false,    '$a should have wide=false');
+  assert.equal(byId.$a.fullword, false,'$a should have fullword=false');
+  assert.equal(byId.$b.wide, true,     '$b should have wide=true');
+  assert.equal(byId.$c.fullword, true, '$c should have fullword=true');
+  assert.equal(byId.$d.nocase, true,   '$d should have all three');
+  assert.equal(byId.$d.wide, true);
+  assert.equal(byId.$d.fullword, true);
 });
 
-test('parseRules: text-string modifier IS captured at end-of-block (no trailing whitespace)', () => {
-  // Edge case where the modifier IS the last thing before `}` — no
-  // intervening whitespace token, so the regex's `(...|\s)*` retains the
-  // modifier in its capture group. This pins the one path where modifiers
-  // currently work, and documents how narrow it is.
+test('parseRules: regex modifiers are captured in canonical multi-line form', () => {
+  // Same fix as above, applied to the regex branch of `strRx`. Pre-fix,
+  // `/foo/ nocase\n    $b = …` retained only the trailing whitespace and
+  // dropped `nocase`; the new outer capture preserves it. The legacy
+  // single-letter `i` flag (between the closing `/` and the modifier)
+  // continues to work and stacks with `nocase`.
   const src = `rule R {
   strings:
-    $a = "x" nocase
-  condition: $a}`;
+    $a = /foo/ nocase
+    $b = /bar/i wide
+    $c = /baz/ nocase wide
+  condition: $a
+}`;
   const { rules, errors } = YaraEngine.parseRules(src);
-  // `}` without a leading newline: parser's outer regex requires `\n}` so
-  // this won't parse at all. Wrap it differently — newline immediately
-  // after the modifier with no space:
-  void rules; void errors;
-  const src2 = 'rule R {\n  strings:\n    $a = "x" nocase\n  condition: $a\n}';
-  const r2 = YaraEngine.parseRules(src2);
-  // Verify the bug: even with minimal whitespace the modifier is dropped.
-  // We assert the buggy behaviour rather than the expected one to keep
-  // this test green pre-fix.
-  assert.equal(r2.rules[0].strings[0].nocase, false);
+  assert.equal(errors.length, 0);
+  const byId = Object.fromEntries(rules[0].strings.map(s => [s.id, s]));
+  assert.equal(byId.$a.nocase, true,  '$a regex nocase modifier');
+  assert.equal(byId.$a.flags, 'i',    '$a regex nocase => "i" flag');
+  assert.equal(byId.$b.nocase, true,  '$b regex /…/i flag');
+  assert.equal(byId.$b.wide, true,    '$b regex wide modifier');
+  assert.equal(byId.$c.nocase, true,  '$c regex nocase + wide stack');
+  assert.equal(byId.$c.wide, true);
 });
 
 test('parseRules: hex string with wildcards and jumps', () => {
