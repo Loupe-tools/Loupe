@@ -86,6 +86,13 @@ test.describe('Timeline — JSONL', () => {
     // a JSON object containing `client.ip`. We don't pin to a
     // specific row index because column display order may put
     // `_extra` anywhere in the visible grid.
+    //
+    // Wait for the virtualised grid to actually paint rows before
+    // reading their text — `loadFixture` resolves on findings
+    // settle, but the Timeline grid sizer hydrates rows on a
+    // subsequent rAF. Without this wait the locator returns zero
+    // elements on slower CI runners and `gridText` collapses to ''.
+    await expect(ctx.page.locator('.grid-row').first()).toBeVisible({ timeout: 5_000 });
     const gridText = await ctx.page.locator('.grid-row').evaluateAll(els =>
       els.map(el => el.textContent || '').join('\n'));
     expect(gridText).toMatch(/client\.ip/);
