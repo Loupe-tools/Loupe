@@ -11897,10 +11897,14 @@ body.dark .bin-triage-badge-info {
 }
 
 /* ── "Why this risk?" reasons panel ──────────────────────────────── */
-/* Used in two places: under the in-content verdict band and under the
-   sidebar risk banner (with the additional `.sb-risk-why` class). The
-   panel is collapsed by default — analysts who want the audit trail
-   click the summary to expand. */
+/* Rendered under the in-content verdict band on PE/ELF/Mach-O viewers.
+   The panel is collapsed by default — analysts who want the audit trail
+   click the summary to expand. (Previously this also rendered under the
+   sidebar risk banner via a `.sb-risk-why` variant; removed because the
+   verdict band is the only surface where reasons currently exist, so
+   the sidebar copy was a redundant second display of the same rows.
+   The structured data still flows to clipboard analysis and the e2e
+   snapshot.) */
 
 .bin-triage-why {
   margin-top: 8px;
@@ -11997,16 +12001,6 @@ body.dark .bin-triage-why-cat {
 body.dark .bin-triage-why-foot {
   border-top-color: rgba(255, 255, 255, .08);
   color: #888;
-}
-
-/* Sidebar variant: same panel, slightly tighter spacing to fit the
-   narrow column. */
-.sb-risk-why {
-  margin: 6px 12px 8px 12px;
-}
-
-.sb-risk-why .bin-triage-why-summary {
-  font-size: 11.5px;
 }
 
 /* ── Anomaly ribbon ─────────────────────────────────────────────── */
