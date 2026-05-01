@@ -2396,13 +2396,327 @@ rule Suspicious_ClickFix_RunDialog
 
     strings:
         $forf_call = /for\s*\/f[^()\r\n]{0,200}\([^)\r\n]+\)\s*do\s+(call\s+)?%/ nocase
-        $cue_human = "verify you are human" nocase
-        $cue_robot = "i'm not a robot" nocase
-        $cue_robot2 = "i am not a robot" nocase
-        $cue_captcha = "captcha" nocase
-        $cue_winr   = "win+r" nocase
-        $cue_winr2  = "press win" nocase
+        $cue_human    = "verify you are human" nocase
+        $cue_robot    = "i'm not a robot" nocase
+        $cue_robot2   = "i am not a robot" nocase
+        $cue_captcha  = "captcha" nocase
+        $cue_winr     = "win+r" nocase
+        $cue_winr2    = "press win" nocase
+        $cue_verifid  = "verification id" nocase
+        $cue_verifcode = "verification code" nocase
+        $cue_hcaptcha = "hcaptcha" nocase
+        $cue_recaptcha = "recaptcha" nocase
+        $cue_turnstile = "cloudflare turnstile" nocase
+        $cue_chrome_upd = "chrome update required" nocase
+        $cue_browser_upd = "browser update required" nocase
+        $cue_adobe = "adobe flash update" nocase
+        $cue_check = "click \xE2\x9C\x85"
 
     condition:
-        $forf_call and 1 of ($cue_human, $cue_robot, $cue_robot2, $cue_captcha, $cue_winr, $cue_winr2)
+        $forf_call and 1 of ($cue_human, $cue_robot, $cue_robot2, $cue_captcha, $cue_winr, $cue_winr2, $cue_verifid, $cue_verifcode, $cue_hcaptcha, $cue_recaptcha, $cue_turnstile, $cue_chrome_upd, $cue_browser_upd, $cue_adobe, $cue_check)
+}
+
+rule LOLBAS_LongTail_Download
+{
+    meta:
+        description = "Download-capable LOLBAS binaries beyond the well-known certutil/bitsadmin set — esentutl/expand/extrac32/replace/printbrm/ieexec/cmdl32/desktopimgdownldr/finger/mpcmdrun/devtunnel/winget/devinit/certoc/certreq used to fetch remote payloads"
+        severity    = "medium"
+        category    = "execution"
+        mitre       = "T1105"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = /\bcertoc(\.exe)?\s+[\-\/](?:LoadDLL|GetCACaps)/ nocase
+        $b = /\bcertreq(\.exe)?\s+[\-\/]Post\b/ nocase
+        $c = /\besentutl(\.exe)?\s+[\-\/]y\b/ nocase
+        $d = /\bexpand(\.exe)?\s+(\\\\|http|\/r\b|\/d\b)/ nocase
+        $e = /\bextrac32(\.exe)?\s+[\-\/]y\b/ nocase
+        $f = /\breplace(\.exe)?\s+\\\\/ nocase
+        $g = /\bprintbrm(\.exe)?\s+[\-\/]b\b/ nocase
+        $h = /\bieexec(\.exe)?\s+http/ nocase
+        $i = /\bcmdl32(\.exe)?\s+\/vpn/ nocase
+        $j = /\bdesktopimgdownldr(\.exe)?\s+\/lockscreenurl/ nocase
+        $k = /\bmpcmdrun(\.exe)?\s+[\-\/]DownloadFile/ nocase
+        $l = /\bdevtunnel(\.exe)?\s+host/ nocase
+        $m = /\bwinget(\.exe)?\s+install\s+[\-\/\-]+(?:manifest|uri|locale-file)/ nocase
+        $n = /\bdevinit(\.exe)?\s+run\s+/ nocase
+        $o = /\bftp(\.exe)?\s+[\-\/]s:/ nocase
+        $p = /\bfinger(\.exe)?\s+[\w\.+\-]+@/ nocase
+
+    condition:
+        any of them
+}
+
+rule LOLBAS_LongTail_CodeExec
+{
+    meta:
+        description = "Long-tail LOLBAS code-execution proxies — cmstp/mavinject/odbcconf/msdt/rpcping/.NET compilers (csc/vbc/jsc/ilasm/aspnet_compiler/Microsoft.Workflow.Compiler)/scriptrunner/infdefaultinstall/presentationhost/ldifde/msxsl/register-cimprovider/agentexecutor/appvlp/settingsynchost/vshadow/sqlps/msdeploy/vstest.console/intellitrace/ttdinject/rasautou/verclsid/atbroker/pubprn/manage-bde/tracker/runonce/squirrel/dnscmd/fltmc/dotnet/wsl/hh/cdb/windbg/ntsd/wlrmdr/xbootmgr"
+        severity    = "high"
+        category    = "execution"
+        mitre       = "T1218"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $cmstp           = /\bcmstp(\.exe)?\s+[\-\/](s|au|ns)\b/ nocase
+        $cmstp_inf       = /\bcmstp(\.exe)?\s+[^\r\n]{0,200}\.inf/ nocase
+        $mavinject       = /\bmavinject(\.exe)?\s+\d+\s+\/INJECTRUNNING/ nocase
+        $odbcconf        = /\bodbcconf(\.exe)?\s+[\-\/](f|a)/ nocase
+        $msdt            = /\bmsdt(\.exe)?\s+[\-\/](?:id|path)\s/ nocase
+        $msdt_url        = "ms-msdt:" nocase
+        $rpcping         = /\brpcping(\.exe)?\s+[\-\/]s\s/ nocase
+        $csc             = /\bcsc(\.exe)?\s+[^\r\n]{0,200}\.cs\b/ nocase
+        $vbc             = /\bvbc(\.exe)?\s+[^\r\n]{0,200}\.vb\b/ nocase
+        $jsc             = /\bjsc(\.exe)?\s+[^\r\n]{0,200}\.js\b/ nocase
+        $ilasm           = /\bilasm(\.exe)?\s+[^\r\n]{0,200}\.il\b/ nocase
+        $aspnet_compiler = /\baspnet_compiler(\.exe)?\s+[\-\/]v\b/ nocase
+        $wf_compiler     = "Microsoft.Workflow.Compiler.exe" nocase
+        $scriptrunner    = /\bscriptrunner(\.exe)?\s+[\-\/]appvscript\b/ nocase
+        $inf_default     = /\binfdefaultinstall(\.exe)?\s+[^\r\n]{0,200}\.inf/ nocase
+        $presentationhost = /\bpresentationhost(\.exe)?\s+[\-\/]debug\b/ nocase
+        $ldifde          = /\bldifde(\.exe)?\s+[\-\/]i\b/ nocase
+        $msxsl           = /\bmsxsl(\.exe)?\s+[^\r\n]+\.xsl/ nocase
+        $regcim          = "register-cimprovider.exe" nocase
+        $regcim2         = /Register-CimProvider\s+\-Path\b/ nocase
+        $agentexecutor   = "AgentExecutor.exe" nocase
+        $appvlp          = /\bappvlp(\.exe)?\s+/ nocase
+        $settingsync     = "SettingSyncHost.exe" nocase
+        $vshadow         = /\bvshadow(\.exe)?\s+[\-\/](script|exec)\b/ nocase
+        $sqlps           = /\bsqlps(\.exe)?\b/ nocase
+        $sqltools        = /\bsqltoolsps(\.exe)?\b/ nocase
+        $msdeploy        = /\bmsdeploy(\.exe)?\s+[\-\/]verb:/ nocase
+        $vstest          = /\bvstest\.console(\.exe)?\s+\/Settings:/ nocase
+        $intellitrace    = "IntelliTraceCollector" nocase
+        $ttdinject       = /\bttdinject(\.exe)?\s+/ nocase
+        $tttracer        = /\btttracer(\.exe)?\s+/ nocase
+        $rasautou        = /\brasautou(\.exe)?\s+[\-\/]d\b/ nocase
+        $verclsid        = /\bverclsid(\.exe)?\s+\/S\s+\/C/ nocase
+        $atbroker        = /\bATBroker(\.exe)?\s+\/start\b/ nocase
+        $pubprn          = "PubPrn.vbs" nocase
+        $managebde       = /\bmanage-bde\.wsf\b/ nocase
+        $tracker         = /\btracker(\.exe)?\s+\/d\b/ nocase
+        $runonce_proc    = /\brunonce(\.exe)?\s+\/AlternateShellStartup/ nocase
+        $squirrel        = /\bsquirrel(\.exe)?\s+--update\b/ nocase
+        $update_app      = /\bUpdate(\.exe)?\s+--processStart/ nocase
+        $dnscmd          = /\bdnscmd(\.exe)?\s+\/config\s+\/serverlevelplugindll/ nocase
+        $fltmc           = /\bfltmc(\.exe)?\s+unload\b/ nocase
+        $dotnet_run      = /\bdotnet(\.exe)?\s+(?:run|build|exec)\s/ nocase
+        $wsl_exec        = /\bwsl(\.exe)?\s+(?:-e|-u\s+root|--exec)/ nocase
+        $bash_exe        = /\bbash\.exe\s+-c\b/ nocase
+        $hh_chm          = /\bhh(\.exe)?\s+(?:http|javascript:|mk:@)/ nocase
+        $cdb             = /\bcdb(\.exe)?\s+[\-\/]c\s+/ nocase
+        $windbg          = /\bwindbg(\.exe)?\s+[\-\/]c\s+/ nocase
+        $ntsd            = /\bntsd(\.exe)?\s+[\-\/]c\s+/ nocase
+        $wlrmdr          = /\bwlrmdr(\.exe)?\s+[\-\/]u\s+/ nocase
+        $xbootmgr        = /\bxbootmgr(\.exe)?\s+[\-\/]trace\b/ nocase
+        $gpscript        = /\bgpscript(\.exe)?\s+\/(logon|startup)\b/ nocase
+        $configsec       = "ConfigSecurityPolicy.exe" nocase
+        $csi             = /\bcsi(\.exe)?\s+[^\r\n]{0,200}\.csx/ nocase
+        $bginfo          = /\bbginfo(\.exe)?\s+[^\r\n]{0,200}\.bgi/ nocase
+        $wuauclt         = /\bwuauclt(\.exe)?\s+\/UpdateDeploymentProvider\b/ nocase
+        $pktmon          = /\bpktmon(\.exe)?\s+(?:start|filter\s+add)/ nocase
+        $psr             = /\bpsr(\.exe)?\s+\/start\b/ nocase
+        $cmdkey_add      = /\bcmdkey(\.exe)?\s+\/add:/ nocase
+        $defaultpack     = "DefaultPack.exe" nocase
+        $devtools        = "DevToolsLauncher.exe" nocase
+        $vsls            = "vsls-agent.exe" nocase
+        $vsdiag          = "VSDiagnostics.exe" nocase
+        $vsiis           = "VSIISExeLauncher.exe" nocase
+        $vslaunch        = "VSLaunchBrowser.exe" nocase
+
+    condition:
+        any of them
+}
+
+rule LOLBAS_UAC_Bypass
+{
+    meta:
+        description = "UAC bypass via auto-elevated trusted binary + hijacked HKCU shell-open command (mscfile/ms-settings/Folder/exefile classes) — wsreset, eventvwr, computerdefaults, fodhelper, slui, sdclt"
+        severity    = "high"
+        category    = "privilege-escalation"
+        mitre       = "T1548.002"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $bin1 = /\b(wsreset|eventvwr|computerdefaults|fodhelper|slui|sdclt)\.exe\b/ nocase
+        $key_mscfile  = "Software\\Classes\\mscfile\\shell\\open\\command" nocase
+        $key_settings = "Software\\Classes\\ms-settings\\shell\\open\\command" nocase
+        $key_folder   = "Software\\Classes\\Folder\\shell\\open\\command" nocase
+        $key_exe      = "Software\\Classes\\exefile\\shell\\open\\command" nocase
+        $delegate     = "DelegateExecute" nocase
+        $reg_add      = /reg(\.exe)?\s+add\s+HKCU\\Software\\Classes\\/ nocase
+        $sn_add       = /Set-ItemProperty\s+(?:[\-]Path\s+)?["']?HKCU:\\Software\\Classes\\/ nocase
+
+    condition:
+        $bin1 and (any of ($key_mscfile, $key_settings, $key_folder, $key_exe) or $delegate or $reg_add or $sn_add)
+}
+
+rule Netsh_PortProxy_Forwarding
+{
+    meta:
+        description = "`netsh interface portproxy add` — port-forwarding pivot primitive (typical of internal pivoting / RDP-tunnel staging)"
+        severity    = "high"
+        category    = "command-and-control"
+        mitre       = "T1090.001"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = /netsh(\.exe)?\s+interface\s+portproxy\s+add\s+v4tov4/ nocase
+        $b = /netsh(\.exe)?\s+i(nterface)?\s+p(ortproxy)?\s+a(dd)?\s+v4tov4/ nocase
+        $c = "netsh portproxy add" nocase
+
+    condition:
+        any of them
+}
+
+rule Netsh_Wifi_Cred_Theft
+{
+    meta:
+        description = "`netsh wlan` Wi-Fi credential extraction (`show profile key=clear` / `export profile`)"
+        severity    = "medium"
+        category    = "credential-access"
+        mitre       = "T1555"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = /netsh(\.exe)?\s+wlan\s+show\s+profile[^\r\n]{0,200}key\s*=\s*clear/ nocase
+        $b = /netsh(\.exe)?\s+wlan\s+export\s+profile/ nocase
+
+    condition:
+        any of them
+}
+
+rule Registry_Hive_Extraction
+{
+    meta:
+        description = "`reg save HKLM\\SAM|SYSTEM|SECURITY` or VSS-shadow-copy + NTDS.dit copy — offline credential dumping primitives"
+        severity    = "critical"
+        category    = "credential-access"
+        mitre       = "T1003.002"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $sam      = /reg(\.exe)?\s+save\s+HKLM\\SAM/ nocase
+        $system   = /reg(\.exe)?\s+save\s+HKLM\\SYSTEM/ nocase
+        $security = /reg(\.exe)?\s+save\s+HKLM\\SECURITY/ nocase
+        $sam2     = /reg(\.exe)?\s+save\s+hklm\\sam/ nocase
+        $vss      = "vssadmin create shadow" nocase
+        $vss2     = /wmic\s+shadowcopy\s+call\s+create/ nocase
+        $ntds     = /\\Windows\\NTDS\\NTDS\.dit\b/ nocase
+        $ntds_copy = /copy\s+[^\r\n]{0,200}NTDS\.dit/ nocase
+
+    condition:
+        any of ($sam, $system, $security, $sam2) or ($vss and $ntds) or ($vss2 and $ntds) or $ntds_copy
+}
+
+rule AD_Database_Dump
+{
+    meta:
+        description = "Active Directory database dump primitive — ntdsutil IFM, dsdbutil, wbadmin systemstate, diskshadow scripted, vshadow exposed"
+        severity    = "critical"
+        category    = "credential-access"
+        mitre       = "T1003.003"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = /ntdsutil(\.exe)?[^\r\n]{0,200}["']?ac(tivate)?\s+i(nstance)?\s+ntds["']?/ nocase
+        $b = /ntdsutil(\.exe)?[^\r\n]{0,200}\bifm\b/ nocase
+        $c = /dsdbutil(\.exe)?[^\r\n]{0,80}\bifm\b/ nocase
+        $d = /wbadmin(\.exe)?\s+start\s+backup[^\r\n]{0,200}-systemstate/ nocase
+        $e = /wbadmin(\.exe)?\s+start\s+systemstaterecovery/ nocase
+        $f = /diskshadow(\.exe)?\s+\/s\b/ nocase
+        $g = /vshadow(\.exe)?\s+-p\s+-nw/ nocase
+
+    condition:
+        any of them
+}
+
+rule Defender_Tampering
+{
+    meta:
+        description = "Microsoft Defender / EDR tamper — Set-MpPreference disables, Add-MpPreference exclusions, sc/Disable WinDefend, audit-log clearing"
+        severity    = "critical"
+        category    = "defense-evasion"
+        mitre       = "T1562.001"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = "Set-MpPreference -DisableRealtimeMonitoring" nocase
+        $b = "Set-MpPreference -DisableBehaviorMonitoring" nocase
+        $c = "Set-MpPreference -DisableScriptScanning" nocase
+        $d = "Set-MpPreference -MAPSReporting Disabled" nocase
+        $e = "Set-MpPreference -SubmitSamplesConsent" nocase
+        $f = "Add-MpPreference -ExclusionPath" nocase
+        $g = "Add-MpPreference -ExclusionProcess" nocase
+        $h = "Add-MpPreference -ExclusionExtension" nocase
+        $i = /sc(\.exe)?\s+(stop|config)\s+windefend/ nocase
+        $j = /sc(\.exe)?\s+(stop|config)\s+wuauserv/ nocase
+        $k = /Disable-WindowsOptionalFeature[^\r\n]{0,80}Defender/ nocase
+        $l = /auditpol(\.exe)?\s+\/clear/ nocase
+        $m = /wevtutil(\.exe)?\s+cl\s+(security|system|application)/ nocase
+        $n = "Clear-EventLog" nocase
+        $o = /fltmc(\.exe)?\s+unload\b/ nocase
+        $p = "Stop-Service WinDefend" nocase
+        $q = "DisableAntiSpyware" nocase
+
+    condition:
+        any of them
+}
+
+rule PostEx_Tool_Reference
+{
+    meta:
+        description = "Reference to known offensive-security / post-exploitation tooling (Rubeus, SharpHound, BloodHound, Seatbelt, GhostPack family, PowerView, Inveigh, Responder, PowerSploit, Empire, Covenant, Sliver, Havoc, BruteRatel, Cobalt Strike beacon hints)"
+        severity    = "high"
+        category    = "execution"
+        mitre       = "T1059"
+
+    strings:
+        $a = "Rubeus" ascii wide
+        $b = "SharpHound" ascii wide nocase
+        $c = "BloodHound" ascii wide nocase
+        $d = "Seatbelt" ascii wide nocase
+        $e = "SharpView" ascii wide nocase
+        $f = "SharpDPAPI" ascii wide nocase
+        $g = "GhostPack" ascii wide nocase
+        $h = "PowerView" ascii wide nocase
+        $i = "Inveigh" ascii wide nocase
+        $j = "Responder.py" ascii wide nocase
+        $k = "PowerSploit" ascii wide nocase
+        $l = "Invoke-Empire" ascii wide nocase
+        $m = "Covenant" ascii wide nocase
+        $n = "Sliver implant" ascii wide nocase
+        $o = "Havoc framework" ascii wide nocase
+        $p = "BruteRatel" ascii wide nocase
+        $q = "BadRatel" ascii wide nocase
+        $r = "CobaltStrike" ascii wide nocase
+        $s = "beacon.dll" ascii wide nocase
+        $t = "ReflectiveLoader" ascii wide
+        $u = "SafetyKatz" ascii wide nocase
+        $v = "Mimikatz" ascii wide
+        $w = "SharpKatz" ascii wide nocase
+        $x = "SharpUp" ascii wide nocase
+        $y = "PrivescCheck" ascii wide nocase
+        $z = "Invoke-Mimikatz" ascii wide nocase
+
+    condition:
+        any of them
+}
+
+rule Homoglyph_Process_Name
+{
+    meta:
+        description = "Executable filename containing Cyrillic / Greek / fullwidth-Latin / emoji codepoints adjacent to a Windows-binary extension — homoglyph masquerade (sⅴсhost.exe, рowershell.exe, ｍｓｈｔａ.exe)"
+        severity    = "medium"
+        category    = "defense-evasion"
+        mitre       = "T1036.005"
+
+    strings:
+        $cyr_exe = /[\xD0-\xD1][\x80-\xBF][\w]{0,40}\.(exe|bat|ps1|dll|cmd|vbs|js|hta|msi|scr)\b/ nocase
+        $cyr_exe2 = /[\w]{0,20}[\xD0-\xD1][\x80-\xBF][\w]{0,20}\.(exe|bat|ps1|dll|cmd|vbs|js|hta|msi|scr)\b/ nocase
+        $fullwidth_exe = /[\xEF\xBC][\xA1-\xBF\x80-\x9A][\w\xEF\xBC]{0,40}\.(exe|bat|ps1|dll)\b/ nocase
+        $emoji_exe = /[\xF0][\x9F][\x80-\xBF][\x80-\xBF][\w]{0,40}\.(exe|bat|ps1|dll|cmd|vbs|js)\b/ nocase
+        $greek_exe = /[\xCE-\xCF][\x80-\xBF][\w]{0,40}\.(exe|bat|ps1|dll)\b/ nocase
+
+    condition:
+        any of them
 }

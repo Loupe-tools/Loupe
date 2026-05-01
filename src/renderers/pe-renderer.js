@@ -3568,6 +3568,14 @@ class PeRenderer {
       const issues = [];
       let riskScore = 0;
 
+      // Strong-signal flags gate the renderer-side `critical` tier — see
+      // `BinaryClass.tierForScore` and the parallel comment in
+      // `elf-renderer.js`. Mirrored across PE / ELF / Mach-O for parity.
+      let _strongHighSevCapability   = false;
+      let _strongWxSection           = false;
+      let _strongHighEntropyOverlay  = false;
+      let _strongHighEntropyCodeSec  = false;
+
       // ── File type context ──────────────────────────────────────────
       findings.metadata = {
         'Type': pe.coff.isDLL ? 'DLL' : pe.coff.isSystem ? 'Driver' : 'Executable',
@@ -3759,6 +3767,7 @@ class PeRenderer {
         if (sec.isWritable && sec.isExecutable) {
           issues.push(`Section "${sec.name}" is W+X (writable and executable) — code injection risk`);
           riskScore += 2;
+          _strongWxSection = true;
         }
         if (sec.entropy > 7.0) {
           if (sec.name === '.rsrc') {
@@ -3767,6 +3776,7 @@ class PeRenderer {
           } else {
             issues.push(`Section "${sec.name}" has very high entropy (${sec.entropy.toFixed(3)}) — likely packed or encrypted`);
             riskScore += 1.5;
+            _strongHighEntropyCodeSec = true;
           }
         }
         if (sec.packerMatch) {
@@ -4090,6 +4100,7 @@ class PeRenderer {
             if (large && highEntropy && unrecognised) {
               issues.push(`Large high-entropy overlay (${overlaySize.toLocaleString()} B, ${overlayPct.toFixed(1)}% of file, entropy ${overlayEntropy.toFixed(2)}) with no recognised container magic — likely packed / encrypted payload`);
               riskScore += 2;
+              _strongHighEntropyOverlay = true;
               pushIOC(findings, {
                 type: IOC.PATTERN,
                 value: `High-entropy overlay [T1027.002]`,
@@ -4190,6 +4201,7 @@ class PeRenderer {
           } else if (epi.inWX) {
             issues.push(`Entry point in W+X section "${epi.section.name}" — self-modifying unpacker pattern (T1027.002)`);
             riskScore += 2.5;
+            _strongWxSection = true;
             pushIOC(findings, {
               type: IOC.PATTERN,
               value: 'Entry point in W+X section [T1027.002]',
@@ -4400,6 +4412,9 @@ class PeRenderer {
           });
           issues.push(`${c.name} (${c.mitre})`);
           riskScore += (sevWeight[c.severity] || 0) * w;
+          if (c.severity === 'critical' || c.severity === 'high') {
+            _strongHighSevCapability = true;
+          }
         }
       } catch (_) { /* capability detection is best-effort */ }
 
@@ -4468,6 +4483,7 @@ class PeRenderer {
                   embeddedCount++;
                   issues.push(`High-entropy blob in ${L.typeIsNamed ? `named type "${L.typeName}"` : `RT_${L.typeName}`} (${L.size.toLocaleString()} B, entropy ${ent.toFixed(2)}) — possible packed payload (T1027.002)`);
                   riskScore += 1;
+                  _strongHighEntropyOverlay = true;
                   pushIOC(findings, {
                     type: IOC.PATTERN,
                     value: `High-entropy resource blob [T1027.002]`,
@@ -4486,11 +4502,25 @@ class PeRenderer {
       } catch (_) { /* resource-payload analysis is best-effort */ }
 
       // ── Risk assessment ────────────────────────────────────────────
+      // The renderer-side `critical` tier is gated on at least one strong
+      // signal (high-sev capability / W+X / packed overlay / packed code
+      // section). See `BinaryClass.tierForScore` and the parallel comment
+      // in `elf-renderer.js`. YARA-driven escalation in `app-yara.js`
+      // runs afterwards and is independent.
       findings.autoExec = issues;
-      if (riskScore >= 8) escalateRisk(findings, 'critical');
-      else if (riskScore >= 5) escalateRisk(findings, 'high');
-      else if (riskScore >= 2) escalateRisk(findings, 'medium');
-      else escalateRisk(findings, 'low');
+      const _tier = (typeof BinaryClass !== 'undefined' && BinaryClass.tierForScore)
+        ? BinaryClass.tierForScore(riskScore, {
+            highSevCapability:      _strongHighSevCapability,
+            wxSection:              _strongWxSection,
+            highEntropyOverlay:     _strongHighEntropyOverlay,
+            highEntropyCodeSection: _strongHighEntropyCodeSec,
+          })
+        : { tier: riskScore >= 8 ? 'critical' : riskScore >= 5 ? 'high' : riskScore >= 2 ? 'medium' : 'low', capped: false };
+      escalateRisk(findings, _tier.tier);
+      if (_tier.capped) {
+        findings.metadata['Risk Tier Note'] =
+          `High (capped from critical: ${_tier.reason} — score=${riskScore.toFixed(1)})`;
+      }
 
     } catch (e) {
       escalateRisk(findings, 'medium');

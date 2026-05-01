@@ -593,3 +593,41 @@ rule Space_Delimited_Hex_Payload
     condition:
         any of them
 }
+
+rule Confusable_Codepoint_Density
+{
+    meta:
+        description = "High density of Cyrillic / Greek / fullwidth-Latin lookalike codepoints — Trojan Source / homoglyph identifier obfuscation beyond punycode/RTLO"
+        severity    = "medium"
+        category    = "obfuscation"
+        mitre       = "T1027"
+        applies_to  = "any, decoded-payload"
+
+    strings:
+        $cyr_a    = { D0 B0 }
+        $cyr_e    = { D0 B5 }
+        $cyr_o    = { D0 BE }
+        $cyr_p    = { D1 80 }
+        $cyr_c    = { D1 81 }
+        $cyr_y    = { D1 83 }
+        $cyr_x    = { D1 85 }
+        $cyr_i    = { D1 96 }
+        $cyr_cap_a = { D0 90 }
+        $cyr_cap_e = { D0 95 }
+        $cyr_cap_o = { D0 9E }
+        $cyr_cap_c = { D0 A1 }
+        $greek_a  = { CE B1 }
+        $greek_o  = { CE BF }
+        $greek_p  = { CF 81 }
+        $fullwidth_lo = /[\xEF\xBC][\xA1-\xBF]/
+        $fullwidth_up = /[\xEF\xBD][\x80-\x9A]/
+        $bidi_iso = { E2 81 A6 }
+        $bidi_iso2 = { E2 81 A7 }
+        $bidi_iso3 = { E2 81 A8 }
+        $bidi_iso4 = { E2 81 A9 }
+        $word_joiner = { E2 81 A0 }
+
+    condition:
+        4 of ($cyr_a, $cyr_e, $cyr_o, $cyr_p, $cyr_c, $cyr_y, $cyr_x, $cyr_i, $cyr_cap_a, $cyr_cap_e, $cyr_cap_o, $cyr_cap_c, $greek_a, $greek_o, $greek_p, $fullwidth_lo, $fullwidth_up) or
+        any of ($bidi_iso, $bidi_iso2, $bidi_iso3, $bidi_iso4, $word_joiner)
+}

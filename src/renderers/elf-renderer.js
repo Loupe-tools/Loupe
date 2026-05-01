@@ -1984,6 +1984,18 @@ class ElfRenderer {
       const issues = [];
       let riskScore = 0;
 
+      // Strong-signal flags gate the renderer-side `critical` tier.
+      // Additive low/medium API quorums (suspicious-symbol bumps, missing
+      // security features, reverse-shell trio) trivially clear riskScore
+      // 8 on legitimate system tools (GNU bash scores ~13). The
+      // `BinaryClass.tierForScore` cap at the bottom of this method
+      // requires at least one of these signals before allowing critical.
+      // YARA-driven escalation (app-yara.js) is independent and unaffected.
+      let _strongHighSevCapability   = false;
+      let _strongWxSection           = false;
+      let _strongHighEntropyOverlay  = false;
+      let _strongHighEntropyCodeSec  = false;
+
       // ── File type context ──────────────────────────────────────────
       const bType = elf.isDyn && elf.interpreter ? 'PIE Executable' : elf.isDyn ? 'Shared Object' : elf.isExec ? 'Executable' : elf.isRel ? 'Relocatable' : elf.isCore ? 'Core Dump' : 'ELF';
       findings.metadata = {
@@ -2097,10 +2109,12 @@ class ElfRenderer {
         if (sec.isWritable && sec.isExec) {
           issues.push(`Section "${sec.name}" is W+X (writable and executable) — code injection risk`);
           riskScore += 2;
+          _strongWxSection = true;
         }
         if (sec.entropy > 7.0 && sec.size > 1024) {
           issues.push(`Section "${sec.name}" has very high entropy (${sec.entropy.toFixed(3)}) — likely packed or encrypted`);
           riskScore += 1.5;
+          _strongHighEntropyCodeSec = true;
         }
       }
 
@@ -2109,6 +2123,7 @@ class ElfRenderer {
         if (seg.type === 1 && seg.permW && seg.permX) { // LOAD segment W+X
           issues.push(`LOAD segment at ${this._hex(seg.vaddr, 8)} is W+X — unusual, potential shellcode region`);
           riskScore += 2;
+          _strongWxSection = true;
         }
       }
 
@@ -2366,6 +2381,7 @@ class ElfRenderer {
           if (large && highEntropy && unrecognised) {
             issues.push(`Large high-entropy overlay (${overlaySize.toLocaleString()} B, ${overlayPct.toFixed(1)}% of file, entropy ${overlayEntropy.toFixed(2)}) with no recognised container magic — likely packed / encrypted payload`);
             riskScore += 2;
+            _strongHighEntropyOverlay = true;
             pushIOC(findings, {
               type: IOC.PATTERN,
               value: `High-entropy overlay [T1027.002]`,
@@ -2499,16 +2515,35 @@ class ElfRenderer {
           });
           issues.push(`${c.name} (${c.mitre})`);
           riskScore += (sevWeight[c.severity] || 0) * w;
+          if (c.severity === 'critical' || c.severity === 'high') {
+            _strongHighSevCapability = true;
+          }
         }
       } catch (_) { /* capability detection is best-effort */ }
 
       // ── Risk assessment ────────────────────────────────────────────
+      // The renderer-side `critical` tier is gated on at least one strong
+      // signal (high-sev capability / W+X / packed overlay / packed code
+      // section). Without one, additive low/medium quorums can only escalate
+      // as far as `high`. This prevents legitimate system tools (e.g. GNU
+      // bash, which imports socket+dup2+execve plus a dozen libc routines)
+      // from tripping `critical` purely on shape. YARA-driven escalation in
+      // `app-yara.js` runs afterwards and is independent — a curated
+      // high/critical-severity rule still escalates as expected.
       findings.autoExec = issues;
-
-      if (riskScore >= 8) escalateRisk(findings, 'critical');
-      else if (riskScore >= 5) escalateRisk(findings, 'high');
-      else if (riskScore >= 2) escalateRisk(findings, 'medium');
-      else escalateRisk(findings, 'low');
+      const _tier = (typeof BinaryClass !== 'undefined' && BinaryClass.tierForScore)
+        ? BinaryClass.tierForScore(riskScore, {
+            highSevCapability:      _strongHighSevCapability,
+            wxSection:              _strongWxSection,
+            highEntropyOverlay:     _strongHighEntropyOverlay,
+            highEntropyCodeSection: _strongHighEntropyCodeSec,
+          })
+        : { tier: riskScore >= 8 ? 'critical' : riskScore >= 5 ? 'high' : riskScore >= 2 ? 'medium' : 'low', capped: false };
+      escalateRisk(findings, _tier.tier);
+      if (_tier.capped) {
+        findings.metadata['Risk Tier Note'] =
+          `High (capped from critical: ${_tier.reason} — score=${riskScore.toFixed(1)})`;
+      }
 
     } catch (e) {
       escalateRisk(findings, 'medium');

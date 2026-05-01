@@ -295,8 +295,63 @@ function shouldSurfaceLowSeverity(klass, category) {
   return true;
 }
 
+/**
+ * Map an additive `riskScore` to a final risk tier with a strong-signal
+ * gate on the `critical` band. The PE / ELF / Mach-O renderers all build
+ * `riskScore` by accumulating low/medium-severity API quorums, missing
+ * security features, and capability hits. Without a gate, legitimate
+ * system tools trivially clear `>= 8` and escalate to `critical` purely
+ * on additive quorum noise — e.g. GNU bash imports socket+dup2+execve,
+ * fork, setuid, setgid, dlopen, dlsym, plus several categorical bumps,
+ * scoring ~13 with no actual evasion / injection / packing evidence.
+ *
+ * The fix: `critical` requires `riskScore >= 8` AND at least one
+ * renderer-internal *strong* signal. YARA-driven escalation runs
+ * independently afterwards in `app-yara.js`, so curated high/critical
+ * rule hits still escalate even when the renderer caps at `high`.
+ *
+ * Strong signals (any one is sufficient):
+ *   • highSevCapability        — `findings.capabilities[].severity` ∈ {high, critical}
+ *   • wxSection                — section or LOAD segment is writable+executable
+ *   • highEntropyOverlay       — large unrecognised high-entropy appended payload
+ *   • highEntropyCodeSection   — packed/encrypted code section
+ *
+ * Tier boundaries:
+ *   score >= 8  + strong signal  → critical
+ *   score >= 8  + no strong sig. → high  (capped, audit-trail in metadata)
+ *   score >= 5                   → high
+ *   score >= 2                   → medium
+ *   score <  2                   → low
+ *
+ * @param {number} score
+ * @param {object} [signals]
+ * @param {boolean} [signals.highSevCapability]
+ * @param {boolean} [signals.wxSection]
+ * @param {boolean} [signals.highEntropyOverlay]
+ * @param {boolean} [signals.highEntropyCodeSection]
+ * @returns {{ tier: 'critical'|'high'|'medium'|'low', capped: boolean, reason?: string }}
+ */
+function tierForScore(score, signals) {
+  const s = Number(score) || 0;
+  const sig = signals || {};
+  const strong = !!(sig.highSevCapability || sig.wxSection
+    || sig.highEntropyOverlay || sig.highEntropyCodeSection);
+  if (s >= 8) {
+    if (strong) return { tier: 'critical', capped: false };
+    return {
+      tier: 'high',
+      capped: true,
+      reason: 'no strong-signal evidence',
+    };
+  }
+  if (s >= 5) return { tier: 'high',   capped: false };
+  if (s >= 2) return { tier: 'medium', capped: false };
+  return { tier: 'low', capped: false };
+}
+
 const BinaryClass = Object.freeze({
   classify: classifyBinary,
   weightFor,
   shouldSurfaceLowSeverity,
+  tierForScore,
 });

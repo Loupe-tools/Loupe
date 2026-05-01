@@ -1183,3 +1183,336 @@ rule NodeJS_Child_Process_Execution
     condition:
         any of ($require_cp*,$import_cp*) and any of ($exec,$execSync,$spawn,$spawnSync,$execFile) and any of ($cmd,$powershell,$bash)
 }
+
+rule ReverseShell_Perl_OneLiner
+{
+    meta:
+        description = "Perl reverse-shell one-liner — Socket + getprotobyname + inet_aton + sockaddr_in (3+ of 4 canonical tokens)"
+        severity    = "critical"
+        category    = "execution"
+        mitre       = "T1059.006"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = "use Socket" nocase
+        $b = "getprotobyname(\"tcp\")" nocase
+        $c = "inet_aton" nocase
+        $d = "sockaddr_in" nocase
+        $e = "socket(S,PF_INET" nocase
+        $f = "exec \"/bin/sh -i\"" nocase
+        $g = "exec \"/bin/bash -i\"" nocase
+        $perl_e = /\bperl\s+-e\s+["']/ nocase
+
+    condition:
+        3 of ($a, $b, $c, $d, $e) or ($perl_e and 1 of ($a, $b, $c, $d, $f, $g))
+}
+
+rule ReverseShell_Ruby_OneLiner
+{
+    meta:
+        description = "Ruby reverse-shell one-liner — require 'socket' + TCPSocket.new + exec/IO.popen/%x{}"
+        severity    = "critical"
+        category    = "execution"
+        mitre       = "T1059.006"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $req   = "require 'socket'" nocase
+        $req2  = "require \"socket\"" nocase
+        $tcps  = "TCPSocket.new" nocase
+        $exec  = /exec\s*\(?\s*['"]\/bin\/(ba)?sh/ nocase
+        $popen = "IO.popen" nocase
+        $pct_x = /%x\s*\{[^}]{0,80}\/bin\/(ba)?sh/ nocase
+        $ruby_e = /\bruby\s+-rsocket\b/ nocase
+
+    condition:
+        ($req or $req2 or $ruby_e) and $tcps and ($exec or $popen or $pct_x)
+}
+
+rule ReverseShell_PHP_OneLiner
+{
+    meta:
+        description = "PHP reverse-shell primitives — fsockopen/stream_socket_client + exec/passthru/proc_open/shell_exec, often via `php -r`"
+        severity    = "critical"
+        category    = "execution"
+        mitre       = "T1059"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $fsock = "fsockopen(" nocase
+        $ssock = "stream_socket_client(" nocase
+        $proc  = "proc_open(" nocase
+        $exec  = /\bexec\s*\(\s*["']\/bin\/(ba)?sh/ nocase
+        $pass  = "passthru(" nocase
+        $shex  = "shell_exec(" nocase
+        $sys   = /\bsystem\s*\(\s*["'][^"']{0,80}\/bin\/(ba)?sh/ nocase
+        $php_r = /\bphp\s+-r\s+["']/ nocase
+        $bash_path = "/bin/sh -i" nocase
+
+    condition:
+        ($fsock or $ssock) and ($proc or $exec or $pass or $shex or $sys or $bash_path) and ($php_r or $fsock or $ssock)
+}
+
+rule ReverseShell_Lua_Tcl_AWK
+{
+    meta:
+        description = "Lua / Tcl / awk reverse-shell one-liners — luasocket TCP shell, expect spawn sh, awk BEGIN{system()} with /inet/tcp/"
+        severity    = "high"
+        category    = "execution"
+        mitre       = "T1059"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $lua_sock = "require(\"socket\")" nocase
+        $lua_sock2 = "require('socket')" nocase
+        $lua_exec = /os\.execute\s*\(\s*["']\/bin\/(ba)?sh/ nocase
+        $tcl_spawn = "spawn sh" nocase
+        $tcl_exp   = "package require Tcl" nocase
+        $awk_inet  = /awk\s+['"]BEGIN\s*\{[^}]{0,200}\/inet\/tcp\// nocase
+        $awk_sys   = /awk\s+['"]BEGIN\s*\{[^}]{0,200}system\s*\(/ nocase
+        $expect_spawn = /expect[^\r\n]{0,80}spawn\s+sh/ nocase
+
+    condition:
+        ($lua_sock or $lua_sock2) and $lua_exec or
+        ($tcl_exp and $tcl_spawn) or
+        $awk_inet or $awk_sys or
+        $expect_spawn
+}
+
+rule ReverseShell_NamedPipe
+{
+    meta:
+        description = "Named-pipe reverse shell — `mkfifo` co-located with nc/ncat/netcat/telnet and a shell pathname"
+        severity    = "critical"
+        category    = "execution"
+        mitre       = "T1059.004"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $mkfifo = /\bmkfifo\s+\/(tmp|var|dev)\/[\w\.]+/ nocase
+        $mknod  = /\bmknod\s+\/(tmp|var|dev)\/[\w\.]+\s+p\b/ nocase
+        $nc     = /\b(n(et)?c(at)?)\s+[a-z0-9\.\-]{1,80}\s+\d+/ nocase
+        $tel    = /\btelnet\s+[a-z0-9\.\-]{1,80}\s+\d+/ nocase
+        $sh     = "/bin/sh" nocase
+        $bash   = "/bin/bash" nocase
+
+    condition:
+        ($mkfifo or $mknod) and ($nc or $tel) and ($sh or $bash)
+}
+
+rule ReverseShell_Socat
+{
+    meta:
+        description = "Socat reverse / bind shell — tcp-listen|tcp-connect|openssl-listen with exec:bash|sh"
+        severity    = "critical"
+        category    = "execution"
+        mitre       = "T1059.004"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = /\bsocat\s+(tcp|tcp4|tcp6|openssl)-listen:\d+[^\r\n]{0,120}exec:\s*["']?\/?(bin\/)?(ba)?sh/ nocase
+        $b = /\bsocat\s+(tcp|tcp4|tcp6|openssl)-connect:[a-z0-9\.\-]+:\d+[^\r\n]{0,120}exec:/ nocase
+        $c = /\bsocat\s+exec:[\"']?\/?(bin\/)?(ba)?sh[^\r\n]{0,120}(tcp|openssl)/ nocase
+
+    condition:
+        any of them
+}
+
+rule PowerShell_TCPClient_RevShell
+{
+    meta:
+        description = "PowerShell TCPClient reverse-shell pattern (Nishang-style Invoke-PowerShellTcp) — System.Net.Sockets.TCPClient + GetStream + IEX/Invoke-Expression + StreamReader/Writer"
+        severity    = "critical"
+        category    = "execution"
+        mitre       = "T1059.001"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $tcp     = "System.Net.Sockets.TCPClient" nocase
+        $getstream = "GetStream()" nocase
+        $iex     = "Invoke-Expression" nocase
+        $iex2    = /\biex\b/ nocase
+        $sw      = "StreamWriter" nocase
+        $sr      = "StreamReader" nocase
+        $bw      = "BinaryWriter" nocase
+
+    condition:
+        $tcp and $getstream and ($iex or $iex2) and ($sw or $sr or $bw)
+}
+
+rule GTFOBin_Exec_Primitive
+{
+    meta:
+        description = "GTFOBin-style command-execution primitive — find -exec, vim/less/tar/awk/gawk/gdb/git/xargs/env/script/flock used as arbitrary-shell launcher"
+        severity    = "high"
+        category    = "execution"
+        mitre       = "T1059.004"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $find_exec   = /\bfind\s+[^\r\n]{0,120}-exec\s+\/?(bin\/)?(ba)?sh\b/ nocase
+        $find_exec2  = /\bfind\s+[^\r\n]{0,120}-exec\s+[^\s]+\s+-i\b/ nocase
+        $vim_cmd     = /\bvim?\s+-c\s+['":]?\!\/?(bin\/)?(ba)?sh/ nocase
+        $vim_py      = /\bvim?\s+-c\s+['":]?py(thon)?\s+import\s+os/ nocase
+        $less_bang   = /\bless\s+[^\r\n]{0,80}!\/?(bin\/)?(ba)?sh/ nocase
+        $tar_cp      = /tar\s+[^\r\n]{0,120}--checkpoint=\d+\s+--checkpoint-action=exec/ nocase
+        $awk_system  = /(g?awk|mawk)\s+['"]BEGIN\s*\{\s*system\s*\(/ nocase
+        $gdb_python  = /\bgdb\s+-batch\s+-ex\s+['"]python\s+/ nocase
+        $git_ssh     = /git\s+-c\s+core\.sshCommand=/ nocase
+        $git_pager   = /git\s+-c\s+core\.pager=/ nocase
+        $xargs_sh    = /\bxargs\s+-I\s*\S+\s+\/?(bin\/)?(ba)?sh\s+-c/ nocase
+        $env_isolate = /\benv\s+-i\s+\/?(bin\/)?(ba)?sh\b/ nocase
+        $script_term = /\bscript\s+(-q\s+)?-c\s+['"]\/?(bin\/)?(ba)?sh/ nocase
+        $script_dev  = /\bscript\s+[^\r\n]{0,40}\/dev\/null/ nocase
+        $flock_cmd   = /\bflock\s+(-u\s+)?[\/-]\s+-c\s+['"]/ nocase
+        $ed_bang     = /\bed\s*\n[^\r\n]*\n!\/?(bin\/)?(ba)?sh/ nocase
+        $rsync_e     = /\brsync\s+-e\s+['"]?\/?(bin\/)?(ba)?sh/ nocase
+        $man_bang    = /\bman\s+[^\r\n]{0,40}!\/?(bin\/)?(ba)?sh/ nocase
+        $sed_e       = /\bsed\s+-e\s+['"]\d*e\b/ nocase
+        $nice_sh     = /\bnice\s+\/?(bin\/)?(ba)?sh\b/ nocase
+        $stdbuf_sh   = /\bstdbuf\s+-[ioe]\s*0?\s+\/?(bin\/)?(ba)?sh/ nocase
+        $timeout_sh  = /\btimeout\s+--preserve-status\s+\d+\s+\/?(bin\/)?(ba)?sh/ nocase
+
+    condition:
+        any of them
+}
+
+rule Linux_SUID_Discovery
+{
+    meta:
+        description = "SUID / file-capability discovery primitive — `find / -perm -u=s|-4000`, `getcap -r`, `getfacl -R` — privilege-escalation reconnaissance"
+        severity    = "low"
+        category    = "discovery"
+        mitre       = "T1083"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = /find\s+\/[^\r\n]{0,120}-perm\s+-?u=s/ nocase
+        $b = /find\s+\/[^\r\n]{0,120}-perm\s+-?4000/ nocase
+        $c = /find\s+\/[^\r\n]{0,120}-perm\s+-?2000/ nocase
+        $d = /find\s+\/[^\r\n]{0,120}-perm\s+-?6000/ nocase
+        $e = "getcap -r /" nocase
+        $f = /\bgetcap\s+-r\b/ nocase
+        $g = /\bgetfacl\s+-R\b/ nocase
+
+    condition:
+        any of them
+}
+
+rule Linux_Persist_Add_User
+{
+    meta:
+        description = "Add backdoor account / privileged-group escalation — usermod/useradd/gpasswd into sudo|wheel|admin, or direct /etc/passwd append with UID 0"
+        severity    = "high"
+        category    = "persistence"
+        mitre       = "T1136.001"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $a = /\busermod\s+-aG\s+(sudo|wheel|admin|root)\b/ nocase
+        $b = /\buseradd\s+[^\r\n]{0,80}-G\s+(sudo|wheel|admin|root)\b/ nocase
+        $c = /\buseradd\s+[^\r\n]{0,80}-u\s*0\b/ nocase
+        $d = /\bgpasswd\s+-a\s+\w+\s+(sudo|wheel|admin|root)\b/ nocase
+        $e = /\badduser\s+\w+\s+(sudo|wheel|admin|root)\b/ nocase
+        $f = /echo\s+["']?[^\r\n]{0,80}:::?0:0/ nocase
+        $g = />>\s*\/etc\/passwd/ nocase
+        $h = />>\s*\/etc\/sudoers/ nocase
+        $i = "NOPASSWD:ALL" nocase
+
+    condition:
+        any of them
+}
+
+rule PasswordManager_DB_Reference
+{
+    meta:
+        description = "Reference to a password-manager / secret-vault database file by name (Bitwarden data.json, 1Password .opvault, KeePass .kdbx, LastPass lp.sqlite, Enpass vault.json, NordPass, Dashlane, RoboForm, pass / password-store)"
+        severity    = "high"
+        category    = "credential-access"
+        mitre       = "T1555.005"
+        applies_to  = "any, decoded-payload"
+
+    strings:
+        $bw_data    = "Bitwarden\\data.json" nocase
+        $bw_data2   = "/Bitwarden/data.json" nocase
+        $op_vault   = ".opvault" nocase
+        $op_sqlite  = "1Password.sqlite" nocase
+        $op_4       = "OnePassword4.sqlite" nocase
+        $kp_kdbx    = ".kdbx" nocase
+        $kp_kdb     = ".kdb" nocase
+        $lp_sqlite  = "lp.sqlite" nocase
+        $enpass     = "vault.enpassdb" nocase
+        $enpass2    = "Enpass\\vault.json" nocase
+        $nordpass   = "NordPass" ascii wide nocase
+        $dashlane   = "Dashlane" ascii wide nocase
+        $roboform   = "RoboForm" ascii wide nocase
+        $stickyp    = "StickyPassword" ascii wide nocase
+        $passstore  = "/.password-store/" nocase
+        $keepassxc  = "KeePassXC" ascii wide nocase
+        $keeper     = /\bkeeper(security)?\b/ nocase
+
+    condition:
+        any of them
+}
+
+rule Browser_NSS_Cred_Reference
+{
+    meta:
+        description = "Reference to Mozilla NSS / Firefox credential-store internals — key3.db / key4.db / logins.json with profile context, nss3.dll, pk11sdr_decrypt"
+        severity    = "high"
+        category    = "credential-access"
+        mitre       = "T1555.003"
+        applies_to  = "any, decoded-payload"
+
+    strings:
+        $k3 = "key3.db" nocase
+        $k4 = "key4.db" nocase
+        $logins = "logins.json" nocase
+        $signons = "signons.sqlite" nocase
+        $nss = "nss3.dll" nocase
+        $pk11 = "PK11SDR_Decrypt" nocase
+        $pk11b = "pk11sdr_decrypt" nocase
+        $profile = /Mozilla[\\\/]Firefox[\\\/]Profiles[\\\/]/ nocase
+        $profile2 = /\.mozilla[\\\/]firefox[\\\/]/ nocase
+        $thunder = /Thunderbird[\\\/]Profiles/ nocase
+
+    condition:
+        ($nss or $pk11 or $pk11b) or
+        (($k3 or $k4 or $logins or $signons) and ($profile or $profile2 or $thunder or $nss))
+}
+
+rule CredFile_Walk_CrossOS
+{
+    meta:
+        description = "Walk of cross-OS credential / config files — .git-credentials, .netrc, .pypirc, kubeconfig, gh hosts.yml, .azure, gcloud, service-account JSON, GNOME keyring, KWallet, SSH agent socket"
+        severity    = "high"
+        category    = "credential-access"
+        mitre       = "T1552.001"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $git_creds  = ".git-credentials" nocase
+        $netrc      = /\b\.netrc\b/ nocase
+        $netrc2     = /[\\\/]_netrc\b/ nocase
+        $pypirc     = ".pypirc" nocase
+        $kubeconfig = /\.kube[\\\/]config\b/ nocase
+        $gh_hosts   = /gh[\\\/]hosts\.yml\b/ nocase
+        $azure_cfg  = /[\\\/]\.azure[\\\/]/ nocase
+        $gcloud_cfg = /\.config[\\\/]gcloud[\\\/]/ nocase
+        $svc_acct   = "service-account.json" nocase
+        $gae_creds  = "GOOGLE_APPLICATION_CREDENTIALS" nocase
+        $aws_creds  = /\.aws[\\\/]credentials\b/ nocase
+        $aws_cfg    = /\.aws[\\\/]config\b/ nocase
+        $docker_cfg = /\.docker[\\\/]config\.json\b/ nocase
+        $gnome_kr   = "login.keyring" nocase
+        $kwallet    = "kdewallet.kwl" nocase
+        $secret_tool = /\bsecret-tool\s+lookup\b/ nocase
+        $ssh_sock   = "SSH_AUTH_SOCK" nocase
+        $ssh_id_rsa = /\.ssh[\\\/]id_(rsa|ed25519|ecdsa|dsa)\b/ nocase
+        $ssh_authk  = /\.ssh[\\\/]authorized_keys\b/ nocase
+        $vault_token = /\.vault-token\b/ nocase
+        $npm_rc     = /\b\.npmrc\b/ nocase
+
+    condition:
+        3 of them
+}

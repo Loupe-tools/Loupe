@@ -185,3 +185,128 @@ rule Abuse_TLD_DDNS_Tunnel
     condition:
         any of them
 }
+
+rule Tunneling_Tool_Reference
+{
+    meta:
+        description = "Reference to a known tunneling / pivoting tool by binary or project name — chisel, ligolo-ng, frpc/frps, gost, socat, plink, sshuttle, cloudflared, stunnel, iodine, dnscat2, nps/npc, revsocks, rathole, gotunnel"
+        severity    = "high"
+        category    = "command-and-control"
+        mitre       = "T1572"
+
+    strings:
+        $chisel       = /\bchisel(\.exe)?\s+(client|server)\b/ nocase
+        $chisel2      = "github.com/jpillora/chisel" nocase
+        $ligolo       = /\bligolo(-ng)?(\.exe)?\b/ nocase
+        $ligolo_proj  = "ligolo-ng" nocase
+        $frpc         = /\bfrpc(\.exe)?\s+-c\b/ nocase
+        $frps         = /\bfrps(\.exe)?\s+-c\b/ nocase
+        $frpc_toml    = "[common]\nserver_addr" nocase
+        $gost         = /\bgost(\.exe)?\s+-L\b/ nocase
+        $socat_tun    = /\bsocat\s+(tcp|tcp4|tcp6|openssl)-listen:[0-9]+/ nocase
+        $socat_exec   = /\bsocat[^\r\n]{0,80}exec:[\"']?(\/bin\/(ba)?sh|cmd)/ nocase
+        $plink        = /\bplink(\.exe)?\s+-(R|L|D)\s+\d+/ nocase
+        $sshuttle     = /\bsshuttle\s+-r\b/ nocase
+        $cloudflared  = /\bcloudflared(\.exe)?\s+(tunnel|access)\b/ nocase
+        $stunnel      = /\bstunnel(4|\.exe)?\s+/ nocase
+        $iodine       = /\biodine(d)?\s+/ nocase
+        $dnscat2      = /\bdnscat2?(\.exe)?\b/ nocase
+        $nps          = /\bnps(\.exe)?\s+(install|start)\b/ nocase
+        $npc          = /\bnpc(\.exe)?\s+-server\s/ nocase
+        $revsocks     = /\brevsocks(\.exe)?\b/ nocase
+        $rathole      = /\brathole(\.exe)?\s+/ nocase
+        $gotunnel     = "gotunnel" nocase
+        $powercat     = "Invoke-PowerCat" nocase
+        $tcp_tunnel   = "github.com/sensepost/godoh" nocase
+
+    condition:
+        any of them
+}
+
+rule Exfil_File_Drop_Hosts
+{
+    meta:
+        description = "Reference to public anonymous-upload / file-drop / large-file-share host commonly abused for exfiltration (mega, mediafire, sendspace, wetransfer, file.io, anonfiles, gofile, catbox.moe, 0x0.st, temp.sh, bashupload, oshi.at, filebin)"
+        severity    = "medium"
+        category    = "exfiltration"
+        mitre       = "T1567.002"
+
+    strings:
+        $mega       = "mega.nz" nocase
+        $mega2      = "mega.co.nz" nocase
+        $mediafire  = "mediafire.com" nocase
+        $sendspace  = "sendspace.com" nocase
+        $wetransfer = "wetransfer.com" nocase
+        $fileio     = /\bfile\.io\b/ nocase
+        $anonfiles  = "anonfiles.com" nocase
+        $gofile     = "gofile.io" nocase
+        $catbox     = "catbox.moe" nocase
+        $litterbox  = "litterbox.catbox.moe" nocase
+        $oxost      = /\b0x0\.st\b/ nocase
+        $tempsh     = /\btemp\.sh\b/ nocase
+        $bashupload = "bashupload.com" nocase
+        $oshi       = /\boshi\.at\b/ nocase
+        $filebin    = "filebin.net" nocase
+        $transfer   = "transfer.archivete.am" nocase
+        $dbox_share = "dropbox.com/s/" nocase
+        $dbox_share2 = "dropbox.com/scl/fi/" nocase
+        $gdrive_dl  = /drive\.google\.com\/uc\?[^\r\n]{0,80}id=/ nocase
+        $gdocs_exp  = "docs.google.com/document/" nocase
+        $onedrv_dl  = "1drv.ms" nocase
+        $onedrv_dl2 = "onedrive.live.com/download" nocase
+        $tmpfiles   = "tmpfiles.org" nocase
+        $putio      = /\bput\.re\b/ nocase
+
+    condition:
+        any of them
+}
+
+rule Exfil_OAST_Collaborator
+{
+    meta:
+        description = "Reference to OAST / OOB-collaborator domain (interactsh, oast.*, dnslog.cn, burpcollaborator, ceye.io) — out-of-band exfil / blind-injection callback channel"
+        severity    = "high"
+        category    = "exfiltration"
+        mitre       = "T1071.004"
+
+    strings:
+        $interactsh   = "interactsh-server" nocase
+        $oast_fun     = ".oast.fun" nocase
+        $oast_live    = ".oast.live" nocase
+        $oast_pro     = ".oast.pro" nocase
+        $oast_me      = ".oast.me" nocase
+        $oast_online  = ".oast.online" nocase
+        $oast_site    = ".oast.site" nocase
+        $dnslog_cn    = "dnslog.cn" nocase
+        $burp         = "burpcollaborator.net" nocase
+        $ceye         = ".ceye.io" nocase
+        $pingb        = ".pingb.in" nocase
+
+    condition:
+        any of them
+}
+
+rule Cloud_CLI_Exfil
+{
+    meta:
+        description = "Cloud-storage CLI write/sync verb paired with non-tenant URL or remote alias (aws s3 cp/sync, gsutil/gcloud cp, az storage blob upload, rclone copy/sync, b2 upload-file, mc cp) — bring-your-own-bucket exfiltration"
+        severity    = "medium"
+        category    = "exfiltration"
+        mitre       = "T1567"
+        applies_to  = "text_like, decoded-payload"
+
+    strings:
+        $aws_cp    = /\baws\s+s3\s+(cp|sync|mv)\s+/ nocase
+        $aws_make  = /\baws\s+s3\s+mb\s+s3:/ nocase
+        $gsutil    = /\bgsutil\s+(cp|mv|rsync)\s+/ nocase
+        $gcloud_cp = /\bgcloud\s+storage\s+(cp|mv|rsync)\s+/ nocase
+        $az_up     = /\baz\s+storage\s+blob\s+(upload|upload-batch|copy)\s+/ nocase
+        $rclone    = /\brclone\s+(copy|sync|move|copyto|moveto)\s+/ nocase
+        $b2_up     = /\bb2\s+upload-file\s+/ nocase
+        $mc_cp     = /\bmc\s+(cp|mirror|mv)\s+/ nocase
+        $oci_up    = /\boci\s+os\s+object\s+put\s+/ nocase
+        $s3_url    = /s3:\/\/[a-z0-9\-\.]{2,}/ nocase
+
+    condition:
+        any of them
+}

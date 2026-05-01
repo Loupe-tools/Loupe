@@ -170,7 +170,16 @@ extendApp({
 
 
     const f = this.findings;
-    const yaraCount = (this._yaraResults || []).length;
+    const yaraResults = this._yaraResults || [];
+    // Inspect the actual YARA-rule severities to attribute the banner copy
+    // honestly. A renderer (e.g. elf-renderer) can escalate findings.risk to
+    // critical via its own scoring path without any YARA rule firing at
+    // critical severity — the previous "any YARA hit ⇒ Critical YARA rules
+    // matched" copy mis-attributed those escalations to YARA. We now only
+    // claim YARA caused the banner level when a rule of matching severity
+    // actually fired.
+    const yaraCrit = yaraResults.some(r => /critical/i.test((r.meta && r.meta.severity) || ''));
+    const yaraHighOrAbove = yaraResults.some(r => /^(high|critical)$/i.test((r.meta && r.meta.severity) || ''));
 
 
     // ── Risk bar ─────────────────────────────────────────────────────────
@@ -183,11 +192,11 @@ extendApp({
     let dotCls, riskText;
     if (f.risk === 'critical') {
       dotCls = 'critical';
-      riskText = yaraCount ? 'CRITICAL — Critical YARA rules matched' : 'CRITICAL — Critical threats detected';
+      riskText = yaraCrit ? 'CRITICAL — Critical YARA rules matched' : 'CRITICAL — Critical threats detected';
     } else if (f.risk === 'high') {
       dotCls = 'high';
       if (f.hasMacros && (f.autoExec || []).length) riskText = 'HIGH RISK — Auto-execute macros detected';
-      else if (yaraCount) riskText = 'HIGH RISK — YARA rules matched';
+      else if (yaraHighOrAbove) riskText = 'HIGH RISK — YARA rules matched';
       else riskText = 'HIGH RISK — Dangerous content detected';
     } else if (f.risk === 'medium') {
       dotCls = 'medium';

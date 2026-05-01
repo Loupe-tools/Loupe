@@ -128,6 +128,23 @@ class YaraEngine {
     // ── Plaintext / catch-alls ──────────────────────────────────────────
     is_plaintext:       ['plaintext'],
 
+    // ── Text-like superset (Loupe convenience) ──────────────────────────
+    // Catch-all for "human-readable command-line shape" rules: anything
+    // where typed shell verbs, paths, or keywords appear as actual text
+    // (scripts, plaintext, lures, documents with text content). Excludes
+    // native binaries (PE/ELF/Mach-O/wasm), media (image/pcap), opaque
+    // containers (sqlite/evtx/archive/jar), and crypto blobs (pgp/x509).
+    // Used by discovery clusters, LOLBAS, reverse-shell language rules,
+    // GTFOBin primitives, etc. — rules that hand-rolled token lists
+    // designed for shell context but would false-positive on the literal
+    // bytes of system utilities like /usr/bin/bash.
+    is_text_like:       ['plaintext', 'html', 'hta', 'eml', 'msg',
+                         'ps1', 'bash', 'bat', 'vbs', 'js', 'py', 'perl',
+                         'scpt', 'wsf', 'inf', 'lnk', 'url', 'reg',
+                         'rtf', 'pdf', 'svg', 'plist', 'clickonce',
+                         'doc', 'xls', 'ppt', 'docx', 'xlsx', 'pptx',
+                         'odt', 'ods', 'odp'],
+
     // ── Decoded-payload tier (Loupe extension) ──────────────────────────
     // Synthetic format tag stamped by `decoded-yara-filter.js` when the
     // host re-scans decoded encoded-content payloads (post-Base64,
@@ -207,16 +224,34 @@ class YaraEngine {
    * Behaviour with a missing/empty `formatTag`: the rule is skipped (the
    * safe default — `applies_to` declares "I only apply when context says
    * so", and absence of context is not "so").
+   *
+   * Negation syntax: a token prefixed with `!` (e.g. `!is_native_binary`,
+   * `!image`) subtracts its tags from the positive union. Example:
+   *   applies_to = "any, !is_native_binary, !image, decoded-payload"
+   * means "every known format except native binaries and images, plus
+   * the synthetic decoded-payload tag". An applies_to that contains
+   * ONLY negative tokens is treated as no-match (intent ambiguous; the
+   * lint rejects such rules at build time).
    */
   static _matchesAppliesTo(appliesTo, formatTag) {
     if (!appliesTo) return true;
     if (!formatTag) return false;
-    const tags = String(appliesTo).split(/[,\s]+/).filter(Boolean);
-    for (const tok of tags) {
-      const allowed = YaraEngine._resolveAppliesToToken(tok);
-      if (allowed.includes(formatTag)) return true;
+    const tokens = String(appliesTo).split(/[,\s]+/).filter(Boolean);
+    let hasPositive = false;
+    let inPositive = false;
+    let inNegative = false;
+    for (const tok of tokens) {
+      if (tok.startsWith('!')) {
+        const allowed = YaraEngine._resolveAppliesToToken(tok.slice(1));
+        if (allowed.includes(formatTag)) inNegative = true;
+      } else {
+        hasPositive = true;
+        const allowed = YaraEngine._resolveAppliesToToken(tok);
+        if (allowed.includes(formatTag)) inPositive = true;
+      }
     }
-    return false;
+    if (!hasPositive) return false;
+    return inPositive && !inNegative;
   }
 
   /**
