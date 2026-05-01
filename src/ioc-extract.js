@@ -205,6 +205,17 @@ function extractInterestingStringsCore(text, opts) {
 
   // SafeLink-aware URL processor — first strip trailing punctuation, then DER
   // tail-junk via the shared `stripDerTail`.
+  //
+  // Obfuscation-decoding is layered after the SafeLink unwrap: when
+  // `UrlNormalizeUtil.normalizeUrl` reports a change (unicode/hex escapes,
+  // percent-encoding, hex/octal/decimal-encoded IP host), the original is
+  // pushed at the existing severity with note 'Obfuscated URL' and the
+  // decoded form is pushed at 'medium' severity (matching SafeLinks /
+  // refanged precedent — obfuscation is itself a signal). When the decoded
+  // host is a dotted-quad we also push an `IOC.IP` sibling so GeoIP
+  // enrichment kicks in. The `processUrl` helper has no `findings` ref to
+  // call `pushIOC` (which is host-only and reaches into `tldts`); manual
+  // sibling emission keeps the worker bundle self-contained.
   const processUrl = (rawUrl, baseSeverity, matchOffset, matchLength) => {
     const url = stripDerTail((rawUrl || '').trim().replace(/[.,;:!?)\]>]+$/, ''));
     if (!url || url.length < 6) return;
@@ -227,12 +238,48 @@ function extractInterestingStringsCore(text, opts) {
           highlightText: url
         });
       }
-    } else {
-      add(IOC.URL, url, baseSeverity, null, {
+      return;
+    }
+
+    // Obfuscation normalisation. Pure helper from src/util/url-normalize.js;
+    // returns null only on non-string input. `changed` is false for the
+    // overwhelming majority of URLs (no extra cost when nothing matches).
+    let norm = null;
+    try {
+      if (typeof UrlNormalizeUtil !== 'undefined' && UrlNormalizeUtil) {
+        norm = UrlNormalizeUtil.normalizeUrl(url);
+      }
+    } catch (_) { /* best-effort */ }
+
+    if (norm && norm.changed && norm.normalized && norm.normalized !== url) {
+      // Original first, at the captured severity, annotated as obfuscated.
+      add(IOC.URL, url, baseSeverity, 'Obfuscated URL', {
         offset: matchOffset,
         length: matchLength
       });
+      const noteParts = norm.transformations && norm.transformations.length
+        ? norm.transformations.join(', ') : 'obfuscation';
+      add(IOC.URL, norm.normalized, 'medium', `Decoded from ${noteParts}`, {
+        offset: matchOffset,
+        length: matchLength,
+        highlightText: url
+      });
+      // Sibling IP for the decoded host. Manual emit because this core
+      // doesn't reach into pushIOC / tldts (worker-bundle constraint).
+      if (norm.hostIsIp && norm.normalizedHost) {
+        add(IOC.IP, norm.normalizedHost, 'medium', 'Decoded from obfuscated URL', {
+          offset: matchOffset,
+          length: matchLength,
+          highlightText: url
+        });
+      }
+      return;
     }
+
+    add(IOC.URL, url, baseSeverity, null, {
+      offset: matchOffset,
+      length: matchLength
+    });
   };
 
   // Combined scan surface = main text + every VBA module source on a fresh line.

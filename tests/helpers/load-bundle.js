@@ -272,6 +272,10 @@ const DEFAULT_EXPOSE = [
   'safeStorage',
   // src/tar-parser.js
   'TarParser',
+  // src/util/ipv4.js
+  'Ipv4Util',
+  // src/util/url-normalize.js
+  'UrlNormalizeUtil',
   // src/yara-engine.js
   'YaraEngine',
 ];

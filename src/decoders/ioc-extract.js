@@ -35,7 +35,9 @@ Object.assign(EncodedContentDetector.prototype, {
     // contains the substring `http://` followed by random bytes, which
     // the URL regex cheerfully matches. Sanity-check the hostname:
     //   • must contain a dot (no `http://abc/...` w/o domain);
-    //   • must NOT start with `0x` (hex-decode artefact);
+    //   • must NOT start with `0x` UNLESS UrlNormalizeUtil can resolve it
+    //     to a valid dotted-quad (legitimate hex IP — not a hex-decode
+    //     artefact);
     //   • bracketed IPv6 form must be properly closed.
     for (const m of text.matchAll(/https?:\/\/[^\s"'<>()\[\]{}\u0000-\u001F]{6,}/g)) {
       const url = (m[0] || '').trim().replace(/[.,;:!?)\]>]+$/, '');
@@ -43,14 +45,26 @@ Object.assign(EncodedContentDetector.prototype, {
       const hostMatch = url.match(/^https?:\/\/([^\/\s?#]+)/i);
       if (!hostMatch) continue;
       const host = hostMatch[1];
+      // Try the obfuscation normaliser first so a legit hex/octal/decimal IP
+      // host gets resolved before the FP-suppression rejects it. The result
+      // is reused below to emit sibling IOCs when the URL was obfuscated.
+      let norm = null;
+      try {
+        if (typeof UrlNormalizeUtil !== 'undefined' && UrlNormalizeUtil) {
+          norm = UrlNormalizeUtil.normalizeUrl(url);
+        }
+      } catch (_) { /* best-effort */ }
       // IPv6 in bracket form: must be correctly bracketed.
       if (host.startsWith('[')) {
         if (!host.includes(']')) continue;
       } else {
-        // Non-IPv6: must contain a literal dot in the hostname.
-        if (!host.includes('.')) continue;
-        // Hex-decode artefact: hostnames don't start with `0x`.
-        if (/^0x/i.test(host)) continue;
+        // Non-IPv6: must contain a literal dot in the hostname OR be a
+        // numeric form the normaliser resolved to a valid IP.
+        const normIsIp = !!(norm && norm.hostIsIp && norm.normalizedHost);
+        if (!host.includes('.') && !normIsIp) continue;
+        // Hex-decode artefact: hostnames don't start with `0x` UNLESS the
+        // normaliser confirms the host parses as a valid IP.
+        if (/^0x/i.test(host) && !normIsIp) continue;
       }
       const unwrapped = EncodedContentDetector.unwrapSafeLink(url);
       if (unwrapped) {
@@ -62,9 +76,19 @@ Object.assign(EncodedContentDetector.prototype, {
         for (const email of unwrapped.emails) {
           add(IOC.EMAIL, email, 'high', 'Extracted from SafeLinks');
         }
-      } else {
-        add(IOC.URL, url, 'high');
+        continue;
       }
+      if (norm && norm.changed && norm.normalized && norm.normalized !== url) {
+        const noteParts = norm.transformations && norm.transformations.length
+          ? norm.transformations.join(', ') : 'obfuscation';
+        add(IOC.URL, url, 'high', 'Obfuscated URL');
+        add(IOC.URL, norm.normalized, 'high', `Decoded from ${noteParts}`);
+        if (norm.hostIsIp && norm.normalizedHost) {
+          add(IOC.IP, norm.normalizedHost, 'high', 'Decoded from obfuscated URL');
+        }
+        continue;
+      }
+      add(IOC.URL, url, 'high');
     }
 
     for (const m of text.matchAll(/\b[a-zA-Z0-9._%+\-]{2,}@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,6}\b/g))

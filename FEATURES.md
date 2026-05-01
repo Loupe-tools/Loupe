@@ -80,6 +80,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 |---|---|
 | **Classic IOCs** | URLs, email addresses, IPv4 + IPv6 addresses (compressed, full, and bracketed-with-port; reserved ranges dropped), file paths, UNC paths, registry keys, command lines, hostnames — pulled from document content, VBA source, binary strings, decoded payloads, and format-specific metadata. |
 | **Defanged-indicator refanging** | `hxxp://`, `1[.]2[.]3[.]4`, and similar obfuscations are refanged automatically before extraction. |
+| **Obfuscated-URL deobfuscation** | URLs hiding behind inline `\uXXXX` / `\xHH` escapes, percent-encoded host/path bytes, or `inet_aton`-shape numeric hosts (integer, hex, octal, dotted-mixed) are normalised to their canonical form and emitted alongside the original — the decoded host also surfaces as a sibling IP IOC for GeoIP enrichment. |
 | **Registrable-domain pivots** | Every extracted URL auto-emits a sibling registrable domain (via the public-suffix list) so you get a domain-level pivot without double-entering the URL. |
 | **Punycode & IDN homograph flags** | URL hosts in punycode (`xn--`) or mixed-script IDN form emit a sibling Hostname IOC with the decoded Unicode label so homograph lookalikes surface in plain sight. |
 | **Trojan Source / bidi unicode flags** | Flags Unicode bidi controls (CVE-2021-42574), zero-width characters splitting identifiers, and mixed-script Latin / Cyrillic / Greek identifiers — each emits a medium Pattern row with the offending codepoint. |
