@@ -85,8 +85,81 @@ class EncodedContentDetector {
     // Implies aggressive — every aggressive-only knob also fires.
     this._bruteforce = !!opts.bruteforce;
     if (this._bruteforce) this._aggressive = true;
+    // Shared cumulative finder-budget object across the recursion tree.
+    // The parent scan() lazily creates this on first use; child detectors
+    // spawned by `_processCandidate` inherit the SAME reference (not a
+    // copy) so total secondary-finder wall-clock is bounded by
+    // FINDER_BUDGET_MS regardless of recursion depth. Without this, a
+    // 5-deep UTF-16LE-PowerShell chain would burn 5 × 2.5 s = 12.5 s of
+    // regex backtracking on the same shape of input at every layer.
+    // Shape: { start: number, ms: number, exhausted: boolean, reason: string|null }
+    this._finderBudget = opts._finderBudget || null;
   }
 
+
+  // ── Helper: pick the right text decoder for a byte buffer ────────────────
+  //
+  // Recursion sites need to feed the inner detector a string, but the
+  // bytes may be either UTF-8 or UTF-16LE depending on the encoding
+  // chain. The canonical PowerShell `[Convert]::FromBase64String("…")`
+  // shape produces UTF-16LE text every other byte (`H\x00e\x00…`).
+  // Probing the first 64 bytes for a strong "every-other byte is 0x00"
+  // signal lets us pick the correct decoder on the first try, without
+  // relying on `_tryDecodeUTF8` rejecting the bytes via its NUL-control
+  // heuristic (which works for ASCII-in-UTF16LE but is fragile for
+  // other shapes — e.g. UTF-16LE with BOM, partially-mangled buffers,
+  // or 1-byte-padded UTF-16LE that fails the even-length gate).
+  // Falls back to UTF-8 → UTF-16LE → null in order; returns null if
+  // neither yields a sufficiently long string.
+  _decodeAsLikelyText(bytes, minLen = 32) {
+    if (!bytes || bytes.length < minLen) return null;
+    let nulEven = 0, nulOdd = 0;
+    const sample = Math.min(64, bytes.length);
+    for (let i = 0; i < sample; i++) {
+      if (bytes[i] === 0) (i & 1 ? nulOdd++ : nulEven++);
+    }
+    const looksUTF16LE = nulOdd > sample * 0.4 || nulEven > sample * 0.4;
+    if (looksUTF16LE && typeof this._tryDecodeUTF16LE === 'function') {
+      const u16 = this._tryDecodeUTF16LE(bytes);
+      if (u16 && u16.length > minLen) return u16;
+    }
+    const u8 = this._tryDecodeUTF8(bytes);
+    if (u8 && u8.length > minLen) return u8;
+    if (!looksUTF16LE && typeof this._tryDecodeUTF16LE === 'function') {
+      const u16 = this._tryDecodeUTF16LE(bytes);
+      if (u16 && u16.length > minLen) return u16;
+    }
+    return null;
+  }
+
+  // ── Helper: recursively prepend a chain prefix to a finding subtree ──
+  //
+  // `_processCandidate` builds an `innerFindings` array via a child
+  // detector and needs to stamp its own `[candidate.type]` (the parent's
+  // pre-classifier chain) onto every descendant's `chain` so the deepest
+  // finding's `chain` reflects the FULL ancestor lineage from root to
+  // leaf.
+  //
+  // The prior implementation only mutated direct children (a flat for-of
+  // over `innerFindings`), so a chain of N nested peels surfaced as a
+  // 3-element string `[parent, self, classifier]` at every grandchild —
+  // visually capping the deobfuscation card at "2 layers" no matter how
+  // deep the unwrap. The bug was hidden until the recursion-unblock fix
+  // landed because pre-fix recursion stalled at depth 2 anyway.
+  //
+  // Recursive walk is safe because `innerFindings` is a tree (each
+  // finding object is owned by exactly one parent's array; the detector
+  // never aliases a finding into multiple parents).
+  _prependChainRecursive(f, parentChain) {
+    if (!f) return;
+    f.chain = [...parentChain, ...(f.chain || [])];
+    f.depth = (f.depth || 0) + 1;
+    if (Array.isArray(f.innerFindings)) {
+      for (const ch of f.innerFindings) {
+        this._prependChainRecursive(ch, parentChain);
+      }
+    }
+  }
 
   // ── Helper: propagate severity & IOCs from inner findings ────────────────
   static _propagateInnerFindings(severity, iocs, innerFindings) {
@@ -136,7 +209,18 @@ class EncodedContentDetector {
     { pattern: /^<HTA:APPLICATION/i,                ext: '.hta',  type: 'HTA Application' },
     { pattern: /^#!(\/usr\/bin|\/bin)\//,            ext: '.sh',   type: 'Shell Script' },
     { pattern: /^(Sub |Function |Dim |Private )/i,  ext: '.vbs',  type: 'VBScript' },
-    { pattern: /^\$[A-Za-z]|^function |^param\s*\(/i, ext: '.ps1', type: 'PowerShell' },
+    // PowerShell anchor list — recognises the surfaces real-world PS
+    // payloads actually start with after a Base64 → UTF-16LE unwrap:
+    //   • $Var / function / param( — original keyword set;
+    //   • IEX / Invoke-Expression / Invoke-Command (and the Verb-Noun
+    //     cmdlet family using Microsoft's standard verbs from Get-Verb);
+    //   • [scriptblock]::Create(...) and [System.*]::* / [Convert]::*
+    //     style .NET calls used by the `[scriptblock]::Create(
+    //     [System.Text.Encoding]::Unicode.GetString(
+    //       [System.Convert]::FromBase64String("...")))` recursion shape.
+    // Without this, layers 1..N of a recursive Unicode-base64 chain were
+    // classified as generic 'UTF-16LE Text' (severity=info) and pruned.
+    { pattern: /^\$[A-Za-z]|^function |^param\s*\(|^(?:I[Ee][Xx]|Invoke-|Get-|Set-|New-|Start-|Stop-|Add-|Out-|ConvertTo-|ConvertFrom-|Write-|Read-|Remove-|Test-|Select-|Where-|ForEach-|Import-|Export-|Enable-|Disable-|Register-|Unregister-)\b|^\[(?:scriptblock|System\.|Convert|Text\.Encoding|Reflection\.|Net\.|Diagnostics\.|IO\.)/i, ext: '.ps1', type: 'PowerShell' },
     { pattern: /^<\?xml\s/i,                        ext: '.xml',  type: 'XML Document' },
     { pattern: /^<!DOCTYPE\s|^<html/i,              ext: '.html', type: 'HTML Document' },
     { pattern: /^\{\\rtf/,                          ext: '.rtf',  type: 'RTF Document' },
@@ -207,19 +291,34 @@ class EncodedContentDetector {
       ? 8_000
       : ((typeof PARSER_LIMITS !== 'undefined') ? PARSER_LIMITS.FINDER_BUDGET_MS : 2_500);
 
-    const finderStart     = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    // Cumulative budget: parent detector lazily creates a shared object
+    // on first scan(); child detectors spawned during recursion inherit
+    // the SAME reference via constructor `opts._finderBudget` so the
+    // 2.5 s wall-clock spans the entire recursion tree, not 2.5 s per
+    // depth (which would let a 5-layer chain burn 12.5 s of regex
+    // backtracking on the same shape of UTF-16LE PowerShell text).
+    // `isRootScan` is true only for the outermost detector — used below
+    // to gate the single-stub diagnostic emission so child detectors
+    // don't duplicate the breadcrumb at every recursion depth.
+    const isRootScan = !this._finderBudget;
+    if (isRootScan) {
+      const startNow = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      this._finderBudget = { start: startNow, ms: finderBudgetMs, exhausted: false, reason: null };
+    }
+    const budget          = this._finderBudget;
     const oversize        = (typeof textContent === 'string') && textContent.length > finderMaxBytes;
-    let   budgetExhausted = false;
-    let   skipReason      = oversize
-      ? `Encoded-content secondary scan skipped: text size ${textContent.length.toLocaleString()} bytes exceeds finder cap of ${finderMaxBytes.toLocaleString()} bytes`
-      : null;
+    if (oversize && !budget.reason) {
+      budget.reason = `Encoded-content secondary scan skipped: text size ${textContent.length.toLocaleString()} bytes exceeds finder cap of ${finderMaxBytes.toLocaleString()} bytes`;
+    }
 
     const _runFinder = (fn) => {
-      if (oversize || budgetExhausted) return [];
+      if (oversize || budget.exhausted) return [];
       const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      if (now - finderStart > finderBudgetMs) {
-        budgetExhausted = true;
-        skipReason = `Encoded-content secondary scan truncated: cumulative finder budget of ${finderBudgetMs} ms exhausted (partial coverage)`;
+      if (now - budget.start > budget.ms) {
+        budget.exhausted = true;
+        if (!budget.reason) {
+          budget.reason = `Encoded-content secondary scan truncated: cumulative finder budget of ${budget.ms} ms exhausted (partial coverage)`;
+        }
         return [];
       }
       try {
@@ -229,8 +328,10 @@ class EncodedContentDetector {
         // as a "skip the rest" signal — we'd rather lose secondary
         // coverage than hang the worker.
         if (err && err.name === 'AbortError') throw err;
-        budgetExhausted = true;
-        skipReason = `Encoded-content secondary scan aborted: ${(err && err.message) || 'finder error'}`;
+        budget.exhausted = true;
+        if (!budget.reason) {
+          budget.reason = `Encoded-content secondary scan aborted: ${(err && err.message) || 'finder error'}`;
+        }
         return [];
       }
     };
@@ -268,8 +369,11 @@ class EncodedContentDetector {
     // Surface a single info-level finding so the analyst knows the
     // secondary scan ran in degraded mode. Without this, an oversize
     // input would silently miss URL-encoded / char-array / cmd-obfusc
-    // matches with no breadcrumb in the sidebar.
-    if (skipReason) {
+    // matches with no breadcrumb in the sidebar. Only the outermost
+    // (root) detector emits this stub — child detectors share the same
+    // budget object and would otherwise duplicate the breadcrumb at
+    // every recursion depth.
+    if (isRootScan && budget.reason) {
       findings.push({
         type: 'encoded-content',
         severity: 'info',
@@ -281,7 +385,7 @@ class EncodedContentDetector {
         chain: ['finder-budget'],
         classification: { type: null, ext: null },
         entropy: 0,
-        hint: skipReason,
+        hint: budget.reason,
         iocs: [],
         innerFindings: [],
         autoDecoded: false,
@@ -457,14 +561,28 @@ class EncodedContentDetector {
     }
     // Rule 5: exec-intent keyword in any text representation of the
     // decoded payload. Try: explicit deobfuscated text, decoded UTF-8
-    // bytes, and the chain string (covers the "PowerShell" / "Mach-O"
-    // chain entries).
+    // bytes, decoded UTF-16LE bytes (the canonical PowerShell
+    // `[Convert]::FromBase64String("…")` of a Unicode-encoded payload
+    // shape — without this fallback, `Invoke-Command` / `IEX` /
+    // `frombase64string` keywords in UTF-16LE bytes are silently
+    // invisible and the finding gets pruned), and the chain string
+    // (covers the "PowerShell" / "Mach-O" chain entries).
+    //
+    // Both UTF-8 and UTF-16LE are tried unconditionally (not as
+    // mutually-exclusive `if`/`else if`) because some byte buffers
+    // decode validly under both — e.g. UTF-8 ASCII text containing an
+    // embedded UTF-16LE PowerShell snippet — and we want the keyword
+    // search to scan every plausible textual representation.
     const texts = [];
     if (f.deobfuscated) texts.push(f.deobfuscated);
     if (f.decodedText) texts.push(f.decodedText);
     if (f.decodedBytes && typeof this._tryDecodeUTF8 === 'function') {
-      const t = this._tryDecodeUTF8(f.decodedBytes);
-      if (t) texts.push(t);
+      const t8 = this._tryDecodeUTF8(f.decodedBytes);
+      if (t8) texts.push(t8);
+      if (typeof this._tryDecodeUTF16LE === 'function') {
+        const t16 = this._tryDecodeUTF16LE(f.decodedBytes);
+        if (t16) texts.push(t16);
+      }
     }
     if (Array.isArray(f.chain)) texts.push(f.chain.join(' '));
     for (const t of texts) {
@@ -554,22 +672,26 @@ class EncodedContentDetector {
           else if (this._isValidUTF8(decompData)) decompChain.push('text');
           else decompChain.push('binary data');
 
-          // Recursively scan decompressed content for further encoding layers
+          // Recursively scan decompressed content for further encoding layers.
+          // `_decodeAsLikelyText` shape-detects UTF-16LE (every-other byte 0x00)
+          // and prefers it over UTF-8 when the signal is strong, so a
+          // Base64 → zlib chain whose decompressed bytes happen to be
+          // UTF-16LE PowerShell text actually unwraps on the first try.
           let decompInner = [];
           if (depth < this.maxRecursionDepth && decompData.length > 32) {
-            const decompText = this._tryDecodeUTF8(decompData);
+            const decompText = this._decodeAsLikelyText(decompData, 32);
             if (decompText && decompText.length > 32) {
               const innerDet = new EncodedContentDetector({
                 maxRecursionDepth: this.maxRecursionDepth,
                 maxCandidatesPerType: this.maxCandidatesPerType,
                 aggressive: this._aggressive,
                 bruteforce: this._bruteforce,
+                _finderBudget: this._finderBudget,
               });
               decompInner = await innerDet.scan(decompText, decompData, { fileType: '' });
-              for (const f of decompInner) {
-                f.chain = [...decompChain, ...f.chain];
-                f.depth = (f.depth || 0) + 1;
-              }
+              // Recursive prepend so every descendant's chain reflects the
+              // decompression layer, not just direct children.
+              for (const f of decompInner) this._prependChainRecursive(f, decompChain);
             }
           }
 
@@ -711,21 +833,25 @@ class EncodedContentDetector {
             // (e.g. the canonical block-14 case is Base64 → XOR → "iex
             // Write-Output Hello World" — the recursion picks up CMD-obf
             // / variable / IOC findings inside the cleartext).
+            // `_decodeAsLikelyText` shape-detects UTF-16LE so an XOR-revealed
+            // PowerShell payload encoded in UTF-16LE unwraps on the first
+            // try (rather than relying on `_tryDecodeUTF8` rejecting the
+            // bytes via its NUL-control heuristic).
             let xorInner = [];
             if (depth < this.maxRecursionDepth && xorBytes.length > 32) {
-              const xorText = this._tryDecodeUTF8(xorBytes);
+              const xorText = this._decodeAsLikelyText(xorBytes, 32);
               if (xorText && xorText.length > 32) {
                 const innerDet = new EncodedContentDetector({
                   maxRecursionDepth: this.maxRecursionDepth,
                   maxCandidatesPerType: this.maxCandidatesPerType,
                   aggressive: this._aggressive,
                   bruteforce: this._bruteforce,
+                  _finderBudget: this._finderBudget,
                 });
                 xorInner = await innerDet.scan(xorText, xorBytes, { fileType: '' });
-                for (const f of xorInner) {
-                  f.chain = [...xorChain, ...f.chain];
-                  f.depth = (f.depth || 0) + 1;
-                }
+                // Recursive prepend so every descendant's chain reflects the
+                // XOR layer, not just direct children.
+                for (const f of xorInner) this._prependChainRecursive(f, xorChain);
               }
             }
 
@@ -753,24 +879,37 @@ class EncodedContentDetector {
       }
     }
 
-    // Recursive scan: check if decoded content contains more encoding layers
+    // Recursive scan: check if decoded content contains more encoding layers.
+    // `_decodeAsLikelyText` shape-detects UTF-16LE (every-other-byte 0x00
+    // signal in the first 64 bytes) and prefers it over UTF-8 when the
+    // signal is strong, so canonical PowerShell recursion shapes —
+    // `[Convert]::FromBase64String("…")` of a UTF-16LE-encoded payload,
+    // used by the `[scriptblock]::Create([System.Text.Encoding]::
+    // Unicode.GetString(...))` family — unwrap on the first try at every
+    // depth. `_extractIOCsFromDecoded` does the same dual-decoder probe
+    // for IOCs.
     let innerFindings = [];
 
     if (depth < this.maxRecursionDepth && decoded.length > 32) {
-      const decodedText = this._tryDecodeUTF8(decoded);
+      const decodedText = this._decodeAsLikelyText(decoded, 32);
       if (decodedText && decodedText.length > 32) {
         const innerDetector = new EncodedContentDetector({
           maxRecursionDepth: this.maxRecursionDepth,
           maxCandidatesPerType: this.maxCandidatesPerType,
           aggressive: this._aggressive,
           bruteforce: this._bruteforce,
+          // Share the parent's cumulative finder budget so total
+          // secondary-finder wall-clock across the recursion tree is
+          // bounded by FINDER_BUDGET_MS, not depth × FINDER_BUDGET_MS.
+          _finderBudget: this._finderBudget,
         });
         innerFindings = await innerDetector.scan(decodedText, decoded, { fileType: '' });
-        // Add parent chain to inner findings
-        for (const f of innerFindings) {
-          f.chain = [...chain, ...f.chain];
-          f.depth = (f.depth || 0) + 1;
-        }
+        // Recursively prepend the parent's chain onto the entire descendant
+        // subtree so a layer N+2 finding's chain reflects all of layer N,
+        // N+1, N+2 — not just N+1+self. Without the recursion, every
+        // grandchild capped at a 3-element chain `[parent, self, classifier]`
+        // and the sidebar's "N layers" badge under-counted the true depth.
+        for (const f of innerFindings) this._prependChainRecursive(f, chain);
       }
     }
 

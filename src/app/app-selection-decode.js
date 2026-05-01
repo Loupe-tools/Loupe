@@ -172,10 +172,35 @@ extendApp({
     // room. Coordinates are viewport-relative (position:fixed in the CSS).
     const chipH = 28;     // matches CSS height — keep in sync with core.css
     const margin = 6;
+    
+    // Vertical: above selection, fallback to below
     let top = rect.top - chipH - margin;
     if (top < 8) top = rect.bottom + margin;
-    let left = rect.left + (rect.width / 2) - 80; // ~half the chip width
-    left = Math.max(8, Math.min(left, window.innerWidth - 180));
+    
+    // Horizontal: for long unwrapped lines (white-space:pre), the selection
+    // rect can extend far off-screen horizontally. Positioning the chip at
+    // the geometric center (rect.left + rect.width/2) places it invisibly
+    // beyond the viewport edge. Instead, clamp the selection rect to the
+    // visible viewport region [0, innerWidth] and center the chip on the
+    // VISIBLE portion. This ensures the chip always appears on-screen even
+    // when the analyst selects a 76 KB base64 blob on a single unwrapped
+    // line. Coordinate frame: `getBoundingClientRect()` returns viewport-
+    // relative coordinates (already accounting for any internal scroll),
+    // and the chip uses `position: fixed` so its `left` is also viewport-
+    // relative — both are in the same frame, no scroll-offset adjustment
+    // needed.
+    const viewportWidth = window.innerWidth;
+    const visibleLeft  = Math.max(rect.left, 0);
+    const visibleRight = Math.min(rect.right, viewportWidth);
+    const visibleCenterX = (visibleLeft + visibleRight) / 2;
+
+    // Center chip on the visible portion of the selection (chip is ~160px
+    // wide; subtract half to center). Final clamp keeps the chip fully
+    // in-viewport with an 8px margin on the left and 180px reserve on the
+    // right (chip width + margin).
+    let left = visibleCenterX - 80;
+    left = Math.max(8, Math.min(left, viewportWidth - 180));
+
     chip.style.top = `${Math.round(top)}px`;
     chip.style.left = `${Math.round(left)}px`;
     chip.classList.remove('hidden');
@@ -207,6 +232,28 @@ extendApp({
     try { bytes = new TextEncoder().encode(txt); }
     catch (_) { return; }
 
+    // Size-based depth limiting to prevent exponential recursion explosion
+    // on large selections containing deeply nested encoded layers. The
+    // bruteforce default is 6 layers, which is safe for small selections
+    // (e.g., a 200-char snippet the analyst highlights) but can cause
+    // memory exhaustion / tab crash on large selections (50+ KB of nested
+    // base64 with 200 candidates per layer × multiple encoding types ×
+    // recursive scans = exponential work). Tune thresholds via empirical
+    // feedback; current values chosen to prevent crash on the 76 KB
+    // recursive-powershell.ps1 example (3 nested layers) while still
+    // allowing deep analysis of targeted regions.
+    //
+    // Sizes:
+    //   • Large (>50 KB): cap at 3 layers — prevents crash, still catches
+    //     the canonical triple-nested PowerShell pattern.
+    //   • Medium (10–50 KB): cap at 4 layers — balance between safety and
+    //     coverage for medium-sized obfuscated scripts.
+    //   • Small (<10 KB): full 6 layers — bruteforce default, no
+    //     restrictions. Most manual selections fall into this bucket.
+    const sizeBasedMaxDepth = bytes.length > 50_000 ? 3
+                            : bytes.length > 10_000 ? 4
+                            : 6;
+
     const parentName = (this.fileMeta && this.fileMeta.name) || 'selection';
     const synName = `selection-decode-${bytes.length}b.txt`;
     const blob = new Blob([bytes], { type: 'text/plain' });
@@ -227,6 +274,7 @@ extendApp({
         parentName,
         _aggressiveDecode: true,
         _bruteforceDecode: true,
+        _maxRecursionDepth: sizeBasedMaxDepth,
         returnFocus: { section: 'deobfuscation' },
       });
     } catch (err) {

@@ -639,9 +639,14 @@ body.dark .tb-menu-item-active {
 }
 
 .crumb-overflow-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  /* `position: fixed` (not absolute) because `#breadcrumbs` has
+     `overflow: hidden` to clip the flex trail when it's too wide for
+     the toolbar — an absolutely-positioned child would be clipped by
+     that ancestor and the dropdown would be invisible. Coordinates are
+     set in JS from `btn.getBoundingClientRect()` when the menu opens
+     (see buildCollapsedTrail in app-load.js); a `scroll` + `resize`
+     listener re-pins them while the menu is open. */
+  position: fixed;
   z-index: 200;
   display: flex;
   flex-direction: column;

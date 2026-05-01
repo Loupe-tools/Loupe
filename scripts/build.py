@@ -535,6 +535,18 @@ EARLY_JS_FILES = [
 APP_JS_FILES = [
     'src/constants.js',
 
+    # util/url-normalize.js — pure deobfuscator for URL strings (unicode /
+    # hex inline escapes, percent-encoding in host+path, hex/octal/decimal
+    # encoded IPs). Consumed by `src/ioc-extract.js::processUrl` and
+    # `src/decoders/ioc-extract.js` to surface the canonical URL alongside
+    # the original obfuscated form, and to emit a sibling `IOC.IP` when
+    # the decoded host is a dotted-quad. Worker-safe (no DOM, no globals
+    # beyond `UrlNormalizeUtil`); concatenated into the encoded-content and
+    # IOC-extract worker bundles too. Must load BEFORE `src/ioc-extract.js`
+    # and BEFORE the encoded-content split (which carries
+    # `src/decoders/ioc-extract.js`).
+    'src/util/url-normalize.js',
+
     # ioc-extract.js — pure regex-based IOC extraction core. Defines
     # `extractInterestingStringsCore(text, opts)` plus the `_unwrapSafeLink`
     # / `_refangString` worker-safe helpers. Loaded as a host module here AND
@@ -1259,6 +1271,10 @@ _encoded_worker_bundle_src = (
     + pako_js + '\n'
     + jszip + '\n'
     + read('src/decompressor.js') + '\n'
+    # url-normalize.js — pure helper consumed by `src/decoders/ioc-extract.js`
+    # (inside _DETECTOR_FILES) for the obfuscated-URL deobfuscation pass.
+    # Mirrors the host-bundle wiring; must load BEFORE the detector files.
+    + read('src/util/url-normalize.js') + '\n'
     + '\n'.join(read(f) for f in _DETECTOR_FILES) + '\n'
     + read('src/workers/encoded.worker.js')
 )
@@ -1283,6 +1299,10 @@ encoded_worker_js = (
 # against `src/constants.js` so silent drift is caught at build time.
 _ioc_extract_worker_bundle_src = (
     read('src/workers/ioc-extract-worker-shim.js') + '\n'
+    # url-normalize.js — pure helper consumed by `src/ioc-extract.js`'s
+    # processUrl for the obfuscated-URL deobfuscation pass. Mirrors the
+    # host-bundle wiring; must load BEFORE `src/ioc-extract.js`.
+    + read('src/util/url-normalize.js') + '\n'
     + read('src/ioc-extract.js') + '\n'
     + read('src/workers/ioc-extract.worker.js')
 )
