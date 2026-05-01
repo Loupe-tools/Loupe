@@ -46,8 +46,27 @@ Object.assign(EncodedContentDetector.prototype, {
   },
 
   _isPowerShellEncodedCommand(text, offset) {
-    const lookback = text.substring(Math.max(0, offset - 60), offset);
-    return /-(enc|encodedcommand|ec|EncodedCommand)\s+$/i.test(lookback);
+    // Extended lookback window to catch .NET method calls (FromBase64String
+    // can appear 80+ chars before the opening quote when wrapped in multiple
+    // static-method calls like [System.Text.Encoding]::Unicode.GetString(...)).
+    const lookback = text.substring(Math.max(0, offset - 120), offset);
+    
+    // CLI flag pattern: powershell.exe -EncodedCommand <base64>
+    if (/-(enc|encodedcommand|ec)\s+$/i.test(lookback)) return true;
+    
+    // .NET decode method patterns:
+    //   [System.Convert]::FromBase64String('...')
+    //   [Convert]::FromBase64String('...')
+    //   ConvertFrom-Base64 -String '...'
+    // The trailing \s*\(\s*['"]? matches the method call + opening quote;
+    // covers both single and double quotes, with optional whitespace.
+    if (/(FromBase64String|ConvertFrom-Base64)\s*\(\s*['"]?$/i.test(lookback)) return true;
+    
+    // ConvertTo-SecureString pattern (also uses base64 in -String argument):
+    //   ConvertTo-SecureString -String '...'
+    if (/ConvertTo-SecureString\s+-String\s+['"]?$/i.test(lookback)) return true;
+    
+    return false;
   },
 
   _hasBase32Context(text, offset) {

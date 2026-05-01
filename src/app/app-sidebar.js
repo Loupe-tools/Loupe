@@ -779,13 +779,58 @@ extendApp({
       const _deepChain = (_deepest && _deepest !== finding && _deepest.chain && _deepest.chain.length)
         ? _deepest.chain
         : [];
-      // Dedupe consecutive repeats (defensive — the detector occasionally
-      // pushes "text" twice when a classifier and a utf-8 sniff both fire).
+
+      // Chain-hop classifier: `true` when a chain element describes the
+      // *content* of a decoded layer (e.g. 'text', 'PowerShell', 'PE
+      // Executable', 'Zlib Compressed (default)') rather than an
+      // *encoding* operation (e.g. 'Base64', 'Hex', 'URL-encoded').
+      //
+      // Two consumers, both critical for accurate "N layers" wording:
+      //
+      //   1. Dedupe (`_fullChain` build below) — only collapses
+      //      consecutive duplicates of *classifier* labels (the
+      //      historical 'text','text' double-emit when the classifier
+      //      and the UTF-8 sniff both fire). Real recursive same-
+      //      encoding hops (`Base64 → Base64 → Base64` on a
+      //      `[scriptblock]::Create([Convert]::FromBase64String(...))`
+      //      chain) MUST NOT be collapsed — each one is a genuine peel.
+      //
+      //   2. "Layers" count (header badge + "N more layers" separator)
+      //      — counts only encoding hops. A `['Base64','text']` chain
+      //      has one encoding peel and a content label; saying "2
+      //      layers" conflates the operation with the result.
+      //
+      // Vocabulary seeded from `_classify` in src/decoders/entropy.js
+      // (MAGIC_BYTES + TEXT_SIGNATURES) and the chain-emission sites in
+      // encoded-content-detector.js (lines 600-603, 762-764, 880-882,
+      // 685, 922) and src/decoders/{cmd-obfuscation,zlib}.js. Substring
+      // match is intentional — the classifier sometimes appends
+      // ' (UTF-16LE)' to the type, and `Zlib Compressed (default)`-
+      // style parenthesised qualifiers should still match. New
+      // classifier labels added without updating this regex fail OPEN:
+      // dedupe stops collapsing them and the layer count over-reports
+      // by one — visibly wrong but never silently corrupt. If you add
+      // a new classifier in entropy.js / a new decoder, update this.
+      const _isClassifierHop = (label) => {
+        const s = (label || '').toLowerCase();
+        if (!s) return false;
+        return /\b(text|binary data|utf-?8|utf-?16(?:le|be)?|xml|json|html|markdown|high-entropy binary|powershell|vbscript|hta|wsf|jscript|shell script|pe executable|elf binary|mach-o|pdf document|rtf document|ole\/cfb|java class|zip archive|rar archive|7-zip archive|gzip compressed|zlib compressed|png image|jpeg image|utf-8 bom text|deobfuscated command|encrypted\/packed|deeper layer|depth-exceeded)\b/.test(s);
+      };
+
+      // Build `_fullChain` — the deepest cumulative chain, with classifier
+      // double-emits collapsed but encoding repeats preserved. See
+      // `_isClassifierHop` above for why this asymmetry matters.
       const _fullChainRaw = _deepChain.length >= _outerChain.length ? _deepChain : _outerChain;
       const _fullChain = [];
       for (const h of _fullChainRaw) {
-        if (!_fullChain.length || _fullChain[_fullChain.length - 1] !== h) _fullChain.push(h);
+        const last = _fullChain[_fullChain.length - 1];
+        if (_fullChain.length && last === h && _isClassifierHop(h)) continue;
+        _fullChain.push(h);
       }
+      // Encoding-hop count — used everywhere the UI says "N layers". A
+      // chain like ['Base64','Base64','Base64','text'] has 3 encoding
+      // hops; the trailing 'text' is the *result*, not a peel.
+      const _encodingHops = _fullChain.filter(h => !_isClassifierHop(h)).length;
 
       // Header line: severity badge + encoding type + depth badge
       const header = document.createElement('div');
@@ -799,16 +844,19 @@ extendApp({
       title.textContent = `${finding.encoding}-encoded content`;
       if (finding.hint) title.textContent += ` — ${finding.hint}`;
       header.appendChild(title);
-      // Depth badge: only shown for multi-layer findings (≥ 2 hops in the
-      // full chain). Mirrors the `⚠ payload` header badge pattern so the
+      // Depth badge: only shown for multi-layer findings (≥ 2 *encoding*
+      // hops). Mirrors the `⚠ payload` header badge pattern so the
       // analyst knows at-a-glance how much peeling is going on without
-      // having to read the chain row. Singleton layers (e.g. Base64 → text)
-      // are intentionally unbadged — the chain row itself is the signal.
-      if (_fullChain.length >= 2) {
+      // having to read the chain row. Singleton encoding peels (e.g.
+      // Base64 → text — one hop, one classifier) are intentionally
+      // unbadged: the chain row itself is the signal, and saying "2
+      // layers" for a single peel was the historical bug — it counted
+      // the result label as a layer.
+      if (_encodingHops >= 2) {
         const depthBadge = document.createElement('span');
         depthBadge.className = 'enc-depth-badge';
-        depthBadge.textContent = `${_fullChain.length} layers`;
-        depthBadge.title = `Deobfuscation chain has ${_fullChain.length} layers — hover the chain pills below for per-layer details`;
+        depthBadge.textContent = `${_encodingHops} layers`;
+        depthBadge.title = `Deobfuscation chain has ${_encodingHops} encoding layer${_encodingHops !== 1 ? 's' : ''} — hover the chain pills below for per-layer details`;
         header.appendChild(depthBadge);
       }
       card.appendChild(header);
@@ -957,11 +1005,27 @@ extendApp({
         // distinct deeper layer; otherwise fall back to an IOC summary.
         let sepLabel;
         if (distinctDeep) {
+          // "More layers" must be the encoding-hop delta, NOT
+          // `deepest.chain.slice(parent.chain.length)`. The naive slice
+          // is off-by-one when the parent's chain ends with a content
+          // classifier: the inner detector copies parent's chain
+          // *before* the classifier push (see encoded-content-detector
+          // .js line 850 vs 880-882), so the deepest's chain inherits
+          // parent's encoding hops only — slicing by parent's *full*
+          // length skips past the first inner encoding hop. Counting
+          // hops on each side via `_isClassifierHop` avoids the
+          // off-by-one entirely.
           const parentLen = (finding.chain && finding.chain.length) || 0;
+          const parentHops = (finding.chain || []).filter(h => !_isClassifierHop(h)).length;
+          const deepestHops = (deepest.chain || []).filter(h => !_isClassifierHop(h)).length;
+          const extraLayers = Math.max(1, deepestHops - parentHops);
+          // Chain *string* still uses the slice — the visual hop sequence
+          // below the parent is what the analyst reads, and the slice
+          // produces the right textual lineage even when its length is
+          // numerically off by one. Only the *count* needed correcting.
           const innerChain = (deepest.chain && deepest.chain.length > parentLen)
             ? deepest.chain.slice(parentLen)
             : (deepest.chain || []);
-          const extraLayers = innerChain.length || 1;
           const chainStr = innerChain.length
             ? innerChain.join(' \u2192 ')
             : (deepest.encoding || 'deeper layer');

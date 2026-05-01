@@ -25,8 +25,8 @@ Object.assign(EncodedContentDetector.prototype, {
     // chunk hashes / source-map keys / asset cache busters that crowd
     // 40-50 char range. High-confidence prefix matches (TVqQ MZ etc.)
     // and PowerShell -EncodedCommand context still trigger at the lower
-    // 40-char gate further down via the high-conf re-match — see
-    // `_decodeAt40` fallback below.
+    // 24-char gate via the high-confidence rescue pass at the bottom of
+    // this function (see "High-confidence rescue pass" below).
     const minLen = this._bruteforce ? 4 : (this._aggressive ? 16 : 64);
     if (!text || text.length < minLen) return [];
     const candidates = [];
@@ -111,11 +111,65 @@ Object.assign(EncodedContentDetector.prototype, {
         length: raw.length,
         entropy,
         confidence: (highConf || psContext) ? 'high' : 'normal',
-        hint: highConf ? highConf.desc : (psContext ? 'PowerShell -EncodedCommand' : null),
+        hint: highConf ? highConf.desc : (psContext ? 'PowerShell encoded string' : null),
         // Bruteforce mode auto-decodes everything so the analyst sees
         // results without hand-clicking each row.
         autoDecoded: !!(highConf || psContext) || this._bruteforce,
       });
+    }
+
+    // ── High-confidence rescue pass (default mode only) ─────────────
+    //
+    // The default-mode floor is 64 chars to suppress webpack chunk
+    // hashes and similar 40-50-char identifier noise. But that floor
+    // also silently drops short Base64 strings inside known-malicious
+    // contexts: a recursive PowerShell `[Convert]::FromBase64String('…')`
+    // chain whose inner B64 has shrunk to ~30-50 chars, or a shellcode
+    // string starting with `TVqQ`/`fc4883` that's only 40 chars long.
+    //
+    // This second pass scans at minLen=24 but ONLY emits candidates
+    // that satisfy `_isPowerShellEncodedCommand` (the `-EncodedCommand`
+    // / `FromBase64String('...')` / `ConvertFrom-Base64` lookback) OR
+    // start with one of the HIGH_CONFIDENCE_B64 prefixes. The same
+    // whitelist filters as the main loop apply (data: URI, PEM,
+    // CSS-font, MIME body) so we never re-emit suppressed noise.
+    //
+    // Bruteforce mode skips this pass — it already runs at minLen=4.
+    // Aggressive mode skips because its minLen=16 already covers this
+    // floor.  Only fires when default mode would otherwise miss the
+    // candidate entirely.
+    if (!this._bruteforce && !this._aggressive && minLen > 24) {
+      const seenOffsets = new Set(candidates.map(c => c.offset));
+      /* safeRegex: builtin */
+      const rescueRe = new RegExp(`[A-Za-z0-9+\\/\\-_]{24,}={0,2}`, 'g');
+      let rm;
+      while ((rm = rescueRe.exec(text)) !== null) {
+        if (candidates.length >= this.maxCandidatesPerType) break;
+        if (seenOffsets.has(rm.index)) continue;
+        const raw = rm[0];
+        // Skip runs the main loop would already have emitted — only
+        // strictly-shorter rescue candidates make it past.
+        if (raw.length >= minLen) continue;
+        const offset = rm.index;
+        const psContext = this._isPowerShellEncodedCommand(text, offset);
+        const highConf = EncodedContentDetector.HIGH_CONFIDENCE_B64.find(h => raw.startsWith(h.prefix));
+        if (!psContext && !highConf) continue;
+        // Same whitelist gates as the main loop.
+        if (this._isDataURI(text, offset)) continue;
+        if (this._isPEMBlock(text, offset)) continue;
+        if (this._isCSSFontData(text, offset)) continue;
+        if (this._isMIMEBody(text, offset, context)) continue;
+        candidates.push({
+          type: 'Base64',
+          raw,
+          offset,
+          length: raw.length,
+          entropy: this._shannonEntropyString(raw),
+          confidence: 'high',
+          hint: highConf ? highConf.desc : 'PowerShell encoded string',
+          autoDecoded: true,
+        });
+      }
     }
 
     return candidates;

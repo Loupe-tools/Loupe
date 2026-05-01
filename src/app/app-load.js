@@ -453,6 +453,8 @@ extendApp({
         this._pendingAggressiveDecode = false;
         const bruteforce = !!this._pendingBruteforceDecode;
         this._pendingBruteforceDecode = false;
+        const maxRecursionDepth = this._pendingMaxRecursionDepth || undefined;
+        this._pendingMaxRecursionDepth = undefined;
         try {
           const out = await WorkerManager.runEncoded(
             buffer.slice(0),
@@ -462,6 +464,7 @@ extendApp({
               mimeAttachments: this.findings._mimeAttachments || null,
               aggressive,
               bruteforce,
+              maxRecursionDepth,
             }
           );
           encodedFindings = out.findings || [];
@@ -479,7 +482,7 @@ extendApp({
             // diagnostic for devs.
             this._reportNonFatal('encoded-worker-fallback', workerErr, { silent: true });
           }
-          const detector = new EncodedContentDetector({ aggressive, bruteforce });
+          const detector = new EncodedContentDetector({ aggressive, bruteforce, maxRecursionDepth });
           encodedFindings = await detector.scan(
             analysisText,
             new Uint8Array(buffer),
@@ -1389,6 +1392,14 @@ extendApp({
       this._pendingBruteforceDecode = true;
       this._pendingAggressiveDecode = true;  // implies aggressive
     }
+    // Explicit recursion-depth override (set by selection-decode for
+    // size-based limiting — see app-selection-decode.js). The
+    // EncodedContentDetector constructor falls back to the bruteforce /
+    // default tiers when this is absent or undefined. Same single-shot
+    // lifetime as the aggressive / bruteforce flags.
+    if (typeof opts._maxRecursionDepth === 'number') {
+      this._pendingMaxRecursionDepth = opts._maxRecursionDepth;
+    }
     this._loadFile(file, parentBuf || null);
   },
 
@@ -1927,6 +1938,18 @@ extendApp({
     const nav = document.getElementById('breadcrumbs');
     if (!nav) return;
 
+    // Close any currently-open overflow dropdown and tear down its
+    // document-level mousedown / keydown / scroll / resize listeners
+    // BEFORE we wipe the nav. The menu element is about to be removed
+    // (or re-created) by the rebuild below; without this, the listeners
+    // would dangle, referencing a detached node. They'd be harmless
+    // (no-ops on a detached menu) but accumulating one set per
+    // re-render-while-open would drift over a long session.
+    if (this._crumbOverflowClose) {
+      try { this._crumbOverflowClose(); } catch (_) { /* defensive */ }
+      this._crumbOverflowClose = null;
+    }
+
     // One-shot install of a debounced window-resize listener. Without
     // this, the staged collapse routine only re-measured on the events
     // that already triggered a render (load / drill-down / nav-jump),
@@ -2082,23 +2105,64 @@ extendApp({
       menu.className = 'crumb-overflow-menu hidden';
       hidden.forEach(h => {
         const item = renderCrumb(h);
-        item.addEventListener('click', () => { menu.classList.add('hidden'); });
+        item.addEventListener('click', () => {
+          menu.classList.add('hidden');
+          if (this._crumbOverflowClose) {
+            try { this._crumbOverflowClose(); } catch (_) { /* defensive */ }
+            this._crumbOverflowClose = null;
+          }
+        });
         menu.appendChild(item);
       });
+
+      // Pin the menu directly under the chip. `.crumb-overflow-menu` is
+      // `position: fixed` (see core.css) so it escapes `#breadcrumbs`'s
+      // `overflow: hidden` clip; that means we own the coordinates and
+      // must re-pin on scroll / resize while open. Left edge is clamped
+      // so a chip near the right edge of a narrow window doesn't push
+      // the menu off-screen.
+      const positionMenu = () => {
+        const r = btn.getBoundingClientRect();
+        menu.style.top = (r.bottom + 4) + 'px';
+        const w = menu.offsetWidth || 220;
+        const maxLeft = Math.max(8, window.innerWidth - w - 8);
+        menu.style.left = Math.max(8, Math.min(r.left, maxLeft)) + 'px';
+      };
+
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const willOpen = menu.classList.contains('hidden');
         menu.classList.toggle('hidden');
-        if (!menu.classList.contains('hidden')) {
-          // One-shot outside click / Esc to close
+        if (willOpen) {
+          // Position after un-hiding so offsetWidth is non-zero.
+          positionMenu();
+          // One-shot outside-click / Esc / scroll / resize teardown.
+          // `scroll` is captured (third arg `true`) so nested scrollers
+          // — e.g. a future scrollable toolbar — also trigger re-pin.
           const off = (ev) => {
-            if (ev.type === 'keydown' && ev.key !== 'Escape') return;
-            if (ev.type === 'mousedown' && wrap.contains(ev.target)) return;
+            if (ev && ev.type === 'keydown' && ev.key !== 'Escape') return;
+            if (ev && ev.type === 'mousedown'
+                && (wrap.contains(ev.target) || menu.contains(ev.target))) return;
             menu.classList.add('hidden');
             document.removeEventListener('mousedown', off, true);
             document.removeEventListener('keydown', off, true);
+            window.removeEventListener('scroll', reposition, true);
+            window.removeEventListener('resize', reposition);
+            if (this._crumbOverflowClose === off) this._crumbOverflowClose = null;
+          };
+          const reposition = () => {
+            if (!menu.classList.contains('hidden')) positionMenu();
           };
           document.addEventListener('mousedown', off, true);
           document.addEventListener('keydown', off, true);
+          window.addEventListener('scroll', reposition, true);
+          window.addEventListener('resize', reposition);
+          // Expose for `_renderBreadcrumbs` to invoke before a rebuild
+          // wipes the nav (otherwise the global listeners would dangle).
+          this._crumbOverflowClose = off;
+        } else if (this._crumbOverflowClose) {
+          try { this._crumbOverflowClose(); } catch (_) { /* defensive */ }
+          this._crumbOverflowClose = null;
         }
       });
       wrap.appendChild(btn);

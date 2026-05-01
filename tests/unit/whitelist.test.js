@@ -104,6 +104,73 @@ test('whitelist: _isPowerShellEncodedCommand matches -enc / -EncodedCommand', ()
   assert.equal(d._isPowerShellEncodedCommand(plain, plain.indexOf('SGVs')), false);
 });
 
+test('whitelist: _isPowerShellEncodedCommand matches [Convert]::FromBase64String', () => {
+  // The .NET `[System.Convert]::FromBase64String('...')` (and the shorter
+  // `[Convert]::FromBase64String('...')`) is the dominant in-script
+  // PowerShell base64 invocation — overwhelmingly more common than the
+  // CLI `-EncodedCommand` flag in real obfuscated scripts. Without this
+  // detection branch, the canonical recursive-PS pattern (Layer 1
+  // `FromBase64String` decodes to a Layer 2 string that ALSO calls
+  // `FromBase64String`, etc.) never auto-decodes — the analyst has to
+  // hand-click each layer.
+  const fullForm = "[System.Convert]::FromBase64String('SGVsbG8=";
+  const shortForm = "[Convert]::FromBase64String('SGVsbG8=";
+  const doubleQuoted = '[System.Convert]::FromBase64String("SGVsbG8=';
+  const withWhitespace = "[System.Convert]::FromBase64String(  'SGVsbG8=";
+  assert.equal(d._isPowerShellEncodedCommand(fullForm,        fullForm.indexOf('SGVs')),       true);
+  assert.equal(d._isPowerShellEncodedCommand(shortForm,       shortForm.indexOf('SGVs')),      true);
+  assert.equal(d._isPowerShellEncodedCommand(doubleQuoted,    doubleQuoted.indexOf('SGVs')),   true);
+  assert.equal(d._isPowerShellEncodedCommand(withWhitespace,  withWhitespace.indexOf('SGVs')), true);
+});
+
+test('whitelist: _isPowerShellEncodedCommand matches deeply nested .NET calls', () => {
+  // The recursive-powershell.ps1 example wraps `FromBase64String` in
+  // `[System.Text.Encoding]::Unicode.GetString(...)` — the call chain
+  // pushes `FromBase64String` ~80 chars before the opening quote, which
+  // is why the lookback window was widened from 60 → 120 chars. Verify
+  // the long form still matches.
+  const nested = "[System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('JgAgAC";
+  const offset = nested.indexOf("'JgAgAC") + 1;
+  assert.equal(d._isPowerShellEncodedCommand(nested, offset), true);
+});
+
+test('whitelist: _isPowerShellEncodedCommand matches ConvertFrom-Base64 cmdlet', () => {
+  // PSv7+ ships a `ConvertFrom-Base64` cmdlet (alias for the .NET
+  // method); some malware uses it as an evasion tactic to avoid
+  // YARA rules that key on the `[Convert]::FromBase64String` literal.
+  const cmdlet = "ConvertFrom-Base64('SGVsbG8=";
+  const offset = cmdlet.indexOf("'SGVsbG8") + 1;
+  assert.equal(d._isPowerShellEncodedCommand(cmdlet, offset), true);
+});
+
+test('whitelist: _isPowerShellEncodedCommand matches ConvertTo-SecureString -String', () => {
+  // `ConvertTo-SecureString -String '<base64>'` is the standard idiom
+  // for embedding encrypted credentials in PowerShell scripts — the
+  // base64 payload is a DPAPI-encrypted blob. Surface it for analysis.
+  const text = "$cred = ConvertTo-SecureString -String 'AQAAANCMnd8B";
+  const offset = text.indexOf("'AQAAANCMnd8B") + 1;
+  assert.equal(d._isPowerShellEncodedCommand(text, offset), true);
+});
+
+test('whitelist: _isPowerShellEncodedCommand rejects FromBase64String inside a comment', () => {
+  // A PowerShell comment that mentions the literal text "FromBase64String"
+  // followed by a long base64-shaped string later on the same line should
+  // NOT match — the `\(\s*['"]?$` anchor at the end of the regex requires
+  // the method-call syntax to end immediately at the candidate offset.
+  const comment = "$comment = '# Use FromBase64String to decode this: SGVsbG8=";
+  const offset = comment.indexOf('SGVsbG8');
+  assert.equal(d._isPowerShellEncodedCommand(comment, offset), false);
+});
+
+test('whitelist: _isPowerShellEncodedCommand rejects bare base64 with no PS context', () => {
+  // A plain base64 token with neither the CLI flag nor a .NET method call
+  // in the lookback window must NOT match — otherwise every base64-shaped
+  // run in any text file would be falsely promoted to high-confidence.
+  const plain = 'just some text here SGVsbG8gV29ybGQ=';
+  const offset = plain.indexOf('SGVsbG8');
+  assert.equal(d._isPowerShellEncodedCommand(plain, offset), false);
+});
+
 test('whitelist: _hasBase32Context requires keyword OR quote-context', () => {
   // Base32 has the lowest signal-to-noise of the three encodings the
   // detector knows about; the gate insists on at least one of:
