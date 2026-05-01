@@ -677,7 +677,7 @@ Object.assign(TimelineView.prototype, {
               </label>
               <label class="tl-field tl-field-wide">
                 <span class="tl-field-label">Name</span>
-                <input type="text" class="tl-field-select" data-field="name" placeholder="auto">
+                <input type="text" class="tl-field-select" data-field="name" placeholder="auto" aria-describedby="tl-regex-name-hint">
               </label>
             </div>
             <p class="tl-dialog-muted">Click a token or drag-select a substring in any sample row below — Loupe infers a regex that captures the same slot on every row and fills the Pattern field automatically. Or write a Pattern directly. The picked value is classified (digits, hex, IP, UUID, hostname, path, quoted, …) and surrounding characters become anchors.</p>
@@ -711,7 +711,6 @@ Object.assign(TimelineView.prototype, {
               <div class="tl-regex-samples"></div>
             </div>
             <footer class="tl-dialog-foot">
-              <button class="tl-tb-btn" data-act="regex-test">Test</button>
               <span class="tl-dialog-spacer"></span>
               <button class="tl-tb-btn tl-tb-btn-primary" data-act="regex-extract">⚡ Extract</button>
             </footer>
@@ -1262,6 +1261,105 @@ Object.assign(TimelineView.prototype, {
     const statusEl = dlg.querySelector('.tl-regex-status');
     const samplesEl = dlg.querySelector('.tl-regex-samples');
 
+    // ── Auto-suggested column name ──────────────────────────────────────────
+    // The Name field stays empty by default; we drive its `placeholder` so
+    // the user sees the name we'll use if they click Extract without typing.
+    // Resolution order in `_suggestRegexName`:
+    //   1. preset-pattern match → preset label
+    //   2. most-recent click-pick classifier label → `<col>.<label>`
+    //   3. consensus class of capture-group values from live preview rows
+    //      → `<col>.<label>` (this is what gives a hand-typed pattern a
+    //      sensible name, the user-reported gap)
+    //   4. leading literal token sniffed from the pattern → `<col>.<token>`
+    //   5. fallback `<col>.regex`
+    // The Extract click handler then uses `nameEl.placeholder` as a fallback
+    // so the saved column matches what was visible in the field.
+    //
+    // `_userTouchedName` flips true on the first non-empty `input` so
+    // refreshes don't clobber a user-typed value via `nameEl.value =`. We
+    // still update the placeholder underneath; it's just invisible while
+    // the value is non-empty.
+    let _userTouchedName = false;
+    let _lastPickLabel = '';      // set by handlePick(); cleared on col change
+    let _lastCapturedPreview = []; // last batch of captured strings from runTest()
+
+    // Sniff a leading literal "name token" from a hand-typed pattern. Strips
+    // common prefixes (`\b`, `^`, `(?:`) then reads a leading run of word
+    // chars. Examples: `DestAddress=(.+?) ` → `DestAddress`,
+    // `\buser=(\w+)` → `user`, `^id_(\d+)` → `id`. Returns '' if nothing
+    // useful is at the head.
+    const _sniffPatternToken = (src) => {
+      if (!src) return '';
+      let s = String(src);
+      // Strip leading anchors / non-capturing group openers.
+      s = s.replace(/^\^+/, '').replace(/^(?:\\b)+/, '').replace(/^\(\?:/, '');
+      const m = /^([A-Za-z_][A-Za-z0-9_-]{0,23})/.exec(s);
+      return m ? m[1] : '';
+    };
+
+    // Find the dominant classifier-label among up to N captured-value
+    // samples. Returns '' if no class hits the 70 % threshold or if the
+    // sample is empty.
+    const _consensusCaptureLabel = (caps) => {
+      if (!Array.isArray(caps) || caps.length < 2) return '';
+      const counts = Object.create(null);
+      let total = 0;
+      for (let i = 0; i < caps.length && i < 20; i++) {
+        const c = caps[i];
+        if (!c) continue;
+        const lbl = _classifyPick(c).label;
+        if (!lbl) continue;
+        counts[lbl] = (counts[lbl] || 0) + 1;
+        total++;
+      }
+      if (total < 2) return '';
+      let best = '', bestN = 0;
+      for (const k in counts) if (counts[k] > bestN) { best = k; bestN = counts[k]; }
+      return (bestN / total) >= 0.7 ? best : '';
+    };
+
+    // Compute the suggested column name from current dialog state. Pure;
+    // safe to call on every keystroke. Returns a non-empty string.
+    const _suggestRegexName = () => {
+      const col = parseInt(colSel.value, 10);
+      const colName = (Number.isFinite(col) && this._baseColumns[col])
+        ? this._baseColumns[col]
+        : (Number.isFinite(col) ? `col${col + 1}` : 'extract');
+      const pattern = patternEl.value || '';
+      const flags = flagsEl.value || '';
+
+      // (1) Preset-pattern match (compare both pattern and normalised flags
+      // — the dialog stores flags as a string, presets may omit it).
+      if (pattern) {
+        for (const p of TL_REGEX_PRESETS) {
+          if (p.pattern === pattern && (p.flags || '') === flags) return p.label;
+        }
+      }
+      // (2) Last click-pick label.
+      if (_lastPickLabel) {
+        return `${colName}.${_lastPickLabel.replace(/\s+/g, '_')}`;
+      }
+      // (3) Consensus capture-class from the live preview.
+      const consensus = _consensusCaptureLabel(_lastCapturedPreview);
+      if (consensus) return `${colName}.${consensus.replace(/\s+/g, '_')}`;
+      // (4) Leading literal token in the pattern.
+      const tok = _sniffPatternToken(pattern);
+      if (tok) return `${colName}.${tok}`;
+      // (5) Fallback.
+      return `${colName}.regex`;
+    };
+
+    const refreshSuggestedName = () => {
+      try { nameEl.placeholder = _suggestRegexName(); } catch (_) { /* defensive */ }
+    };
+
+    // Track whether the user has typed their own name. Once they do, we
+    // never overwrite `.value` from suggestion logic. Clearing the field
+    // resets the flag so the placeholder takes over again.
+    nameEl.addEventListener('input', () => {
+      _userTouchedName = nameEl.value.trim().length > 0;
+    });
+
     // Render the clicker sample rows for the currently-selected column.
     // Each row carries its untruncated text on `_fullText` so `handlePick`
     // can compute pick offsets without re-reading the table.
@@ -1342,14 +1440,10 @@ Object.assign(TimelineView.prototype, {
       groupEl.value = '1';
       if (presetSel) presetSel.value = '-1';
 
-      // Default Name placeholder: "<colName>.<label>" — only set if the
-      // user hasn't typed their own name. Keeps the value field empty so
-      // the extract handler's `(nameEl.value || '').trim()` fallback to
-      // `${colName} (regex)` still applies if the placeholder is rejected.
-      const colName = this._baseColumns[col] || `col${col + 1}`;
-      if (!nameEl.value.trim()) {
-        nameEl.placeholder = `${colName}.${cls.label.replace(/\s+/g, '_')}`;
-      }
+      // Remember the classifier label so the suggestion helper can prefer
+      // it over a token-sniff or capture-class consensus. The placeholder
+      // itself is set inside `refreshSuggestedName()` (called by `runTest`).
+      _lastPickLabel = cls.label || '';
 
       runTest();
     };
@@ -1362,13 +1456,20 @@ Object.assign(TimelineView.prototype, {
     });
 
     presetSel.addEventListener('change', () => {
-
       const p = TL_REGEX_PRESETS.find(x => x.label === presetSel.value);
       if (p) {
         patternEl.value = p.pattern;
         flagsEl.value = p.flags || '';
         groupEl.value = String(p.group == null ? 0 : p.group);
-        nameEl.value = p.label;
+        // Picking a preset is a fresh signal — clear the click-pick memory
+        // so the suggestion logic falls through to the preset-match branch
+        // (which returns the preset label) rather than the stale pick label.
+        _lastPickLabel = '';
+        // Setting `.value =` programmatically does NOT fire an `input`
+        // event, so the preview wouldn't refresh on its own — and historically
+        // didn't, leaving the status pane stale until the next keystroke.
+        // Drive the preview + name suggestion directly.
+        runTest();
       }
     });
 
@@ -1391,19 +1492,29 @@ Object.assign(TimelineView.prototype, {
     const runTest = () => {
       const pattern = patternEl.value;
       const flags = flagsEl.value;
-      if (!pattern) { statusEl.textContent = 'Enter a pattern to preview.'; samplesEl.innerHTML = ''; return; }
+      if (!pattern) {
+        statusEl.textContent = 'Enter a pattern to preview.';
+        samplesEl.innerHTML = '';
+        _lastCapturedPreview = [];
+        refreshSuggestedName();
+        return;
+      }
       // Cap pattern length to prevent pathologically long inputs from
       // even reaching the engine. 1 KB is plenty for any realistic
       // extractor; anything longer is almost certainly a paste accident.
       if (pattern.length > 1024) {
         statusEl.textContent = 'Pattern too long (>1024 chars). Try anchoring or trimming it.';
         samplesEl.innerHTML = '';
+        _lastCapturedPreview = [];
+        refreshSuggestedName();
         return;
       }
       const safe = safeRegex(pattern, flags);
       if (!safe.ok) {
         statusEl.textContent = 'Invalid or unsafe regex: ' + safe.error;
         samplesEl.innerHTML = '';
+        _lastCapturedPreview = [];
+        refreshSuggestedName();
         return;
       }
       const re = safe.regex;
@@ -1472,6 +1583,8 @@ Object.assign(TimelineView.prototype, {
         status = `Pattern timed out after ${seen} of ${N} sample rows — try anchoring or bounding it.`;
         statusEl.textContent = status;
         samplesEl.innerHTML = '';
+        _lastCapturedPreview = [];
+        refreshSuggestedName();
         return;
       }
       statusEl.textContent = status;
@@ -1482,6 +1595,11 @@ Object.assign(TimelineView.prototype, {
         d.innerHTML = `<span class="tl-regex-sample-cap">${_tlEsc(h.cap)}</span><span class="tl-regex-sample-src" title="${_tlEsc(h.src)}">${_tlEsc(this._ellipsis(h.src, 90))}</span>`;
         samplesEl.appendChild(d);
       }
+      // Feed the suggestion helper with the actual captured strings so
+      // hand-typed patterns get a class-of-capture-derived name (e.g.
+      // a pattern that captures IPv4-shaped strings → `<col>.IPv4`).
+      _lastCapturedPreview = hits.map(h => h.cap);
+      refreshSuggestedName();
     };
     // Debounce the keystroke-driven preview. Each keystroke previously fired
     // a fresh `runTest` synchronously over up to 200 rows; for adversarial
@@ -1496,9 +1614,14 @@ Object.assign(TimelineView.prototype, {
     flagsEl.addEventListener('input', runTestDebounced);
     groupEl.addEventListener('input', runTestDebounced);
     // Column change repaints the click-to-pick samples (so users see rows
-    // from the newly-selected column) and re-runs the regex preview.
-    colSel.addEventListener('change', () => { renderClickerSamples(); runTest(); });
-    dlg.querySelector('[data-act="regex-test"]').addEventListener('click', runTest);
+    // from the newly-selected column) and re-runs the regex preview. The
+    // click-pick label is column-scoped — switching columns invalidates it
+    // so a stale `<oldCol>.<label>` hint can't bleed into the new column.
+    colSel.addEventListener('change', () => {
+      _lastPickLabel = '';
+      renderClickerSamples();
+      runTest();
+    });
 
     dlg.querySelector('[data-act="regex-extract"]').addEventListener('click', () => {
       const pattern = patternEl.value;
@@ -1533,7 +1656,16 @@ Object.assign(TimelineView.prototype, {
       }
       const gp = Math.max(0, Math.min(9, parseInt(groupEl.value, 10) || 0));
       const colName = this._baseColumns[col] || `(col ${col + 1})`;
-      const name = (nameEl.value || '').trim() || `${colName} (regex)`;
+      // Fallback chain: user-typed value → live-suggested placeholder →
+      // legacy "<col> (regex)" sentinel. The placeholder is the same string
+      // the user has been seeing in the Name field (driven by
+      // `refreshSuggestedName`), so the saved column name always matches
+      // the label they were shown. The legacy form remains as the final
+      // safety net in case the suggestion helper somehow returned empty.
+      const suggested = (nameEl.placeholder || '').trim();
+      const name = (nameEl.value || '').trim()
+        || suggested
+        || `${colName} (regex)`;
       const before = this._extractedCols.length;
       this._addRegexExtractNoRender({
         name, col, pattern, flags: flagsEl.value, group: gp, kind: 'regex',
@@ -1550,8 +1682,11 @@ Object.assign(TimelineView.prototype, {
     // Initial paint of the click-to-pick samples for the preselected
     // column so the unified Manual pane shows rows the moment the dialog
     // opens — without this, samples only appeared after the user changed
-    // the Column dropdown.
+    // the Column dropdown. Also seed the Name placeholder with the
+    // best-effort suggestion (`<colName>.regex` until the user picks /
+    // types something more specific).
     renderClickerSamples();
+    refreshSuggestedName();
   },
 
 });
