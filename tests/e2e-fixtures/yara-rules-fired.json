@@ -1,6 +1,7 @@
 {
   "anchorFixtures": {
     "examples/archives/example-security.evtx.tar.gz": [
+      "Confusable_Codepoint_Density",
       "Embedded_Compressed_Stream"
     ],
     "examples/archives/example.7z": [
@@ -28,6 +29,7 @@
       "SSH_Private_Key_Reference"
     ],
     "examples/elf/example": [
+      "ELF_Reverse_Shell",
       "Info_Reverse_Shell_Patterns"
     ],
     "examples/elf/example.so": [
@@ -35,12 +37,14 @@
       "Info_Tracking_Pixel",
       "SVG_Redirect_Phish"
     ],
+    "examples/elf/overlay-zip-elf": [
+      "Embedded_ZIP_In_Non_Archive"
+    ],
     "examples/email/example.eml": [
       "Info_Email_EML_Format",
       "Info_Email_Multipart_Mixed"
     ],
     "examples/email/example.msg": [
-      "Embedded_ZIP_In_Non_Archive",
       "MSI_Network_Indicators"
     ],
     "examples/email/phishing-example.eml": [
@@ -54,14 +58,18 @@
       "Encoded_Base64_PE_Header"
     ],
     "examples/encoded-payloads/encoded-hex-base64-powershell.txt": [
+      "PowerShell_Encoded_Command",
       "Stacked_Encoding_Indicators"
     ],
     "examples/encoded-payloads/example-safelinks.txt": [
       "Info_Unique_Token_In_URL"
     ],
     "examples/encoded-payloads/js-string-array-obfuscation.js": [
+      "Obfuscated_Download_Cradle",
       "PowerShell_Download_Cradle",
-      "Standalone_Download_Network_Indicators"
+      "Standalone_Download_Network_Indicators",
+      "Standalone_HTML_Code_Execution",
+      "Standalone_PowerShell_Indicators"
     ],
     "examples/encoded-payloads/mixed-obfuscations.txt": [
       "Encoded_Base64_Gzip",
@@ -87,12 +95,7 @@
       "Python_Eval_Codec_Obfuscation",
       "Python_Exec_Base64_Obfuscation",
       "Space_Delimited_Hex_Payload",
-      "Standalone_HTML_Code_Execution",
-      "Standalone_PowerShell_Indicators",
       "Unicode_Escape_Obfuscation"
-    ],
-    "examples/encoded-payloads/nested-b64-hex-url.txt": [
-      "Obfuscated_Download_Cradle"
     ],
     "examples/encoded-payloads/nested-triple-b64-url.txt": [
       "Info_BITSAdmin_Reference"
@@ -112,6 +115,10 @@
     ],
     "examples/java/example.jar": [
       "Info_Alternate_Data_Stream"
+    ],
+    "examples/json/array-of-objects-example.json": [
+      "HTML_Data_URI_Payload",
+      "Info_Data_URI_Scheme"
     ],
     "examples/macos-scripts/example.applescript": [
       "osascript_admin_shell_execution",
@@ -141,6 +148,7 @@
       "plist_watchpaths_monitoring"
     ],
     "examples/macos-system/example.app": [
+      "Info_DNS_TXT_Lookup",
       "Info_Quoted_Printable_Obfuscation",
       "Info_Sensitive_File_Extensions",
       "ZIP_Contains_MacApp_Bundle"
@@ -173,6 +181,33 @@
     "examples/office/example.slk": [
       "SLK_Symbolic_Link_File"
     ],
+    "examples/office/macro-dropper.docm": [
+      "OOXML_External_Template",
+      "Office_External_Relationship",
+      "Office_Remote_Template_Injection",
+      "Standalone_COM_Objects",
+      "Standalone_LOLBin_Indicators",
+      "Standalone_Script_Shell_Execution",
+      "VBA_AutoExec_Trigger",
+      "VBA_Certutil_Decode",
+      "VBA_Download_Capability",
+      "VBA_Environment_Enumeration",
+      "VBA_File_System_Write",
+      "VBA_GetObject_WMI",
+      "VBA_MSHTA_Invocation",
+      "VBA_NewObject_PowerShell",
+      "VBA_Obfuscation_Techniques",
+      "VBA_PowerShell_Invocation",
+      "VBA_Registry_Manipulation",
+      "VBA_Scheduled_Task_Persistence",
+      "VBA_Shell_Application_Abuse",
+      "VBA_Shell_Execution",
+      "VBA_Sleep_Delay",
+      "VBA_WbemDisp_WMI"
+    ],
+    "examples/onenote/onenote-example.one": [
+      "OneNote_Any_Embedded_File"
+    ],
     "examples/pdf/javascript-example.pdf": [
       "PDF_AutoOpen_Action",
       "PDF_JavaScript_Execution"
@@ -182,17 +217,29 @@
     ],
     "examples/pe/example.exe": [
       "Info_Debugger_Detection",
-      "Info_Timing_Based_Evasion"
+      "Info_Timing_Based_Evasion",
+      "PE_Anti_Debug_Techniques"
+    ],
+    "examples/pe/example.xll": [
+      "AddIn_XLL_File",
+      "Info_Contains_DLL_Export",
+      "Info_Contains_DotNet_Assembly",
+      "PE_Dot_NET_Assembly",
+      "PE_XLL_ExcelDNA_Managed",
+      "PE_XLL_Excel_AddIn"
+    ],
+    "examples/pe/overlay-post-authenticode.exe": [
+      "PE_UPX_Packed"
     ],
     "examples/pe/signed-example.dll": [
       "Info_Process_Enumeration",
-      "Info_Socket_Connection"
+      "PE_Download_Capability",
+      "PE_Service_Persistence"
     ],
     "examples/web/encoded-entities.html": [
-      "HTML_Data_URI_Payload",
       "HTML_Entity_Obfuscated_Script",
-      "Info_Data_URI_Scheme",
       "Info_HTML_Entity_Obfuscation",
+      "Standalone_HTA_VBScript_Indicators",
       "URL_Encoded_Command"
     ],
     "examples/web/example-malicious.svg": [
@@ -223,8 +270,7 @@
       "Standalone_HTML_Suspicious_Elements"
     ],
     "examples/web/example.hta": [
-      "HTA_Any_Presence",
-      "Standalone_HTA_VBScript_Indicators"
+      "HTA_Any_Presence"
     ],
     "examples/web/example.wasm": [
       "Info_Contains_WebAssembly",
@@ -238,6 +284,9 @@
     ],
     "examples/windows-installers/example.manifest": [
       "ClickOnce_FullTrust_Requested"
+    ],
+    "examples/windows-installers/example.msi": [
+      "MSI_Installer_Suspicious"
     ],
     "examples/windows-installers/example.msix": [
       "MSIX_AppExecutionAlias_CommonName",
@@ -259,7 +308,10 @@
       "CMD_Caret_Obfuscation",
       "CMD_Environment_Substring_Abuse",
       "CMD_Set_Variable_Obfuscation",
-      "Standalone_LOLBin_Indicators"
+      "Suspicious_ClickFix_RunDialog"
+    ],
+    "examples/windows-scripts/encoded-powershell.bat": [
+      "Standalone_LNK_Argument_Patterns"
     ],
     "examples/windows-scripts/example.cmd": [
       "BAT_Registry_Persistence"
@@ -271,10 +323,13 @@
     ],
     "examples/windows-scripts/example.js": [
       "JS_ActiveX_With_XMLHttp",
-      "JS_WSH_Dropper",
-      "Standalone_Script_Shell_Execution"
+      "JS_WSH_Dropper"
+    ],
+    "examples/windows-scripts/example.lnk": [
+      "LNK_Environment_Variable_Abuse"
     ],
     "examples/windows-scripts/example.reg": [
+      "Defender_Tampering",
       "REG_Any_Presence",
       "REG_COM_Hijack",
       "REG_Persistence_Run_Key",
@@ -285,8 +340,7 @@
     "examples/windows-scripts/example.sct": [
       "SCT_Any_Presence",
       "SCT_COM_Object_Creation",
-      "SCT_Script_Execution",
-      "Standalone_COM_Objects"
+      "SCT_Script_Execution"
     ],
     "examples/windows-scripts/example.url": [
       "URL_Shortcut_Any_Presence",
@@ -304,19 +358,30 @@
       "PS_Char_Casting_Obfuscation",
       "PS_Format_Operator_Obfuscation",
       "PS_Replace_Chain_Obfuscation",
-      "PS_String_Concatenation_Obfuscation",
-      "PowerShell_Encoded_Command"
+      "PS_String_Concatenation_Obfuscation"
+    ],
+    "examples/windows-scripts/ps-stealth-launcher.ps1": [
+      "Info_WMI_Event_Subscription",
+      "PowerShell_AMSI_Bypass",
+      "PowerShell_AddType_Inline_CSharp",
+      "PowerShell_Certutil_Combo",
+      "PowerShell_Credential_Theft",
+      "PowerShell_Execution_Policy_Bypass",
+      "PowerShell_Hidden_Window",
+      "PowerShell_Invoke_Command_Remote",
+      "PowerShell_Stealth_Flags_Combo",
+      "PowerShell_WMI_Event_Persistence"
     ]
   },
   "summary": {
-    "anchorFixtures": 58,
-    "rulesFiredInCorpus": 191,
-    "rulesUnanchored": 347,
-    "totalRulesDefined": 538
+    "anchorFixtures": 67,
+    "rulesFiredInCorpus": 238,
+    "rulesUnanchored": 331,
+    "totalRulesDefined": 569
   },
   "unanchoredRules": [
+    "AD_Database_Dump",
     "AMSI_ETW_Bypass_Patterns",
-    "AddIn_XLL_File",
     "Archive_Double_Extension",
     "BAT_Recursive_Copy_Drop",
     "BITSAdmin_Download",
@@ -327,16 +392,22 @@
     "BrowserExt_NativeHost_Bridge",
     "BrowserExt_Proxy_Permission",
     "BrowserExt_UpdateUrl_NonStore",
+    "Browser_NSS_Cred_Reference",
     "CMSTP_CommandLine_Execution",
     "CMSTP_INF_Bypass",
     "CSV_Formula_Injection",
     "ClickOnce_AppRef_MS",
+    "Cloud_CLI_Exfil",
+    "CredFile_Walk_CrossOS",
     "Credential_Dumping_Commands",
     "Crypto_Miner_Indicators",
     "DMG_Contains_App_Launcher",
     "DMG_Contains_Hidden_App",
     "DMG_Encrypted",
     "DMG_UDIF_Disk_Image",
+    "Discovery_Cluster_Unix",
+    "Discovery_Cluster_Windows",
+    "Discovery_SPN_Kerberoast_Precursor",
     "Double_Extension_Any_File",
     "ELF_BPF_Rootkit",
     "ELF_Container_Escape",
@@ -353,7 +424,6 @@
     "ELF_Persistence_Mechanism",
     "ELF_Proc_Hiding",
     "ELF_Ptrace_AntiDebug",
-    "ELF_Reverse_Shell",
     "ELF_Self_Deletion",
     "ELF_UPX_Packed",
     "Embedded_PE_Header",
@@ -364,9 +434,12 @@
     "Excel_AutoOpen_Defined_Name",
     "Excel_High_Risk_Formula_Function",
     "Exfil_Discord_Webhook",
+    "Exfil_File_Drop_Hosts",
+    "Exfil_OAST_Collaborator",
     "Exfil_Pastebin_Reference",
     "Exfil_Slack_Webhook",
     "Exfil_Telegram_Bot_API",
+    "GTFOBin_Exec_Primitive",
     "HTA_Download_Execute",
     "HTA_File_With_Script",
     "HTA_MSHTA_Inline_Script",
@@ -378,6 +451,7 @@
     "HTML_Smuggling_Password_Hint",
     "HTML_WebSocket_Exfil",
     "Hex_Encoded_PE_Header",
+    "Homoglyph_Process_Name",
     "INF_CMSTP_Bypass",
     "INF_DLL_Registration",
     "INF_LOLBin_Reference",
@@ -390,11 +464,8 @@
     "Info_Browser_Credential_Paths",
     "Info_CSS_Content_Injection",
     "Info_Cloudflare_Workers_URL",
-    "Info_Contains_DLL_Export",
-    "Info_Contains_DotNet_Assembly",
     "Info_DLL_Sideload_Indicators",
     "Info_DNS_Over_HTTPS_Reference",
-    "Info_DNS_TXT_Lookup",
     "Info_Email_Bulk_Precedence",
     "Info_Email_Content_Transfer_Encoding",
     "Info_Email_Multiple_Received_Hops",
@@ -413,11 +484,11 @@
     "Info_Punycode_Domain",
     "Info_Screenshot_Capture",
     "Info_Service_Installation",
+    "Info_Socket_Connection",
     "Info_UAC_Bypass_Indicators",
     "Info_UTF7_Encoded_Content",
     "Info_VM_Detection_Strings",
     "Info_Vercel_Netlify_Hosting",
-    "Info_WMI_Event_Subscription",
     "Info_Webcam_Microphone_Access",
     "Info_iOS_MobileConfig",
     "JS_Clipboard_Paste_Lure",
@@ -442,10 +513,14 @@
     "Java_Script_Engine",
     "Java_Security_Manager_Bypass",
     "LNK_Double_Extension",
-    "LNK_Environment_Variable_Abuse",
     "LNK_Extended_LOLBins",
     "LNK_Script_Target",
     "LNK_Suspicious_CommandLine",
+    "LOLBAS_LongTail_CodeExec",
+    "LOLBAS_LongTail_Download",
+    "LOLBAS_UAC_Bypass",
+    "Linux_Persist_Add_User",
+    "Linux_SUID_Discovery",
     "MHTML_Smuggling",
     "MSBuild_Inline_Task",
     "MSIX_APPX_Installer",
@@ -453,7 +528,6 @@
     "MSI_Embedded_PE",
     "MSI_Embedded_Script",
     "MSI_Encoded_Content",
-    "MSI_Installer_Suspicious",
     "MSI_Service_Install",
     "MSI_Suspicious_CustomAction",
     "MachO_AMOS_Credential_Prompt",
@@ -474,6 +548,8 @@
     "MachO_Suspicious_Entitlements",
     "MachO_VM_Detection",
     "Msiexec_Remote_Install",
+    "Netsh_PortProxy_Forwarding",
+    "Netsh_Wifi_Cred_Theft",
     "NodeJS_Child_Process_Execution",
     "Npm_Bin_Shell_Wrapper",
     "Npm_Clipboard_Wallet_Swap",
@@ -492,7 +568,6 @@
     "Npm_Webhook_Beacon",
     "OLE10Native_Embedded_Executable",
     "OOXML_DDE_Field_Code",
-    "OOXML_External_Template",
     "Office_ActiveX_Embedded",
     "Office_DDE_AutoLink_Legacy",
     "Office_DDE_AutoLink_OOXML",
@@ -500,13 +575,10 @@
     "Office_Equation_Editor_CLSID",
     "Office_ExternalLink_Formula",
     "Office_External_OLE_Link",
-    "Office_External_Relationship",
     "Office_Follina_MSDT",
     "Office_OLE_Embedded_Object",
-    "Office_Remote_Template_Injection",
     "Office_VBA_Stomping",
     "Office_XLM_4_Macro",
-    "OneNote_Any_Embedded_File",
     "OneNote_Embedded_PE",
     "OneNote_Embedded_Script",
     "PCAP_Cobalt_Strike_Malleable_C2",
@@ -534,13 +606,10 @@
     "PDF_URI_Link",
     "PDF_XFA_Form",
     "PE_ASPack_Packed",
-    "PE_Anti_Debug_Techniques",
     "PE_AutoIT_Compiled",
     "PE_Cobalt_Strike_Indicators",
     "PE_Compiled_AutoHotkey",
     "PE_Credential_Theft_APIs",
-    "PE_Dot_NET_Assembly",
-    "PE_Download_Capability",
     "PE_Download_Execute",
     "PE_Dynamic_API_Resolution",
     "PE_Embedded_PE",
@@ -557,25 +626,15 @@
     "PE_PyInstaller_Packed",
     "PE_Ransomware_APIs",
     "PE_Registry_Persistence",
-    "PE_Service_Persistence",
     "PE_Shellcode_Loader_Pattern",
     "PE_Suspicious_Imports_Cluster",
     "PE_Suspicious_Section_Name",
     "PE_Suspicious_Strings_CnC",
     "PE_Themida_Packed",
-    "PE_UPX_Packed",
     "PE_VMProtect_Packed",
-    "PE_XLL_ExcelDNA_Managed",
-    "PE_XLL_Excel_AddIn",
-    "PowerShell_AMSI_Bypass",
-    "PowerShell_AddType_Inline_CSharp",
-    "PowerShell_Certutil_Combo",
-    "PowerShell_Credential_Theft",
-    "PowerShell_Execution_Policy_Bypass",
-    "PowerShell_Hidden_Window",
-    "PowerShell_Invoke_Command_Remote",
-    "PowerShell_Stealth_Flags_Combo",
-    "PowerShell_WMI_Event_Persistence",
+    "PasswordManager_DB_Reference",
+    "PostEx_Tool_Reference",
+    "PowerShell_TCPClient_RevShell",
     "Punycode_IDN_Homograph",
     "Python_Char_Construction",
     "Python_Reverse_Shell",
@@ -592,7 +651,14 @@
     "RTF_ObjClass_Exploit",
     "RTF_ObjUpdate_AutoExec",
     "RTF_Package_Object",
+    "Registry_Hive_Extraction",
     "Regsvr32_Remote_SCT",
+    "ReverseShell_Lua_Tcl_AWK",
+    "ReverseShell_NamedPipe",
+    "ReverseShell_PHP_OneLiner",
+    "ReverseShell_Perl_OneLiner",
+    "ReverseShell_Ruby_OneLiner",
+    "ReverseShell_Socat",
     "Right_To_Left_Override",
     "Rundll32_Script_Proxy",
     "SCT_Network_Access",
@@ -602,32 +668,15 @@
     "SVG_Event_Handler_Error",
     "Scheduled_Task_XML",
     "Shell_Curl_Wget_Pipe_Exec",
-    "Standalone_LNK_Argument_Patterns",
     "Standalone_RTF_Exploit_Patterns",
     "Standalone_RTF_OLE_Keywords",
-    "Suspicious_ClickFix_RunDialog",
     "Suspicious_Finger_LOLBin",
+    "Tunneling_Tool_Reference",
     "UNC_Path_NTLM_Theft",
     "URL_Shortcut_To_Script_Handler",
     "URL_Shortcut_UNC_Icon",
     "VBA_ActiveX_Control",
-    "VBA_AutoExec_Trigger",
-    "VBA_Certutil_Decode",
     "VBA_DDE_Field_Injection",
-    "VBA_Download_Capability",
-    "VBA_Environment_Enumeration",
-    "VBA_File_System_Write",
-    "VBA_GetObject_WMI",
-    "VBA_MSHTA_Invocation",
-    "VBA_NewObject_PowerShell",
-    "VBA_Obfuscation_Techniques",
-    "VBA_PowerShell_Invocation",
-    "VBA_Registry_Manipulation",
-    "VBA_Scheduled_Task_Persistence",
-    "VBA_Shell_Application_Abuse",
-    "VBA_Shell_Execution",
-    "VBA_Sleep_Delay",
-    "VBA_WbemDisp_WMI",
     "VBS_Obfuscation_ChrW",
     "VBS_Registry_Persistence",
     "VBS_Scheduled_Task",
