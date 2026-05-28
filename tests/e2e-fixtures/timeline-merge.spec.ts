@@ -518,6 +518,7 @@ test.describe('Timeline — merged sources', () => {
     // `tl-canonical-cell`. Cells are lazily rendered (virtual
     // scroll); assert against the first few that are in view.
     const canonicalCells = ctx.page.locator('.tl-grid .grid-cell.tl-canonical-cell');
+    await expect(canonicalCells.first()).toBeVisible();
     expect(await canonicalCells.count()).toBeGreaterThan(0);
     const firstCellText = await canonicalCells.first().textContent();
     // Must carry an actual filename (from FIXTURE_A or FIXTURE_B).
