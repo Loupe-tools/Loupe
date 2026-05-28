@@ -882,7 +882,7 @@ the documented values.
 | `loupe_plaintext_format` | `PlainTextRenderer._writeFormatPref` | `"on"` / `"off"` (default). Gated by the shared rich-render gate (`RICH_MAX_BYTES` 1 MB / `RICH_MAX_LINES` 20 000 / `RICH_MAX_LINE_LEN` 10 000 chars) AND a detected `LANG_MAP` / MIME language — no button is shown on unknown-language files or on builds without `CodeFormatter`. Visual-only: `_rawText` (sidebar click-to-focus, IOC offsets, YARA scan buffer) always tracks the unformatted source. |
 | `loupe_plaintext_wrap` | `PlainTextRenderer._writeWrapPref` | `"on"` (default) / `"off"`. Hidden — and wrap forced off — by the shared rich-render gate (`RICH_MAX_BYTES` 1 MB / `RICH_MAX_LINES` 20 000 / `RICH_MAX_LINE_LEN` 10 000 chars), which gates format too. Syntax highlighting runs whenever the gate passes — no user toggle. |
 | `loupe_grid_drawer_w` | `_saveDrawerWidth` (`grid-viewer.js`) | Row-details drawer width in px. Default 420; min 280; max dynamic. |
-| `loupe_grid_colW_<gridKey>` | `_saveUserColumnWidth` | `{"<colIdx>": pxWidth, …}`. Per-renderer manual overrides; double-clicking a handle deletes the entry to restore auto-size. |
+| `loupe_grid_colW_<gridKey>` | `_saveUserColumnWidth` | `{"<colIdx>": pxWidth, …}`. Per-renderer manual overrides; Timeline uses a per-file `tl-grid-inner_<fileKey>` grid key. Double-clicking a resize handle or using the header-menu reset deletes entries to restore auto-size. |
 | `loupe_timeline_grid_h` | `.tl-splitter` drag | Virtual-grid pane height in px (clamped on read). |
 | `loupe_timeline_chart_h` | `.tl-chart-resize` drag | Histogram pane height in px. Default 220; clamp 120 – 600. |
 | `loupe_timeline_bucket` | toolbar bucket picker | `1m` / `5m` / `1h` / `1d` / …. |

@@ -1118,6 +1118,24 @@ body.dark .grid-row:hover {
   align-items: center;
 }
 
+/* Opt-in compact density. JS sets matching ROW_HEIGHT / HEADER_H values
+   before virtual scrolling starts; keep these CSS heights in lockstep. */
+.grid-view.grid-density-compact .grid-header {
+  height: 28px;
+}
+
+.grid-view.grid-density-compact .grid-header-cell {
+  padding: 4px 8px;
+}
+
+.grid-view.grid-density-compact .grid-row {
+  height: 24px;
+}
+
+.grid-view.grid-density-compact .grid-cell {
+  padding: 2px 8px;
+}
+
 body.dark .grid-cell {
   border-right-color: var(--hairline);
 }

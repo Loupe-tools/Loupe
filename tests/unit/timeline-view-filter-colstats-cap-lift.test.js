@@ -13,7 +13,7 @@
 //
 //   2. All-unique columns (every row's value is unique — e.g. timestamp,
 //      event_record_id, sequence_no) short-circuit BEFORE the sort and
-//      surface as `{ values: [], allUnique: true, distinct }`.
+//      surface as `{ values: [], allUnique: true, distinct, maxLen }`.
 //      `_paintColumnCards` consumes `allUnique` to suppress the card
 //      entirely; the suppression takes precedence over the pinned
 //      carve-out because pin-buttons only exist on rendered cards.
@@ -68,8 +68,8 @@ test('_computeColumnStatsSync no longer slices values to a top-N cap', () => {
 test('_computeColumnStatsSync emits uncapped values: arr', () => {
   assert.match(
     FILTER,
-    /out\[c\]\s*=\s*\{\s*total\s*,\s*distinct\s*,\s*values\s*:\s*arr\s*\}\s*;/,
-    'expected uncapped finalisation `out[c] = { total, distinct, values: arr };`',
+    /out\[c\]\s*=\s*\{\s*total\s*,\s*distinct\s*,\s*values\s*:\s*arr\s*,\s*maxLen\s*:\s*maxLens\[c\]\s*\}\s*;/,
+    'expected uncapped finalisation `out[c] = { total, distinct, values: arr, maxLen: maxLens[c] };`',
   );
 });
 
@@ -82,8 +82,8 @@ test('stats compute short-circuits on distinct === total via allUnique flag', ()
   // `distinct === 0`), not all-unique.
   assert.match(
     FILTER,
-    /if\s*\(\s*distinct\s*===\s*total\s*&&\s*total\s*>\s*0\s*\)\s*\{\s*out\[c\]\s*=\s*\{\s*total\s*,\s*distinct\s*,\s*values\s*:\s*\[\]\s*,\s*allUnique\s*:\s*true\s*\}\s*;/,
-    'expected `if (distinct === total && total > 0) { out[c] = { total, distinct, values: [], allUnique: true }; }`',
+    /if\s*\(\s*distinct\s*===\s*total\s*&&\s*total\s*>\s*0\s*\)\s*\{\s*out\[c\]\s*=\s*\{\s*total\s*,\s*distinct\s*,\s*values\s*:\s*\[\]\s*,\s*allUnique\s*:\s*true\s*,\s*maxLen\s*:\s*maxLens\[c\]\s*\}\s*;/,
+    'expected `if (distinct === total && total > 0) { out[c] = { total, distinct, values: [], allUnique: true, maxLen: maxLens[c] }; }`',
   );
 });
 
@@ -110,18 +110,18 @@ test('stats compute short-circuit appears in BOTH sync and async paths', () => {
 // through). Any regression that breaks one outcome but not the others
 // gets caught here.
 
-function finaliseRef(stats, total) {
+function finaliseRef(stats, total, maxLens = []) {
   const out = new Array(stats.length);
   for (let c = 0; c < stats.length; c++) {
     const m = stats[c];
     const distinct = m.size;
     if (distinct === total && total > 0) {
-      out[c] = { total, distinct, values: [], allUnique: true };
+      out[c] = { total, distinct, values: [], allUnique: true, maxLen: maxLens[c] || 0 };
       continue;
     }
     const arr = Array.from(m.entries());
     arr.sort((a, b) => b[1] - a[1]);
-    out[c] = { total, distinct, values: arr };
+    out[c] = { total, distinct, values: arr, maxLen: maxLens[c] || 0 };
   }
   return out;
 }

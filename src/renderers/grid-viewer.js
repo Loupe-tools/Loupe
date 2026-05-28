@@ -60,6 +60,11 @@ class GridViewer {
    *   rowOffsets?: {start:number,end:number}[],  // byte offsets into rawText — enables YARA offset→row mapping
    *   rawText?: string,                  // full source text; used by sidebar IOC extraction & YARA mapping
    *   className?: string,                // extra class on root (default 'csv-view' for sidebar compatibility)
+   *   gridKey?: string,                  // localStorage namespace for manual column widths
+   *   density?: 'default'|'compact',     // fixed-row-height preset
+   *   columnSizing?: { maxTextColW?: number, maxShortColW?: number,
+   *     maxIdentityColW?: number, fixedExtraPx?: number,
+   *     growShortColumns?: boolean, widthHints?: ({maxLen:number}|null)[] },
    *   infoText?: string,                 // header info bar ("N rows × M cols · delimiter: Comma")
    *   truncationNote?: string,           // "⚠ Showing first N of M rows" banner below the grid
    *   emptyMessage?: string              // rendered when rows.length === 0
@@ -301,17 +306,33 @@ class GridViewer {
     this._timeWindow = null;
 
 
-    // Tunables (intentionally internal — callers don't twiddle these).
-    this.ROW_HEIGHT = 28;
-    this.HEADER_H = 32;
+    // Tunables. Defaults preserve the shared GridViewer shape; callers can
+    // opt into a named density preset / sizing hints without changing the
+    // virtual-scroll contract for every renderer.
+    this._density = opts.density === 'compact' ? 'compact' : 'default';
+    this.ROW_HEIGHT = this._density === 'compact' ? 24 : 28;
+    this.HEADER_H = this._density === 'compact' ? 28 : 32;
     this.BUFFER_ROWS = 12;
     this.MIN_COL_W = 60;
-    this.MAX_COL_W = 320;     // default soft-cap for 'text' kind
-    this.SHORT_COL_MAX = 240;    // 'short' kind soft-cap
+    const sizing = opts.columnSizing && typeof opts.columnSizing === 'object'
+      ? opts.columnSizing : {};
+    const optNum = (name, fallback, min, max) => {
+      const v = Number(sizing[name]);
+      if (!Number.isFinite(v)) return fallback;
+      return Math.max(min, Math.min(max, v));
+    };
+    // Default soft-cap for 'text' kind.
+    this.MAX_COL_W = optNum('maxTextColW', 320, this.MIN_COL_W, 1600);
+    // 'short' kind soft-cap.
+    this.SHORT_COL_MAX = optNum('maxShortColW', 240, this.MIN_COL_W, 1600);
     this.BLOB_BASE_MAX = 420;    // 'blob' kind base clamp (grows beyond via slack)
-    this.CELL_PAD_PX = 22;      // body cell horizontal padding+border
-    this.HEADER_EXTRA_PX = 24;   // extra px needed in header for chevron + sort indicator
+    this.CELL_PAD_PX = this._density === 'compact' ? 18 : 22;      // body cell horizontal padding+border
+    this.HEADER_EXTRA_PX = this._density === 'compact' ? 22 : 24;   // extra px needed in header for chevron + sort indicator
     this.ROWNUM_COL_W = 64;
+    this._fixedColExtraPx = optNum('fixedExtraPx', 8, 0, 80);
+    this._identityMaxColW = optNum('maxIdentityColW', Math.max(this.MAX_COL_W, 420), this.MIN_COL_W, 1600);
+    this._growShortColumns = sizing.growShortColumns !== false;
+    this._columnWidthHints = Array.isArray(sizing.widthHints) ? sizing.widthHints.slice() : null;
     this.DRAWER_MIN_W = 280;
     // Upper bound for the drawer width. Computed dynamically from the
     // current viewport so the analyst can swell the drawer out to
@@ -497,7 +518,8 @@ class GridViewer {
   // ═══════════════════════════════════════════════════════════════════════════
   _buildDOM() {
     const root = document.createElement('div');
-    root.className = this._rootClass + ' grid-view';
+    root.className = this._rootClass + ' grid-view' +
+      (this._density === 'compact' ? ' grid-density-compact' : '');
     root._rawText = lfNormalize(this.rawText);
 
     // ── Info bar ────────────────────────────────────────────────────────────
@@ -834,17 +856,19 @@ class GridViewer {
    *  grid is attached to the document (falls back to the default guess). */
   _measureCharWidth() {
     if (this._chWMeasured) return this._chW;
-    // We need a cell-shaped element *inside the grid* so the probe inherits
-    // font-family/size/weight from the viewer-specific CSS (core.css + any
-    // theme overlay). Fall back to a plain off-screen span if the root
-    // hasn't mounted yet.
-    const probe = document.createElement('div');
-    probe.className = 'grid-cell';
+    // Grid cells inherit their monospace font from `.grid-row`; a lone
+    // `.grid-cell` appended under `<body>` would inherit the page font and
+    // over-estimate character widths. Make the probe explicitly text-shaped
+    // and padding-free so the sizing math tracks rendered body cells.
+    const probe = document.createElement('span');
     probe.style.position = 'absolute';
     probe.style.visibility = 'hidden';
     probe.style.whiteSpace = 'pre';
     probe.style.padding = '0';
     probe.style.border = '0';
+    probe.style.fontFamily = "'Fira Code', 'Consolas', 'Courier New', monospace";
+    probe.style.fontSize = '12px';
+    probe.style.fontWeight = '400';
     probe.textContent = '0'.repeat(80);   // 80 zeros → stable sample
     const host = (this._sizer && this._sizer.isConnected) ? this._sizer
       : (this._root && this._root.isConnected) ? this._root
@@ -868,10 +892,22 @@ class GridViewer {
    *
    *  Caller-supplied `columnKinds` wins per-cell: any index whose entry is
    *  a known kind string is accepted verbatim and the sniffer skipped. */
+  _isIdentityColumnName(name) {
+    const s = String(name || '').toLowerCase();
+    const norm = s.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (/^(?:user|userid|user_id|username|user_name|userprincipalname|upn|principal|email|mail)$/.test(norm)) return true;
+    if (/^(?:account|actor|owner)(?:id|name|user|email|upn)$/.test(norm)) return true;
+    if (/^(?:account|actor|owner)(?:_|$)/.test(norm) && /(?:^|_)(?:id|name|user|email|upn)$/.test(norm)) return true;
+    if (/^(?:target|source|src|dst|dest|destination)(?:user|userid|username|account|accountname|email|upn|principal)$/.test(norm)) return true;
+    if (/^(?:target|source|src|dst|dest|destination)_(?:user|userid|username|user_name|account|accountname|email|upn|principal)$/.test(norm)) return true;
+    return /(?:^|_)(?:email|mail|upn|principal)(?:_|$)/.test(norm);
+  }
+
   _classifyColumns() {
     const hint = this._columnKindsHint;
     const cols = this.columns.length;
     const kinds = new Array(cols);
+    const roles = new Array(cols);
     const lens = new Array(cols);       // Array<sorted number[]>
     const distinct = new Array(cols);   // Array<Set<string>> — up to 50 each
     for (let c = 0; c < cols; c++) {
@@ -899,11 +935,12 @@ class GridViewer {
     // auto-detection is only meant to catch the obvious cases.
     const stats = new Array(cols);
     for (let c = 0; c < cols; c++) {
-      stats[c] = { nonEmpty: 0, numeric: 0, ts: 0, hex32: 0, hex40: 0, hex64: 0, maxLen: 0, startsJsonish: 0 };
+      stats[c] = { nonEmpty: 0, numeric: 0, ts: 0, hex32: 0, hex40: 0, hex64: 0, email: 0, maxLen: 0, startsJsonish: 0 };
     }
     const TS_RE = /^(?:\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)$/;
     const NUM_RE = /^-?\d+(?:\.\d+)?$/;
     const HEX_RE = /^[0-9a-fA-F]+$/;
+    const EMAIL_RE = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
     for (const r of sampleIdxs) {
       const row = this._rowAt(r);
@@ -921,6 +958,7 @@ class GridViewer {
         if (distinct[c].size < 50) distinct[c].add(trimmed);
         if (NUM_RE.test(trimmed)) stats[c].numeric++;
         if (TS_RE.test(trimmed)) stats[c].ts++;
+        if (EMAIL_RE.test(trimmed)) stats[c].email++;
         if (HEX_RE.test(trimmed)) {
           const hl = trimmed.length;
           if (hl === 32) stats[c].hex32++;
@@ -939,6 +977,8 @@ class GridViewer {
       }
       const st = stats[c];
       if (st.nonEmpty === 0) { kinds[c] = 'short'; continue; }
+      const identityName = this._isIdentityColumnName(this.columns[c]);
+      if (identityName || st.email / st.nonEmpty >= 0.25) roles[c] = 'identity';
 
       // Hash — ≥90% fixed-length hex at a known length → column is hashes.
       if (st.hex32 / st.nonEmpty >= 0.9 || st.hex40 / st.nonEmpty >= 0.9 || st.hex64 / st.nonEmpty >= 0.9) {
@@ -971,6 +1011,7 @@ class GridViewer {
     }
 
     this._columnKinds = kinds;
+    this._columnRoles = roles;
     this._columnLengths = lens;
   }
 
@@ -988,6 +1029,7 @@ class GridViewer {
     this._classifyColumns();
     const chW = this._measureCharWidth();
     const kinds = this._columnKinds;
+    const roles = this._columnRoles || [];
     const lens = this._columnLengths;
     const cols = this.columns.length;
     const widths = new Array(cols);
@@ -1009,29 +1051,40 @@ class GridViewer {
       const p85 = p(0.85);
       const p95 = p(0.95);
       const p100 = arr[arr.length - 1] || 0;
+      const hint = this._columnWidthHints && this._columnWidthHints[c];
+      const hintMaxLen = hint && Number.isFinite(Number(hint.maxLen))
+        ? Math.max(0, Number(hint.maxLen)) : null;
+      const maxObservedLen = hintMaxLen == null ? p100 : Math.max(p100, hintMaxLen);
+      const identity = roles[c] === 'identity' || this._isIdentityColumnName(this.columns[c]);
 
       let base;
       let greedy = false;
       // Small amount of extra breathing room for fixed-shape columns so
       // the last char doesn't sit flush against the next cell's border.
-      const TIGHT_PAD = 8;
+      const TIGHT_PAD = this._fixedColExtraPx;
+      const identityPx = () => Math.min(
+        this._identityMaxColW,
+        Math.ceil(maxObservedLen * chW) + this.CELL_PAD_PX,
+      );
 
       switch (kind) {
         case 'timestamp':
-          base = Math.ceil(p100 * chW) + this.CELL_PAD_PX + TIGHT_PAD;
+          base = Math.ceil(maxObservedLen * chW) + this.CELL_PAD_PX + TIGHT_PAD;
           break;
         case 'number':
         case 'id':
-          base = Math.ceil(p100 * chW) + this.CELL_PAD_PX + TIGHT_PAD;
+          base = Math.ceil(maxObservedLen * chW) + this.CELL_PAD_PX + TIGHT_PAD;
           break;
         case 'hash':
-          base = Math.ceil(p100 * chW) + this.CELL_PAD_PX + TIGHT_PAD;
+          base = Math.ceil(maxObservedLen * chW) + this.CELL_PAD_PX + TIGHT_PAD;
           break;
         case 'enum':
-          base = Math.ceil(p100 * chW) + this.CELL_PAD_PX + TIGHT_PAD;
+          base = Math.ceil(maxObservedLen * chW) + this.CELL_PAD_PX + TIGHT_PAD;
           break;
         case 'short':
-          base = Math.min(this.SHORT_COL_MAX, Math.ceil(p95 * chW) + this.CELL_PAD_PX);
+          base = identity
+            ? identityPx()
+            : Math.min(this.SHORT_COL_MAX, Math.ceil(p95 * chW) + this.CELL_PAD_PX);
           break;
         case 'blob':
           base = Math.min(this.BLOB_BASE_MAX, Math.ceil(p85 * chW) + this.CELL_PAD_PX);
@@ -1039,7 +1092,9 @@ class GridViewer {
           break;
         case 'text':
         default:
-          base = Math.min(this.MAX_COL_W, Math.ceil(p85 * chW) + this.CELL_PAD_PX);
+          base = identity
+            ? identityPx()
+            : Math.min(this.MAX_COL_W, Math.ceil(p85 * chW) + this.CELL_PAD_PX);
           break;
       }
       // Clamp & floor.
@@ -1053,6 +1108,7 @@ class GridViewer {
 
       meta[c] = {
         kind,
+        role: identity ? 'identity' : '',
         greedy,
         headerPx,
         base,
@@ -1090,7 +1146,8 @@ class GridViewer {
 
     // Two-pass slack allocation:
     //   Pass 1 — leave fixed-shape columns (timestamp/number/id/enum/
-    //            hash/short/user-overridden) alone. Greedy blobs absorb
+    //            hash/user-overridden, plus short when the caller opts out
+    //            of short-column growth) alone. Greedy blobs absorb
     //            ALL leftover slack, split equally between them when
     //            multiple blobs exist.
     //   Pass 2 — if no greedy column exists (typical CSV with short
@@ -1127,6 +1184,7 @@ class GridViewer {
             if (meta[i].userOverride) continue;
             if (k === 'timestamp' || k === 'number' || k === 'id' ||
               k === 'hash' || k === 'enum') continue;
+            if (!this._growShortColumns && k === 'short') continue;
             growable.push(i);
           }
           if (growable.length === 0) {
@@ -1223,6 +1281,10 @@ class GridViewer {
     for (const [k, v] of this._userColWidths) obj[k] = v;
     if (widthPx == null) delete obj[colIdx];
     else obj[colIdx] = widthPx;
+    if (Object.keys(obj).length === 0) {
+      safeStorage.remove(this._colWidthStorageKey());
+      return;
+    }
     safeStorage.setJSON(this._colWidthStorageKey(), obj);
   }
 
@@ -1233,6 +1295,24 @@ class GridViewer {
     this._saveUserColumnWidth(colIdx, null);
     this._recomputeColumnWidths();
     this._applyColumnTemplate();
+  }
+
+  /** Reset every manually-resized column for this grid instance. */
+  _resetAllColumnWidths() {
+    if (!this._userColWidths.size) return;
+    this._userColWidths.clear();
+    safeStorage.remove(this._colWidthStorageKey());
+    this._recomputeColumnWidths();
+    this._applyColumnTemplate();
+  }
+
+  /** Apply caller-supplied width hints (currently Timeline full-column
+   *  stats) and repaint widths without rebuilding the grid DOM. */
+  _setColumnWidthHints(hints) {
+    this._columnWidthHints = Array.isArray(hints) ? hints.slice() : null;
+    this._recomputeColumnWidths();
+    this._applyColumnTemplate();
+    this._forceFullRender();
   }
 
   /** Wire a drag handle onto one header cell. Called from
@@ -2961,6 +3041,13 @@ class GridViewer {
       ));
     }
     pop.appendChild(mkItem('Copy column', () => this._copyColumn(colIdx)));
+    if (this._userColWidths.has(colIdx)) {
+      pop.appendChild(mkItem('Reset column width', () => this._resetColumnWidth(colIdx)));
+    }
+    if (this._userColWidths.size > 1 ||
+        (this._userColWidths.size === 1 && !this._userColWidths.has(colIdx))) {
+      pop.appendChild(mkItem('Reset all column widths', () => this._resetAllColumnWidths()));
+    }
     pop.appendChild(this._popoverSeparator());
     pop.appendChild(mkItem('Hide column', () => this._toggleHideColumn(colIdx), { danger: true }));
     // Escape hatch — if any column is currently hidden, surface the same

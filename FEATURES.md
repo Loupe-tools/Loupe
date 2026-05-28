@@ -219,7 +219,7 @@ ZIP listings additionally surface per-entry risk signals classic archive viewers
 
 ## 📈 Timeline
 
-Every `.csv` / `.tsv` / `.evtx` / `.log` / `.jsonl` / `.ndjson` / `.cef` / `.leef` / `.pcap` / `.pcapng` / `.cap` file — and SQLite browser history databases (Chrome / Edge / Firefox) — opens directly in Timeline: scrubber, stacked-bar chart, virtual grid, and per-column top-value cards on one page. Extensionless drops are routed by magic-byte / text sniff. Generic (non-browser-history) SQLite databases use the tabbed-grid viewer.
+Every `.csv` / `.tsv` / `.evtx` / `.log` / `.jsonl` / `.ndjson` / `.cef` / `.leef` / `.pcap` / `.pcapng` / `.cap` file — and SQLite browser history databases (Chrome / Edge / Firefox) — opens directly in Timeline: scrubber, stacked-bar chart, compact auto-sized virtual grid, and per-column top-value cards on one page. Extensionless drops are routed by magic-byte / text sniff. Generic (non-browser-history) SQLite databases use the tabbed-grid viewer.
 
 `.log` files are dispatched by content sniff. Each format yields a stable column projection so filtering, sorting, and the histogram stack column behave consistently across vendor variants.
 
@@ -285,8 +285,8 @@ Every `.csv` / `.tsv` / `.evtx` / `.log` / `.jsonl` / `.ndjson` / `.cef` / `.lee
 | **Smart whole-token select** | Double-click in any monospace viewer selects the entire non-whitespace token — expanding past `/ . : = - _` and across visual line wraps — up to the nearest whitespace boundary. Great for URLs, hashes, base64 blobs, file paths, registry keys, PE imports, x509 fingerprints. |
 | **Tabular grid (CSV / TSV / EVTX / XLSX / SQLite / JSON-array)** | Fixed-row virtual scroller renders million-row files without stutter. Streaming parse paints the first 1 000 rows immediately and fills the rest in the background with a progress chip. |
 | **Row-details drawer** | Click any row to open a resizable right-hand drawer with per-column key/value view; drawer width persists per-browser and can be dragged almost to the full viewport width for wide EventData payloads. A top-bar search box (or `Ctrl+F` while the drawer is focused) smooth-scrolls and highlights matches within the drawer, with `Enter` / `Shift+Enter` to cycle hits and `Esc` to clear. JSON cells render as a first-class collapsible tree — every node has a ＋ pick button that promotes the leaf (or subtree) to a new virtual column in the grid. |
-| **Column header menu** | Click any column header for Sort asc / desc / clear, Copy column (tab-separated to clipboard), Hide column, **Show hidden columns…** (when any are hidden), and **Top values…** — a mini bar chart of the 50 most frequent values with one-click filter-to-value. **Ctrl+Click** (or ⌘-click) any header is a shortcut for Hide; a `⊘ N hidden` chip in the filter bar lets you re-reveal them one-by-one or all at once. |
-| **Drag-to-reorder columns (Timeline)** | Grab any column header in the Timeline grid and drag it to a new position; a 2 px accent-coloured bar shows the drop slot. The arrangement persists per-file. Sort, hide, top-values, GeoIP / ASN enrichment, and right-click filters all use the original column index, so behaviour stays stable regardless of the visible order. |
+| **Column header menu** | Click any column header for Sort asc / desc / clear, Copy column (tab-separated to clipboard), reset manual width, Hide column, **Show hidden columns…** (when any are hidden), and **Top values…** — a mini bar chart of the 50 most frequent values with one-click filter-to-value. **Ctrl+Click** (or ⌘-click) any header is a shortcut for Hide; a `⊘ N hidden` chip in the filter bar lets you re-reveal them one-by-one or all at once. |
+| **Drag-to-reorder columns (Timeline)** | Grab any column header in the Timeline grid and drag it to a new position; a 2 px accent-coloured bar shows the drop slot. The arrangement and manual widths persist per-file. Sort, hide, top-values, GeoIP / ASN enrichment, and right-click filters all use the original column index, so behaviour stays stable regardless of the visible order. |
 | **Malformed-row ribbon** | CSV / TSV parses flag rows with wrong cell counts or unbalanced quotes; the filter bar shows a ⚠ count chip with Next (jump to next malformed row) and Filter (show only malformed rows) buttons. |
 | **Loading overlay** | Spinner with status message while parsing large files. |
 | **Toast notifications** | Non-intrusive feedback for downloads, clipboard operations, and errors. |
@@ -384,4 +384,3 @@ The size is user-configurable in ⚙ Settings — **Default** (~16 K tokens / 64
 | Any other type | `text` | Other | false |
 
 IOCs with Loupe severity `info` always force `to_ids: false` regardless of type.
-

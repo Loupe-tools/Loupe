@@ -1234,7 +1234,7 @@ class TimelineView {
     // This covers:
     //   - every `loupe_timeline_*` key (per-file + global)
     //   - the embedded GridViewer's saved column widths
-    //     (`loupe_grid_colW_tl-grid-inner_csv-view`)
+    //     (`loupe_grid_colW_tl-grid-inner_*`)
     //   - the shared drawer width (`loupe_grid_drawer_w`)
     safeStorage.removeMatching(k =>
       k.startsWith('loupe_timeline_')
@@ -1760,5 +1760,4 @@ class TimelineView {
   // remain reachable as `this._buildPivot()` etc. via prototype
   // dispatch.
 }
-
 

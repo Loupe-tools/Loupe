@@ -117,6 +117,8 @@ test.describe('Timeline RowStore — generated CSV', () => {
     // ≥ 1 for a non-empty store. Asserting an exact count would
     // make the test viewport-dependent.
     await expect(rows.first()).toBeVisible({ timeout: 5_000 });
+    await expect(ctx.page.locator('.tl-grid .grid-header')).toHaveCSS('height', '28px');
+    await expect(rows.first()).toHaveCSS('height', '24px');
     const count = await rows.count();
     expect(count).toBeGreaterThan(0);
     // Cell content sourced from `store.getCell(rowIdx, colIdx)`:

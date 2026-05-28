@@ -413,6 +413,7 @@ Object.assign(TimelineView.prototype, {
     const span = hi - lo;
     const stats = new Array(span);
     for (let c = 0; c < span; c++) stats[c] = new Map();
+    const maxLens = new Array(span).fill(0);
     const total = idx.length;
 
     // P3-H: extracted-only fast path. When the requested range lies
@@ -444,6 +445,7 @@ Object.assign(TimelineView.prototype, {
           const arr = colArrays[c];
           const raw = arr ? arr[di] : null;
           const v = raw == null ? '' : (typeof raw === 'string' ? raw : String(raw));
+          if (v.length > maxLens[c]) maxLens[c] = v.length;
           stats[c].set(v, (stats[c].get(v) || 0) + 1);
         }
       }
@@ -455,6 +457,8 @@ Object.assign(TimelineView.prototype, {
         const di = idx[i];
         for (let c = lo; c < hi; c++) {
           const v = this._cellAt(di, c);
+          const rel = c - lo;
+          if (v.length > maxLens[rel]) maxLens[rel] = v.length;
           stats[c - lo].set(v, (stats[c - lo].get(v) || 0) + 1);
         }
       }
@@ -474,7 +478,7 @@ Object.assign(TimelineView.prototype, {
       // when the column re-appears non-unique under a different filter
       // / file.
       if (distinct === total && total > 0) {
-        out[c] = { total, distinct, values: [], allUnique: true };
+        out[c] = { total, distinct, values: [], allUnique: true, maxLen: maxLens[c] };
         continue;
       }
       const arr = Array.from(m.entries());
@@ -483,7 +487,7 @@ Object.assign(TimelineView.prototype, {
       // list (sizer + start..end window). The Excel filter menu has
       // its own `_distinctValuesFor(colIdx, …, 200)` cap and is
       // unaffected.
-      out[c] = { total, distinct, values: arr };
+      out[c] = { total, distinct, values: arr, maxLen: maxLens[c] };
     }
     return out;
   },
@@ -514,6 +518,7 @@ Object.assign(TimelineView.prototype, {
     const span = toCol - fromCol;
     const stats = new Array(span);
     for (let c = 0; c < span; c++) stats[c] = new Map();
+    const maxLens = new Array(span).fill(0);
     const total = idx.length;
     const self = this;
 
@@ -583,6 +588,7 @@ Object.assign(TimelineView.prototype, {
               const arr = colArrays[c];
               const raw = arr ? arr[di] : null;
               const v = raw == null ? '' : (typeof raw === 'string' ? raw : String(raw));
+              if (v.length > maxLens[c]) maxLens[c] = v.length;
               const m = stats[c];
               m.set(v, (m.get(v) || 0) + 1);
             }
@@ -591,12 +597,16 @@ Object.assign(TimelineView.prototype, {
             ds.rowInto(di, rowScratch);
             for (let c = fromCol; c < toCol; c++) {
               const v = rowScratch[c];
+              const rel = c - fromCol;
+              if (v.length > maxLens[rel]) maxLens[rel] = v.length;
               const m = stats[c - fromCol];
               m.set(v, (m.get(v) || 0) + 1);
             }
           } else {
             for (let c = fromCol; c < toCol; c++) {
               const v = self._cellAt(di, c);
+              const rel = c - fromCol;
+              if (v.length > maxLens[rel]) maxLens[rel] = v.length;
               const m = stats[c - fromCol];
               m.set(v, (m.get(v) || 0) + 1);
             }
@@ -618,13 +628,13 @@ Object.assign(TimelineView.prototype, {
         // offenders (timestamp / event_record_id / sequence_no) and
         // signals `_paintColumnCards` to suppress the card.
         if (distinct === total && total > 0) {
-          out[c] = { total, distinct, values: [], allUnique: true };
+          out[c] = { total, distinct, values: [], allUnique: true, maxLen: maxLens[c] };
           continue;
         }
         const arr = Array.from(m.entries());
         arr.sort((a, b) => b[1] - a[1]);
         // Uncapped — Top-Values card row list is windowed-virtualised.
-        out[c] = { total, distinct, values: arr };
+        out[c] = { total, distinct, values: arr, maxLen: maxLens[c] };
       }
       return out;
     })();

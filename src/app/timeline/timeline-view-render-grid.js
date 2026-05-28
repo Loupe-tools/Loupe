@@ -366,6 +366,15 @@ Object.assign(TimelineView.prototype, {
         columns: this.columns,
         store: rowView,
         className: 'tl-grid-inner csv-view',
+        gridKey: 'tl-grid-inner_' + this._fileKey,
+        density: 'compact',
+        columnSizing: {
+          maxTextColW: 420,
+          maxIdentityColW: 480,
+          fixedExtraPx: 0,
+          growShortColumns: false,
+          widthHints: this._gridWidthHintsFromStats(),
+        },
         hideFilterBar: true,
         infoText: '',
         timeColumn: -1,
@@ -634,7 +643,31 @@ Object.assign(TimelineView.prototype, {
 
   // ── Column top-values cards ──────────────────────────────────────────────
   _renderColumns() {
+    this._applyGridWidthHints();
     this._paintColumnCards(this._els.cols, this._colStats, 'main');
+  },
+
+  _gridWidthHintsFromStats() {
+    if (!this._colStats || !this._colStats.length) return null;
+    const hints = new Array(this.columns.length);
+    let any = false;
+    for (let c = 0; c < hints.length; c++) {
+      const s = this._colStats[c];
+      if (!s || !Number.isFinite(Number(s.maxLen))) continue;
+      hints[c] = { maxLen: Math.max(0, Number(s.maxLen)) };
+      any = true;
+    }
+    return any ? hints : null;
+  },
+
+  _applyGridWidthHints() {
+    if (!this._grid || typeof this._grid._setColumnWidthHints !== 'function') return;
+    const hints = this._gridWidthHintsFromStats();
+    if (!hints) return;
+    const sig = hints.map(h => h ? h.maxLen : '').join('|');
+    if (sig === this._gridWidthHintSig) return;
+    this._gridWidthHintSig = sig;
+    this._grid._setColumnWidthHints(hints);
   },
 
   // ── Detections (EVTX-only) ───────────────────────────────────────────────
