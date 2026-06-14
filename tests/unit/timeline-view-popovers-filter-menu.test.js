@@ -100,11 +100,34 @@ test('filter menu renders All / None batch toggles + 📋 Copy', () => {
   assert.match(body, /data-act="copyvals"/, 'expected Copy-values button (`data-act="copyvals"`)');
 });
 
-test('filter menu renders the column-action buttons (stack / extract / autopivot)', () => {
+test('filter menu renders the column-action buttons via the shared descriptors', () => {
   const body = sliceFilterMenuBody();
-  assert.match(body, /data-act="stackcol"/, 'expected Stack chart button');
-  assert.match(body, /data-act="extract"/, 'expected ƒx Extract values button');
-  assert.match(body, /data-act="autopivot"/, 'expected Auto-pivot button');
+  // The whole-column actions (Use as Timestamp / Stack / Extract /
+  // Auto-pivot / Enrich IP / Remove extracted) are no longer hand-
+  // written as literal `data-act` buttons — both this menu and the
+  // slim card menu now build them from the single source of truth
+  // `_buildColumnActionItems`, rendered into `actionsHtml`. Pin that
+  // wiring so a refactor that drops the shared helper is caught.
+  assert.match(body, /_buildColumnActionItems\s*\(\s*colIdx\s*\)/,
+    'expected `_buildColumnActionItems(colIdx)` shared-descriptor call');
+  assert.match(body, /actionsHtml/, 'expected the rendered `actionsHtml` button block');
+  assert.match(body, /data-act="\$\{_tlEsc\(a\.id\)\}"/,
+    'expected per-action `data-act="${_tlEsc(a.id)}"` buttons generated from the descriptors');
+});
+
+test('_buildColumnActionItems defines the canonical action set (stack / extract / autopivot)', () => {
+  // The shared descriptor builder is the single source of truth for
+  // which whole-column actions exist + what each does. Pin the always-
+  // present action ids so a refactor that renames / drops one lights up.
+  const m = POPOVERS.match(/_buildColumnActionItems\s*\(\s*colIdx\s*\)\s*\{[\s\S]*?\n  \},\n/);
+  assert.ok(m, 'failed to slice the body of `_buildColumnActionItems`');
+  const body = m[0];
+  assert.match(body, /id:\s*'stackcol'/, "expected a 'stackcol' action descriptor");
+  assert.match(body, /id:\s*'extract'/, "expected an 'extract' action descriptor");
+  assert.match(body, /id:\s*'autopivot'/, "expected an 'autopivot' action descriptor");
+  assert.match(body, /id:\s*'timecol'/, "expected a conditional 'timecol' action descriptor");
+  assert.match(body, /id:\s*'geoip'/, "expected a conditional 'geoip' action descriptor");
+  assert.match(body, /id:\s*'removeExtract'/, "expected a conditional 'removeExtract' action descriptor");
 });
 
 test('filter menu uses the .tl-colmenu CSS class (Excel-style styling)', () => {

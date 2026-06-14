@@ -191,9 +191,13 @@ function buildCompositeSchema(sources) {
   // surface in the grid, never clutter the column picker.
   //
   // Single-source views (n=1) SKIP the cull — their canonical columns
-  // are instead hidden by default via `_gridColOrder` so a subsequent
-  // merge that adds a source capable of populating a canonical
-  // brings it back cleanly without needing schema surgery.
+  // are instead hidden by default at grid-mount time by
+  // `_seedHiddenColumns` (which hides every canonical except the active
+  // time/stack column for an n=1 composite). Keeping them in the schema
+  // means a subsequent merge that adds a source capable of populating a
+  // canonical brings it back cleanly without schema surgery; the
+  // analyst can also unhide one via the right-click header menu, and
+  // that choice persists.
   //
   // Sample size (50 rows) is bounded so this is O(sources × 50 × 9)
   // ≈ O(thousands of ops) regardless of total row count. False-negative
@@ -235,7 +239,8 @@ function buildCompositeSchema(sources) {
       if (populated) culledCanonicalCols.push(name);
     }
   } else {
-    // n=1: keep all canonicals (default-hide handled elsewhere).
+    // n=1: keep all canonicals (default-hidden at mount by
+    // `_seedHiddenColumns`, not culled, so a later merge can revive them).
     for (let i = 0; i < canonicalCols.length; i++) {
       culledCanonicalCols.push(canonicalCols[i]);
     }

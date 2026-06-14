@@ -312,6 +312,13 @@ class TimelineView {
     // `GridViewer._setColumnOrder` on grid mount + after every
     // `_updateColumns` call so it survives auto-extract.
     this._gridColOrder = TimelineView._loadGridColOrderFor(this._fileKey);
+    // Array of column NAMES the analyst has hidden, persisted per-file
+    // (was session-only `GridViewer._hiddenCols`). Seeded into the grid
+    // after mount via `setInitialHiddenColumns` (resolving names → live
+    // real indices) and re-saved by the `onHiddenColumnsChange` hook on
+    // every hide / unhide. Names that no longer exist on reopen are
+    // dropped during the name→index resolve.
+    this._hiddenColNames = TimelineView._loadHiddenColsFor(this._fileKey);
     // Entities-section parity with Top values: pinned types + drag-reorder
     // saved per-file under their own keys so they don't collide with
     // `pinnedCols` / `cardOrder` (which key on column names — entity cards
@@ -1272,6 +1279,7 @@ class TimelineView {
     this._cardOrder = null;
     this._pinnedCols = [];
     this._gridColOrder = null;
+    this._hiddenColNames = [];
     this._pendingCtrlSelect = null;
     if (this._root && this._root.style) {
       this._root.style.setProperty('--tl-grid-h', TIMELINE_GRID_DEFAULT_H + 'px');

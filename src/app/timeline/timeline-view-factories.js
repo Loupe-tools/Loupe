@@ -712,9 +712,10 @@ Object.assign(TimelineView, {
   // `TimelineView.fromSources(sources)` builds a composite timeline view
   // from ≥1 `SourceRecord`s (see `timeline-sources.js`).  For n=1, the
   // composite schema degenerates to "canonical columns + the single
-  // source's native columns" — canonical columns are hidden by default
-  // in the grid (the chip-bar mixin gates visibility on n≥2) so the
-  // single-file UX is unchanged.
+  // source's native columns" — the canonical columns are hidden by
+  // default at grid-mount time by `_seedHiddenColumns` (the chip-bar
+  // mixin also gates its own visibility on n≥2) so the single-file UX
+  // is unchanged from a fresh single-file drop.
   //
   // Throws:
   //   `MIXED_TIME_DOMAIN` — one source is numeric-axis, another

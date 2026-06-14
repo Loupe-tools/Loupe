@@ -276,6 +276,121 @@ Object.assign(TimelineView.prototype, {
     }
     this._openPopover = null;
   },
+
+  // ── Shared column-action descriptors ─────────────────────────────────────
+  //
+  // SINGLE SOURCE OF TRUTH for the whole-column actions offered by BOTH
+  // the slim card `⋮` menu (`_openColumnMenu`) and the Excel-style grid-
+  // header filter menu (`_openColumnFilterMenu`). The two menus stay
+  // structurally separate (a shared *implementation* regressed the grid
+  // in `f0dd560`), but the action SET + each action's behaviour + the
+  // show/hide conditions used to be hand-duplicated across both, kept in
+  // sync by comment alone — a known footgun. This helper centralises the
+  // descriptors so adding / changing a column action touches one place.
+  //
+  // Returns an array of `{ id, label, title?, danger?, run() }`. `run`
+  // performs the action but does NOT close the popover — each menu owns
+  // its own close timing (the slim menu closes after `run`; the filter
+  // menu closes before opening a dialog). Conditional actions
+  // (`timecol`, `geoip`, `removeExtract`) are simply absent from the
+  // array when not applicable, so callers iterate without re-checking.
+  _buildColumnActionItems(colIdx) {
+    const items = [];
+
+    // "Use as Timestamp" — only when the column parses as time / bare
+    // numbers AND it isn't already the time column (setting it again is
+    // a no-op). Reuses `_columnLooksLikeTimestamp` (the same scorer
+    // `_tlAutoDetectTimestampCol` uses).
+    if (this._columnLooksLikeTimestamp(colIdx) && colIdx !== this._timeCol) {
+      items.push({
+        id: 'timecol',
+        label: '🕒 Use as Timestamp',
+        run: () => {
+          this._timeCol = colIdx;
+          if (this._els && this._els.timeColSelect) this._els.timeColSelect.value = String(colIdx);
+          this._parseAllTimestamps();
+          this._dataRange = this._computeDataRange();
+          this._window = null;
+          this._recomputeFilter();
+          this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips']);
+        },
+      });
+    }
+
+    items.push({
+      id: 'stackcol',
+      label: '📊 Stack chart by this',
+      run: () => {
+        this._stackCol = colIdx;
+        this._buildStableStackColorMap();
+        if (this._els && this._els.stackColSelect) this._els.stackColSelect.value = String(colIdx);
+        this._scheduleRender(['chart', 'grid', 'columns']);
+      },
+    });
+
+    items.push({
+      id: 'extract',
+      label: 'ƒx Extract values',
+      run: () => this._openExtractionDialog(colIdx, 'manual'),
+    });
+
+    items.push({
+      id: 'autopivot',
+      label: '🧮 Auto pivot on this column',
+      run: () => this._autoPivotFromColumn(colIdx),
+    });
+
+    // "🌍 Enrich IP" — only when the column is ≥80% IPv4-shaped over a
+    // 30-cell sample AND a provider (geo or ASN) is wired, and never on
+    // an enrichment-OUTPUT column.
+    if (this._columnLooksEnrichable(colIdx)) {
+      items.push({
+        id: 'geoip',
+        label: '🌍 Enrich IP',
+        title: 'Force enrichment for this column — emits geo and/or ASN columns from the configured providers',
+        run: () => {
+          if (typeof this._runGeoipEnrichment === 'function') {
+            this._runGeoipEnrichment({ forceCol: colIdx });
+          }
+        },
+      });
+    }
+
+    if (this._isExtractedCol(colIdx)) {
+      items.push({
+        id: 'removeExtract',
+        label: '✕ Remove extracted column',
+        danger: true,
+        run: () => this._removeExtractedCol(colIdx),
+      });
+    }
+
+    return items;
+  },
+
+  // Shared predicate for the "🌍 Enrich IP" action's visibility. Was
+  // inlined identically in both column menus; centralised alongside
+  // `_buildColumnActionItems`. Walks up to 30 sampled cells via
+  // `_cellAt` so it works on base + auto-extracted IP columns, matches
+  // the 80% IPv4 bar `_detectIpColumns` uses (≥4 non-empty in the small
+  // sample), and suppresses on enrichment-output columns.
+  _columnLooksEnrichable(colIdx) {
+    if (!(this._app && (this._app.geoip || this._app.geoipAsn))) return false;
+    const ext = this._isExtractedCol(colIdx) ? this._extractedColFor(colIdx) : null;
+    if (ext && (ext.kind === 'geoip' || ext.kind === 'geoip-asn')) return false;
+    const sample = Math.min(this.store.rowCount, 30);
+    let nonEmpty = 0;
+    let hits = 0;
+    // /* safeRegex: bounded literal IPv4 pattern */
+    const ipRe = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+    for (let r = 0; r < sample; r++) {
+      const v = this._cellAt(r, colIdx);
+      if (!v) continue;
+      nonEmpty++;
+      if (ipRe.test(v)) hits++;
+    }
+    return nonEmpty >= 4 && (hits / nonEmpty) >= 0.8;
+  },
   // ── Column actions menu ──────────────────────────────────────────────────
   //
   // Slim per-column dropdown anchored on the `⋮` button in each Top-Values
@@ -311,100 +426,20 @@ Object.assign(TimelineView.prototype, {
     menu.className = 'tl-popover tl-rowmenu';
     const name = this.columns[colIdx] || `(col ${colIdx + 1})`;
 
-    // Only offer "Use as Timestamp" when the column's values actually parse
-    // as timestamps (or bare numbers suitable for a numeric axis). Reuses the
-    // scorers already used by `_tlAutoDetectTimestampCol`. Extracted columns
-    // are sampled via `_cellAt` since their values live in `_extractedCols`.
-    // The button is also hidden for the column that's already the current
-    // timestamp — setting it a second time is a no-op.
-    const showTimeBtn = this._columnLooksLikeTimestamp(colIdx)
-      && colIdx !== this._timeCol;
-
-    // Show the "🌍 Enrich IP" entry only when the column actually
-    // contains IPv4 addresses AND at least one provider (geo or ASN) is
-    // wired. Walks up to 30 sampled cells via `_cellAt` so it works on
-    // both base and extracted (auto-extracted IP) columns. Hidden on
-    // enrichment-output columns themselves (`<src>.geo` / `<src>.asn`).
-    // The IPv4 shape check matches `isStrictIPv4` in
-    // `timeline-view-geoip.js` (intentionally inlined here).
-    let showGeoipBtn = false;
-    if (this._app && (this._app.geoip || this._app.geoipAsn)) {
-      const ext = this._isExtractedCol(colIdx) ? this._extractedColFor(colIdx) : null;
-      // Suppress on enrichment-output columns (`kind: 'geoip' | 'geoip-asn'`).
-      if (!(ext && (ext.kind === 'geoip' || ext.kind === 'geoip-asn'))) {
-        const sample = Math.min(this.store.rowCount, 30);
-        let nonEmpty = 0;
-        let hits = 0;
-        const ipRe = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/; // safe: bounded literal, ANN-OK
-        for (let r = 0; r < sample; r++) {
-          const v = this._cellAt(r, colIdx);
-          if (!v) continue;
-          nonEmpty++;
-          if (ipRe.test(v)) hits++;
-        }
-        // Same 80 % bar `_detectIpColumns` uses; needs ≥ 4 non-empty cells
-        // in the small popover sample (lower than the detection-pass bar
-        // of 8 because the analyst already eyeballed the column).
-        showGeoipBtn = nonEmpty >= 4 && (hits / nonEmpty) >= 0.8;
-      }
-    }
-
-    // Build the action list. Mirrors the right-click row context menu
-    // shape (`{ sep: true }` separators + plain `{ label, act }` items).
+    // Build the action list from the shared descriptors (single source
+    // of truth — see `_buildColumnActionItems`). Render them with the
+    // same primitives as the right-click row context menu so the two
+    // surfaces look like cousins. A separator goes after the "Stack
+    // chart by this" entry (the time/stack grouping) and before the
+    // "Remove extracted column" danger entry.
+    const actions = this._buildColumnActionItems(colIdx);
     const items = [];
-    // Header label — read-only, shows which column the menu targets.
     items.push({ labelOnly: true, label: name });
     items.push({ sep: true });
-    if (showTimeBtn) {
-      items.push({
-        label: '🕒 Use as Timestamp',
-        act: () => {
-          this._timeCol = colIdx;
-          this._els.timeColSelect.value = String(colIdx);
-          this._parseAllTimestamps();
-          this._dataRange = this._computeDataRange();
-          this._window = null;
-          this._recomputeFilter();
-          this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips']);
-        },
-      });
-    }
-    items.push({
-      label: '📊 Stack chart by this',
-      act: () => {
-        this._stackCol = colIdx;
-        this._buildStableStackColorMap();
-        this._els.stackColSelect.value = String(colIdx);
-        this._scheduleRender(['chart', 'grid', 'columns']);
-      },
-    });
-    items.push({ sep: true });
-    items.push({
-      label: 'ƒx Extract values',
-      act: () => this._openExtractionDialog(colIdx, 'manual'),
-    });
-    items.push({
-      label: '🧮 Auto pivot on this column',
-      act: () => this._autoPivotFromColumn(colIdx),
-    });
-    if (showGeoipBtn) {
-      items.push({
-        label: '🌍 Enrich IP',
-        title: 'Force enrichment for this column — emits geo and/or ASN columns from the configured providers',
-        act: () => {
-          if (typeof this._runGeoipEnrichment === 'function') {
-            this._runGeoipEnrichment({ forceCol: colIdx });
-          }
-        },
-      });
-    }
-    if (this._isExtractedCol(colIdx)) {
-      items.push({ sep: true });
-      items.push({
-        label: '✕ Remove extracted column',
-        danger: true,
-        act: () => this._removeExtractedCol(colIdx),
-      });
+    for (let i = 0; i < actions.length; i++) {
+      const a = actions[i];
+      if (a.id === 'extract' || a.id === 'removeExtract') items.push({ sep: true });
+      items.push({ label: a.label, title: a.title, danger: a.danger, act: a.run });
     }
 
     // Render. Same primitives as the right-click row context menu so the
@@ -508,43 +543,14 @@ Object.assign(TimelineView.prototype, {
       ne: Array.from(neSet).sort(),
     });
 
-    // Only offer "Use as Timestamp" when the column's values actually parse
-    // as timestamps (or bare numbers suitable for a numeric axis). Reuses the
-    // scorers already used by `_tlAutoDetectTimestampCol`. Extracted columns
-    // are sampled via `_cellAt` since their values live in `_extractedCols`.
-    // The button is also hidden for the column that's already the current
-    // timestamp — setting it a second time is a no-op.
-    const showTimeBtn = this._columnLooksLikeTimestamp(colIdx)
-      && colIdx !== this._timeCol;
-
-    // Show the "🌍 Enrich IP" entry only when the column actually
-    // contains IPv4 addresses AND at least one provider (geo or ASN) is
-    // wired. Walks up to 30 sampled cells via `_cellAt` so it works on
-    // both base and extracted (auto-extracted IP) columns. Hidden on
-    // enrichment-output columns themselves (`<src>.geo` / `<src>.asn`).
-    // The IPv4 shape check matches `isStrictIPv4` in
-    // `timeline-view-geoip.js` (intentionally inlined here).
-    let showGeoipBtn = false;
-    if (this._app && (this._app.geoip || this._app.geoipAsn)) {
-      const ext = this._isExtractedCol(colIdx) ? this._extractedColFor(colIdx) : null;
-      // Suppress on enrichment-output columns (`kind: 'geoip' | 'geoip-asn'`).
-      if (!(ext && (ext.kind === 'geoip' || ext.kind === 'geoip-asn'))) {
-        const sample = Math.min(this.store.rowCount, 30);
-        let nonEmpty = 0;
-        let hits = 0;
-        const ipRe = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/; // safe: bounded literal, ANN-OK
-        for (let r = 0; r < sample; r++) {
-          const v = this._cellAt(r, colIdx);
-          if (!v) continue;
-          nonEmpty++;
-          if (ipRe.test(v)) hits++;
-        }
-        // Same 80 % bar `_detectIpColumns` uses; needs ≥ 4 non-empty cells
-        // in the small popover sample (lower than the detection-pass bar
-        // of 8 because the analyst already eyeballed the column).
-        showGeoipBtn = nonEmpty >= 4 && (hits / nonEmpty) >= 0.8;
-      }
-    }
+    // Whole-column actions — shared with the slim card menu via
+    // `_buildColumnActionItems` (single source of truth for which
+    // actions show + what each does). Rendered as `data-act="<id>"`
+    // buttons in the "Column actions" section and wired below by id.
+    const actionItems = this._buildColumnActionItems(colIdx);
+    const actionsHtml = actionItems.map(a =>
+      `<button class="tl-tb-btn${a.danger ? ' tl-tb-btn-danger' : ''}" data-act="${_tlEsc(a.id)}"${a.title ? ` title="${_tlEsc(a.title)}"` : ''}>${_tlEsc(a.label)}</button>`
+    ).join('');
 
     menu.innerHTML = `
       <div class="tl-colmenu-head">
@@ -573,14 +579,7 @@ Object.assign(TimelineView.prototype, {
       </div>
       <div class="tl-colmenu-section tl-colmenu-actions">
         <label class="tl-colmenu-label">Column actions</label>
-        ${showTimeBtn ? '<button class="tl-tb-btn" data-act="timecol">🕒 Use as Timestamp</button>' : ''}
-        <button class="tl-tb-btn" data-act="stackcol">📊 Stack chart by this</button>
-        <button class="tl-tb-btn" data-act="extract">ƒx Extract values</button>
-        <button class="tl-tb-btn" data-act="autopivot">🧮 Auto pivot on this column</button>
-        ${showGeoipBtn
-          ? '<button class="tl-tb-btn" data-act="geoip" title="Force enrichment for this column — emits geo and/or ASN columns from the configured providers">🌍 Enrich IP</button>'
-          : ''}
-        ${this._isExtractedCol(colIdx) ? '<button class="tl-tb-btn tl-tb-btn-danger" data-act="removeExtract">✕ Remove extracted column</button>' : ''}
+        ${actionsHtml}
       </div>
       <div class="tl-colmenu-foot">
         <button class="tl-tb-btn" data-act="reset">Reset filters</button>
@@ -759,56 +758,21 @@ Object.assign(TimelineView.prototype, {
       updateSelState();
       updateApplyEnabled();
     });
-    // The `Use as Timestamp` button is conditional (see `showTimeBtn`
-    // above — hidden when the column doesn't parse as timestamps / numbers,
-    // and on the already-selected timestamp column). Null-guard the wire
-    // up; without this, if the button isn't rendered the following
-    // `querySelector(...).addEventListener` throws mid-handler and kills
-    // every subsequent listener wire-up in this menu — including the
-    // value-search <input>, which is how the user most often discovers it.
-    const timeColBtn = menu.querySelector('[data-act="timecol"]');
-    if (timeColBtn) timeColBtn.addEventListener('click', () => {
-      this._timeCol = colIdx;
-      this._els.timeColSelect.value = String(colIdx);
-      this._parseAllTimestamps();
-      this._dataRange = this._computeDataRange();
-      this._window = null;
-      this._recomputeFilter();
-      this._scheduleRender(['chart', 'scrubber', 'grid', 'columns', 'chips']);
-      this._closePopover();
-    });
-    menu.querySelector('[data-act="stackcol"]').addEventListener('click', () => {
-      this._stackCol = colIdx;
-      this._buildStableStackColorMap();
-      this._els.stackColSelect.value = String(colIdx);
-      this._scheduleRender(['chart', 'grid', 'columns']);
-      this._closePopover();
-    });
-    menu.querySelector('[data-act="extract"]').addEventListener('click', () => {
-      this._closePopover();
-      this._openExtractionDialog(colIdx, 'manual');
-    });
-    menu.querySelector('[data-act="autopivot"]').addEventListener('click', () => {
-      this._closePopover();
-      this._autoPivotFromColumn(colIdx);
-    });
-    const removeExtractBtn = menu.querySelector('[data-act="removeExtract"]');
-    if (removeExtractBtn) removeExtractBtn.addEventListener('click', () => {
-      this._removeExtractedCol(colIdx);
-      this._closePopover();
-    });
-    // 🌍 Enrich IP — bypass the IPv4-detection threshold AND the skip
-    // heuristic for this specific column. Fires every wired provider
-    // (`this._app.geoip` and/or `this._app.geoipAsn`); the mixin's
-    // per-source-col + per-kind dedup means a click on an already-
-    // enriched column is a no-op.
-    const geoipBtn = menu.querySelector('[data-act="geoip"]');
-    if (geoipBtn) geoipBtn.addEventListener('click', () => {
-      this._closePopover();
-      if (typeof this._runGeoipEnrichment === 'function') {
-        this._runGeoipEnrichment({ forceCol: colIdx });
-      }
-    });
+    // Wire the whole-column action buttons from the shared descriptors.
+    // Each button carries `data-act="<id>"`; conditional actions
+    // (`timecol`, `geoip`, `removeExtract`) are simply absent from
+    // `actionItems` when not applicable, so we never query for a button
+    // that wasn't rendered. The filter menu closes BEFORE running each
+    // action (so an action that opens a dialog — Extract — doesn't fight
+    // the popover-close), which matches the prior per-handler behaviour.
+    for (const a of actionItems) {
+      const btn = menu.querySelector(`[data-act="${a.id}"]`);
+      if (!btn) continue;
+      btn.addEventListener('click', () => {
+        this._closePopover();
+        try { a.run(); } catch (_) { /* action errors must not break the menu */ }
+      });
+    }
     menu.querySelector('[data-act="reset"]').addEventListener('click', () => {
       // Strip every top-level clause targeting this column from the
       // query AST. Sus marks aren't query-bar clauses, so they're

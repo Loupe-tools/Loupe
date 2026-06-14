@@ -95,6 +95,30 @@ Object.assign(TimelineView, {
     else delete all[fileKey];
     safeStorage.setJSON(TIMELINE_KEYS.GRID_COL_ORDER, all);
   },
+  // Per-file HIDDEN columns — same shape as GRID_COL_ORDER (per-file
+  // map of column-name arrays). Returned `[]` ⇒ nothing hidden. Stored
+  // as names so an extracted column whose real index shifts after the
+  // auto-extract pass still re-hides by name on reopen.
+  _loadHiddenColsFor(fileKey) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.HIDDEN_COLS, null);
+    const arr = all && all[fileKey];
+    return Array.isArray(arr) ? arr : [];
+  },
+  _saveHiddenColsFor(fileKey, names) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.HIDDEN_COLS, {}) || {};
+    if (names && names.length) all[fileKey] = names;
+    else delete all[fileKey];
+    safeStorage.setJSON(TIMELINE_KEYS.HIDDEN_COLS, all);
+  },
+  // True iff a HIDDEN_COLS entry exists for `fileKey` (even an empty
+  // array written by an explicit unhide-all). Distinguishes "never
+  // touched" from "deliberately empty" so the single-source canonical
+  // default-hide only applies on the FIRST mount and the analyst's
+  // later unhide of a canonical column survives reload.
+  _hasHiddenColsEntryFor(fileKey) {
+    const all = safeStorage.getJSON(TIMELINE_KEYS.HIDDEN_COLS, null);
+    return !!(all && Object.prototype.hasOwnProperty.call(all, fileKey));
+  },
   _loadPinnedColsFor(fileKey) {
     const all = safeStorage.getJSON(TIMELINE_KEYS.PINNED_COLS, null);
     const arr = all && all[fileKey];

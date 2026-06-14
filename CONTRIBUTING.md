@@ -890,6 +890,7 @@ the documented values.
 | `loupe_timeline_card_widths` | edge resize on `.tl-col-card` / `.tl-entity-group` | `{"<fileKey>": {"<key>": {span: N}, …}}`. fileKey = `name\|size\|lastModified`. |
 | `loupe_timeline_card_order` | drag card headers | `{"<fileKey>": ["colName", …]}`. |
 | `loupe_timeline_grid_col_order` | drag a Timeline grid header | `{"<fileKey>": ["colName", …]}`. Stored by NAME so extracted columns survive reload at different real index. Applied via `_applyGridColOrder` on mount + after `_updateColumns`. |
+| `loupe_timeline_hidden_cols` | Ctrl+Click a column / right-click header → Hide | `{"<fileKey>": ["colName", …]}`. Stored by NAME (like `grid_col_order`). Replayed on mount via `_seedHiddenColumns` → `GridViewer.setInitialHiddenColumns`; re-saved by the `onHiddenColumnsChange` hook on every hide/unhide. A present-but-empty entry means "deliberately nothing hidden" — used to suppress the single-source (n=1) canonical-column default-hide after the analyst unhides one. |
 | `loupe_timeline_pinned_cols` | 📌 pin | `{"<fileKey>": [...]}` — pinned cards sort top-left. |
 | `loupe_timeline_entity_pinned` | 📌 on Entities | `{"<fileKey>": ["entity:<IOC_TYPE>", …]}`. |
 | `loupe_timeline_entity_order` | drag-reorder Entities | `{"<fileKey>": ["entity:<IOC_TYPE>", …]}`. |

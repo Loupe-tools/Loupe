@@ -173,6 +173,13 @@ class GridViewer {
     // resize — every code path that calls `_buildHeaderCells`). Pure
     // decoration — does not affect click-handlers or layout.
     this._headerClassFn = typeof opts.headerClass === 'function' ? opts.headerClass : null;
+    // Optional caller-supplied per-header tooltip. Receives
+    // `(colIdx, colName)` and returns a string to PREPEND to the
+    // built-in "click for filter · …" affordance hint, or a falsy value
+    // to keep just the default. Used by the merged Timeline to explain
+    // the `__source` bookkeeping column and `<source>·<col>` namespaced
+    // columns, which otherwise appear with no context.
+    this._headerTitleFn = typeof opts.headerTitle === 'function' ? opts.headerTitle : null;
 
     // Timeline layout. Opt-in per-caller:
     //   timeColumn       : number|null     — index of the timestamp column.
@@ -238,6 +245,16 @@ class GridViewer {
     // is rehydrated by the host via `_setColumnOrder(...)` on mount.
     //   onColumnReorder(realIndicesInDisplayOrder)
     this._onColumnReorder = typeof opts.onColumnReorder === 'function' ? opts.onColumnReorder : null;
+
+    // Optional callback fired whenever `_hiddenCols` changes (hide /
+    // unhide / unhide-all). Receives the live `_hiddenCols` real-index
+    // array. Timeline Mode wires this to persist hidden columns by NAME
+    // per-file so a hidden column stays hidden across reload — width /
+    // order / pin already persist, and hide used to be the odd one out
+    // (session-only), which surprised analysts.
+    //   onHiddenColumnsChange(realIndicesHidden)
+    this._onHiddenColumnsChange = typeof opts.onHiddenColumnsChange === 'function'
+      ? opts.onHiddenColumnsChange : null;
 
     // ── Column display-order layer ────────────────────────────────────────
     //
@@ -785,9 +802,17 @@ class GridViewer {
       chev.setAttribute('aria-hidden', 'true');
       cell.appendChild(chev);
 
-      cell.title = this._onHeaderClick
+      const baseTitle = this._onHeaderClick
         ? name + ' — click for filter · right-click for sort/hide · Ctrl+Click to hide'
         : name + ' — click for column menu · Ctrl+Click to hide';
+      let prefix = '';
+      if (this._headerTitleFn) {
+        try {
+          const t = this._headerTitleFn(i, name);
+          if (t) prefix = String(t) + '\n';
+        } catch (_) { /* decorative — never break header render */ }
+      }
+      cell.title = prefix + baseTitle;
       cell.addEventListener('click', (e) => {
         e.stopPropagation();
         // Ctrl/Cmd+Click on a header → quick-hide. Same as picking
@@ -3390,6 +3415,7 @@ class GridViewer {
     this._applyColumnTemplate();
     this._forceFullRender();
     this._updateHiddenChipUI();
+    this._notifyHiddenColumnsChange();
     // If the drawer is open the pane shows every column as a key/value
     // row — refresh it so hidden columns disappear from the drawer too.
     if (this.state.drawer.open) this._renderDrawerBody(this.state.drawer.dataIdx);
@@ -3403,6 +3429,7 @@ class GridViewer {
     this._applyColumnTemplate();
     this._forceFullRender();
     this._updateHiddenChipUI();
+    this._notifyHiddenColumnsChange();
     if (this.state.drawer.open) this._renderDrawerBody(this.state.drawer.dataIdx);
   }
 
@@ -3412,6 +3439,37 @@ class GridViewer {
   _unhideAllColumns() {
     if (!this._hiddenCols.size) return;
     this._hiddenCols.clear();
+    this._buildHeaderCells();
+    this._applyColumnTemplate();
+    this._forceFullRender();
+    this._updateHiddenChipUI();
+    this._notifyHiddenColumnsChange();
+    if (this.state.drawer.open) this._renderDrawerBody(this.state.drawer.dataIdx);
+  }
+
+  /** Fire the `onHiddenColumnsChange` callback (if wired) with the live
+   *  hidden real-index list. Pure notification — never mutates state. */
+  _notifyHiddenColumnsChange() {
+    if (!this._onHiddenColumnsChange) return;
+    try { this._onHiddenColumnsChange(Array.from(this._hiddenCols)); }
+    catch (_) { /* host persistence error must not break the grid */ }
+  }
+
+  /** Seed `_hiddenCols` from a real-index array WITHOUT firing the
+   *  change callback (avoids a persist→replay loop on mount). Drops
+   *  indices that are out of range or would hide every column. Called
+   *  once by Timeline Mode after mount to replay persisted hidden
+   *  columns. */
+  setInitialHiddenColumns(realIdxs) {
+    if (!Array.isArray(realIdxs) || !realIdxs.length) return;
+    this._hiddenCols.clear();
+    for (const i of realIdxs) {
+      if (Number.isInteger(i) && i >= 0 && i < this.columns.length) {
+        this._hiddenCols.add(i);
+      }
+    }
+    // Never hide every column — recovery would be impossible.
+    if (this._hiddenCols.size >= this.columns.length) this._hiddenCols.clear();
     this._buildHeaderCells();
     this._applyColumnTemplate();
     this._forceFullRender();

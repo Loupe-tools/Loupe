@@ -40,6 +40,17 @@ const TIMELINE_KEYS = Object.freeze({
   // silently dropped and the surviving order is healed by
   // `GridViewer._resolveColOrder`. Mirrors the `CARD_ORDER` shape.
   GRID_COL_ORDER: 'loupe_timeline_grid_col_order',
+  // Per-file HIDDEN columns — `{ [fileKey]: [colName, …] }`. Persists
+  // the analyst's hidden-column choices across reload, mirroring the
+  // `GRID_COL_ORDER` shape (stored as NAMES, not indices, so an
+  // extracted column whose real index shifts after the auto-extract
+  // pass still re-hides by name; names that no longer exist are
+  // silently dropped on restore). Before this key, hide state lived
+  // only in `GridViewer._hiddenCols` (session-only), so a hidden
+  // column reappeared on every reopen — inconsistent with width /
+  // order / pin, which all persist. `_reset()` wipes this via the
+  // `loupe_timeline_*` prefix.
+  HIDDEN_COLS: 'loupe_timeline_hidden_cols',
   // Per-file marker — `{ [fileKey]: true }` — set the first time the
   // best-effort auto-extract pass FIRES THE TOAST against a given file.
   // The auto-extract pass itself runs on every file open (it's

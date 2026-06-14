@@ -60,6 +60,7 @@ const PERSIST_METHODS = [
   '_loadQueryFor',           '_saveQueryFor',
   '_loadSusMarksFor',        '_saveSusMarksFor',
   '_loadGridColOrderFor',    '_saveGridColOrderFor',
+  '_loadHiddenColsFor',      '_saveHiddenColsFor',
 ];
 
 // ── Removal asserts ────────────────────────────────────────────────────────
@@ -102,8 +103,8 @@ test('timeline-view-persist.js defines every _load/_save helper exactly once', (
 
 // ── Storage-key inventory ──────────────────────────────────────────────────
 
-test('TIMELINE_KEYS inventory in timeline-view-persist.js is the canonical 18-key set', () => {
-  // The 18 keys these helpers are responsible for. Any change here
+test('TIMELINE_KEYS inventory in timeline-view-persist.js is the canonical 19-key set', () => {
+  // The 19 keys these helpers are responsible for. Any change here
   // would be a localStorage format break — bump CONTRIBUTING.md's
   // Persistence Keys table in the same commit if you have a real
   // reason to do so.
@@ -127,6 +128,7 @@ test('TIMELINE_KEYS inventory in timeline-view-persist.js is the canonical 18-ke
     'GEOIP_DONE',
     'GRID_COL_ORDER', 'GRID_H', 'PINNED_COLS', 'PIVOT', 'QUERY',
     'REGEX_EXTRACTS', 'SECTIONS', 'SUS_MARKS',
+    'HIDDEN_COLS',
   ];
   const found = new Set();
   const re = /TIMELINE_KEYS\.([A-Z_]+)/g;

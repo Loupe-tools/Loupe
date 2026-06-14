@@ -393,6 +393,25 @@ Object.assign(TimelineView.prototype, {
         headerClass: (colIdx, colName) => {
           return colName === '__source' ? 'grid-header-canonical' : null;
         },
+        // Explanatory tooltip prefix for the two header shapes a merged
+        // Timeline introduces that otherwise have no context: the
+        // `__source` bookkeeping column and `<source>·<col>` namespaced
+        // columns (a native column that couldn't fuse across sources, so
+        // it carries one source's values and is empty for the rest).
+        // Returns falsy for ordinary columns so they keep the default
+        // affordance hint only.
+        headerTitle: (colIdx, colName) => {
+          if (colName === '__source') {
+            return 'Source file — which merged file each row came from (chip colour matches the source bar)';
+          }
+          // Namespaced columns use the U+00B7 middot separator
+          // (`buildCompositeSchema`). Show which source owns the column.
+          const dot = colName.indexOf('\u00b7');
+          if (dot > 0 && this._sources && this._sources.length >= 2) {
+            return 'Column from source "' + colName.slice(0, dot) + '" (empty for other sources)';
+          }
+          return '';
+        },
 
         // In Timeline Mode the embedded grid's built-in "Use as timeline"
         // and "Stack timeline by this column" column-header actions must
@@ -427,6 +446,23 @@ Object.assign(TimelineView.prototype, {
           }
           this._gridColOrder = names;
           TimelineView._saveGridColOrderFor(this._fileKey, names);
+        } : null,
+        // Hidden-column persistence — only on the main grid. Receives
+        // the post-change real-index array from GridViewer; we translate
+        // to column NAMES (stable across the auto-extract index shuffle)
+        // and save to the per-file `loupe_timeline_hidden_cols` map so a
+        // hidden column stays hidden across reload. On next mount,
+        // `_seedHiddenColumns` resolves the saved names back to live real
+        // indices and replays them via `grid.setInitialHiddenColumns`.
+        onHiddenColumnsChange: role === 'main' ? (realIdxs) => {
+          const names = [];
+          for (const i of realIdxs) {
+            if (Number.isInteger(i) && i >= 0 && i < this.columns.length) {
+              names.push(this.columns[i] || `col${i}`);
+            }
+          }
+          this._hiddenColNames = names;
+          TimelineView._saveHiddenColsFor(this._fileKey, names);
         } : null,
         // Drawer → key right-click menu → promote the JSON leaf to a
         // virtual (extracted) column and optionally chain a filter chip.
@@ -621,6 +657,10 @@ Object.assign(TimelineView.prototype, {
         // sort indicator AND the saved order. `_applyGridColOrder` is a
         // no-op when `_gridColOrder` is null or empty.
         this._applyGridColOrder();
+        // Replay persisted hidden columns (resolved name → real index).
+        // No-op when nothing is hidden. Done last so it operates on the
+        // final column set / order.
+        this._seedHiddenColumns();
       }
     } else {
       // Preserve columns in case new extracted columns were added.
@@ -1134,12 +1174,12 @@ Object.assign(TimelineView.prototype, {
           try { this._grid._toggleHideColumn(c); } catch (_) { /* noop */ }
         }
         if (this._app && typeof this._app._toast === 'function') {
-          this._app._toast(`Hid column "${colName}" (use the chip in the grid's filter bar to unhide)`, 'info');
+          this._app._toast(`Hid column "${colName}" — right-click any column header → "Show hidden columns" to restore`, 'info');
         }
       });
       // Add the hint into the column-name tooltip so users can discover the gesture.
       const nameEl = head.querySelector('.tl-col-name');
-      if (nameEl) nameEl.title = `${colName} · Ctrl+Click card header to hide this column in the grid · Drag header to reorder`;
+      if (nameEl) nameEl.title = `${colName} · Ctrl+Click card header to hide this column (right-click a grid header to restore) · Drag header to reorder`;
 
       // --- Drag-to-reorder card headers ---
       head.draggable = true;
@@ -1259,6 +1299,77 @@ Object.assign(TimelineView.prototype, {
     }
     if (identity) return;
     this._grid._setColumnOrder(realIdxs);
+  },
+
+  // Replay persisted hidden columns onto the freshly-mounted grid.
+  // Resolves the saved column NAMES (`_hiddenColNames`) to live real
+  // indices and hands them to `GridViewer.setInitialHiddenColumns`,
+  // which seeds `_hiddenCols` WITHOUT firing the change callback (so we
+  // don't loop back into a save). Names that no longer exist are
+  // dropped during resolve. No-op when nothing is hidden or no grid is
+  // mounted. Also seeds the canonical-column default-hide for a
+  // single-source composite view (see `_canonicalColsToHide`).
+  _seedHiddenColumns() {
+    if (!this._grid || typeof this._grid.setInitialHiddenColumns !== 'function') return;
+    const names = Array.isArray(this._hiddenColNames) ? this._hiddenColNames.slice() : [];
+    // Single-source composite views (n=1) carry the canonical columns
+    // (`__source`, `Timestamp`, `Host`, …) prepended by the composite
+    // schema, but they're bookkeeping noise for a lone source — hide
+    // them by default so a remove-to-one view presents the same columns
+    // a fresh single-file drop would. Apply this ONCE (first mount, no
+    // persisted entry yet) then persist the result, so the analyst's
+    // later unhide of a canonical column survives reload rather than
+    // silently returning — the trap the auto-extract columns fall into.
+    const firstMount = !TimelineView._hasHiddenColsEntryFor(this._fileKey);
+    if (firstMount) {
+      let added = false;
+      for (const c of this._canonicalColsToHide()) {
+        if (names.indexOf(c) < 0) { names.push(c); added = true; }
+      }
+      if (added) {
+        this._hiddenColNames = names.slice();
+        TimelineView._saveHiddenColsFor(this._fileKey, this._hiddenColNames);
+      }
+    }
+    if (!names.length) return;
+    const n = this.columns.length;
+    if (!n) return;
+    const seen = new Set();
+    const realIdxs = [];
+    for (const name of names) {
+      const i = this.columns.indexOf(name);
+      if (i < 0) continue;
+      if (seen.has(i)) continue;
+      // Never hide the active time column — the grid needs it and it's
+      // excluded from the canonical-hide set, but guard defensively.
+      if (i === this._timeCol) continue;
+      seen.add(i);
+      realIdxs.push(i);
+    }
+    if (!realIdxs.length) return;
+    this._grid.setInitialHiddenColumns(realIdxs);
+  },
+
+  // The canonical columns to hide by default for a SINGLE-source
+  // composite view. Returns `[]` for legacy single-file views (no
+  // `_sources`) and for merged views (n≥2, where canonical columns are
+  // the whole point of the merge). For n=1 it returns every canonical
+  // column name present in `this.columns` EXCEPT the active time/stack
+  // column (those must stay visible). `__source` is always a single
+  // constant value for one source, so hiding it removes a useless
+  // column.
+  _canonicalColsToHide() {
+    if (!this._sources || this._sources.length !== 1) return [];
+    const out = [];
+    const canon = (typeof TIMELINE_CANONICAL_COLS !== 'undefined')
+      ? TIMELINE_CANONICAL_COLS : [];
+    for (const name of canon) {
+      const i = this.columns.indexOf(name);
+      if (i < 0) continue;
+      if (i === this._timeCol || i === this._stackCol) continue;
+      out.push(name);
+    }
+    return out;
   },
 
   // Sus values keyed by column — for highlighting top-values cards.

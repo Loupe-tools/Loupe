@@ -546,32 +546,40 @@ test('column header menu offers single "Enrich IP" entry on IPv4 columns', () =>
 test('Events-grid column filter menu also surfaces "Enrich IP" via data-act="geoip"', () => {
   // The Events-grid column-header click opens `_openColumnFilterMenu`
   // (Excel-style), which is a SECOND surface offering the same forced
-  // enrichment escape hatch. This test pins the dedicated function
-  // exists and that, within its body, the Enrich-IP affordance keeps
-  // its `data-act="geoip"` attribute hook (the function builds DOM via
-  // an HTML string, not the `items[]` callback shape used by the slim
-  // `_openColumnMenu`). Loss of either pin breaks the dual-surface
-  // promise restored after the regression in commit f0dd560.
+  // enrichment escape hatch. Both that menu and the slim Top-Values-
+  // card menu now build their whole-column actions from the shared
+  // `_buildColumnActionItems` descriptors (single source of truth),
+  // so the Enrich-IP affordance — its `geoip` id + the
+  // `_runGeoipEnrichment({ forceCol })` click — lives in that helper.
+  // The filter menu renders each descriptor as a `data-act="<id>"`
+  // button via `actionsHtml`. Loss of either pin breaks the
+  // dual-surface promise restored after the regression in commit
+  // f0dd560.
   assert.match(
     POPOVERS,
     /_openColumnFilterMenu\s*\(\s*colIdx\s*,\s*anchor\s*\)\s*\{/,
     'expected `_openColumnFilterMenu(colIdx, anchor)` to exist as the Excel-style filter for the grid header',
   );
-  // Pin the Enrich-IP markup inside the filter-menu function body.
-  // Slice the function body so the assertion is robust against
-  // identical strings landing elsewhere in the module.
-  const m = POPOVERS.match(/_openColumnFilterMenu\s*\(\s*colIdx\s*,\s*anchor\s*\)\s*\{[\s\S]*?\n  \},\n/);
-  assert.ok(m, 'failed to slice the body of `_openColumnFilterMenu`');
-  const body = m[0];
+  // The filter-menu body builds + renders the shared action buttons.
+  const fm = POPOVERS.match(/_openColumnFilterMenu\s*\(\s*colIdx\s*,\s*anchor\s*\)\s*\{[\s\S]*?\n  \},\n/);
+  assert.ok(fm, 'failed to slice the body of `_openColumnFilterMenu`');
+  assert.match(fm[0], /_buildColumnActionItems\s*\(\s*colIdx\s*\)/,
+    '`_openColumnFilterMenu` must render the shared action descriptors');
+  assert.match(fm[0], /data-act="\$\{_tlEsc\(a\.id\)\}"/,
+    '`_openColumnFilterMenu` must render each action as a `data-act="${id}"` button');
+  // The geoip descriptor (id + forced-enrichment click) lives in the
+  // shared `_buildColumnActionItems` helper.
+  const bi = POPOVERS.match(/_buildColumnActionItems\s*\(\s*colIdx\s*\)\s*\{[\s\S]*?\n  \},\n/);
+  assert.ok(bi, 'failed to slice the body of `_buildColumnActionItems`');
   assert.match(
-    body,
-    /data-act="geoip"/,
-    '`_openColumnFilterMenu` must render `data-act="geoip"` markup for the Enrich-IP entry',
+    bi[0],
+    /id:\s*'geoip'/,
+    '`_buildColumnActionItems` must define the `geoip` Enrich-IP action descriptor',
   );
   assert.match(
-    body,
+    bi[0],
     /_runGeoipEnrichment\s*\(\s*\{\s*forceCol/,
-    '`_openColumnFilterMenu` Enrich-IP click must call _runGeoipEnrichment({ forceCol: … })',
+    '`_buildColumnActionItems` geoip action must call _runGeoipEnrichment({ forceCol: … })',
   );
 });
 
