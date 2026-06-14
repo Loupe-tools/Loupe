@@ -282,12 +282,12 @@ jobs:
   # ──────────────────────────────────────────────────────────────────
   # Test pipeline (opt-in for contributors locally; mandatory in CI).
   #
-  # Two test jobs (unit + e2e) run in parallel and are independent of
-  # `deploy-pages` on purpose: the release path
-  # (build → verify-vendored → static-checks → lint → deploy-pages) is
-  # what the threat model treats as "the product", and a flake in a
-  # Playwright e2e shouldn't keep a clean release bundle off Pages.
-  # This will tighten over time as the e2e suite stabilises.
+  # Two test jobs (unit + e2e) run in parallel and gate `deploy-pages`:
+  # the full suite is run locally before every push, so the CI run is
+  # both a public-confidence signal and a hard deploy gate — Pages only
+  # publishes once build → verify-vendored → static-checks → lint →
+  # yara-lint → unit → e2e are all green. `release.yml` is downstream of
+  # the whole CI run concluding `success`, so it inherits the same gate.
   #
   # The previous `test-build` job is now folded into `e2e` directly —
   # building the test bundle inline saves an artefact upload/download
@@ -409,8 +409,9 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────
   # Deploy the built bundle to GitHub Pages. Runs only on pushes to
-  # main, only after build + static-checks + lint + verify-vendored
-  # all pass. This replaces the old "commit docs/index.html to git"
+  # main, only after build + verify-vendored + static-checks + lint +
+  # yara-lint + unit + e2e all pass — the full green CI run gates the
+  # publish. This replaces the old "commit docs/index.html to git"
   # dance — Pages now serves the CI-produced bytes directly.
   #
   # Requires repository Pages settings to be set to "GitHub Actions"
@@ -420,7 +421,7 @@ jobs:
   deploy-pages:
     name: Deploy to GitHub Pages
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build, verify-vendored, static-checks, lint, yara-lint]
+    needs: [build, verify-vendored, static-checks, lint, yara-lint, unit, e2e]
     runs-on: ubuntu-latest
     permissions:
       pages: write
