@@ -141,9 +141,23 @@ function _tlTokenize(src) {
         // `RegExp.prototype.test` stateful via `lastIndex`; in the
         // per-row predicate (`re.test(cell)`) a sticky pattern anchors at
         // position 0, silently turning a "contains" match into an
-        // anchored one. Reject `y`/`g` at tokenise time so the matcher
-        // semantics stay positional-independent.
+        // anchored one, so the matcher must stay positional-independent.
         while (i < n && /[imsu]/.test(s.charAt(i))) { flags += s.charAt(i); i++; }
+        // A trailing identifier char after the accepted flags means the user
+        // supplied an unsupported flag (`g`/`y`/typo). Consume the whole run
+        // and emit an ERR so the parser fails the filter with a toast — rather
+        // than letting the leftover char fall through to bareword tokenisation,
+        // where implicit-AND would silently append a spurious any-column
+        // `contains` filter.
+        if (closed && i < n && /[a-zA-Z]/.test(s.charAt(i))) {
+          while (i < n && /[a-zA-Z]/.test(s.charAt(i))) i++;
+          tokens.push({
+            kind: 'ERR',
+            text: s.slice(start, i), value: { pattern: pat, flags }, start, end: i,
+            err: 'unsupported regex flag(s); only i, m, s, u are allowed',
+          });
+          continue;
+        }
         tokens.push({
           kind: closed ? 'REGEX' : 'ERR',
           text: s.slice(start, i), value: { pattern: pat, flags }, start, end: i,

@@ -2,8 +2,9 @@
 // timeline-query-correctness.test.js — pins the query-engine correctness
 // + safety fixes from the timeline audit:
 //
-//   • M5  sticky `y` (and global `g`) regex flags are rejected by the
-//         tokenizer so `col ~ /pat/y` can't silently anchor matches.
+//   • M5  unsupported regex flags (sticky `y` / global `g`) are rejected as
+//         a parse error so `col ~ /pat/y` can't silently anchor matches or
+//         leak the flag char into a spurious any-column filter.
 //   • M6  `eq` / `ne` are case-insensitive + whitespace-trimmed (so a
 //         click-pivot built from the displayed cell text matches the
 //         canonical cell regardless of case/whitespace), consistent with
@@ -46,13 +47,27 @@ function compile(query, view) {
 
 // ── M5: sticky / global regex flags rejected ────────────────────────────────
 
-test('M5: regex tokenizer accepts imsu but stops before a sticky `y` flag', () => {
-  // `/foo/y` — the `y` must NOT be absorbed into the flags. The tokenizer
-  // stops the flag-scan at `y`, leaving it as a separate bareword token.
+test('M5: regex tokenizer rejects an unsupported `y` flag as an ERR token', () => {
+  // `/foo/y` — the `y` must NOT be absorbed into the flags, and must NOT leak
+  // out as a separate bareword (which implicit-AND would fold into a spurious
+  // any-column `contains "y"` filter). It becomes a single ERR token.
   const toks = _tlTokenize('col ~ /foo/y').filter(t => t.kind !== 'WS');
-  const re = toks.find(t => t.kind === 'REGEX');
-  assert.ok(re, 'a REGEX token is produced');
-  assert.strictEqual(re.value.flags, '', 'sticky `y` is not included in regex flags');
+  const errTok = toks.find(t => t.kind === 'ERR');
+  assert.ok(errTok, 'an ERR token is produced for the unsupported flag');
+  assert.match(errTok.err, /unsupported regex flag/i);
+  assert.strictEqual(
+    toks.some(t => t.kind === 'REGEX'), false,
+    'no REGEX token survives — the whole literal is an ERR',
+  );
+  assert.strictEqual(
+    toks.some(t => t.kind === 'WORD' && t.text === 'y'), false,
+    'the `y` does not leak out as a dangling bareword',
+  );
+});
+
+test('M5: a query with an unsupported regex flag fails to parse', () => {
+  const view = makeView(['col', 'x'], [['foo', 'a']]);
+  assert.throws(() => compile('col ~ /foo/y', view), /unsupported regex flag/i);
 });
 
 test('M5: imsu flags are still accepted', () => {
