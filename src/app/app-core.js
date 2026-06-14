@@ -1028,6 +1028,49 @@ class App {
         }
         // Mixed drop — fall through to the folder-bundle path below.
       }
+
+      // Fresh multi-file drop (no Timeline loaded yet) where EVERY file
+      // is merge-eligible — build a merged Timeline directly instead of
+      // bundling into a "Dropped files" folder. This is the primary
+      // DFIR workflow: drop an EDR/host CSV export together with a
+      // browser-history database (or several logs at once) and get one
+      // interleaved, chronologically-sorted Timeline. The first file
+      // mounts a Timeline via `_timelineTryHandle`; the rest merge onto
+      // it. Any single file that isn't actually browser-history SQLite,
+      // or that has an incompatible time domain, surfaces its own toast
+      // from `_timelineAddFile` and is skipped without aborting the run.
+      if (!this._timelineCurrent && this._timelineTryHandle
+          && this._isTimelineExt) {
+        const allEligible = fileList.every(f => {
+          if (!f || !f.name) return false;
+          const ext = f.name.split('.').pop().toLowerCase();
+          return TIMELINE_MERGE_ELIGIBLE_KINDS.has(ext);
+        });
+        if (allEligible) {
+          (async () => {
+            this._resetNavStack();
+            // Mount the first file as a Timeline, then await the kick.
+            this._timelineTryHandle(fileList[0]);
+            if (this._timelineLoadInFlight) {
+              try { await this._timelineLoadInFlight; } catch (_) { /* toasted */ }
+            }
+            // If the first file didn't actually open a Timeline (e.g. a
+            // generic .sqlite that fell through to the analyser), fall
+            // back to bundling the whole drop so no file is lost.
+            if (!this._timelineCurrent) {
+              this._ingestLooseMultiFile(fileList);
+              return;
+            }
+            for (let i = 1; i < fileList.length; i++) {
+              try {
+                await this._timelineAddFile(fileList[i]);
+              } catch (_) { /* error already toasted by _timelineAddFile */ }
+            }
+          })();
+          return;
+        }
+      }
+
       this._ingestLooseMultiFile(fileList);
       return;
     }

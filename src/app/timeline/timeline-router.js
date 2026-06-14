@@ -472,17 +472,21 @@ extendApp({
   _timelineTryHandle(file) {
     if (!this._isTimelineExt(file)) return false;
     // Merge branch — when ANY Timeline is already loaded AND the incoming
-    // file kind is merge-eligible (CSV/TSV/log/structured-log/EVTX),
-    // route into `_timelineAddFile` instead of replacing the view. The
-    // check is intentionally `this._timelineCurrent` (not
-    // `this._timelineCurrent._sources`): the first merge onto a legacy
+    // file kind is merge-eligible (CSV/TSV/log/structured-log/EVTX, plus
+    // browser-history SQLite), route into `_timelineAddFile` instead of
+    // replacing the view. The check is intentionally `this._timelineCurrent`
+    // (not `this._timelineCurrent._sources`): the first merge onto a legacy
     // single-file view is handled by `_timelineAddFile`, which
     // synthesises a SourceRecord from the prior view via
     // `_singleFileSourceFromView(prior)` before assembling the composite.
     //
-    // PCAP and SQLite (`sqlite`/`db`/`pcap`/`pcapng`/`cap`) fall through
-    // to the single-file replace path below because their side-channels
-    // don't aggregate cleanly in v1.
+    // SQLite is in the eligible set but is browser-history-only:
+    // `_timelineAddFile` → `timelineSourceFromFile` throws
+    // `SQLITE_NOT_BROWSER` for a generic DB and surfaces a refusal toast
+    // (the existing Timeline is left intact). PCAP (`pcap`/`pcapng`/
+    // `cap`) is NOT in the eligible set and falls through to the
+    // single-file replace path below — its `_pcapInfo` side-channel
+    // doesn't aggregate cleanly.
     if (this._timelineCurrent) {
       const ext = file && file.name
         ? file.name.split('.').pop().toLowerCase() : '';
@@ -496,10 +500,10 @@ extendApp({
         return true;
       }
       // Incoming file is a legitimate Timeline extension but NOT
-      // merge-eligible (PCAP / SQLite). Surface a targeted toast and
-      // fall through to the normal replace path.
+      // merge-eligible (PCAP). Surface a targeted toast and fall through
+      // to the normal replace path.
       this._toast(
-        'PCAP and SQLite files open standalone — existing merged Timeline will be replaced.',
+        'PCAP files open standalone — the existing Timeline will be replaced.',
         'info');
     }
     // Fire-and-forget: `_loadFile` returns synchronously after we kick
@@ -1434,9 +1438,20 @@ extendApp({
     } catch (e) {
       console.error('[timeline] add failed:', e);
       if (newSource) releaseSourceRecord(newSource);
-      this._toast(
-        'Failed to merge file: ' + (e && e.message ? e.message : e),
-        'error');
+      // Generic (non-browser-history) SQLite reaches here via the
+      // `SQLITE_NOT_BROWSER` throw from `timelineSourceFromFile`. The
+      // existing Timeline is left intact (we never reached the swap).
+      if (e && e.code === 'SQLITE_NOT_BROWSER') {
+        this._toast(
+          'Only browser-history databases (Chrome / Edge / Firefox) can be ' +
+          'merged into a Timeline. Close the current Timeline to open this ' +
+          'database on its own.',
+          'error');
+      } else {
+        this._toast(
+          'Failed to merge file: ' + (e && e.message ? e.message : e),
+          'error');
+      }
     } finally {
       this._setLoading(false);
     }
@@ -1468,6 +1483,11 @@ extendApp({
     else if (/w3c/i.test(view.formatLabel) || /IIS/i.test(view.formatLabel)) formatKind = 'w3c';
     else if (/apache error/i.test(view.formatLabel)) formatKind = 'apache-error';
     else if (/access log/i.test(view.formatLabel)) formatKind = 'access-log';
+    // Browser-history SQLite loaded standalone first, then merged onto.
+    // `fromSqlite` tags it `"SQLite – Chrome/Firefox History"`. Detect
+    // before the generic CSV fallback so its source uses the `sqlite`
+    // mapper (else it'd mis-map browser columns through the CSV probe).
+    else if (/sqlite/i.test(formatLabelLower) || /history/i.test(formatLabelLower)) formatKind = 'sqlite';
     else if (/^csv/i.test(view.formatLabel) || /^tsv/i.test(view.formatLabel)) {
       formatKind = /tsv/i.test(view.formatLabel) ? 'tsv' : 'csv';
     } else if (/log/i.test(formatLabelLower)) formatKind = 'log';

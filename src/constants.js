@@ -393,14 +393,18 @@ const TIMELINE_CANONICAL_COLS = Object.freeze([
 ]);
 
 // Extension / sniff-kind values that are ELIGIBLE to be merged into an
-// existing Timeline via drop-to-add. PCAP (`pcap`/`pcapng`/`cap`) and
-// SQLite browser-history (`sqlite`/`db`) still open standalone as
-// first-class timelines, but the composite merge path refuses them
-// (their side-channel shape — `_pcapInfo`, `browserType`-gated dispatch
-// — doesn't aggregate cleanly and deferring them keeps v1 scope
-// bounded). Dropped onto a loaded Timeline they surface a specific
-// refusal toast; dropped fresh they still route through
-// `_timelineTryHandle` as today.
+// existing Timeline via drop-to-add. SQLite (`sqlite`/`db`) is eligible
+// ONLY for browser-history databases — `timelineSourceFromFile` builds
+// the source via `TimelineView.fromSqlite` and rejects (throws
+// `SQLITE_NOT_BROWSER`) any DB without a recognised `browserType`, so a
+// generic SQLite dropped onto a loaded Timeline surfaces a refusal
+// toast rather than a junk merge. PCAP (`pcap`/`pcapng`/`cap`) stays
+// merge-INELIGIBLE: its `_pcapInfo` side-channel doesn't aggregate
+// cleanly, so it always opens standalone (drop-to-add surfaces a
+// refusal toast). Browser-history rows carry only the `Timestamp`
+// canonical (their wide fields — URL / Title / Domain / Type — stay on
+// the native column plane), interleaving cleanly with EDR/host CSV and
+// EVTX wall-clock sources for analyst triage.
 const TIMELINE_MERGE_ELIGIBLE_KINDS = Object.freeze(new Set([
   'csv', 'tsv', 'log',
   'evtx',
@@ -408,6 +412,7 @@ const TIMELINE_MERGE_ELIGIBLE_KINDS = Object.freeze(new Set([
   'zeek', 'jsonl', 'cloudtrail',
   'cef', 'leef', 'logfmt',
   'w3c', 'apache-error', 'access-log',
+  'sqlite', 'db',
 ]));
 
 // Composite `_fileKey` prefix — distinguishes merged timelines from

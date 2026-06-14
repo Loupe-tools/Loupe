@@ -551,12 +551,45 @@ const TIMELINE_MAPPERS = {
     // CSV-style probe because column names aren't guaranteed.
     return TIMELINE_MAPPERS.csv(source, row);
   },
+
+  // ── SQLite browser history (Chrome / Edge / Firefox) ─────────────────
+  // Per-event columns (the merge-eligible shape): `Timestamp, Type,
+  // Title, URL, Domain, Visit Count, Transition, Search Terms, Target
+  // Path, Referrer, MIME Type` (see `SqliteRenderer._buildChromeEvents`
+  // / `_buildFirefoxEvents`). Only browser-history DBs reach this mapper
+  // — `timelineSourceFromFile` rejects generic SQLite before a source
+  // is ever built (throws `SQLITE_NOT_BROWSER`).
+  //
+  // Deliberately MINIMAL projection — only `Timestamp` lands in a
+  // canonical slot. The wide / pivot-shape fields (URL, Title, Domain,
+  // Referrer, the visit `Type`) stay on the source's native column
+  // plane where their semantic is preserved and the analyst pivots on
+  // them by name. This matches the wide-field exclusion rationale used
+  // for EVTX `Event Data`, CloudTrail `userAgent`, and syslog
+  // `Message`: the canonical schema is for short identifier-shape
+  // values, and a browser-history URL is a wide pivot field, not a
+  // short identifier. In a merged grid, history rows are distinguished
+  // from EDR/host rows by the `__source` chip colour + filename, and
+  // their native URL / Type columns sit to the right.
+  sqlite: (source, row) => {
+    const out = {};
+    // Per-event timestamp is always native column 0. Probe by name as a
+    // belt-and-braces fallback in case the legacy URL-aggregated shape
+    // (`Last Visited`) is ever routed here.
+    const ts = _tlmFirst(source, row, ['timestamp', 'last visited']);
+    if (ts) out.Timestamp = ts;
+    return out;
+  },
 };
 
 // Alias `tsv` → `csv` — the parser treats them identically (only the
 // delimiter differs). Keeping both lookup keys lets callers pass the
 // raw `formatKind` without a pre-normalisation step.
 TIMELINE_MAPPERS.tsv = TIMELINE_MAPPERS.csv;
+
+// Alias `db` → `sqlite` — both extensions route to the same SQLite
+// browser-history parser; the mapper is identical.
+TIMELINE_MAPPERS.db = TIMELINE_MAPPERS.sqlite;
 
 // Resolve a mapper for a `formatKind`. Returns the CSV-style fallback
 // for unknown kinds so a new format added to `timeline-router.js` that

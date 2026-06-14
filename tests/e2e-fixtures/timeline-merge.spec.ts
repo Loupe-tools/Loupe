@@ -1098,3 +1098,114 @@ test.describe('Timeline — merged sources', () => {
     expect(nativeCols).not.toContain('Message');
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// Browser-history SQLite merge — interleave a host CSV/EDR timeline with
+// Chrome / Firefox history for DFIR triage. Browser-history SQLite is
+// merge-ELIGIBLE (it's a clean RowStore + wall-clock timestamps);
+// generic (non-browser) SQLite is REFUSED so it doesn't junk the merge.
+// ════════════════════════════════════════════════════════════════════════════
+
+const FIXTURE_CHROME_HISTORY = 'examples/forensics/chromehistory-example.sqlite';
+const FIXTURE_GENERIC_SQLITE = 'examples/forensics/example.sqlite';
+
+test.describe('Timeline — browser-history merge', () => {
+  const ctx = useSharedBundlePage();
+
+  test('CSV + Chrome history merge into a composite with native URL column', async () => {
+    // Load a host CSV first (single-source Timeline), then merge a
+    // Chrome history database on top — the analyst's interleaved
+    // "EDR + browsing" triage view. The history contributes its rows
+    // and `Timestamp` to the shared chronological axis; its wide
+    // fields (URL / Title / Domain / Type) stay on the native plane.
+    await loadFixture(ctx.page, FIXTURE_A);
+    const before = await ctx.page.evaluate(() => {
+      const w = window as unknown as {
+        app: { _timelineCurrent: { _sources: unknown; store: { rowCount: number } } | null };
+      };
+      return {
+        sources: w.app._timelineCurrent?._sources ?? null,
+        rowCount: w.app._timelineCurrent?.store.rowCount ?? 0,
+      };
+    });
+    expect(before.sources).toBeNull();
+    expect(before.rowCount).toBe(10);
+
+    await loadFixture(ctx.page, FIXTURE_CHROME_HISTORY, undefined, { skipCrossLoadReset: true });
+
+    const merged = await ctx.page.evaluate(() => {
+      const w = window as unknown as {
+        app: {
+          _timelineCurrent: {
+            _sources: Array<{ sourceLabel: string; formatKind: string; formatLabel: string }> | null;
+            store: { rowCount: number; columns: string[] };
+          } | null;
+        };
+      };
+      const v = w.app._timelineCurrent;
+      return {
+        hasSources: !!(v && v._sources),
+        sourceCount: v && v._sources ? v._sources.length : 0,
+        labels: v && v._sources ? v._sources.map(s => s.sourceLabel) : [],
+        kinds: v && v._sources ? v._sources.map(s => s.formatKind) : [],
+        formatLabels: v && v._sources ? v._sources.map(s => s.formatLabel) : [],
+        totalRows: v ? v.store.rowCount : 0,
+        cols: v ? v.store.columns : [],
+      };
+    });
+
+    expect(merged.hasSources).toBe(true);
+    expect(merged.sourceCount).toBe(2);
+    expect(merged.labels[0]).toBe('timeline-geoip.csv');
+    expect(merged.labels[1]).toBe('chromehistory-example.sqlite');
+    // The history source is mapped through the `sqlite` mapper.
+    expect(merged.kinds[1]).toBe('sqlite');
+    expect(merged.formatLabels[1]).toMatch(/History/);
+    // Composite carries the host CSV's 10 rows plus the history's rows.
+    expect(merged.totalRows).toBeGreaterThan(10);
+    // The canonical `__source` column exists, and the history's wide
+    // URL field survives on the native plane (NOT projected into a
+    // canonical slot).
+    expect(merged.cols).toContain('__source');
+    expect(merged.cols).toContain('URL');
+  });
+
+  test('generic (non-browser) SQLite is refused — existing Timeline stays intact', async () => {
+    // Reset to a clean single-source Timeline.
+    await loadFixture(ctx.page, FIXTURE_A);
+    const before = await ctx.page.evaluate(() => {
+      const w = window as unknown as {
+        app: { _timelineCurrent: { _sources: unknown; store: { rowCount: number } } | null };
+      };
+      return {
+        present: !!w.app._timelineCurrent,
+        sources: w.app._timelineCurrent?._sources ?? null,
+        rowCount: w.app._timelineCurrent?.store.rowCount ?? 0,
+      };
+    });
+    expect(before.present).toBe(true);
+    expect(before.sources).toBeNull();
+    expect(before.rowCount).toBe(10);
+
+    // Attempt to merge a generic SQLite — `timelineSourceFromFile`
+    // throws `SQLITE_NOT_BROWSER`, `_timelineAddFile` toasts and bails
+    // BEFORE any view swap, so the original single-source Timeline must
+    // be untouched (still 10 rows, still `_sources === null`).
+    await loadFixture(ctx.page, FIXTURE_GENERIC_SQLITE, undefined, { skipCrossLoadReset: true });
+
+    const after = await ctx.page.evaluate(() => {
+      const w = window as unknown as {
+        app: { _timelineCurrent: { _sources: unknown; store: { rowCount: number } } | null };
+      };
+      return {
+        present: !!w.app._timelineCurrent,
+        sources: w.app._timelineCurrent?._sources ?? null,
+        rowCount: w.app._timelineCurrent?.store.rowCount ?? 0,
+      };
+    });
+    expect(after.present).toBe(true);
+    // Merge refused — no composite, original row count preserved.
+    expect(after.sources).toBeNull();
+    expect(after.rowCount).toBe(10);
+  });
+});

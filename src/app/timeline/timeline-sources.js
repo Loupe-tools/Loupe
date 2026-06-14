@@ -168,6 +168,25 @@ async function timelineSourceFromFile(file, buffer, formatKind, existingLabels) 
           || formatKind === 'w3c' || formatKind === 'apache-error'
           || formatKind === 'access-log') {
     view = await TimelineView.fromStructuredLogAsync(file, buffer, formatKind);
+  } else if (formatKind === 'sqlite' || formatKind === 'db') {
+    // SQLite is merge-eligible ONLY for browser-history databases.
+    // `fromSqlite` returns a zero-row view tagged `formatLabel:'SQLite'`
+    // (no " – … History" suffix) for non-browser or empty DBs — that's
+    // its escape-hatch shape that re-routes to the standalone tabbed
+    // grid. We can't merge a generic SQLite (no time axis, no clean row
+    // model), so detect that shape and throw a typed error the caller
+    // turns into a refusal toast. Browser-history views always have rows
+    // and wall-clock timestamps, so they interleave with CSV / EVTX.
+    view = TimelineView.fromSqlite(file, buffer);
+    const isBrowserHistory = view && view.store && view.store.rowCount > 0
+      && /History/.test(view.formatLabel || '');
+    if (!isBrowserHistory) {
+      try { if (view) view.destroy(); } catch (_) { /* noop */ }
+      const err = new Error(
+        'timeline-sources: only browser-history SQLite databases can be merged');
+      err.code = 'SQLITE_NOT_BROWSER';
+      throw err;
+    }
   } else {
     throw new Error('timeline-sources: unsupported merge formatKind=' + formatKind);
   }

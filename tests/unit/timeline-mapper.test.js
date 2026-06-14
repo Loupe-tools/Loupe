@@ -64,6 +64,7 @@ test('TIMELINE_MAPPERS is frozen and carries every expected kind', () => {
     'zeek', 'jsonl', 'cloudtrail',
     'cef', 'leef', 'logfmt',
     'w3c', 'apache-error', 'access-log',
+    'sqlite', 'db',
   ];
   for (const k of kinds) {
     assert.equal(typeof TIMELINE_MAPPERS[k], 'function',
@@ -314,6 +315,42 @@ test('w3c mapper concatenates split date+time when unified Timestamp absent', ()
   // `cs-method` and `cs-uri-stem` stay on the native plane — they're
   // request descriptors, not short canonical identifiers.
   assert.equal(out.Message, undefined);
+});
+
+// ── SQLite browser-history mapper ──────────────────────────────────────────
+
+test('sqlite mapper projects ONLY Timestamp (URL / Title / Domain stay native)', () => {
+  // Per-event browser-history columns: Timestamp, Type, Title, URL,
+  // Domain, Visit Count, Transition, Search Terms, Target Path,
+  // Referrer, MIME Type. Only the short identifier-shape Timestamp
+  // earns a canonical slot — every wide / pivot field stays on the
+  // native plane (URL is a wide pivot, not a short identifier).
+  const src = stubSource('sqlite',
+    ['Timestamp', 'Type', 'Title', 'URL', 'Domain', 'Visit Count',
+     'Transition', 'Search Terms', 'Target Path', 'Referrer', 'MIME Type']);
+  const out = TIMELINE_MAPPERS.sqlite(src, [
+    '2026-01-01T12:00:00Z', 'visit', 'Example', 'https://example.com/a',
+    'example.com', '3', 'link', '', '', 'https://ref.example/', '',
+  ]);
+  assert.equal(out.Timestamp, '2026-01-01T12:00:00Z');
+  // No URL / Title / Domain / Type projection — these stay native.
+  assert.equal(out.Host, undefined);
+  assert.equal(out.Category, undefined);
+  assert.equal(out.EventID, undefined);
+  assert.equal(out.User, undefined);
+  assert.equal(out.Message, undefined);
+});
+
+test('db mapper is the same function as the sqlite mapper (alias)', () => {
+  assert.equal(TIMELINE_MAPPERS.db, TIMELINE_MAPPERS.sqlite);
+});
+
+test('sqlite mapper falls back to "Last Visited" for the legacy aggregated shape', () => {
+  const src = stubSource('sqlite',
+    ['URL', 'Domain', 'Title', 'Last Visited']);
+  const out = TIMELINE_MAPPERS.sqlite(src,
+    ['https://x/', 'x', 'X', '2026-01-02T00:00:00Z']);
+  assert.equal(out.Timestamp, '2026-01-02T00:00:00Z');
 });
 
 // ── Unknown kind fallback ──────────────────────────────────────────────────
