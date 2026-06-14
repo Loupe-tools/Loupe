@@ -524,6 +524,16 @@ extendApp({
   },
 
   async _loadFileInTimeline(file, prefetchedBuffer /* optional */) {
+    // ── Stale-mount fence ─────────────────────────────────────────────
+    // The Timeline path bypasses `_loadFile` / `_setRenderResult`, so it
+    // never bumps `app._renderEpoch`; two rapid drops can otherwise race
+    // and mount the slower worker's view on top of the faster one. A
+    // dedicated monotonic generation, captured here and re-checked before
+    // every mount/side-effect that publishes the view, gives the same
+    // "latest wins" guarantee the render-epoch contract provides for the
+    // normal pipeline.
+    const loadGen = (this._timelineLoadGen = (this._timelineLoadGen || 0) + 1);
+    const isStale = () => this._timelineLoadGen !== loadGen;
     // ── Chromium heap-budget pre-flight gate ──────────────────────────
     // The Timeline path's RowStore peaks at roughly
     // `file.size * ROWSTORE_HEAP_OVERHEAD_FACTOR` bytes on the main
@@ -1095,6 +1105,20 @@ extendApp({
       // Mount the view into #timeline-root, creating it on demand. The
       // container exists purely to host the Timeline surface — there is
       // no persistent "Timeline mode" any more.
+      //
+      // Bail if a newer Timeline load superseded this one while the
+      // worker/parse was in flight. Without this fence a slower earlier
+      // load could mount its view over the newer one and publish a stale
+      // `_timelineCurrent`. We also `destroy()` our now-orphaned view so
+      // its parsed dataset / SourceRecords are released rather than
+      // leaked. (Safe to destroy: a brand-new view that was never mounted
+      // owns its own store — no SourceRecord aliasing applies on the
+      // single-file path, and the composite merge path goes through
+      // `_timelineAddFile`, not here.)
+      if (isStale()) {
+        try { if (view && typeof view.destroy === 'function') view.destroy(); } catch (_) { /* noop */ }
+        return;
+      }
       let host = document.getElementById('timeline-root');
       if (!host) {
         host = document.createElement('div');
@@ -1424,7 +1448,12 @@ extendApp({
   _singleFileSourceFromView(view) {
     const file = view.file || { name: 'source', size: 0, lastModified: 0 };
     const fileKey = _tlsComputeFileKey(file);
-    const sourceId = 1;   // first source — stable, no collision possible
+    // Allocate from the same monotonic counter the new source will use
+    // (`_tlsFromView` → `_tlsMonotonicId`). Hardcoding `1` here collides
+    // with the first `_tlsMonotonicId()` (also 1), giving two sources the
+    // same id so `_toggleSource`/`_removeSource` (which match the FIRST
+    // entry by id) would operate on the wrong chip.
+    const sourceId = _tlsMonotonicId();
     const formatLabelLower = (view.formatLabel || '').toLowerCase();
     let formatKind = 'csv';
     if (view._evtxEvents) formatKind = 'evtx';
@@ -1489,9 +1518,36 @@ extendApp({
       // sources list carries the old sources by reference, same
       // situation.
       try {
+        // Mark destroyed up-front so any already-queued callback (rAF /
+        // idle tick) that guards on `_destroyed` bails before touching
+        // the caches we null below.
+        oldView._destroyed = true;
         // Manually tear down only view-local resources (ResizeObserver,
         // event listeners) without nulling the data arrays.
         if (oldView._resizeObs) { try { oldView._resizeObs.disconnect(); } catch (_) { /* noop */ } }
+        // Cancel pending async work that would otherwise fire against the
+        // about-to-be-detached old view: the colStats rAF, the in-flight
+        // auto-extract idle tick, and the two post-mount kick-off timers.
+        // `destroy()` does all of this; the swap path is a hand-rolled
+        // partial teardown that previously omitted them, leaving the old
+        // view's auto-extract idle pump running against nulled caches.
+        if (oldView._colStatsRaf) {
+          try { cancelAnimationFrame(oldView._colStatsRaf); } catch (_) { /* noop */ }
+          oldView._colStatsRaf = 0;
+        }
+        if (oldView._autoExtractIdleHandle) {
+          try { oldView._autoExtractIdleHandle.cancel(); } catch (_) { /* noop */ }
+          oldView._autoExtractIdleHandle = null;
+        }
+        oldView._autoExtractApplying = false;
+        if (oldView._postMountAutoExtractTimer) {
+          clearTimeout(oldView._postMountAutoExtractTimer);
+          oldView._postMountAutoExtractTimer = 0;
+        }
+        if (oldView._postMountGeoipTimer) {
+          clearTimeout(oldView._postMountGeoipTimer);
+          oldView._postMountGeoipTimer = 0;
+        }
         if (oldView._queryEditor && typeof oldView._queryEditor.destroy === 'function') {
           try { oldView._queryEditor.destroy(); } catch (_) { /* noop */ }
         }
@@ -1539,7 +1595,6 @@ extendApp({
         // `_extractedCols` reference of its own (same array), but
         // the wrapper itself + its caches add more heap.
         oldView._dataset = null;
-        oldView._destroyed = true;
       } catch (_) { /* best-effort teardown */ }
     }
     // Ensure body chrome reflects Timeline state.

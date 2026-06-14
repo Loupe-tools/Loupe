@@ -312,6 +312,12 @@ function buildCompositeStore(sources, plan) {
   // every pending row pointing at the last iteration's cells.
   const baseRowBuf = [];
 
+  // Amortised cooperative-cancel poll. This is a byte-intensive
+  // main-thread pass over the SUM of every source's rows (multi-million
+  // on a large merge); poll once per block so an active parser-watchdog
+  // signal can preempt it rather than wedging the UI (invariant #12).
+  let rowsDone = 0;
+
   for (let s = 0; s < sources.length; s++) {
     const src = sources[s];
     const srcPlan = plan.sourceColPlans[s];
@@ -326,6 +332,7 @@ function buildCompositeStore(sources, plan) {
     const iSource = canonicalIdx.get('__source');
 
     for (let r = 0; r < rc; r++) {
+      if ((rowsDone++ & 0x3fff) === 0) throwIfAborted();
       // Fresh per-row cell buffer — see note above on builder batching.
       const cellBuf = new Array(totalCols);
       for (let c = 0; c < totalCols; c++) cellBuf[c] = '';

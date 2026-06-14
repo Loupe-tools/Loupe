@@ -334,8 +334,11 @@ async function _parseStructuredLog(buffer, kindHint, fileLastModified) {
   // Pass the raw mtime ms through to the per-line tokeniser. The
   // tokeniser handles the "missing mtime → current UTC year" fallback
   // internally, and uses the mtime as the upper-bound boundary for
-  // its 30-day future-roll heuristic.
-  const nowMs = fileLastModified | 0;
+  // its 30-day future-roll heuristic. Do NOT `| 0` — epoch-ms (~1.7e12)
+  // exceeds the 32-bit signed range and would truncate to a 1970 date,
+  // corrupting RFC-3164 year inference. Mirror the shim's guard.
+  const nowMs = (Number.isFinite(fileLastModified) && fileLastModified > 0)
+    ? fileLastModified : Date.now();
 
   let columns = [];
   let colLen = 0;

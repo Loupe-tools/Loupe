@@ -393,7 +393,11 @@ class TimelineView {
     // the post-apply toast on reopens; the extraction itself ignores it.
     // Manual Regex-tab extracts persist via `_persistRegexExtracts` and
     // are dedupe-merged with the auto pass.
-    setTimeout(() => this._autoExtractBestEffort(), 60);
+    this._postMountAutoExtractTimer = setTimeout(() => {
+      this._postMountAutoExtractTimer = 0;
+      if (this._destroyed) return;
+      this._autoExtractBestEffort();
+    }, 60);
     // GeoIP enrichment runs on the same post-mount tick as auto-extract,
     // but slightly later so its idempotence-marker check sees any
     // analyst-deleted columns from auto-extract first. The mixin
@@ -402,7 +406,9 @@ class TimelineView {
     // briefly on the synchronous factory path — `_app` is assigned by
     // the router after `view.root()` is mounted). The router calls
     // `_runGeoipEnrichment()` again after stamping `_app` for that case.
-    setTimeout(() => {
+    this._postMountGeoipTimer = setTimeout(() => {
+      this._postMountGeoipTimer = 0;
+      if (this._destroyed) return;
       if (typeof this._runGeoipEnrichment === 'function') {
         try { this._runGeoipEnrichment(); } catch (_) { /* enrichment is additive */ }
       }
@@ -417,6 +423,19 @@ class TimelineView {
     this._destroyed = true;
     cancelAnimationFrame(this._colStatsRaf);
     this._colStatsRaf = 0;
+    // Cancel the post-mount auto-extract / geoip kick-off timers. Without
+    // this, a rapid file swap (Timeline→Timeline replace calls destroy()
+    // synchronously, often within the 60/100 ms window) lets the timers
+    // fire against a half-nulled instance → `_autoExtractBestEffort`
+    // touches a null `_dataset`/`store`.
+    if (this._postMountAutoExtractTimer) {
+      clearTimeout(this._postMountAutoExtractTimer);
+      this._postMountAutoExtractTimer = 0;
+    }
+    if (this._postMountGeoipTimer) {
+      clearTimeout(this._postMountGeoipTimer);
+      this._postMountGeoipTimer = 0;
+    }
     // Cancel any in-flight auto-extract idle/timeout tick. The handle
     // record carries its own cancel fn so we don't have to remember
     // which scheduler we picked (rIC vs setTimeout fallback). Without

@@ -137,7 +137,13 @@ function _tlTokenize(src) {
           pat += ch; i++;
         }
         let flags = '';
-        while (i < n && /[imsuy]/.test(s.charAt(i))) { flags += s.charAt(i); i++; }
+        // Accept `imsu` only. The sticky `y` (and global `g`) flags make
+        // `RegExp.prototype.test` stateful via `lastIndex`; in the
+        // per-row predicate (`re.test(cell)`) a sticky pattern anchors at
+        // position 0, silently turning a "contains" match into an
+        // anchored one. Reject `y`/`g` at tokenise time so the matcher
+        // semantics stay positional-independent.
+        while (i < n && /[imsu]/.test(s.charAt(i))) { flags += s.charAt(i); i++; }
         tokens.push({
           kind: closed ? 'REGEX' : 'ERR',
           text: s.slice(start, i), value: { pattern: pat, flags }, start, end: i,
@@ -300,13 +306,22 @@ function _tlParseQuery(tokens, columnsResolver) {
   };
 
   // Parse a primary expression.
+  // `parenDepth` bounds parenthesised-group nesting: each `(` re-enters
+  // `parseExpr → parseAnd → parseNot → parsePrimary`, so a pasted query
+  // like `(((((…)))))` with thousands of parens would otherwise overflow
+  // the JS call stack with an uncaught `RangeError`. Cap it and surface a
+  // clean parse error instead.
+  let parenDepth = 0;
+  const MAX_PAREN_DEPTH = 256;
   const parsePrimary = () => {
 
     if (atEnd()) err('expected expression', toks[toks.length - 1] || { start: 0 });
     const t = peek();
     if (t.kind === 'LP') {
       eat();
+      if (++parenDepth > MAX_PAREN_DEPTH) err('query nested too deeply', t);
       const inner = parseExpr();
+      parenDepth--;
       if (atEnd() || peek().kind !== 'RP') err('expected ")"', peek() || t);
       eat();
       return inner;
@@ -472,11 +487,20 @@ function _tlParseQuery(tokens, columnsResolver) {
 function _tlCompileAst(ast, view) {
   if (!ast || ast.k === 'empty') return null;
   const cellAt = (di, ci) => view._cellAt(di, ci);
-  const allColsJoin = (di) => {
+  // Per-row "any column contains <needle>" test. Scans cells one at a
+  // time and stops at the first hit, lowercasing only the individual
+  // cell being tested (the needle is pre-lowercased once at compile
+  // time). The previous approach built `new Array(cols)`, `join('\n')`
+  // and `.toLowerCase()`'d the whole joined string for EVERY row — for a
+  // 1M-row × 30-col corpus that is millions of large transient string
+  // allocations per filter pass. This early-outs and allocates nothing
+  // beyond the single lowercased cell.
+  const anyColContains = (di, needleLc) => {
     const total = view.columns.length;
-    const parts = new Array(total);
-    for (let c = 0; c < total; c++) parts[c] = cellAt(di, c);
-    return parts.join('\n').toLowerCase();
+    for (let c = 0; c < total; c++) {
+      if (cellAt(di, c).toLowerCase().indexOf(needleLc) !== -1) return true;
+    }
+    return false;
   };
   const compile = (node) => {
     switch (node.k) {
@@ -501,7 +525,7 @@ function _tlCompileAst(ast, view) {
       case 'any': {
         const needle = String(node.needle || '').toLowerCase();
         if (!needle) return () => true;
-        return (di) => allColsJoin(di).indexOf(needle) !== -1;
+        return (di) => anyColContains(di, needle);
       }
       case 'is': {
         const name = node.name;
@@ -527,15 +551,24 @@ function _tlCompileAst(ast, view) {
         const ci = node.colIdx;
         const v = String(node.val == null ? '' : node.val);
         const lcNeedle = v.toLowerCase();
+        const lcNeedleTrim = lcNeedle.trim();
 
         switch (node.op) {
           case 'contains':
-            if (ci === -1) return (di) => allColsJoin(di).indexOf(lcNeedle) !== -1;
+            if (ci === -1) return (di) => anyColContains(di, lcNeedle);
             return (di) => cellAt(di, ci).toLowerCase().indexOf(lcNeedle) !== -1;
           case 'eq':
-            return (di) => cellAt(di, ci) === v;
+            // Case-insensitive + whitespace-trimmed equality. Click-pivots
+            // (right-click Include / column-card click) emit `eq` clauses
+            // built from the displayed cell text; a strict case-sensitive
+            // `===` silently filtered to 0 rows whenever the canonical
+            // cell text differed only by case or surrounding whitespace
+            // from the pivoted value. `contains` is already
+            // case-insensitive, so this also removes the surprising
+            // asymmetry between the two operators.
+            return (di) => cellAt(di, ci).trim().toLowerCase() === lcNeedleTrim;
           case 'ne':
-            return (di) => cellAt(di, ci) !== v;
+            return (di) => cellAt(di, ci).trim().toLowerCase() !== lcNeedleTrim;
           case 'regex': {
             const re = node.re;
             return (di) => { re.lastIndex = 0; return re.test(cellAt(di, ci)); };

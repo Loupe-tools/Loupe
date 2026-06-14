@@ -312,13 +312,16 @@ Object.assign(TimelineView.prototype, {
           case 'tactic': cmp = String(a.primaryTactic).localeCompare(String(b.primaryTactic)); break;
           default: cmp = a.sevRank - b.sevRank;
         }
-        if (cmp === 0) {
-          // Stable secondary order: severity desc, then count desc.
-          cmp = (a.sevRank - b.sevRank);
-          if (cmp === 0) cmp = (a.count - b.count);
-          return -cmp;
-        }
-        return cmp * dir;
+        if (cmp !== 0) return cmp * dir;
+        // Deterministic tie-break for a total ordering. Applied as a
+        // fixed sequence (severity desc, then count desc, then desc text)
+        // and NOT scaled by `dir` — but it only runs when the primary key
+        // is equal, so it cannot contradict the primary comparison and
+        // the relation stays transitive.
+        let tie = b.sevRank - a.sevRank;
+        if (tie === 0) tie = b.count - a.count;
+        if (tie === 0) tie = String(a.desc).localeCompare(String(b.desc));
+        return tie;
       });
     };
 

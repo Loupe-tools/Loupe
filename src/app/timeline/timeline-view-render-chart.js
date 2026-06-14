@@ -450,19 +450,30 @@ Object.assign(TimelineView.prototype, {
   // so a linear scan is acceptable at interactive rates (rAF-throttled).
   // Returns a dataIdx suitable for `_setCursorDataIdx`, or null.
   _findNearestDataIdxForTime(targetMs) {
+    const r = this._findNearestForTime(targetMs);
+    return r ? r.di : null;
+  },
+
+  // Internal variant returning both the nearest dataIdx AND its virtual
+  // position within `_filteredIdx`. The cursor-drag handler needs the
+  // virtual index to scroll the grid; returning it here avoids a SECOND
+  // O(n) scan in `_scrollGridToCursorIdx` to recover the same `i` this
+  // loop already visited.
+  _findNearestForTime(targetMs) {
     const idx = this._filteredIdx;
     const times = this._timeMs;
     if (!idx || !idx.length || !times) return null;
     let bestDi = null;
+    let bestV = -1;
     let bestDist = Infinity;
     for (let i = 0; i < idx.length; i++) {
       const di = idx[i];
       const t = times[di];
       if (!Number.isFinite(t)) continue;
       const d = Math.abs(t - targetMs);
-      if (d < bestDist) { bestDist = d; bestDi = di; }
+      if (d < bestDist) { bestDist = d; bestDi = di; bestV = i; }
     }
-    return bestDi;
+    return bestDi == null ? null : { di: bestDi, vIdx: bestV };
   },
 
   // Scroll the main grid so the row for `dataIdx` is roughly centred in
@@ -470,17 +481,23 @@ Object.assign(TimelineView.prototype, {
   // the cursor position during a drag without animation lag. Skips the
   // GridViewer `_scrollToRow` path which opens the drawer and does
   // highlight flash — here we just want a lightweight viewport reposition.
-  _scrollGridToCursorIdx(dataIdx) {
+  _scrollGridToCursorIdx(dataIdx, knownVIdx) {
     const viewer = this._grid;
     if (!viewer || !viewer._scr) return;
     // Map original dataIdx → virtual row index in the grid. The grid's
     // rows are in `_filteredIdx` order, so we need the position of
-    // `dataIdx` within `_filteredIdx`.
-    const fi = this._filteredIdx;
-    if (!fi) return;
+    // `dataIdx` within `_filteredIdx`. The drag path already knows this
+    // position (from `_findNearestForTime`) and passes it in to skip the
+    // O(n) inverse scan; the fallback below handles other callers.
     let vIdx = -1;
-    for (let i = 0; i < fi.length; i++) {
-      if (fi[i] === dataIdx) { vIdx = i; break; }
+    if (Number.isInteger(knownVIdx) && knownVIdx >= 0) {
+      vIdx = knownVIdx;
+    } else {
+      const fi = this._filteredIdx;
+      if (!fi) return;
+      for (let i = 0; i < fi.length; i++) {
+        if (fi[i] === dataIdx) { vIdx = i; break; }
+      }
     }
     if (vIdx < 0) return;
     const rowH = viewer.ROW_HEIGHT || 28;
@@ -536,16 +553,17 @@ Object.assign(TimelineView.prototype, {
         const clamped = Math.max(padL, Math.min(padL + plotW, x));
         const rel = (clamped - padL) / plotW;
         const targetMs = cd.viewLo + rel * cd.rangeMs;
-        const di = this._findNearestDataIdxForTime(targetMs);
-        if (di != null) {
-          this._setCursorDataIdx(di);
+        const near = this._findNearestForTime(targetMs);
+        if (near) {
+          this._setCursorDataIdx(near.di);
           // Throttle grid scrolling to rAF so we don't overwhelm
           // the virtual-scroll grid with synchronous reflows.
           if (!scrollRaf) {
-            const scrollDi = di;
+            const scrollDi = near.di;
+            const scrollV = near.vIdx;
             scrollRaf = requestAnimationFrame(() => {
               scrollRaf = 0;
-              this._scrollGridToCursorIdx(scrollDi);
+              this._scrollGridToCursorIdx(scrollDi, scrollV);
             });
           }
         }

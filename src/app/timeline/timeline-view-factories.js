@@ -381,7 +381,14 @@ Object.assign(TimelineView, {
     // Mtime ms threads through the tokeniser; see the worker copy
     // (`timeline.worker.js::_parseStructuredLog`) and the canonical
     // `_tlTokenizeSyslog3164` for the year-inference rule.
-    const nowMs = (file && file.lastModified) | 0;
+    // File mtime in epoch MILLISECONDS, threaded into the syslog
+    // tokenizer for RFC-3164 year inference (3164 omits the year). NOTE:
+    // do NOT `| 0` this — epoch-ms is ~1.7e12, far beyond the 32-bit
+    // signed range, so `| 0` truncates it to garbage (often a 1970 date)
+    // and the inferred year is wrong. Mirror the shim's guard
+    // (`timeline-worker-shim.js`) and fall back to "now" when absent.
+    const lm = file && file.lastModified;
+    const nowMs = (Number.isFinite(lm) && lm > 0) ? lm : Date.now();
     const yieldTick = () => new Promise(resolve => {
       if (typeof MessageChannel !== 'undefined') {
         const ch = new MessageChannel();

@@ -1737,7 +1737,11 @@ function _tlParseTimestamp(s) {
   if (typeof s === 'number') return s;
   const str = String(s).trim();
   if (!str) return NaN;
-  // Epoch seconds / milliseconds.
+  // Epoch seconds / milliseconds. Digit-count is the only signal here,
+  // so this is inherently ambiguous with bare numeric IDs of the same
+  // width — a residual, documented limitation (see audit M4). A leading
+  // `-` is accepted as a pre-1970 epoch by design (regression-pinned in
+  // `timeline-ts-parse.test.js`).
   if (/^-?\d{10}$/.test(str)) return Number(str) * 1000;
   if (/^-?\d{13}$/.test(str)) return Number(str);
   // ISO datetime (with time component).
@@ -1748,7 +1752,17 @@ function _tlParseTimestamp(s) {
     // word forms `UTC` / `GMT` with space / hyphen / underscore / no
     // separator, with or without surrounding brackets / parens).
     const norm = _tlNormaliseIsoSuffix(str);
-    const ms = Date.parse(norm);
+    // A datetime with NO explicit timezone is interpreted by
+    // `Date.parse` as LOCAL time (ECMAScript: the `T`-separated, offset-
+    // less form is local; the space-separated form is implementation-
+    // defined). Loupe treats every timeline timestamp as UTC (syslog,
+    // CLF, Ivanti, .NET dates all use `Date.UTC`), so a tz-less value
+    // must also be read as UTC — otherwise the same log shifts by the
+    // analyst's local offset and parses differently across machines,
+    // breaking run determinism. If normalisation didn't leave an
+    // explicit `Z` or `±HH[:]MM` offset, append `Z` to pin it to UTC.
+    const hasTz = /(?:Z|[+-]\d{2}:?\d{2})$/.test(norm);
+    const ms = Date.parse(hasTz ? norm : norm + 'Z');
     return Number.isFinite(ms) ? ms : NaN;
   }
   // Pulse Secure / Ivanti Connect Secure (and similar hand-rolled
@@ -2292,9 +2306,19 @@ function _tlFileKey(file) {
   return `${file.name || ''}|${file.size || 0}|${file.lastModified || 0}`;
 }
 
-// CSV-escape a single cell (RFC 4180-ish).
+// CSV-escape a single cell (RFC 4180-ish) with spreadsheet
+// formula-injection neutralisation. Loupe's entire input corpus is
+// untrusted forensic data; a cell whose text begins with `= + - @` (or a
+// leading TAB / CR that some spreadsheets strip before re-classifying)
+// is interpreted as a formula by Excel / LibreOffice / Sheets on open,
+// turning an exported timeline into a code-execution vector. We defang
+// by prefixing such cells with a single quote, then apply the normal
+// RFC-4180 quoting (the leading `'` means every defanged cell also needs
+// quoting because `'` itself is harmless but the value may still contain
+// commas/quotes).
 function _tlCsvCell(s) {
-  const str = s == null ? '' : String(s);
+  let str = s == null ? '' : String(s);
+  if (str !== '' && /^[=+\-@\t\r]/.test(str)) str = "'" + str;
   if (/[",\r\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
   return str;
 }

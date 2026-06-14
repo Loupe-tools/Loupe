@@ -213,12 +213,22 @@ Object.assign(TimelineView.prototype, {
     } else {
       const buf = new Uint32Array(n);
       let w = 0;
+      // Amortised cooperative-cancel poll. These full-corpus filter
+      // passes (any-column / regex predicates over millions of rows) are
+      // the heaviest synchronous main-thread loops in the Timeline; poll
+      // once per block so that if this ever runs under an active parser
+      // watchdog signal it can be preempted rather than wedging the UI.
+      // `throwIfAborted()` is a single global-read + branch when no
+      // signal is active, so the per-block cost is negligible.
+      const ABORT_POLL_MASK = 0x0fff; // every 4096 rows
       if (queryPred && hasSourceFilter) {
         for (let i = 0; i < n; i++) {
+          if ((i & ABORT_POLL_MASK) === 0) throwIfAborted();
           if (enabledBm[i] && queryPred(i)) buf[w++] = i;
         }
       } else if (queryPred) {
         for (let i = 0; i < n; i++) {
+          if ((i & ABORT_POLL_MASK) === 0) throwIfAborted();
           if (queryPred(i)) buf[w++] = i;
         }
       } else {
@@ -270,6 +280,7 @@ Object.assign(TimelineView.prototype, {
       const bm = new Uint8Array(n);
       const nCols = this.columns.length;
       for (let i = 0; i < n; i++) {
+        if ((i & 0x0fff) === 0) throwIfAborted();
         for (let s = 0; s < susResolved.length; s++) {
           const spec = susResolved[s];
           // Case-insensitive substring match: spec.val is already

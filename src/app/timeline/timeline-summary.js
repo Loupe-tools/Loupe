@@ -427,6 +427,14 @@
       const lvlCount = new Map();
       const computerCount = new Map();
       const eidStats = new Map(); // key = eid
+      // Per-EID (across ALL channels) first/last/count, built in the SAME
+      // single pass below. The detection-decoration step keys off the
+      // bare eventId, so precomputing it here turns what was an
+      // O(detections × events) nested re-walk into an O(events) build +
+      // O(detections) lookup. Without this, a malicious/large EVTX with
+      // many distinct detection patterns wedged the main thread during
+      // ⚡Summarize (audit M8).
+      const eidAggByEid = new Map(); // key = eid string → {first,last,count}
       // Process trees: pid → {image, parent, ts, cmd, user, hashes}
       const procByPid = new Map();
       // Logon events (4625 / 4624 / 4634 / 4647 / 4648)
@@ -471,6 +479,7 @@
       // `events.length === tm.length === store.rowCount`, so we can
       // index in lock-step without per-row guards.
       for (let i = 0; i < events.length; i++) {
+        if ((i & 0x0fff) === 0) throwIfAborted();
         const ev = events[i];
         if (!ev) continue;
         const ts = tm && tm.length ? tm[i] : NaN;
@@ -497,6 +506,20 @@
         if (Number.isFinite(ts)) {
           if (ts < er.first) er.first = ts;
           if (ts > er.last) er.last = ts;
+        }
+
+        // Per-EID (channel-agnostic) aggregate for detection decoration.
+        if (eid) {
+          let ea = eidAggByEid.get(eid);
+          if (!ea) {
+            ea = { first: Infinity, last: -Infinity, count: 0 };
+            eidAggByEid.set(eid, ea);
+          }
+          ea.count++;
+          if (Number.isFinite(ts)) {
+            if (ts < ea.first) ea.first = ts;
+            if (ts > ea.last) ea.last = ts;
+          }
         }
 
         // Quick KV map for relationship harvesting. Skip events
@@ -621,22 +644,16 @@
       const decoratedDetections = [];
       for (const r of detectionRefs) {
         const eid = r.eventId == null ? '' : String(r.eventId);
-        // Walk events to find min/max timestamps for this EID. Filter
-        // to the same channel-family the detection's recommendation
-        // implies (using EvtxEventIds.lookup if available).
-        let dFirst = Infinity, dLast = -Infinity, dCount = 0;
-        for (let i = 0; i < events.length; i++) {
-          const ev = events[i];
-          if (!ev || String(ev.eventId) !== eid) continue;
-          dCount++;
-          const ts = tm && tm.length ? tm[i] : NaN;
-          if (Number.isFinite(ts)) {
-            if (ts < dFirst) dFirst = ts;
-            if (ts > dLast) dLast = ts;
-          }
+        // Per-EID min/max timestamp + count, read from the single-pass
+        // `eidAggByEid` aggregate built above (was an O(events) re-walk
+        // per detection — audit M8).
+        let dFirst = NaN, dLast = NaN, dCount = 0;
+        const ea = eid ? eidAggByEid.get(eid) : null;
+        if (ea) {
+          dCount = ea.count;
+          dFirst = Number.isFinite(ea.first) ? ea.first : NaN;
+          dLast = Number.isFinite(ea.last) ? ea.last : NaN;
         }
-        if (!Number.isFinite(dFirst)) dFirst = NaN;
-        if (!Number.isFinite(dLast)) dLast = NaN;
         const rec = _eidLookup(eid, '');
         const tids = rec && Array.isArray(rec.mitre) ? rec.mitre : [];
         decoratedDetections.push({
@@ -783,16 +800,29 @@
       const det = agg.decoratedDetections;
       if (!det.length) return '';
       const tally = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-      for (const d of det) tally[d.severity] = (tally[d.severity] || 0) + 1;
+      // Fold any non-canonical severity into `info` rather than letting
+      // it create a phantom tally key that is then dropped from both the
+      // table and `topRisk` (audit M8). Matches the detections-grid
+      // behaviour (`timeline-detections.js`).
+      for (const d of det) {
+        const sev = Object.prototype.hasOwnProperty.call(tally, d.severity)
+          ? d.severity : 'info';
+        tally[sev]++;
+      }
       const tactics = new Map();
       for (const d of det) {
         if (!d.tactic) continue;
         tactics.set(d.tactic, (tactics.get(d.tactic) || 0) + 1);
       }
-      let topRisk = 'low';
+      // Derive the top severity from whichever tier actually has rows —
+      // don't default to `low` when only `info` (or nothing above info)
+      // is present, which previously mislabelled an info-only report as
+      // 🟢 LOW.
+      let topRisk = 'info';
       if (tally.critical) topRisk = 'critical';
       else if (tally.high) topRisk = 'high';
       else if (tally.medium) topRisk = 'medium';
+      else if (tally.low) topRisk = 'low';
       const sevIcon = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢', info: '⚪' };
       let s = '\n## Risk Summary\n';
       s += `**Top severity:** ${sevIcon[topRisk]} ${topRisk.toUpperCase()}\n\n`;
