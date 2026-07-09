@@ -466,6 +466,9 @@ _DETECTOR_FILES = [
     # source mentions an XOR operator. See PLAN.md → D1.
     'src/decoders/xor-bruteforce.js',
     'src/decoders/ioc-extract.js',
+    # decoder-ioc.js — sentinel-gated pattern IOC helpers for encoded-content
+    # decoders. Must load before cmd-obfuscation.js and siblings.
+    'src/decoder-ioc.js',
     'src/decoders/base64-hex.js',
     'src/decoders/zlib.js',
     'src/decoders/encoding-finders.js',
@@ -602,6 +605,9 @@ APP_JS_FILES = [
     # calibrateRiskFromEvidence primitives for format handlers. Must load
     # immediately after constants.js (depends on pushIOC / escalateRisk / IOC.*).
     'src/renderer-helpers.js',
+    # decoder-ioc.js — shared with encoded worker via _DETECTOR_FILES; host
+    # bundle includes it here for symmetry with merge-helper docs.
+    'src/decoder-ioc.js',
 
     # util/url-normalize.js — pure deobfuscator for URL strings (unicode /
     # hex inline escapes, percent-encoding in host+path, hex/octal/decimal

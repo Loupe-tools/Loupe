@@ -99,6 +99,8 @@ MIRRORS = [
         # `matchAll` site through it as defence-in-depth against ReDoS.
         "path": ROOT / "src" / "workers" / "ioc-extract-worker-shim.js",
         "consts": [
+            "DER_TAIL_RX_TERMINATED",
+            "DER_TAIL_RX_TLD",
             "_KNOWN_EXT_RE",
             # _UNRESOLVED_SENTINEL_RE — ⟨unresolved:…⟩ / ⟨VAR:~…⟩ sentinel
             # gate regex. Consumed by `hasUnresolvedSentinel` (below),

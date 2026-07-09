@@ -43,6 +43,7 @@ function loadMergeHelper() {
     ],
     {
       shims: {
+        RendererDispatchFactory: { build: () => ({}) },
         extendApp: (obj) => Object.assign(methods, obj),
       },
       expose: ['IOC', 'pushIOC', 'IOC_CANONICAL_SEVERITY'],

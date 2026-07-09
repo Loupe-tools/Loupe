@@ -590,10 +590,62 @@ function loadModulesAsRequire(relPaths, opts) {
   };
 }
 
+/**
+ * Experimental ESM path: bundle ``relPaths`` with esbuild (build-time tool
+ * only) and evaluate the IIFE inside a fresh vm context. Falls back to
+ * ``loadModules`` when esbuild is unavailable.
+ *
+ * @param {string[]} relPaths
+ * @param {object}   [opts]
+ * @returns {object}
+ */
+function loadESMModules(relPaths, opts) {
+  if (!Array.isArray(relPaths) || relPaths.length === 0) {
+    throw new Error('load-bundle: relPaths must be a non-empty array');
+  }
+  const o = opts || {};
+  const expose = Array.isArray(o.expose) ? o.expose : DEFAULT_EXPOSE;
+  try {
+    const { execFileSync } = require('node:child_process');
+    const os = require('node:os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'loupe-esm-'));
+    const imports = relPaths
+      .map((rel) => `import '${resolveSrc(rel).replace(/\\/g, '/')}';`)
+      .join('\n');
+    const entry = path.join(tmpDir, 'entry.mjs');
+    fs.writeFileSync(entry, imports + '\n', 'utf8');
+    const out = path.join(tmpDir, 'bundle.js');
+    execFileSync(
+      'npx',
+      [
+        '--yes', 'esbuild@0.25.0', entry,
+        '--bundle', '--format=iife', '--platform=browser', '--target=es2020',
+        `--outfile=${out}`,
+        '--log-level=warning',
+      ],
+      { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 },
+    );
+    let code = fs.readFileSync(out, 'utf8');
+    code += '\n';
+    for (const name of expose) {
+      if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) continue;
+      code += `try { globalThis[${JSON.stringify(name)}] = (typeof ${name} !== 'undefined') ? ${name} : undefined; } catch (_) {}\n`;
+    }
+    const sandbox = makeSandbox(o.shims);
+    vm.runInContext(code, vm.createContext(sandbox), {
+      filename: o.filename || 'load-bundle:esbuild',
+    });
+    return sandbox;
+  } catch (_err) {
+    return loadModules(relPaths, opts);
+  }
+}
+
 module.exports = {
   loadModules,
   loadModulesWithManifest,
   loadModulesAsRequire,
+  loadESMModules,
   resolveSrc,
   REPO_ROOT,
   DEFAULT_EXPOSE,

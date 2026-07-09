@@ -33,15 +33,8 @@
 // catch the drift.
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── IOC type constants (mirrors src/constants.js, IOC table) ────────────────
-//
-// `_extractIOCsFromDecoded()` shapes its output rows with `type: IOC.URL`,
-// `IOC.EMAIL`, `IOC.IP`, `IOC.FILE_PATH`, `IOC.UNC_PATH`. The host's
-// `app-load.js` post-scan loop merges these rows into
-// `findings.interestingStrings` verbatim, so the values must match the
-// canonical strings defined in `src/constants.js`. Keep this object in sync
-// with the real `IOC` table — there's no build-time check for drift between
-// the worker shim and the main constants table.
+// ── Mirrored constants (codegen from src/constants.js) ─────────────────────
+// @loupe-codegen:start
 const IOC = Object.freeze({
   URL: 'URL',
   EMAIL: 'Email',
@@ -67,86 +60,20 @@ const IOC = Object.freeze({
   SECRET: 'Secret',
 });
 
-// ── PARSER_LIMITS subset (Decompressor MAX_OUTPUT) ──────────────────────────
-//
-// `src/decompressor.js` reads `PARSER_LIMITS.MAX_UNCOMPRESSED` at module
-// load to set its zip-bomb expansion cap. Match the main-thread value
-// exactly — see `src/constants.js`.
 const PARSER_LIMITS = Object.freeze({
-  MAX_UNCOMPRESSED: 256 * 1024 * 1024,  // 256 MB — must match constants.js
+  MAX_UNCOMPRESSED: 256 * 1024 * 1024,  // generated from constants.js
 });
 
-// ── _trimPathExtGarbage (mirrors src/constants.js) ──────────────────────────
-//
-// `_extractIOCsFromDecoded()` calls this on every Windows-style path it
-// finds in the decoded payload to trim string-extraction garbage that
-// fused adjacent printable bytes onto the end of a path (e.g.
-// `"file.pdbtEXtSoftwareAdobe…"` → `"file.pdb"`). Source-of-truth lives
-// in `src/constants.js`; keep this copy in sync.
-const _KNOWN_EXT_RE = /^\.(exe|dll|sys|drv|ocx|cpl|scr|com|pdb|lib|obj|exp|pif|lnk|url|bat|cmd|ps1|py|vbs|vbe|js|jse|wsh|wsf|wsc|hta|sct|inf|reg|msi|msp|mst|txt|log|ini|cfg|conf|config|xml|html?|json|ya?ml|toml|csv|tsv|sql|sqlite|db|mdb|accdb|doc[xm]?|xls[xmb]?|ppt[xm]?|pdf|rtf|odt|ods|odp|one|eml|msg|pst|evtx?|zip|rar|7z|gz|tar|bz2|xz|cab|iso|img|vhdx?|vmdk|dmp|bak|tmp|old|dat|bin|pyc|pyo|pyw|rb|java|class|jar|war|apk|cpp|hpp|cs|go|rs|php|aspx?|jsp|sh|so|dylib|manifest|pem|crt|cer|der|key|pfx|ico|png|jpe?g|gif|bmp|svg|webp|tiff?|mp[34]|avi|mov|wmv|wav|ogg|woff2?|ttf|otf|eot)/i;
-function _trimPathExtGarbage(path) {
-  const ls = path.lastIndexOf('\\');
-  if (ls < 0) return path;
-  const fn = path.slice(ls + 1);
-  const dot = fn.lastIndexOf('.');
-  if (dot < 0) return path;
-  const ext = fn.slice(dot + 1);
-  if (ext.length <= 10) return path;
-  const tail = fn.slice(dot);
-  const extM = tail.match(_KNOWN_EXT_RE);
-  return extM ? path.slice(0, ls + 1 + dot + extM[0].length) : path;
-}
-
-// ── throwIfAborted no-op (mirrors src/workers/timeline-worker-shim.js) ──────
-//
-// `throwIfAborted` is the render-epoch / watchdog poll site defined in
-// `src/constants.js` for the host thread. Decoder helpers
-// (`src/decoders/encoding-finders.js`, `src/decoders/cmd-obfuscation.js`)
-// call it between candidate scans so the host can preempt long parses on
-// supersession / watchdog timeout. Workers never participate in the host's
-// render-epoch fence — they're terminated wholesale by `worker.terminate()`
-// — so this is a no-op stub. Without it the finder helpers would throw
-// `ReferenceError: throwIfAborted is not defined`, and the
-// secondary-scan `catch` would surface the failure as the misleading
-// "finder-budget — throwIfAborted is not defined" Info row.
-function throwIfAborted() { /* no-op in worker */ }
-
-// ── hasUnresolvedSentinel (mirrors src/constants.js) ────────────────────────
-//
-// Gate called from `_extractIOCsFromDecoded` (src/decoders/ioc-extract.js),
-// `_processCommandObfuscation` (src/decoders/cmd-obfuscation.js), and the
-// AppleScript Tier C / literal-URL extractors
-// (src/decoders/applescript-obfuscation.js) to reject IOC rows whose values
-// still carry a ⟨unresolved:NAME⟩ / ⟨VAR:~start,len⟩ / ⟨!cleaned!⟩ / ⟨…⟩
-// sentinel (U+27E8 / U+27E9). All three files live in `_DETECTOR_FILES`
-// (see `scripts/build.py`) and therefore execute inside this worker bundle,
-// so the helper MUST be visible at worker-global scope — otherwise every
-// sentinel-gate call throws `ReferenceError`, the encoded-content
-// `_runFinder` wrapper short-circuits the whole secondary scan, and the
-// Deobfuscation section blanks out with a "finder-budget — … is not
-// defined" stub (the same failure mode the `throwIfAborted` block above
-// was added to prevent).
-//
-// Keep the regex body byte-equivalent with `src/constants.js`;
-// `scripts/check_shim_parity.py` diffs it at build time.
-/* safeRegex: builtin */
-const _UNRESOLVED_SENTINEL_RE = /\u27E8[^\u27E8\u27E9]{0,256}\u27E9/;
-function hasUnresolvedSentinel(s) {
-  return typeof s === 'string' && _UNRESOLVED_SENTINEL_RE.test(s);
-}
-
-// ── safeRegex helpers (mirror src/constants.js) ─────────────────────────────
-//
-// Workers don't share globals with the host bundle, so the safeRegex /
-// safeTest / safeMatchAll / looksRedosProne primitives — used by encoded-
-// content finders, cmd-obfuscation, and YARA worker-side regex — must be
-// inlined here. Keep the bodies byte-equivalent with `src/constants.js`; the
-// build's verify pass diffs them.
 const SAFE_REGEX_MAX_PATTERN_LEN = 2048;
-const _REDOS_NESTED_QUANT_RE =
-  /\((?:\?[:=!]|\?<[=!])?[^()]*(?:[+*]|\{\d+,\}|\{,\d+\})[^()]*\)\s*(?:[+*]|\{\d+,\}|\{,\d+\})/;
-const _REDOS_DUPLICATE_GROUP_RE =
-  /(\([^()]{2,80}\)[+*])\s*\1/;
+
+const _REDOS_NESTED_QUANT_RE = /\((?:\?[:=!]|\?<[=!])?[^()]*(?:[+*]|\{\d+,\}|\{,\d+\})[^()]*\)\s*(?:[+*]|\{\d+,\}|\{,\d+\})/;
+
+const _REDOS_DUPLICATE_GROUP_RE = /(\([^()]{2,80}\)[+*])\s*\1/;
+
+const _KNOWN_EXT_RE = /^\.(exe|dll|sys|drv|ocx|cpl|scr|com|pdb|lib|obj|exp|pif|lnk|url|bat|cmd|ps1|py|vbs|vbe|js|jse|wsh|wsf|wsc|hta|sct|inf|reg|msi|msp|mst|txt|log|ini|cfg|conf|config|xml|html?|json|ya?ml|toml|csv|tsv|sql|sqlite|db|mdb|accdb|doc[xm]?|xls[xmb]?|ppt[xm]?|pdf|rtf|odt|ods|odp|one|eml|msg|pst|evtx?|zip|rar|7z|gz|tar|bz2|xz|cab|iso|img|vhdx?|vmdk|dmp|bak|tmp|old|dat|bin|pyc|pyo|pyw|rb|java|class|jar|war|apk|cpp|hpp|cs|go|rs|php|aspx?|jsp|sh|so|dylib|manifest|pem|crt|cer|der|key|pfx|ico|png|jpe?g|gif|bmp|svg|webp|tiff?|mp[34]|avi|mov|wmv|wav|ogg|woff2?|ttf|otf|eot)/i;
+
+const _UNRESOLVED_SENTINEL_RE = /\u27E8[^\u27E8\u27E9]{0,256}\u27E9/;
+
 function looksRedosProne(src) {
   if (typeof src !== 'string') return { warn: false, reject: false };
   if (src.length > SAFE_REGEX_MAX_PATTERN_LEN) {
@@ -160,6 +87,7 @@ function looksRedosProne(src) {
   }
   return { warn: false, reject: false };
 }
+
 function safeRegex(pattern, flags) {
   const src = String(pattern == null ? '' : pattern);
   const heur = looksRedosProne(src);
@@ -175,6 +103,39 @@ function safeRegex(pattern, flags) {
   }
   return { ok: true, regex, warning: heur.warn ? heur.reason : null, error: null };
 }
+
+function _trimPathExtGarbage(path) {
+  const ls = path.lastIndexOf('\\');
+  if (ls < 0) return path;
+  const fn = path.slice(ls + 1);
+  const dot = fn.lastIndexOf('.');
+  if (dot < 0) return path;
+  const ext = fn.slice(dot + 1);
+  if (ext.length <= 10) return path;           // extension is a reasonable length
+  const tail = fn.slice(dot);                   // e.g. ".pdbtEXtSoftwareAdobe"
+  const extM = tail.match(_KNOWN_EXT_RE);
+  return extM ? path.slice(0, ls + 1 + dot + extM[0].length) : path;
+}
+
+function hasUnresolvedSentinel(s) {
+  return typeof s === 'string' && _UNRESOLVED_SENTINEL_RE.test(s);
+}
+// @loupe-codegen:end
+
+// ── throwIfAborted no-op (mirrors src/workers/timeline-worker-shim.js) ──────
+//
+// `throwIfAborted` is the render-epoch / watchdog poll site defined in
+// `src/constants.js` for the host thread. Decoder helpers
+// (`src/decoders/encoding-finders.js`, `src/decoders/cmd-obfuscation.js`)
+// call it between candidate scans so the host can preempt long parses on
+// supersession / watchdog timeout. Workers never participate in the host's
+// render-epoch fence — they're terminated wholesale by `worker.terminate()`
+// — so this is a no-op stub. Without it the finder helpers would throw
+// `ReferenceError: throwIfAborted is not defined`, and the
+// secondary-scan `catch` would surface the failure as the misleading
+// "finder-budget — throwIfAborted is not defined" Info row.
+function throwIfAborted() { /* no-op in worker */ }
+
 function safeMatchAll(re, str, budgetMs, maxMatches) {
   const matches = [];
   if (!re || typeof str !== 'string') return { matches, truncated: false, timedOut: false };

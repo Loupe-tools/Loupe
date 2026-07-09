@@ -59,7 +59,10 @@ const ctx = loadModules(
     'src/app/app-core.js',
     'src/app/app-load.js',
   ],
-  { expose: ['App', 'extendApp'] },
+  {
+    shims: { RendererDispatchFactory: { build: () => ({}) } },
+    expose: ['App', 'extendApp'],
+  },
 );
 const { App } = ctx;
 

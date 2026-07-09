@@ -19,9 +19,14 @@ REPO = SCRIPTS.parent
 PRE_BUILD_GATES: tuple[tuple[str, str], ...] = (
     ('verify', 'verify_vendored.py'),
     ('regex', 'check_regex_safety.py'),
+    ('shim-codegen', 'gen_worker_shims.py'),
     ('parity', 'check_shim_parity.py'),
     ('yara-lint', 'lint_yara.py'),
     ('dispatch-sync', 'check_renderer_dispatch_sync.py'),
+    ('decoder-ioc', 'check_decoder_ioc.py'),
+    ('timeline-contract', 'check_timeline_contract.py'),
+    ('renderer-ioc', 'check_renderer_ioc.py'),
+    ('chokepoint-apis', 'check_chokepoint_apis.py'),
 )
 
 

@@ -82,7 +82,7 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.epoch }}
           TZ: UTC
           LC_ALL: C.UTF-8
-        run: python make.py verify regex parity yara-lint dispatch-sync build contract
+        run: python make.py verify regex shim-codegen parity yara-lint dispatch-sync decoder-ioc timeline-contract renderer-ioc chokepoint-apis build contract
 
       - name: Verify build output exists
         run: |

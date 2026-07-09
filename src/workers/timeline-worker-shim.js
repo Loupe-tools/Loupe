@@ -71,15 +71,14 @@ function lfNormalize(s) { return typeof s === 'string' ? s.replace(/\r\n?/g, '\n
 // analyser pipeline, defeating the "EVTX always opens in Timeline" rule.
 function throwIfAborted() { /* no-op in worker */ }
 
-// ── safeRegex helpers (mirror src/constants.js) ─────────────────────────────
-// Inlined into the worker because workers don't share globals with the host
-// bundle. Used by the Timeline DSL regex compile path. Keep in lockstep with
-// `src/constants.js` and `src/workers/encoded-worker-shim.js`.
+// ── safeRegex helpers (codegen from src/constants.js) ───────────────────────
+// @loupe-codegen:start
 const SAFE_REGEX_MAX_PATTERN_LEN = 2048;
-const _REDOS_NESTED_QUANT_RE =
-  /\((?:\?[:=!]|\?<[=!])?[^()]*(?:[+*]|\{\d+,\}|\{,\d+\})[^()]*\)\s*(?:[+*]|\{\d+,\}|\{,\d+\})/;
-const _REDOS_DUPLICATE_GROUP_RE =
-  /(\([^()]{2,80}\)[+*])\s*\1/;
+
+const _REDOS_NESTED_QUANT_RE = /\((?:\?[:=!]|\?<[=!])?[^()]*(?:[+*]|\{\d+,\}|\{,\d+\})[^()]*\)\s*(?:[+*]|\{\d+,\}|\{,\d+\})/;
+
+const _REDOS_DUPLICATE_GROUP_RE = /(\([^()]{2,80}\)[+*])\s*\1/;
+
 function looksRedosProne(src) {
   if (typeof src !== 'string') return { warn: false, reject: false };
   if (src.length > SAFE_REGEX_MAX_PATTERN_LEN) {
@@ -93,6 +92,7 @@ function looksRedosProne(src) {
   }
   return { warn: false, reject: false };
 }
+
 function safeRegex(pattern, flags) {
   const src = String(pattern == null ? '' : pattern);
   const heur = looksRedosProne(src);
@@ -108,6 +108,7 @@ function safeRegex(pattern, flags) {
   }
   return { ok: true, regex, warning: heur.warn ? heur.reason : null, error: null };
 }
+// @loupe-codegen:end
 
 // ── EVTX event-id table stub ────────────────────────────────────────────────
 //
