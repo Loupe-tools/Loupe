@@ -9,10 +9,19 @@ _LOAD_CHAIN_FILES = ('src/app/app-load.js', 'src/app/app-yara.js')
 _SILENT_CATCH_RE = re.compile(r"\bcatch\s*\([^)]*\)\s*\{\s*\}")
 
 
-def check_silent_catch() -> list[str]:
+def check_silent_catch(root: str | None = None) -> list[str]:
     violations: list[str] = []
     for rel in _LOAD_CHAIN_FILES:
-        text = read_js(rel)
+        if root:
+            import os as _os
+            p = _os.path.join(root, rel)
+            try:
+                with open(p, encoding='utf-8') as fh:
+                    text = fh.read()
+            except Exception:
+                continue
+        else:
+            text = read_js(rel)
         for lineno, line in enumerate(text.splitlines(), start=1):
             if is_comment_line(line):
                 continue

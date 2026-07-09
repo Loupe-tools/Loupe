@@ -25,6 +25,7 @@ function loadHelpers() {
       'pushExternalRef',
       'riskLevelFromScore',
       'finalizeScoreBasedRisk',
+      'IOC',
     ],
   });
 }
@@ -103,4 +104,26 @@ test('finalizeScoreBasedRisk lifts when critical evidence exceeds score tier', (
   finalizeScoreBasedRisk(findings);
   assert.equal(findings.riskLevel, 'medium');
   assert.equal(findings.risk, 'critical');
+});
+
+test('finalizeScoreBasedRisk: critical evidence lifts a low score floor', () => {
+  const { finalizeScoreBasedRisk, IOC } = loadHelpers();
+  const findings = {
+    detections: [{ name: 'SyntheticHigh', description: 'misaligned', severity: 'critical' }],
+    riskScore: 0,   // score floor → 'low'
+    externalRefs: [],
+  };
+  finalizeScoreBasedRisk(findings);
+  assert.equal(findings.riskLevel, 'low');      // score floor preserved
+  assert.equal(findings.risk, 'critical');      // but evidence lifts to critical
+  // And mirror produced an externalRefs PATTERN row
+  assert.ok(findings.externalRefs.some(r => r.type === IOC.PATTERN && r.severity === 'critical'));
+});
+
+test('finalizeScoreBasedRisk: score-tier-critical + low evidence stays critical', () => {
+  const { finalizeScoreBasedRisk } = loadHelpers();
+  const findings = { detections: [], riskScore: 100, externalRefs: [] };
+  finalizeScoreBasedRisk(findings);
+  assert.equal(findings.riskLevel, 'critical');
+  assert.equal(findings.risk, 'critical');      // no downgrade from low evidence
 });

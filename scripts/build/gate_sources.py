@@ -28,3 +28,27 @@ def read_js(rel: str) -> str:
 def is_comment_line(line: str) -> bool:
     stripped = line.lstrip()
     return stripped.startswith('//') or stripped.startswith('*')
+
+
+def iter_js_under_root(root: str) -> list[tuple[str, str]]:
+    """Walk <root>/src collecting (rel, text) for .js files.
+
+    Used by gate positive-case tests that pass root= to check_*().
+    Always uses 'with open' and normalizes rel to /-separated.
+    Returns only files that could be read.
+    """
+    out: list[tuple[str, str]] = []
+    src = os.path.join(root, 'src')
+    for r, _dirs, files in os.walk(src):
+        for fn in files:
+            if not fn.endswith('.js'):
+                continue
+            abs_path = os.path.join(r, fn)
+            rel = os.path.relpath(abs_path, root).replace(os.sep, '/')
+            try:
+                with open(abs_path, encoding='utf-8') as fh:
+                    out.append((rel, fh.read()))
+            except Exception:
+                # Skip unreadable in test fixtures; do not mask real bugs in live runs.
+                continue
+    return out

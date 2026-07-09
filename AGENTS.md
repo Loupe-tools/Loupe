@@ -94,7 +94,7 @@ python make.py contract                 # static renderer-contract check
 python make.py sbom                     # opt-in; release-time only
 python make.py perf                     # opt-in; writes dist/perf-report.{json,md}
 python make.py fuzz                     # opt-in; Jazzer.js over tests/fuzz/targets/
-LOUPE_ESBUILD=full LOUPE_ESBUILD_MINIFY=1 python scripts/build.py  # experimental single-block minify (~26% smaller)
+LOUPE_ESBUILD=full LOUPE_ESBUILD_MINIFY=1 python scripts/build.py  # experimental single-block minify (~26.6% smaller)
 LOUPE_ESBUILD=1 python scripts/build.py # legacy per-block import bundle (bisect only; breaks globals)
 python scripts/gen_dispatch_manifest.py # regen scripts/dispatch-manifest.toml after registry/dispatch edits
 

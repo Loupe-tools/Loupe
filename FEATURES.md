@@ -153,7 +153,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 
 | Capability | What you get |
 |---|---|
-| **AppleScript / JXA** | Source files (`.applescript`, `.jxa`) with full syntax highlighting; compiled `.scpt` binaries mined for strings and embedded source; macOS-specific flags for `do shell script`, `display dialog`, `with administrator privileges`, and similar dangerous patterns. |
+| **AppleScript / JXA** | Source files (`.applescript`, `.jxa`) with full syntax highlighting; compiled `.scpt` binaries mined for strings and embedded source; macOS-specific flags for `do shell script`, `display dialog`, `with administrator privileges`, and similar dangerous patterns. Unresolved-sentinel labels (e.g. `⟨unresolved:HOST⟩`) from `do shell script` deobfuscation are suppressed from the pattern IOC sidebar. |
 | **Property lists** | Parses both XML and binary plist into an interactive tree view — expandable nested structures, LaunchAgent / LaunchDaemon detection, persistence keys, suspicious URL schemes, privacy-sensitive entitlements. |
 | **DMG (Apple Disk Image)** | Enumerates partitions, detects encrypted envelopes, and extracts embedded `.app` bundle paths even when full filesystem walking isn't possible. |
 | **PKG (flat installer)** | Parses xar TOC + `Distribution` / `PackageInfo` XML; clickable entry drill-down; flags dangerous install-time script names (`preinstall`, `postinstall`, `preflight`, `postflight`, `InstallationCheck`, `VolumeCheck`). |
