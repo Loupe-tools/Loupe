@@ -714,6 +714,23 @@ class EmlRenderer {
         continue;
       }
 
+      // TNEF / winmail.dat (MS-OXRTNEF) — Exchange/Outlook rich-text transport wrapper.
+      // Extract any inner attachments we can identify and always surface the container
+      // so the analyst can drill into it (future dedicated TnefRenderer can improve).
+      const pctLower = pct;
+      const ctRaw = partHeaders['content-type'] || '';
+      const fnGuess = this._extractFilename(cd) || this._extractFilename(ctRaw) || '';
+      if (pctLower.includes('ms-tnef') || /winmail\.dat/i.test(fnGuess) || /name=.*winmail/i.test(ctRaw)) {
+        const decoded = this._decodeBodyBinary(partBody, cte);
+        const inners = this._extractTnefAttachments(decoded, fnGuess || 'winmail.dat');
+        for (const a of inners) {
+          if (a) email.attachments.push(a);
+        }
+        // Always expose the raw TNEF container (named appropriately) for drill-down.
+        email.attachments.push({ filename: fnGuess || 'winmail.dat', size: decoded.length, data: decoded });
+        continue;
+      }
+
       // Attachment
       if (cd.toLowerCase().includes('attachment') || (cd.toLowerCase().includes('filename'))) {
         const fn = this._extractFilename(cd) || this._extractFilename(partHeaders['content-type'] || '') || 'attachment';
@@ -910,6 +927,46 @@ class EmlRenderer {
       att.filename || 'attachment',
       'application/octet-stream',
     );
+  }
+
+  // Minimal TNEF extractor (MS-OXRTNEF). Real TNEF is a stream of attributes
+  // (lvl, name, type, len, data, checksum). For highest-value triage we:
+  //   • recognise the container and always surface it under its real name
+  //   • attempt a best-effort scan for embedded filenames inside the blob
+  //     (common in attachment records) and emit zero-length placeholder
+  //     entries so the UI at least shows "there were more things inside".
+  // A full attribute walker + data extraction can be added later without
+  // changing the call site.
+  _extractTnefAttachments(tnefBytes, containerName) {
+    const atts = [];
+    if (!tnefBytes || tnefBytes.length < 4) return atts;
+
+    // Signature check (little-endian 0x223E9F78 appears as 78 9f 3e 22 on disk)
+    const sig = (tnefBytes[0] === 0x78 && tnefBytes[1] === 0x9f && tnefBytes[2] === 0x3e && tnefBytes[3] === 0x22);
+    if (!sig) {
+      // Still surface whatever we have; some truncated samples may vary.
+    }
+
+    // Heuristic filename hunt inside the whole blob (covers many real samples).
+    // Look for typical attachment filename records or plain ASCII names with
+    // dangerous exts.
+    try {
+      const latin = new TextDecoder('latin1', { fatal: false }).decode(tnefBytes);
+      const re = /([A-Za-z0-9_.\- ]{2,60}\.(?:exe|dll|scr|com|bat|cmd|ps1|js|vbs|hta|lnk|url|docx?|xlsx?|pptx?|pdf|zip|rar|7z))/gi;
+      const seen = new Set();
+      let m;
+      while ((m = re.exec(latin)) !== null) {
+        const name = m[1].trim();
+        if (seen.has(name.toLowerCase())) continue;
+        seen.add(name.toLowerCase());
+        // We don't have reliable data offsets without full parser; emit a
+        // size=0 marker so the table shows "something was here".
+        atts.push({ filename: name, size: 0, data: null, _tnefNote: 'extracted name only (TNEF)' });
+        if (atts.length >= 8) break;
+      }
+    } catch (_) {}
+
+    return atts;
   }
 
   _getFileIcon(name) {

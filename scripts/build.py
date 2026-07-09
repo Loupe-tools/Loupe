@@ -923,6 +923,7 @@ APP_JS_FILES = [
     'src/renderers/dmg-renderer.js',
     'src/renderers/pkg-renderer.js',
     'src/renderers/url-renderer.js',
+    'src/renderers/ics-renderer.js',
     'src/renderers/onenote-renderer.js',
     'src/renderers/iqy-slk-renderer.js',
     'src/renderers/scf-renderer.js',

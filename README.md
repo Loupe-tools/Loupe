@@ -69,6 +69,7 @@ Extensionless and renamed files are auto-routed by magic-byte sniff. Per-format 
 | **Office** | `.docx` `.docm` `.xlsx` `.xlsm` `.pptx` `.pptm` `.doc` `.xls` `.ppt` `.ods` `.odt` `.odp` `.rtf` `.iqy` `.slk` |
 | **PDF** | `.pdf` |
 | **Email** | `.eml` `.msg` |
+| **Calendar** | `.ics` |
 | **Web** | `.html` `.htm` `.mht` `.mhtml` `.xhtml` `.svg` |
 | **Archives** | `.zip` `.gz` `.gzip` `.tar` `.tar.gz` `.tgz` `.rar` `.7z` `.cab` `.iso` `.img` |
 | **OneNote** | `.one` |

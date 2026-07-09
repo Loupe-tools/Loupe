@@ -1391,6 +1391,11 @@ extendApp({
       this.findings = r.analyzeForSecurity(buffer, file.name);
       return { docEl: r.render(buffer, file.name) };
     },
+    ics(file, buffer) {
+      const r = new IcsRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
     scf(file, buffer) {
       const r = new ScfRenderer();
       this.findings = r.analyzeForSecurity(buffer, file.name);
