@@ -1228,6 +1228,36 @@ extendApp({
       if (this.findings.augmentedBuffer) this.currentResult.yaraBuffer = this.findings.augmentedBuffer;
       return { docEl: r.render(buffer, file.name) };
     },
+    url(file, buffer) {
+      const r = new UrlShortcutRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    ics(file, buffer) {
+      const r = new IcsRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    scf(file, buffer) {
+      const r = new ScfRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    libraryms(file, buffer) {
+      const r = new LibraryMsRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    mof(file, buffer) {
+      const r = new MofRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
+    xslt(file, buffer) {
+      const r = new XsltRenderer();
+      this.findings = r.analyzeForSecurity(buffer, file.name);
+      return { docEl: r.render(buffer, file.name) };
+    },
     async wasm(file, buffer) {
       const r = new WasmRenderer();
       // analyzeForSecurity is async — modulehash awaits crypto.subtle.
