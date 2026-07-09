@@ -104,7 +104,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.x'
 
@@ -261,7 +261,7 @@ jobs:
       - name: Generate SLSA build provenance
         if: steps.check.outputs.exists == 'false'
         id: provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
             loupe.html
@@ -293,7 +293,7 @@ jobs:
 
       - name: Create Release
         if: steps.check.outputs.exists == 'false'
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: ${{ steps.version.outputs.version }}
           # Point the tag at exactly the commit CI validated. On
