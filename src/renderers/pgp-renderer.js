@@ -1109,9 +1109,9 @@ class PgpRenderer {
         armorBlocks = this._decodeArmor(text);
         if (armorBlocks.length === 0) {
           findings.summary = 'No valid PGP armor blocks found';
-          escalateRisk(findings, findings.riskLevel);
           findings.metadata = {};
           findings.externalRefs = [];
+          finalizeScoreBasedRisk(findings);
           return findings;
         }
       } else {
@@ -1295,18 +1295,11 @@ class PgpRenderer {
       const issues = findings.detections.filter(d => d.severity !== 'info').length;
       findings.summary = parts.join(', ') + (issues ? ` — ${issues} issue${issues > 1 ? 's' : ''}` : '');
 
-      // Risk level
-      if (findings.riskScore >= 50) findings.riskLevel = 'critical';
-      else if (findings.riskScore >= 30) findings.riskLevel = 'high';
-      else if (findings.riskScore >= 10) findings.riskLevel = 'medium';
-      else findings.riskLevel = 'low';
-
       // Normalise to sidebar-compatible shape
-      escalateRisk(findings, findings.riskLevel);
       findings.metadata = {};
       for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
       findings.externalRefs = [];
-      mirrorDetectionsToExternalRefs(findings);
+      finalizeScoreBasedRisk(findings);
 
       // Mirror classic-pivot fingerprints + Key IDs into the IOC table.
       // The PGP renderer stores these under human-readable labels that
@@ -1323,9 +1316,9 @@ class PgpRenderer {
       }
     } catch (e) {
       findings.summary = `Analysis error: ${e.message}`;
-      escalateRisk(findings, findings.riskLevel);
       findings.metadata = {};
       findings.externalRefs = [];
+      finalizeScoreBasedRisk(findings);
     }
 
     return findings;

@@ -19,7 +19,13 @@ function loadHelpers() {
       },
       IOC: { PATTERN: 'pattern' },
     },
-    expose: ['calibrateRiskFromEvidence', 'mirrorDetectionsToExternalRefs', 'pushExternalRef'],
+    expose: [
+      'calibrateRiskFromEvidence',
+      'mirrorDetectionsToExternalRefs',
+      'pushExternalRef',
+      'riskLevelFromScore',
+      'finalizeScoreBasedRisk',
+    ],
   });
 }
 
@@ -44,5 +50,57 @@ test('calibrateRiskFromEvidence respects monotonic escalateRisk (no downgrade)',
     externalRefs: [{ severity: 'low' }],
   };
   calibrateRiskFromEvidence(findings);
+  assert.equal(findings.risk, 'critical');
+});
+
+test('riskLevelFromScore boundary pins', () => {
+  const { riskLevelFromScore } = loadHelpers();
+  assert.equal(riskLevelFromScore(9), 'low');
+  assert.equal(riskLevelFromScore(10), 'medium');
+  assert.equal(riskLevelFromScore(29), 'medium');
+  assert.equal(riskLevelFromScore(30), 'high');
+  assert.equal(riskLevelFromScore(49), 'high');
+  assert.equal(riskLevelFromScore(50), 'critical');
+  assert.equal(riskLevelFromScore(Number.NaN), 'low');
+});
+
+test('finalizeScoreBasedRisk mirrors score tier then lifts from evidence', () => {
+  const { finalizeScoreBasedRisk } = loadHelpers();
+  const findings = {
+    riskScore: 40,
+    detections: [{ name: 'Private Key Detected', description: 'test', severity: 'high' }],
+    externalRefs: [],
+  };
+  finalizeScoreBasedRisk(findings);
+  assert.equal(findings.riskLevel, 'high');
+  assert.equal(findings.risk, 'high');
+  assert.equal(findings.externalRefs.length, 1);
+});
+
+test('finalizeScoreBasedRisk does not downgrade score tier via evidence calibration', () => {
+  const { finalizeScoreBasedRisk } = loadHelpers();
+  const findings = {
+    riskScore: 40,
+    detections: [{ name: 'Private Key Detected', description: 'test', severity: 'high' }],
+    externalRefs: [],
+  };
+  finalizeScoreBasedRisk(findings);
+  // One high ref → evidence-only path would be medium; score floor stays high.
+  assert.equal(findings.risk, 'high');
+});
+
+test('finalizeScoreBasedRisk lifts when critical evidence exceeds score tier', () => {
+  const { finalizeScoreBasedRisk } = loadHelpers();
+  const findings = {
+    riskScore: 15,
+    detections: [{
+      name: 'Unprotected PGP Private Key',
+      description: 'test',
+      severity: 'critical',
+    }],
+    externalRefs: [],
+  };
+  finalizeScoreBasedRisk(findings);
+  assert.equal(findings.riskLevel, 'medium');
   assert.equal(findings.risk, 'critical');
 });
