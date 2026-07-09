@@ -54,6 +54,7 @@ const td = new TextDecoder('utf-8', { fatal: false });
 const fuzz = defineFuzzTarget({
   modules: [
     'src/constants.js',
+    'src/decoder-ioc.js',
     'src/encoded-content-detector.js',
     'src/decoders/safelinks.js',
     'src/decoders/whitelist.js',

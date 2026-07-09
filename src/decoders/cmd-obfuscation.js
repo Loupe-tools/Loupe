@@ -732,13 +732,6 @@ Object.assign(EncodedContentDetector.prototype, {
       // fetch, python/php/js eval sinks) don't get tagged with this
       // CMD-only IOC.PATTERN. `_executeOutput` retains its generic
       // role of bumping severity in `_processCommandObfuscation`.
-      const _patternIocs = executeOutput
-        ? [{
-            url: 'for /f \u2026 do call %X \u2014 captured command output is executed as a shell command',
-            severity: 'high',
-          }]
-        : undefined;
-
       candidates.push({
         type: 'cmd-obfuscation',
         technique,
@@ -748,7 +741,12 @@ Object.assign(EncodedContentDetector.prototype, {
         deobfuscated: cleanedCapped,
         _executeOutput: executeOutput,
         _forFCall: hasCall,
-        ..._patternIocs ? { _patternIocs } : {},
+        ...(executeOutput ? {
+          _patternIocs: [DecoderIoc.pattern(
+            'for /f \u2026 do call %X \u2014 captured command output is executed as a shell command',
+            'high',
+          )].filter(Boolean),
+        } : {}),
       });
     }
 
@@ -1000,10 +998,10 @@ Object.assign(EncodedContentDetector.prototype, {
             length: rawSpan.length,
             deobfuscated: clippedPayload,
             _clickfix: true,
-            _patternIocs: [{
-              url: 'ClickFix run-dialog payload \u2014 instructs user to paste malicious command (T1204.001)',
-              severity: 'critical',
-            }],
+            _patternIocs: [DecoderIoc.pattern(
+              'ClickFix run-dialog payload \u2014 instructs user to paste malicious command (T1204.001)',
+              'critical',
+            )].filter(Boolean),
           });
         }
       }

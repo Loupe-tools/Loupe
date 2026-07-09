@@ -64,20 +64,29 @@ dist/                  SBOM, perf reports, test deps. Gitignored.
 
 ```bash
 # Default local edit-build-verify loop (zero-deps; Python 3.8+ stdlib only)
-python make.py                          # verify → regex → parity → yara-lint → build → contract
-python make.py build contract           # fastest re-verify after a src/ tweak
+python make.py                          # 13-step gate chain → build → contract (see below)
+python make.py build contract           # fastest re-verify after a src/ tweak (run full make.py before push)
 python make.py verify                   # vendor SHA-256 pin check
 python make.py regex                    # ReDoS / safeRegex annotation gate
+python make.py shim-codegen             # worker shim @loupe-codegen regions match constants.js
 python make.py parity                   # worker-shim ↔ canonical PARSER_LIMITS / IOC table
+python make.py dispatch-sync            # dispatch manifest ↔ registry/caps alignment
+python make.py decoder-ioc              # decoder IOC chokepoints (DecoderIoc + merge gate)
+python make.py timeline-contract        # timeline composite _sources contract
+python make.py renderer-ioc             # renderer pushIOC chokepoint contract
+python make.py chokepoint-apis          # WorkerManager / FileDownload / SandboxPreview allow-list
+python make.py gate-tests               # Python unit tests for scripts/build/gates/
 python make.py yara-lint                # YARA house-style; --fix variant below
 python scripts/lint_yara.py --fix       # autofix YARA meta-key order, comments, whitespace
 python make.py contract                 # static renderer-contract check
 python make.py sbom                     # opt-in; release-time only
 python make.py perf                     # opt-in; writes dist/perf-report.{json,md}
 python make.py fuzz                     # opt-in; Jazzer.js over tests/fuzz/targets/
+LOUPE_ESBUILD=1 python scripts/build.py # experimental esbuild IIFE path; concat is the release default
+python scripts/gen_dispatch_manifest.py # regen scripts/dispatch-manifest.toml after registry/dispatch edits
 
 # Test pipeline (opt-in; never blocks the default loop)
-python make.py test                     # test-build → test-unit → test-e2e
+python make.py test                     # pre-build gates → test-build → test-unit → test-e2e
 python make.py test-build               # build docs/index.test.html with --test-api
 python make.py test-unit                # node:test over tests/unit/
 python make.py test-e2e                 # Playwright e2e-fixtures + e2e-ui
@@ -114,14 +123,14 @@ Five workflows in `.github/workflows/`:
 
 | Job | What it guarantees |
 |---|---|
-| `build` | `scripts/build.py` succeeds with `SOURCE_DATE_EPOCH` pinned to HEAD's commit-author timestamp; SHA-256 + size in job summary; bundle uploaded as artefact. |
+| `build` | Full `make.py` pre-build gate chain + `scripts/build.py`; `SOURCE_DATE_EPOCH` pinned to HEAD's commit-author timestamp; SHA-256 + size in job summary; bundle uploaded as artefact. |
 | `verify-vendored` | Every `vendor/*.js` matches `VENDORED.md` SHA-256 (no missing, no unpinned). |
 | `yara-lint` | Comment-free, meta-key whitelist, canonical order, severity values. |
 | `static-checks` | On the built bundle: CSP meta present, `default-src 'none'` intact, no inline `on*=` attribute handlers, no `'unsafe-eval'`, no remote CSP hosts. |
 | `lint` | ESLint **9.39.4** (pinned) over `src/**/*.js`; minimal config, not a style enforcer. |
 | `unit` | `python make.py test-unit` (Node 24, `node:test`, `vm.Context`). |
-| `e2e` | Builds `docs/index.test.html` inline with `--test-api`; caches `@playwright/test` + Chromium browsers keyed by `PLAYWRIGHT_VERSION`. |
-| `deploy-pages` | **Only on `main`**, after build + verify-vendored + static-checks + lint + yara-lint pass. |
+| `e2e` | Runs pre-build gates + `test-build` (`--test-api`); caches `@playwright/test` + Chromium browsers keyed by `PLAYWRIGHT_VERSION`. |
+| `deploy-pages` | **Only on `main`**, after build + verify-vendored + static-checks + lint + yara-lint + unit + e2e pass. |
 
 All third-party Actions are pinned by full 40-char commit SHA; Dependabot rotates them weekly.
 

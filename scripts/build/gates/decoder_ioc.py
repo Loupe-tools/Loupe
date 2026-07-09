@@ -34,10 +34,15 @@ def check_decoder_ioc() -> list[str]:
                 for pat, label in forbidden:
                     if pat.search(line):
                         violations.append(f'{rel}:{lineno}: forbidden {label}')
-            if '_patternIocs' in text and 'hasUnresolvedSentinel' not in text and 'DecoderIoc' not in text:
-                violations.append(
-                    f'{rel}: uses _patternIocs without hasUnresolvedSentinel or DecoderIoc gate'
-                )
+            _emit_rx = re.compile(r'_patternIocs\s*:|patternIocs\.push\s*\(')
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                stripped = line.lstrip()
+                if stripped.startswith('//') or stripped.startswith('*'):
+                    continue
+                if _emit_rx.search(line) and 'DecoderIoc' not in line:
+                    violations.append(
+                        f'{rel}:{lineno}: _patternIocs emission must use DecoderIoc chokepoint'
+                    )
 
     # Merge chokepoint: only app-load.js may define or call _mergeEncodedFindingIocs.
     for root, _dirs, files in os.walk(os.path.join(REPO, 'src')):

@@ -42,17 +42,30 @@ before opening a PR.**
 Requires **Python 3.8+**, stdlib only — no `pip install`.
 
 ```bash
-python make.py                   # default: verify → regex → parity → yara-lint → build → contract
+python make.py                   # default 13-step gate chain → build → contract
 python make.py <step> [<step>…]  # any subset, any order
 ```
 
-`make.py` is a thin orchestrator over `scripts/`. Steps:
-`verify` (vendor SHA-256 pins), `regex` (ReDoS scan), `parity` (JS/Py
-parity gates), `yara-lint` (meta-key + comment lint), `build`
-(`docs/index.html`), `contract` (renderer-contract check). Opt-in:
-`sbom`, `perf`, `test`. `docs/index.html` is the single build output —
+`make.py` is a thin orchestrator over `scripts/`. **DEFAULT_STEPS** (in
+order): `verify`, `regex`, `shim-codegen`, `parity`, `yara-lint`,
+`dispatch-sync`, `decoder-ioc`, `timeline-contract`, `renderer-ioc`,
+`chokepoint-apis`, `gate-tests`, `build`, `contract`. Opt-in: `sbom`,
+`perf`, `fuzz`, `test`. `docs/index.html` is the single build output —
 gitignored, produced locally for smoke-testing or by CI for Pages /
 release signing.
+
+**Dispatch manifest:** after editing `RendererRegistry.ENTRIES`,
+`RendererDispatchFactory.SPEC`, or bespoke handlers in `app-load.js`,
+run `python scripts/gen_dispatch_manifest.py` and commit
+`scripts/dispatch-manifest.toml`. `python make.py dispatch-sync` (or
+the default chain) verifies registry, manifest, dispatch keys, and caps
+stay aligned.
+
+**Experimental esbuild:** `LOUPE_ESBUILD=1 python scripts/build.py`
+bundles APP script blocks via esbuild IIFE instead of concat. Concat
+remains the supported release path until cross-block global semantics
+are proven; do not enable esbuild in CI or Pages without that smoke
+test.
 
 ### Determinism & `SOURCE_DATE_EPOCH`
 
@@ -104,13 +117,19 @@ SHA-256 in `VENDORED.md`.
 Three automated test layers plus two opt-in investigative harnesses:
 
 ```bash
-python make.py test          # test-build → test-unit → test-e2e
+python make.py test          # pre-build gates → test-build → test-unit → test-e2e
 python make.py test-build    # rebuild docs/index.test.html (--test-api)
 python make.py test-unit     # Node node:test over tests/unit/
 python make.py test-e2e      # Playwright (e2e-fixtures + e2e-ui)
+python make.py gate-tests    # Python unit tests for scripts/build/gates/
 python make.py perf          # Timeline perf harness
 python make.py fuzz          # Fuzz harness under tests/fuzz/
 ```
+
+`python make.py test` runs the same pre-build gates as DEFAULT_STEPS
+(excluding release `build` + `contract`) before building
+`docs/index.test.html`, so a tree that fails `decoder-ioc` or
+`dispatch-sync` cannot pass unit/e2e in isolation.
 
 | Layer | Runner | Covers |
 |---|---|---|

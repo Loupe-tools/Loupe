@@ -25,6 +25,7 @@ const { loadModules, host } = require('../helpers/load-bundle.js');
 // `_processCommandObfuscation()` end-to-end.
 const ctx = loadModules([
   'src/constants.js',
+  'src/decoder-ioc.js',
   'src/encoded-content-detector.js',
   'src/decoders/safelinks.js',
   'src/decoders/entropy.js',
