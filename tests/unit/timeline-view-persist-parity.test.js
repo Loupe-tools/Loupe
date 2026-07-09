@@ -37,7 +37,7 @@ const MIXIN = fs.readFileSync(
   'utf8',
 );
 const BUILD = fs.readFileSync(
-  path.join(REPO_ROOT, 'scripts/build.py'),
+  path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
   'utf8',
 );
 
@@ -171,7 +171,7 @@ test('no bare `loupe_` storage keys in timeline-view-persist.js (all route throu
 
 // ── Build order ────────────────────────────────────────────────────────────
 
-test('scripts/build.py registers timeline-view-persist.js after timeline-view.js', () => {
+test('scripts/build/js_sources.py registers timeline-view-persist.js after timeline-view.js', () => {
   const viewIdx = BUILD.indexOf("'src/app/timeline/timeline-view.js'");
   const persistIdx = BUILD.indexOf("'src/app/timeline/timeline-view-persist.js'");
   assert.notEqual(viewIdx, -1);

@@ -37,7 +37,7 @@ const MIXIN = fs.readFileSync(
   'utf8',
 );
 const BUILD = fs.readFileSync(
-  path.join(REPO_ROOT, 'scripts/build.py'),
+  path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
   'utf8',
 );
 
@@ -180,7 +180,7 @@ test('_closeDialog teardown nulls the single _openDialog slot', () => {
 
 // ── Build order ────────────────────────────────────────────────────────────
 
-test('scripts/build.py registers timeline-view-popovers.js after timeline-view.js', () => {
+test('scripts/build/js_sources.py registers timeline-view-popovers.js after timeline-view.js', () => {
   const viewIdx = BUILD.indexOf("'src/app/timeline/timeline-view.js'");
   const popIdx = BUILD.indexOf("'src/app/timeline/timeline-view-popovers.js'");
   assert.notEqual(viewIdx, -1);

@@ -32,7 +32,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SIDEBAR = fs.readFileSync(path.join(REPO_ROOT, 'src/app/app-sidebar.js'), 'utf8');
 const APP_UI  = fs.readFileSync(path.join(REPO_ROOT, 'src/app/app-ui.js'), 'utf8');
 const APP_CORE = fs.readFileSync(path.join(REPO_ROOT, 'src/app/app-core.js'), 'utf8');
-const BUILD = fs.readFileSync(path.join(REPO_ROOT, 'scripts/build.py'), 'utf8');
+const BUILD = fs.readFileSync(path.join(REPO_ROOT, 'scripts/build/js_sources.py'), 'utf8');
 
 test('_enrichIpForExport is defined exactly once on App.prototype via extendApp', () => {
   const re = /^\s*_enrichIpForExport\s*\(/gm;

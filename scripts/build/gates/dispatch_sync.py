@@ -75,20 +75,20 @@ def _parse_cap_keys() -> set[str]:
 
 
 def _parse_app_js_files() -> set[str]:
-    text = _read('scripts/build.py')
-    files: set[str] = set()
-    in_app = False
-    for line in text.splitlines():
-        if line.strip() == 'APP_JS_FILES = [':
-            in_app = True
-            continue
-        if in_app:
-            if line.strip() == ']':
-                break
-            m = re.search(r"'(src/[^']+)'", line)
-            if m:
-                files.add(m.group(1))
-    return files
+    from build.js_sources import APP_JS_FILES  # noqa: WPS433
+
+    return set(APP_JS_FILES)
+
+
+def _parse_factory_override_ids() -> set[str]:
+    text = _read('src/renderer-dispatch-factory.js')
+    block = re.search(
+        r'OVERRIDE_IDS:\s*Object\.freeze\(new Set\(\[([\s\S]*?)\]\)\)',
+        text,
+    )
+    if not block:
+        raise RuntimeError('RendererDispatchFactory.OVERRIDE_IDS not found')
+    return set(re.findall(r"'([a-z][a-z0-9]*)'", block.group(1)))
 
 
 def _check_manifest_freshness() -> list[str]:
@@ -121,6 +121,9 @@ def check_dispatch_sync() -> list[str]:
     dispatch_keys = _parse_dispatch_keys()
     cap_keys = _parse_cap_keys()
     app_files = _parse_app_js_files()
+    factory_override_ids = _parse_factory_override_ids()
+    app_load_override_keys = _parse_override_dispatch_keys()
+    allowed_override_ids = factory_override_ids | app_load_override_keys
 
     missing_dispatch = sorted(registry_ids - dispatch_keys)
     extra_dispatch = sorted(dispatch_keys - registry_ids)
@@ -151,7 +154,12 @@ def check_dispatch_sync() -> list[str]:
             )
         if e.module and e.module not in app_files:
             violations.append(
-                f'{e.id}: module {e.module} not listed in APP_JS_FILES (build.py)'
+                f'{e.id}: module {e.module} not listed in APP_JS_FILES (js_sources.py)'
+            )
+        if e.dispatch_override and e.id not in allowed_override_ids:
+            violations.append(
+                f'{e.id}: dispatch_override=true but id is not in '
+                'RendererDispatchFactory.OVERRIDE_IDS or app-load.js overrides'
             )
 
     orphan_caps = sorted(cap_keys - registry_ids - {'_DEFAULT'})

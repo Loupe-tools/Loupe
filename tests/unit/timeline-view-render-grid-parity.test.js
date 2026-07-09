@@ -34,7 +34,7 @@ const MIXIN = fs.readFileSync(
   'utf8',
 );
 const BUILD = fs.readFileSync(
-  path.join(REPO_ROOT, 'scripts/build.py'),
+  path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
   'utf8',
 );
 
@@ -173,7 +173,7 @@ test('_columnsGridGeometry honours the persisted card-size preference', () => {
 
 // ── Build order ────────────────────────────────────────────────────────────
 
-test('scripts/build.py registers timeline-view-render-grid.js after timeline-view.js', () => {
+test('scripts/build/js_sources.py registers timeline-view-render-grid.js after timeline-view.js', () => {
   const viewIdx = BUILD.indexOf("'src/app/timeline/timeline-view.js'");
   const gridIdx = BUILD.indexOf("'src/app/timeline/timeline-view-render-grid.js'");
   assert.notEqual(viewIdx, -1);

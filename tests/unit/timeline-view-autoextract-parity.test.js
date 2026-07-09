@@ -36,7 +36,7 @@ const MIXIN = fs.readFileSync(
   'utf8',
 );
 const BUILD = fs.readFileSync(
-  path.join(REPO_ROOT, 'scripts/build.py'),
+  path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
   'utf8',
 );
 
@@ -172,7 +172,7 @@ test('_autoExtractBestEffort refreshes per proposal (no batched rebuild)', () =>
 
 // ── Build order ────────────────────────────────────────────────────────────
 
-test('scripts/build.py registers timeline-view-autoextract.js after timeline-drawer.js', () => {
+test('scripts/build/js_sources.py registers timeline-view-autoextract.js after timeline-drawer.js', () => {
   // Critical dep: this mixin calls `_addJsonExtractedColNoRender` /
   // `_addRegexExtractNoRender` / `_rebuildExtractedStateAndRender`,
   // all defined in `timeline-drawer.js`. Loading earlier would

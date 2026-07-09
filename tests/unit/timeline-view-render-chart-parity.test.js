@@ -36,7 +36,7 @@ const MIXIN = fs.readFileSync(
   'utf8',
 );
 const BUILD = fs.readFileSync(
-  path.join(REPO_ROOT, 'scripts/build.py'),
+  path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
   'utf8',
 );
 
@@ -197,7 +197,7 @@ test('_buildStableStackColorMap produces a deterministic colour assignment', () 
 
 // ── Build order ────────────────────────────────────────────────────────────
 
-test('scripts/build.py registers timeline-view-render-chart.js after timeline-view.js', () => {
+test('scripts/build/js_sources.py registers timeline-view-render-chart.js after timeline-view.js', () => {
   const viewIdx = BUILD.indexOf("'src/app/timeline/timeline-view.js'");
   const chartIdx = BUILD.indexOf("'src/app/timeline/timeline-view-render-chart.js'");
   assert.notEqual(viewIdx, -1);

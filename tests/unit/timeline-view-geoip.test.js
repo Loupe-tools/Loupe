@@ -57,6 +57,10 @@ const POPOVERS = fs.readFileSync(
   path.join(REPO_ROOT, 'src/app/timeline/timeline-view-popovers.js'),
   'utf8',
 );
+const JS_SOURCES = fs.readFileSync(
+  path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
+  'utf8',
+);
 const BUILD = fs.readFileSync(
   path.join(REPO_ROOT, 'scripts/build.py'),
   'utf8',
@@ -121,13 +125,13 @@ test('main timeline-view.js does NOT define any geoip method', () => {
 
 // ── Build order — mixin must load AFTER everything it depends on ──────────
 
-test('scripts/build.py registers timeline-view-geoip.js after timeline-drawer.js', () => {
+test('js_sources.py registers timeline-view-geoip.js after timeline-drawer.js', () => {
   // Same dependency story as auto-extract: the mixin calls
   // `_addExtractedCol` (via the dataset), `_rebuildExtractedStateAndRender`,
   // and `_queryRemoveClausesForCols` — all installed by drawer / persist
   // mixins loaded earlier.
-  const drawerIdx = BUILD.indexOf("'src/app/timeline/timeline-drawer.js'");
-  const geoipIdx = BUILD.indexOf("'src/app/timeline/timeline-view-geoip.js'");
+  const drawerIdx = JS_SOURCES.indexOf("'src/app/timeline/timeline-drawer.js'");
+  const geoipIdx = JS_SOURCES.indexOf("'src/app/timeline/timeline-view-geoip.js'");
   assert.notEqual(drawerIdx, -1, 'timeline-drawer.js must be in JS_FILES');
   assert.notEqual(geoipIdx, -1, 'timeline-view-geoip.js must be in JS_FILES');
   assert.ok(
@@ -136,14 +140,14 @@ test('scripts/build.py registers timeline-view-geoip.js after timeline-drawer.js
   );
 });
 
-test('scripts/build.py registers the geoip provider modules in the right order', () => {
+test('js_sources.py registers the geoip provider modules in the right order', () => {
   // `bundled-geoip.js` reads the build-time-injected `__GEOIP_BUNDLE_B64`
   // const. `mmdb-reader.js` is independent. `geoip-store.js` is loaded
   // after both providers because `App.init()` calls `GeoipStore.load()`
   // and immediately wraps the result in `MmdbReader.fromBlob`.
-  const bundledIdx = BUILD.indexOf("'src/geoip/bundled-geoip.js'");
-  const mmdbIdx = BUILD.indexOf("'src/geoip/mmdb-reader.js'");
-  const storeIdx = BUILD.indexOf("'src/geoip/geoip-store.js'");
+  const bundledIdx = JS_SOURCES.indexOf("'src/geoip/bundled-geoip.js'");
+  const mmdbIdx = JS_SOURCES.indexOf("'src/geoip/mmdb-reader.js'");
+  const storeIdx = JS_SOURCES.indexOf("'src/geoip/geoip-store.js'");
   assert.notEqual(bundledIdx, -1);
   assert.notEqual(mmdbIdx, -1);
   assert.notEqual(storeIdx, -1);

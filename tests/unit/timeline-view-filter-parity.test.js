@@ -33,7 +33,7 @@ const MIXIN = fs.readFileSync(
   'utf8',
 );
 const BUILD = fs.readFileSync(
-  path.join(REPO_ROOT, 'scripts/build.py'),
+  path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
   'utf8',
 );
 
@@ -131,7 +131,7 @@ test('_applyWindowOnly cancels pending column-stats rAF', () => {
 
 // ── Build order ────────────────────────────────────────────────────────────
 
-test('scripts/build.py registers timeline-view-filter.js after timeline-view.js', () => {
+test('scripts/build/js_sources.py registers timeline-view-filter.js after timeline-view.js', () => {
   const viewIdx = BUILD.indexOf("'src/app/timeline/timeline-view.js'");
   const filterIdx = BUILD.indexOf("'src/app/timeline/timeline-view-filter.js'");
   assert.notEqual(viewIdx, -1);

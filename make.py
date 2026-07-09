@@ -80,6 +80,7 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
     'extend-app': ('Check extendApp mixin chokepoint', 'scripts/check_extend_app.py', []),
     'backtick-comment': ('Check backtick comment terminator', 'scripts/check_backtick_comment.py', []),
     'gate-tests': ('Run Python gate unit tests', 'scripts/run_gate_tests.py', []),
+    'pipeline-sync': ('Check pipeline orchestration sync', 'scripts/check_pipeline_sync.py', []),
     'build':      ('Build docs/index.html',        'scripts/build.py',               []),
     'release-test-api': ('Check release bundle test-API leak', 'scripts/check_release_test_api.py', []),
     'fuzz-path-leak': ('Check bundle fuzz path leak', 'scripts/check_fuzz_path_leak.py', []),
@@ -121,7 +122,7 @@ DEFAULT_STEPS = [
     'decoder-ioc', 'timeline-contract', 'renderer-ioc', 'chokepoint-apis',
     'risk-pre-stamp', 'bare-ioc-types', 'pushioc-only', 'raw-text-lf',
     'worker-spawn', 'silent-catch', 'storage-access', 'extend-app',
-    'backtick-comment', 'gate-tests', 'build', 'release-test-api',
+    'backtick-comment', 'gate-tests', 'pipeline-sync', 'build', 'release-test-api',
     'fuzz-path-leak', 'contract',
 ]
 # Pre-build gates shared by the test pipeline (build + post-build bundle gates omitted).

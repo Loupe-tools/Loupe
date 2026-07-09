@@ -577,13 +577,13 @@ test('TimelineView delegates _cellAt / columns / _isExtractedCol to the dataset'
 // ── Bundle membership ──────────────────────────────────────────────────────
 
 test('timeline-dataset.js is registered in build APP_JS_FILES', () => {
-  // `scripts/build.py` concatenates JS files in a load-bearing
+  // `scripts/build/js_sources.py` concatenates JS files in a load-bearing
   // order; `timeline-dataset.js` must appear before
   // `timeline-view.js` (the view constructs a dataset). A future
   // hand-edit that drops the file from `APP_JS_FILES` would make
   // the bundle reference an undefined `TimelineDataset` symbol.
   const buildPy = fs.readFileSync(
-    path.join(REPO_ROOT, 'scripts/build.py'),
+    path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
     'utf8',
   );
   const dsIdx = buildPy.indexOf("'src/app/timeline/timeline-dataset.js'");

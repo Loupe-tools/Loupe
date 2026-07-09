@@ -32,7 +32,7 @@ const MIXIN = fs.readFileSync(
   'utf8',
 );
 const BUILD = fs.readFileSync(
-  path.join(REPO_ROOT, 'scripts/build.py'),
+  path.join(REPO_ROOT, 'scripts/build/js_sources.py'),
   'utf8',
 );
 
@@ -147,7 +147,7 @@ test('_addOrToggleChip dispatches by op (eq / ne / contains / in / nin)', () => 
 
 // ── Build order ────────────────────────────────────────────────────────────
 
-test('scripts/build.py registers timeline-view-query-chips.js after timeline-view.js', () => {
+test('scripts/build/js_sources.py registers timeline-view-query-chips.js after timeline-view.js', () => {
   const viewIdx = BUILD.indexOf("'src/app/timeline/timeline-view.js'");
   const qcIdx = BUILD.indexOf("'src/app/timeline/timeline-view-query-chips.js'");
   assert.notEqual(viewIdx, -1);

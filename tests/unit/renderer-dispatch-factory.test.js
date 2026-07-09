@@ -116,3 +116,123 @@ test('RendererDispatchFactory._makeHandler: pinYaraRaw stamps yaraBuffer', () =>
   handler.call(app, { name: 'capture.pcap' }, buffer);
   assert.equal(app.currentResult.yaraBuffer, buffer);
 });
+
+test('RendererDispatchFactory.build(): msg uses buffer-only analyze/render and wires inner', async () => {
+  const analyzeArgs = [];
+  const renderArgs = [];
+  let wired = null;
+  const ctx = loadFactory({
+    MsgRenderer: class {
+      analyzeForSecurity(...args) { analyzeArgs.push(args); return {}; }
+      render(...args) { renderArgs.push(args); return { _tag: 'msg-doc' }; }
+    },
+  });
+  const dispatch = ctx.RendererDispatchFactory.build();
+  const buffer = new ArrayBuffer(8);
+  const app = {
+    findings: null,
+    currentResult: { yaraBuffer: null },
+    _wireInnerFileListener(el, name) { wired = { el, name }; },
+  };
+  const out = await dispatch.msg.call(app, { name: 'mail.msg' }, buffer);
+  assert.equal(analyzeArgs.length, 1);
+  assert.deepEqual(analyzeArgs[0], [buffer]);
+  assert.equal(renderArgs.length, 1);
+  assert.deepEqual(renderArgs[0], [buffer]);
+  assert.equal(out.docEl._tag, 'msg-doc');
+  assert.deepEqual(wired, { el: out.docEl, name: 'mail.msg' });
+});
+
+test('RendererDispatchFactory.build(): doc awaits buffer-only analyze', async () => {
+  const order = [];
+  const analyzeArgs = [];
+  const ctx = loadFactory({
+    DocBinaryRenderer: class {
+      async analyzeForSecurity(...args) {
+        order.push('analyze');
+        analyzeArgs.push(args);
+        return {};
+      }
+      render(...args) {
+        order.push('render');
+        return { _tag: 'doc-doc', args };
+      }
+    },
+  });
+  const dispatch = ctx.RendererDispatchFactory.build();
+  const buffer = new ArrayBuffer(4);
+  const app = {
+    findings: null,
+    currentResult: { yaraBuffer: null },
+    _wireInnerFileListener() {},
+  };
+  const out = await dispatch.doc.call(app, { name: 'legacy.doc' }, buffer);
+  assert.deepEqual(order, ['analyze', 'render']);
+  assert.deepEqual(analyzeArgs[0], [buffer]);
+  assert.equal(out.docEl._tag, 'doc-doc');
+});
+
+test('RendererDispatchFactory.build(): lnk sync handler uses buffer-only args', async () => {
+  const analyzeArgs = [];
+  const renderArgs = [];
+  const ctx = loadFactory({
+    LnkRenderer: class {
+      analyzeForSecurity(...args) { analyzeArgs.push(args); return {}; }
+      render(...args) { renderArgs.push(args); return { _tag: 'lnk-doc' }; }
+    },
+  });
+  const dispatch = ctx.RendererDispatchFactory.build();
+  const buffer = new ArrayBuffer(4);
+  const app = {
+    findings: null,
+    currentResult: { yaraBuffer: null },
+    _wireInnerFileListener() {},
+  };
+  const out = await dispatch.lnk.call(app, { name: 'shortcut.lnk' }, buffer);
+  assert.equal(out.docEl._tag, 'lnk-doc');
+  assert.deepEqual(analyzeArgs[0], [buffer]);
+  assert.deepEqual(renderArgs[0], [buffer]);
+});
+
+test('RendererDispatchFactory.build(): scpt augmentedYara stamps findings.augmentedBuffer', () => {
+  const augmented = new Uint8Array([0x46, 0x4f, 0x41, 0x53]);
+  const ctx = loadFactory({
+    OsascriptRenderer: class {
+      analyzeForSecurity() { return { augmentedBuffer: augmented }; }
+      render() { return { _tag: 'scpt-doc' }; }
+    },
+  });
+  const dispatch = ctx.RendererDispatchFactory.build();
+  const app = {
+    findings: null,
+    currentResult: { yaraBuffer: null },
+    _wireInnerFileListener() {},
+  };
+  dispatch.scpt.call(app, { name: 'mal.scpt' }, new ArrayBuffer(4));
+  assert.equal(app.currentResult.yaraBuffer, augmented);
+});
+
+test('RendererDispatchFactory.build(): eml awaits analyze and wires inner listener', async () => {
+  const order = [];
+  let wired = null;
+  const ctx = loadFactory({
+    EmlRenderer: class {
+      async analyzeForSecurity(_buf, name) {
+        order.push(`analyze:${name}`);
+        return {};
+      }
+      render() { order.push('render'); return { _tag: 'eml-doc' }; }
+    },
+  });
+  const dispatch = ctx.RendererDispatchFactory.build();
+  const app = {
+    findings: null,
+    currentResult: { yaraBuffer: null },
+    _wireInnerFileListener(el, name) { wired = { el, name }; },
+  };
+  const file = { name: 'phish.eml' };
+  const out = await dispatch.eml.call(app, file, new ArrayBuffer(4));
+  assert.deepEqual(order, ['analyze:phish.eml', 'render']);
+  assert.equal(out.docEl._tag, 'eml-doc');
+  assert.deepEqual(wired, { el: out.docEl, name: 'phish.eml' });
+});
