@@ -252,6 +252,7 @@ const PARSER_LIMITS = Object.freeze({
     rtf:        64 * 1024 * 1024,
     // Config / scripts.
     url:         8 * 1024 * 1024,
+    ics:         8 * 1024 * 1024,
     reg:        64 * 1024 * 1024,
     inf:        16 * 1024 * 1024,
     iqyslk:     16 * 1024 * 1024,

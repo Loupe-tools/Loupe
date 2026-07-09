@@ -1,27 +1,23 @@
 'use strict';
 // ════════════════════════════════════════════════════════════════════════════
-// rar-renderer.js — RAR archive analyser (listing-only)
+// rar-renderer.js — RAR archive analyser
 //
 // Parses both RAR v4 ("Rar!\x1A\x07\x00") and RAR v5 ("Rar!\x1A\x07\x01\x00")
 // headers to enumerate file entries, their sizes, timestamps, and the
-// compression / encryption flags. Extraction is NOT supported:
+// compression / encryption flags.
 //
-//   • RAR's compression (RAR, RAR5) is a proprietary LZSS / PPMd variant
-//     with no open-source pure-JS decoder small enough to ship offline.
-//   • Even the listing pass surfaces more forensic signal than most
-//     reverse-engineered samples need: file names, sizes, exec / script
-//     classifications, encrypted-header detection, solid-mode flag, and
-//     multi-volume continuation warnings.
+// Store (uncompressed) entries are extractable for drill-down when not
+// encrypted. Compressed entries (proprietary LZSS/PPMd) remain listing-only
+// because no small pure-JS decoder is shipped.
 //
-// Every entry is marked `encrypted: true` in the ArchiveTree view so the
-// Open button is suppressed — users can still inspect the listing and
-// the per-archive analysis. A banner at the top of the view explains why.
+// The listing still surfaces exec/script classifications, encrypted-header
+// detection, solid/multi-volume flags, etc. A banner explains the limits.
 //
 // Emits the usual archive signals (exec/script/HTA/LNK content, double
 // extensions, nested archives, path-traversal patterns, encrypted
 // headers, solid / multi-volume flags).
 //
-// Depends on: constants.js (IOC, PARSER_LIMITS, escHtml, fmtBytes,
+// Depends on: constants.js (IOC, PARSER_LIMITS, fmtBytes,
 //             pushIOC), ArchiveTree (archive-tree.js)
 // ════════════════════════════════════════════════════════════════════════════
 class RarRenderer {
@@ -41,7 +37,7 @@ class RarRenderer {
 
     const banner = document.createElement('div');
     banner.className = 'doc-extraction-banner';
-    banner.innerHTML = '<strong>RAR Archive</strong> — Loupe lists RAR contents for forensic review but cannot decompress RAR-compressed data (proprietary LZSS/PPMd). File names, sizes, timestamps, and flags are authoritative; body content cannot be extracted in-browser.';
+    banner.innerHTML = '<strong>RAR Archive</strong> — Loupe lists contents and extracts <em>store</em> (uncompressed) entries for drill-down. Compressed entries (LZSS/PPMd) remain listing-only because the algorithms are proprietary.';
     wrap.appendChild(banner);
 
     let parsed;
@@ -87,21 +83,26 @@ class RarRenderer {
       wrap.appendChild(warnDiv);
     }
 
-    // File browser — every entry marked `encrypted: true` to suppress
-    // the Open button (we cannot actually extract RAR-compressed data).
-    const archEntries = parsed.files.map(f => ({
-      path: f.path,
-      dir: !!f.isDir,
-      size: f.size,
-      compressedSize: f.packedSize,
-      date: f.date || null,
-      encrypted: true, // locks the Open button per-entry
-      _rarRef: f,
-    }));
+    // File browser. Store (uncompressed) entries carry `data` (or a slice ref)
+    // so _maybeOpenRarEntry can turn them into real drill-down Files.
+    // Compressed or encrypted entries stay locked (encrypted:true or no data).
+    const archEntries = parsed.files.map(f => {
+      const e = {
+        path: f.path,
+        dir: !!f.isDir,
+        size: f.size,
+        compressedSize: f.packedSize,
+        date: f.date || null,
+        encrypted: !!f.encrypted,
+        _rarRef: f,
+      };
+      if (f.data) e.data = f.data;
+      return e;
+    });
 
     const tree = ArchiveTree.render({
       entries: archEntries,
-      onOpen: () => { /* extraction not supported */ },
+      onOpen: (entry) => this._maybeOpenRarEntry(entry, wrap),
       execExts: RarRenderer.EXEC_EXTS,
       decoyExts: RarRenderer.DECOY_EXTS,
       showCompressed: true,
@@ -264,7 +265,7 @@ class RarRenderer {
           aggExhausted = true;
           break;
         }
-        files.push({
+        const fileObj = {
           path,
           size: unpSize,
           packedSize: packSize,
@@ -274,7 +275,14 @@ class RarRenderer {
           hostOs,
           encrypted,
           isDir: dir2 || isDir,
-        });
+          headFlags,
+        };
+        // Store-method (0x30) candidates record their payload offset; solid
+        // archives defer slicing until we know which entry ends the block.
+        if (method === 0x30 && !encrypted && !(dir2 || isDir) && packSize > 0) {
+          fileObj.dataStart = off + headSize;
+        }
+        files.push(fileObj);
         if (files.length >= PARSER_LIMITS.MAX_ENTRIES) break;
 
       } else if (headType === 0x7B) {
@@ -288,6 +296,8 @@ class RarRenderer {
       off = blockEnd;
       if (off <= 0 || off > bytes.length) break;
     }
+
+    this._attachRar4StorePayloads(files, bytes, solid);
 
     return {
       version: '4',
@@ -385,12 +395,20 @@ class RarRenderer {
           off += 4;
         }
         if (fileFlags & 0x0004) off += 4; // CRC32 present
-        v = readVuint(off); /* compression info */ off = v.pos;
+        v = readVuint(off); const compressionInfo = v.value; off = v.pos;
         v = readVuint(off); /* host OS        */ off = v.pos;
         v = readVuint(off); const nameLength = v.value; off = v.pos;
         if (off + nameLength > bytes.length) break;
         const name = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(off, off + nameLength));
         off += nameLength;
+
+        const headerEnd = headerStart + headerSize;
+        const extraStart = off;
+        const extraEnd = headerEnd;
+        let fileEncrypted = encryptedHeaders || !!(fileFlags & 0x0004);
+        if (extraEnd > extraStart) {
+          fileEncrypted = fileEncrypted || RarRenderer._rar5ExtraHasCrypt(bytes, extraStart, extraEnd, readVuint);
+        }
 
         if (headerType === 2) {
           // Actual file entry
@@ -406,14 +424,22 @@ class RarRenderer {
             aggExhausted = true;
             break;
           }
-          files.push({
+          const fileRec = {
             path,
             size: unpSize,
             packedSize: dataSize,
             date,
             isDir,
-            encrypted: false, // determined by encryption extra record; listed separately
-          });
+            encrypted: fileEncrypted,
+            compressionInfo,
+            dataSize,
+          };
+          // Store (algorithm 0) candidates record payload offset; solid blocks
+          // and encryption are resolved in _attachRar5StorePayloads.
+          if ((compressionInfo & 0x7) === 0 && !fileEncrypted && !isDir && dataSize > 0 && dataSize === unpSize) {
+            fileRec.dataStart = headerEnd;
+          }
+          files.push(fileRec);
           if (files.length >= PARSER_LIMITS.MAX_ENTRIES) break;
         }
 
@@ -423,10 +449,11 @@ class RarRenderer {
       }
 
       // Advance past the rest of the header + data payload.
-      const headerEnd = headerStart + headerSize;
-      off = headerEnd + dataSize;
+      off = headerStart + headerSize + dataSize;
       if (off <= 0 || off > bytes.length) break;
     }
+
+    this._attachRar5StorePayloads(files, bytes, solid);
 
     return {
       version: '5',
@@ -439,6 +466,89 @@ class RarRenderer {
 
 
   // ── Helpers ───────────────────────────────────────────────────────────
+
+  _attachRar4StorePayloads(files, bytes, solid) {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (f.dataStart == null || f.method !== 0x30 || f.encrypted || f.isDir || !f.packedSize) {
+        delete f.headFlags;
+        delete f.dataStart;
+        continue;
+      }
+      if (solid) {
+        const nextContinuesSolid = i + 1 < files.length && !!(files[i + 1].headFlags & 0x0010);
+        if (nextContinuesSolid) {
+          delete f.headFlags;
+          delete f.dataStart;
+          continue;
+        }
+      }
+      const dataStart = f.dataStart;
+      const packSize = f.packedSize;
+      if (dataStart + packSize > bytes.length) {
+        delete f.headFlags;
+        delete f.dataStart;
+        continue;
+      }
+      f.data = bytes.subarray(dataStart, dataStart + packSize);
+      delete f.headFlags;
+      delete f.dataStart;
+    }
+  }
+
+  _attachRar5StorePayloads(files, bytes, solid) {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (f.dataStart == null || f.encrypted || f.isDir || !f.dataSize) {
+        delete f.compressionInfo;
+        delete f.dataStart;
+        delete f.dataSize;
+        continue;
+      }
+      if ((f.compressionInfo & 0x7) !== 0 || f.dataSize !== f.size) {
+        delete f.compressionInfo;
+        delete f.dataStart;
+        delete f.dataSize;
+        continue;
+      }
+      if (solid) {
+        const nextContinuesSolid = i + 1 < files.length && !!(files[i + 1].compressionInfo & 0x8);
+        if (nextContinuesSolid) {
+          delete f.compressionInfo;
+          delete f.dataStart;
+          delete f.dataSize;
+          continue;
+        }
+      }
+      const dataStart = f.dataStart;
+      const dataSize = f.dataSize;
+      if (dataStart + dataSize > bytes.length) {
+        delete f.compressionInfo;
+        delete f.dataStart;
+        delete f.dataSize;
+        continue;
+      }
+      f.data = bytes.subarray(dataStart, dataStart + dataSize);
+      delete f.compressionInfo;
+      delete f.dataStart;
+      delete f.dataSize;
+    }
+  }
+
+  static _rar5ExtraHasCrypt(bytes, start, end, readVuint) {
+    let p = start;
+    while (p < end) {
+      const recordStart = p;
+      const v = readVuint(p);
+      const totalSize = v.value;
+      p = v.pos;
+      if (totalSize < 1 || recordStart + totalSize > end) break;
+      const v2 = readVuint(p);
+      if (v2.value === 0x01) return true;
+      p = recordStart + totalSize;
+    }
+    return false;
+  }
 
   _dosDate(ftime) {
     if (!ftime) return null;
@@ -547,7 +657,7 @@ class RarRenderer {
     // Warnings → externalRefs + risk
     const warnings = this._checkWarnings(parsed);
     for (const w of warnings) {
-      pushIOC(f, { type: IOC.PATTERN, url: w.msg, severity: w.sev , bucket: 'externalRefs' });
+      pushIOC(f, { type: IOC.PATTERN, value: w.msg, severity: w.sev , bucket: 'externalRefs' });
       if (w.sev === 'high') escalateRisk(f, 'high');
       else if (w.sev === 'medium' && f.risk !== 'high') escalateRisk(f, 'medium');
     }
@@ -569,7 +679,7 @@ class RarRenderer {
     const dangerous = parsed.files.filter(e => !e.isDir && RarRenderer.EXEC_EXTS.has((e.path || '').split('.').pop().toLowerCase()));
     if (dangerous.length) {
       for (const e of dangerous.slice(0, 50)) {
-        pushIOC(f, { type: IOC.FILE_PATH, url: e.path, severity: 'high' , bucket: 'externalRefs' });
+        pushIOC(f, { type: IOC.FILE_PATH, value: e.path, severity: 'high' , bucket: 'externalRefs' });
       }
     }
 
@@ -582,13 +692,31 @@ class RarRenderer {
       if (e.isDir) continue;
       if (seen.has(e.path)) continue;
       if (surfaced >= listingCap) break;
-      pushIOC(f, { type: IOC.FILE_PATH, url: e.path, severity: 'info' , bucket: 'externalRefs' });
+      pushIOC(f, { type: IOC.FILE_PATH, value: e.path, severity: 'info' , bucket: 'externalRefs' });
       surfaced++;
     }
     if (parsed.files.length > listingCap + dangerous.length) {
-      pushIOC(f, { type: IOC.INFO, url: `+${parsed.files.length - listingCap - dangerous.length} more file path(s) truncated`, severity: 'info' , bucket: 'externalRefs' });
+      pushIOC(f, { type: IOC.INFO, value: `+${parsed.files.length - listingCap - dangerous.length} more file path(s) truncated`, severity: 'info' , bucket: 'externalRefs' });
     }
 
     return f;
+  }
+
+  // Called by ArchiveTree for rows that the tree thinks are openable.
+  // If the parsed entry carried raw bytes (store method + not encrypted)
+  // we synthesise a File and dispatch open-inner-file exactly like ZIP.
+  _maybeOpenRarEntry(entry, wrap) {
+    const ref = entry && entry._rarRef;
+    if (!ref) return;
+    let data = entry.data || ref.data;
+    if (!data || entry.encrypted || ref.encrypted) return;
+    try {
+      const name = (entry.path || ref.path || 'rar-entry').split(/[\\/]/).pop();
+      const ab = (data instanceof Uint8Array) ? data.slice().buffer : data;
+      const file = new File([ab], name, { type: 'application/octet-stream' });
+      wrap.dispatchEvent(new CustomEvent('open-inner-file', { bubbles: true, detail: file }));
+    } catch (e) {
+      console.warn('RAR store entry open failed:', e);
+    }
   }
 }

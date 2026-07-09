@@ -33,6 +33,7 @@ Extensionless and renamed files are auto-routed via magic-byte sniff, extension 
 | **Document attack vectors** | `.iqy` (Internet Query — phishing-pulled URL → worksheet) · `.slk` (SYLK — DDE-injection / formula attack vector) · `.xsl` `.xslt` (XSLT — T1220 SquiblyTwo signed-binary proxy execution via wmic.exe / msxsl.exe) — Excel-readable script-like formats abused as macro-warning bypass |
 | **PDF** | `.pdf` |
 | **Email** | `.eml` `.msg` |
+| **Calendar** | `.ics` — structured event / invite view (summary, times, attendees, description) + URL / ATTACH extraction for phishing triage (T1566.002); YARA coverage already present |
 | **HTML** | `.html` `.htm` `.mht` `.mhtml` `.xhtml` — sandboxed preview + source view |
 | **Archives** | `.zip` `.gz` `.gzip` `.tar` `.tar.gz` / `.tgz` `.rar` `.7z` `.cab` |
 | **Folders** | Drop a directory (or several) onto the drop-zone, multi-select files in the picker, or use the open-folder picker — Loupe synthesises a single tree-view root and per-leaf drill-down works the same way archive entries do. Capped at 4 096 entries with a visible truncation row; analysis stays foreground-on-click. |

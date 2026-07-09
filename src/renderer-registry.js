@@ -112,7 +112,11 @@ class RendererRegistry {
     {
       id: 'xls',
       className: 'XlsxRenderer',
-      exts: ['xlsx', 'xlsm', 'xls', 'ods'],
+      // Note: 'xlsx'/'xlsm' appear here for legacy-OLE fallback, but the
+      // zip-based 'xlsx' entry (earlier in magic pass) wins for real OOXML.
+      // 'xlsb' (BIFF12 binary) is intentionally listed here to avoid
+      // plaintext fallback.
+      exts: ['xlsx', 'xlsm', 'xls', 'xlsb', 'ods'],
       magic: (ctx) => ctx.oleStreams && ctx.oleStreams.has('workbook'),
       description: 'Legacy Excel Binary Workbook (OLE path)',
     },
@@ -663,6 +667,16 @@ class RendererRegistry {
       exts: ['url', 'webloc', 'website'],
       textSniff: (ctx) => ctx.head.startsWith('[InternetShortcut]'),
       description: 'Internet Shortcut',
+    },
+    {
+      id: 'ics',
+      className: 'IcsRenderer',
+      exts: ['ics'],
+      textSniff: (ctx) => {
+        const h = ctx.head200 || ctx.head || '';
+        return /BEGIN:VCALENDAR/i.test(h);
+      },
+      description: 'iCalendar Invite / Calendar Event',
     },
     {
       id: 'reg',
