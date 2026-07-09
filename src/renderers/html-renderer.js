@@ -326,6 +326,7 @@ class HtmlRenderer {
       f.metadata.title = stripped.trim().slice(0, 200);
     }
 
+    calibrateRiskFromEvidence(f);
     return Object.assign(f, { augmentedBuffer: augmentedBuffer.buffer });
   }
 

@@ -35,8 +35,13 @@ def pre_build_gates() -> tuple[tuple[str, str, list[str]], ...]:
     )
 
 
+def gate_script_path(script: str) -> Path:
+    """Resolve a STEPS script path the same way run_gate does."""
+    return REPO / script
+
+
 def run_gate(name: str, script: str, extra: list[str] | None = None) -> int:
-    path = SCRIPTS / script
+    path = gate_script_path(script)
     if not path.is_file():
         print(f'ERROR  {script} not found', file=sys.stderr)
         return 2

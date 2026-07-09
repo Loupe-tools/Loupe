@@ -48,4 +48,12 @@ def check_pipeline_sync() -> list[str]:
             'pipeline.py pre_build_step_ids() drifted from make.py TEST_PIPELINE_GATES'
         )
 
+    from build.pipeline import gate_script_path, pre_build_gates  # noqa: WPS433
+
+    for step_id, script, _extra in pre_build_gates():
+        if not gate_script_path(script).is_file():
+            violations.append(
+                f'pipeline.py cannot resolve {step_id} script: {script}'
+            )
+
     return violations

@@ -987,6 +987,8 @@ class SvgRenderer {
       try { await Promise.all(qrPromises); } catch (_) { /* swallow */ }
     }
 
+    calibrateRiskFromEvidence(findingsRef);
+
     return {
       risk: findingsRef.risk,
       externalRefs: findingsRef.externalRefs,
