@@ -598,6 +598,11 @@ EARLY_JS_FILES = [
 APP_JS_FILES = [
     'src/constants.js',
 
+    # renderer-helpers.js — shared pushExternalRef / mirrorDetectionsToExternalRefs /
+    # calibrateRiskFromEvidence primitives for format handlers. Must load
+    # immediately after constants.js (depends on pushIOC / escalateRisk / IOC.*).
+    'src/renderer-helpers.js',
+
     # util/url-normalize.js — pure deobfuscator for URL strings (unicode /
     # hex inline escapes, percent-encoding in host+path, hex/octal/decimal
     # encoded IPs). Consumed by `src/ioc-extract.js::processUrl` and

@@ -1305,11 +1305,8 @@ class PgpRenderer {
       escalateRisk(findings, findings.riskLevel);
       findings.metadata = {};
       for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
-      findings.externalRefs = findings.detections.map(d => ({
-        type: IOC.PATTERN,
-        url: `${d.name} — ${d.description}`,
-        severity: d.severity,
-      }));
+      findings.externalRefs = [];
+      mirrorDetectionsToExternalRefs(findings);
 
       // Mirror classic-pivot fingerprints + Key IDs into the IOC table.
       // The PGP renderer stores these under human-readable labels that

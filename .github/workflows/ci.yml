@@ -77,12 +77,12 @@ jobs:
           EPOCH=$(git log -1 --format=%ct HEAD)
           echo "epoch=${EPOCH}" >> "$GITHUB_OUTPUT"
 
-      - name: Build docs/index.html (deterministic)
+      - name: Run pre-build gates + build (deterministic)
         env:
           SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.epoch }}
           TZ: UTC
           LC_ALL: C.UTF-8
-        run: python scripts/build.py
+        run: python make.py verify regex parity yara-lint dispatch-sync build contract
 
       - name: Verify build output exists
         run: |

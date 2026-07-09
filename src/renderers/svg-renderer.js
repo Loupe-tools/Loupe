@@ -323,8 +323,6 @@ class SvgRenderer {
    */
   async analyzeForSecurity(buffer, fileName) {
     const text = this._decode(buffer);
-    const refs = [];
-
     // Persistent findings reference shared with async QR callbacks below.
     // QR decoding on embedded image data: URIs goes through an offscreen
     // <img> + canvas and is therefore async — we collect every decode
@@ -334,7 +332,7 @@ class SvgRenderer {
     const findingsRef = {
       risk: 'low',
       hasMacros: false, modules: [], autoExec: [], signatureMatches: [],
-      externalRefs: refs,
+      externalRefs: [],
       metadata: {},
     };
 
@@ -400,7 +398,7 @@ class SvgRenderer {
       const src = script.getAttribute('href') || script.getAttribute('xlink:href') || '';
       const range = findScriptRange(content);
       if (content) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `Embedded <script> element (${content.length} chars): ${this._truncate(content, 120)}`,
           severity: 'critical',
@@ -410,16 +408,16 @@ class SvgRenderer {
         });
         setRisk('critical');
         // Check for obfuscation in script content
-        this._checkJsSuspicious(content, refs, setRisk, false, text);
+        this._checkJsSuspicious(content, findingsRef, setRisk, false, text);
       }
       if (src) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.URL,
           url: src,
           severity: 'critical',
           _highlightText: src,
         });
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `External script reference: ${src}`,
           severity: 'critical',
@@ -435,7 +433,7 @@ class SvgRenderer {
     let scriptMatch;
     while ((scriptMatch = scriptRegex.exec(text)) !== null) {
       if (scriptEls.length === 0) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `<script> block detected in raw SVG (${scriptMatch[0].length} chars)`,
           severity: 'critical',
@@ -475,7 +473,7 @@ class SvgRenderer {
         // the cache hits 100% after the first analyze() call.
         const attrRe = SvgRenderer._eventAttrRegex(attr);
         const attrIdx = text.search(attrRe);
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `Event handler ${attr} on <${sample.element}>: ${this._truncate(sample.value, 100)}${suffix}`,
           severity: 'high',
@@ -486,7 +484,7 @@ class SvgRenderer {
         setRisk('high');
         // Check JS content in handlers
         for (const h of handlers) {
-          this._checkJsSuspicious(h.value, refs, setRisk);
+          this._checkJsSuspicious(h.value, findingsRef, setRisk);
         }
       }
     }
@@ -496,7 +494,7 @@ class SvgRenderer {
     let evtMatch;
     while ((evtMatch = eventRegex.exec(text)) !== null) {
       if (eventHandlers.length === 0) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `Event handler in raw SVG: ${evtMatch[0].substring(0, 100)}`,
           severity: 'high',
@@ -526,7 +524,7 @@ class SvgRenderer {
       const hasScript = /<script[\s>]/i.test(html);
 
       if (hasPassword) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: 'Credential harvesting: <foreignObject> contains password input field',
           severity: 'critical',
@@ -534,7 +532,7 @@ class SvgRenderer {
         });
         setRisk('critical');
       } else if (hasForm) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: 'Phishing form: <foreignObject> contains HTML form',
           severity: 'high',
@@ -543,7 +541,7 @@ class SvgRenderer {
         setRisk('high');
       }
       if (hasIframe) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: '<foreignObject> contains <iframe> — potential redirect/phishing',
           severity: 'high',
@@ -552,7 +550,7 @@ class SvgRenderer {
         setRisk('high');
       }
       if (hasEmbed) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: '<foreignObject> contains <embed>/<object> — potential payload delivery',
           severity: 'high',
@@ -561,7 +559,7 @@ class SvgRenderer {
         setRisk('high');
       }
       if (hasScript) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: '<foreignObject> contains <script> — embedded JavaScript execution',
           severity: 'critical',
@@ -570,7 +568,7 @@ class SvgRenderer {
         setRisk('critical');
       }
       if (!hasForm && !hasPassword && !hasIframe && !hasEmbed && !hasScript) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `<foreignObject> element detected (${html.length} chars of embedded HTML)`,
           severity: 'medium',
@@ -582,7 +580,7 @@ class SvgRenderer {
 
     // Regex fallback for foreignObject
     if (foreignObjects.length === 0 && /<foreignObject[\s>]/i.test(text)) {
-      refs.push({
+      pushExternalRef(findingsRef,{
         type: IOC.PATTERN,
         url: '<foreignObject> detected in raw SVG markup',
         severity: 'medium',
@@ -614,7 +612,7 @@ class SvgRenderer {
 
       // Script MIME types in data URIs
       if (/javascript|ecmascript|jscript|vbscript|html/i.test(mimeType)) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `Data URI with script MIME type: data:${mimeType} (${payload.length} chars)`,
           severity: 'critical',
@@ -627,7 +625,7 @@ class SvgRenderer {
         try {
           const decoded = atob(payload.substring(0, 500));
           if (/<script|javascript:|on\w+\s*=/i.test(decoded)) {
-            refs.push({
+            pushExternalRef(findingsRef,{
               type: IOC.PATTERN,
               url: `Base64 data URI decodes to script content: ${this._truncate(decoded, 100)}`,
               severity: 'critical',
@@ -640,7 +638,7 @@ class SvgRenderer {
           if (sniff && !seenBlobPrefix.has(payload.substring(0, 8))) {
             seenBlobPrefix.add(payload.substring(0, 8));
             sniffedBlobTypes.push(sniff.type);
-            refs.push({
+            pushExternalRef(findingsRef,{
               type: IOC.PATTERN,
               url: `Data URI base64 blob decodes to ${sniff.type} (${payload.length} chars of base64)`,
               severity: sniff.sev,
@@ -658,7 +656,7 @@ class SvgRenderer {
             const declaredExt = mimeType.split('/')[1] || '';
             const actualLower = sniff.type.toLowerCase();
             if (!actualLower.includes(declaredExt.toLowerCase())) {
-              refs.push({
+              pushExternalRef(findingsRef,{
                 type: IOC.PATTERN,
                 url: `Polyglot: declared ${mimeType} but decodes to ${sniff.type}`,
                 severity: 'critical',
@@ -706,7 +704,7 @@ class SvgRenderer {
         if (sniff) {
           seenBlobPrefix.add(prefix);
           sniffedBlobTypes.push(sniff.type);
-          refs.push({
+          pushExternalRef(findingsRef,{
             type: IOC.PATTERN,
             url: `Bare base64 literal decodes to ${sniff.type} (${b64.length} chars, prefix "${prefix}…")`,
             severity: sniff.sev,
@@ -776,7 +774,7 @@ class SvgRenderer {
         sev = 'medium';
         setRisk('medium');
       }
-      refs.push({ type: IOC.URL, url, severity: sev, _highlightText: url });
+      pushExternalRef(findingsRef,{ type: IOC.URL, url, severity: sev, _highlightText: url });
     }
 
     // ── 6. SVG-specific attack vectors ───────────────────────────────────
@@ -786,7 +784,7 @@ class SvgRenderer {
     for (const u of useEls) {
       const href = u.getAttribute('href') || u.getAttribute('xlink:href') || '';
       if (href && !href.startsWith('#') && /^(?:https?:|\/\/|data:)/i.test(href)) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `<use> element loads external resource: ${this._truncate(href, 150)}`,
           severity: 'medium',
@@ -802,7 +800,7 @@ class SvgRenderer {
       const attrName = (anim.getAttribute('attributeName') || '').toLowerCase();
       if (['href', 'xlink:href', 'src', 'action', 'data'].includes(attrName)) {
         const toVal = anim.getAttribute('to') || anim.getAttribute('values') || '';
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `<${anim.tagName.toLowerCase()}> animates "${attrName}" → ${this._truncate(toVal, 100)}`,
           severity: 'high',
@@ -817,7 +815,7 @@ class SvgRenderer {
     for (const fi of feImages) {
       const href = fi.getAttribute('href') || fi.getAttribute('xlink:href') || '';
       if (href && !href.startsWith('#') && /^(?:https?:|\/\/|data:)/i.test(href)) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `<feImage> loads external resource: ${this._truncate(href, 150)}`,
           severity: 'medium',
@@ -832,7 +830,7 @@ class SvgRenderer {
     for (const img of imageEls) {
       const href = img.getAttribute('href') || img.getAttribute('xlink:href') || '';
       if (href && /^(?:https?:|\/\/)/i.test(href)) {
-        refs.push({
+        pushExternalRef(findingsRef,{
           type: IOC.PATTERN,
           url: `<image> loads external URL: ${this._truncate(href, 150)}`,
           severity: 'medium',
@@ -845,7 +843,7 @@ class SvgRenderer {
     // ── 7. Entity/DTD references in raw text ─────────────────────────────
     const entityMatch = text.match(/<!ENTITY\s[^>]*>/i);
     if (entityMatch) {
-      refs.push({
+      pushExternalRef(findingsRef,{
         type: IOC.PATTERN,
         url: 'XML entity declaration detected — potential XXE or obfuscation',
         severity: 'high',
@@ -857,7 +855,7 @@ class SvgRenderer {
     }
     const dtdMatch = text.match(/<!DOCTYPE[^>]+SYSTEM\s[^>]*>/i);
     if (dtdMatch) {
-      refs.push({
+      pushExternalRef(findingsRef,{
         type: IOC.PATTERN,
         url: 'DOCTYPE with SYSTEM reference — potential XXE',
         severity: 'high',
@@ -881,7 +879,7 @@ class SvgRenderer {
       prevScriptStrip = textWithoutScripts;
       textWithoutScripts = textWithoutScripts.replace(stripScriptRe, '');
     } while (textWithoutScripts !== prevScriptStrip);
-    this._checkJsSuspicious(textWithoutScripts, refs, setRisk, true);
+    this._checkJsSuspicious(textWithoutScripts, findingsRef, setRisk, true);
 
     // ── 8b. Forcepoint X-Labs obfuscation fingerprints ───────────────────
     // Runs across the entire SVG source (including <script> content) because
@@ -893,7 +891,7 @@ class SvgRenderer {
         const m = pat.exec(text);
         if (m) {
           obfuscationHits.push(fp.key);
-          refs.push({
+          pushExternalRef(findingsRef,{
             type: IOC.PATTERN,
             url: `Obfuscation fingerprint [${fp.key}]: ${fp.label} — "${this._truncate(m[0], 80)}"`,
             severity: 'high',
@@ -909,7 +907,7 @@ class SvgRenderer {
     // Multiple independent obfuscation categories in one file is a strong
     // phishing-loader signal — escalate to critical.
     if (obfuscationHits.length >= 2) {
-      refs.push({
+      pushExternalRef(findingsRef,{
         type: IOC.PATTERN,
         url: `Multi-layer obfuscation: ${obfuscationHits.length} distinct categories (${obfuscationHits.join(', ')}) — likely phishing loader`,
         severity: 'critical'
@@ -921,13 +919,13 @@ class SvgRenderer {
     const metaRefreshRegex = /<meta[^>]+http-equiv\s*=\s*["']?refresh[^>]+content\s*=\s*["']?\d+;\s*url\s*=\s*([^"'\s>]+)/gi;
     let metaMatch;
     while ((metaMatch = metaRefreshRegex.exec(text)) !== null) {
-      refs.push({
+      pushExternalRef(findingsRef,{
         type: IOC.URL,
         url: metaMatch[1],
         severity: 'high',
         _highlightText: metaMatch[1],
       });
-      refs.push({
+      pushExternalRef(findingsRef,{
         type: IOC.PATTERN,
         url: `Meta refresh redirect to: ${metaMatch[1]}`,
         severity: 'high',
@@ -991,7 +989,7 @@ class SvgRenderer {
 
     return {
       risk: findingsRef.risk,
-      externalRefs: refs,
+      externalRefs: findingsRef.externalRefs,
       metadata: findingsRef.metadata,
       hasMacros: false,
       modules: [],
@@ -1010,7 +1008,8 @@ class SvgRenderer {
   /** Check JS content for suspicious patterns and push findings.
    *  When `rawText` is provided, we also try to pin the finding to an offset
    *  in the full source for click-to-highlight. */
-  _checkJsSuspicious(content, refs, setRisk, dedup = false, rawText = null) {
+  _checkJsSuspicious(content, findingsRef, setRisk, dedup = false, rawText = null) {
+    const refs = findingsRef.externalRefs;
     const seen = dedup ? new Set(refs.map(r => r.url)) : null;
     for (const { pattern, label } of SvgRenderer.JS_SUSPICIOUS) {
       pattern.lastIndex = 0;
@@ -1024,7 +1023,7 @@ class SvgRenderer {
           const idx = rawText.indexOf(m[0]);
           if (idx >= 0) { ref._sourceOffset = idx; ref._sourceLength = m[0].length; }
         }
-        refs.push(ref);
+        pushExternalRef(findingsRef,ref);
         setRisk('high');
       }
     }
