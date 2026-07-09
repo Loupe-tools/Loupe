@@ -274,12 +274,14 @@ id = "url"
 class = "UrlShortcutRenderer"
 module = "src/renderers/url-renderer.js"
 max_bytes = 8388608
+dispatch_override = true
 
 [[dispatch]]
 id = "ics"
 class = "IcsRenderer"
 module = "src/renderers/ics-renderer.js"
 max_bytes = 8388608
+dispatch_override = true
 
 [[dispatch]]
 id = "reg"
@@ -304,24 +306,28 @@ id = "scf"
 class = "ScfRenderer"
 module = "src/renderers/scf-renderer.js"
 max_bytes = 16777216
+dispatch_override = true
 
 [[dispatch]]
 id = "libraryms"
 class = "LibraryMsRenderer"
 module = "src/renderers/library-ms-renderer.js"
 max_bytes = 16777216
+dispatch_override = true
 
 [[dispatch]]
 id = "mof"
 class = "MofRenderer"
 module = "src/renderers/mof-renderer.js"
 max_bytes = 67108864
+dispatch_override = true
 
 [[dispatch]]
 id = "xslt"
 class = "XsltRenderer"
 module = "src/renderers/xslt-renderer.js"
 max_bytes = 67108864
+dispatch_override = true
 
 [[dispatch]]
 id = "wasm"
