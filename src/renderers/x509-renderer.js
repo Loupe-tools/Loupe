@@ -1217,8 +1217,7 @@ class X509Renderer {
         findings.metadata = {};
         for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
         findings.externalRefs = [];
-        mirrorDetectionsToExternalRefs(findings);
-        escalateRisk(findings, findings.riskLevel);
+        finalizeScoreBasedRisk(findings);
         return findings;
       } else if (this._isDER(bytes)) {
         try { certs.push(this._parseCertificate(bytes)); } catch (e) { /* skip */ }
@@ -1238,15 +1237,7 @@ class X509Renderer {
         findings.metadata = {};
         for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
         findings.externalRefs = [];
-        mirrorDetectionsToExternalRefs(findings);
-        // Set risk level from accumulated riskScore so escalateRisk has
-        // the right starting point (matches the post-loop block at
-        // line ~1415).
-        if (findings.riskScore >= 50) findings.riskLevel = 'critical';
-        else if (findings.riskScore >= 30) findings.riskLevel = 'high';
-        else if (findings.riskScore >= 10) findings.riskLevel = 'medium';
-        else findings.riskLevel = 'low';
-        escalateRisk(findings, findings.riskLevel);
+        finalizeScoreBasedRisk(findings);
         return findings;
       }
 
@@ -1429,18 +1420,11 @@ class X509Renderer {
       // Store parsed certificates for analysis copy
       findings.x509Certs = certs;
 
-      // Set risk level
-      if (findings.riskScore >= 50) findings.riskLevel = 'critical';
-      else if (findings.riskScore >= 30) findings.riskLevel = 'high';
-      else if (findings.riskScore >= 10) findings.riskLevel = 'medium';
-      else findings.riskLevel = 'low';
-
       // Normalize to standard findings format for sidebar/copy compatibility
-      escalateRisk(findings, findings.riskLevel);
       findings.metadata = {};
       for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
       findings.externalRefs = [];
-      mirrorDetectionsToExternalRefs(findings);
+      finalizeScoreBasedRisk(findings);
 
       // Mirror classic-pivot fingerprints into the IOC table. X.509
       // certs are pivoted on SHA-1 and SHA-256 thumbprints — treat any
@@ -1463,9 +1447,9 @@ class X509Renderer {
 
     } catch (e) {
       findings.summary = `Analysis error: ${e.message}`;
-      escalateRisk(findings, findings.riskLevel);
       findings.metadata = {};
       findings.externalRefs = [];
+      finalizeScoreBasedRisk(findings);
     }
 
     return findings;

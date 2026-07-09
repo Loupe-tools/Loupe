@@ -525,6 +525,17 @@ lowers, safe to repeat. Direct writes are rejected by the build gate.
 Mirror every Detection into `externalRefs` as `IOC.PATTERN` first or
 YARA-only findings are invisible to this calculation.
 
+Tripwire renderers (HTML, SVG, …) call `calibrateRiskFromEvidence(f)`
+from `src/renderer-helpers.js` at the end of `analyzeForSecurity()`.
+
+Score-based renderers (X.509, PGP) accumulate `findings.riskScore`
+per detection, then call `finalizeScoreBasedRisk(findings)` — same
+module. That helper mirrors detections, maps score → tier via
+`riskLevelFromScore()` (≥50 critical, ≥30 high, ≥10 medium), calls
+`escalateRisk`, then `calibrateRiskFromEvidence` as a monotonic lift
+only (never downgrades the score-derived floor). Keep the per-detection
+`riskScore += N` weights in the renderer; only finalization is shared.
+
 ### IOC Push Helpers & Checklist
 
 Two helpers in `src/constants.js`:

@@ -204,6 +204,8 @@ class FooRenderer {
 
 Full skeleton details live in `CONTRIBUTING.md § Renderer Contract` (detection mirrors, metadata pivots, evidence-derived risk, cancellation polling, drill-down wiring).
 
+X.509 / PGP `analyzeForSecurity()` paths use `finalizeScoreBasedRisk(findings)` from `renderer-helpers.js` (not bare `calibrateRiskFromEvidence`) — see CONTRIBUTING.md → Risk Tier Calibration.
+
 **Wire-up checklist:** renderer file; probe + class in `renderer-registry.js`; add to `JS_FILES` after registry and before `app-core.js`; extension route in `app-load.js` if needed; viewer CSS; `PARSER_LIMITS.MAX_FILE_BYTES_BY_DISPATCH` entry; docs in `FEATURES.md` + `README.md`; async analyzers must await all work before returning.
 
 ---

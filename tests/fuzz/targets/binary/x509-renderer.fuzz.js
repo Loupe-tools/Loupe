@@ -32,6 +32,7 @@ const fuzz = defineFuzzTarget({
   // path is unused on x509 but `md5` is referenced for fingerprint hash).
   modules: [
     'src/constants.js',
+    'src/renderer-helpers.js',
     'src/hashes.js',
     'src/renderers/x509-renderer.js',
   ],
