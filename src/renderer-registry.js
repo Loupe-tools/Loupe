@@ -674,7 +674,7 @@ class RendererRegistry {
       exts: ['ics'],
       textSniff: (ctx) => {
         const h = ctx.head200 || ctx.head || '';
-        return /BEGIN:VCALENDAR/i.test(h) || /BEGIN:VEVENT/i.test(h);
+        return /BEGIN:VCALENDAR/i.test(h);
       },
       description: 'iCalendar Invite / Calendar Event',
     },

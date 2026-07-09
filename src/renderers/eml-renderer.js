@@ -68,6 +68,12 @@ class EmlRenderer {
           // Filename
           const tdName = document.createElement('td'); tdName.className = 'zip-path';
           tdName.textContent = att.filename || 'unnamed';
+          if (att._tnefInnerNames && att._tnefInnerNames.length) {
+            const note = document.createElement('div');
+            note.className = 'zip-tnef-note';
+            note.textContent = `TNEF heuristic inner names (${att._tnefInnerNames.length}): ${att._tnefInnerNames.join(', ')}`;
+            tdName.appendChild(note);
+          }
           const ext = (att.filename || '').split('.').pop().toLowerCase();
           if (/^(exe|dll|scr|com|bat|cmd|vbs|js|ps1|hta|msi|jar)$/.test(ext)) {
             const badge = document.createElement('span'); badge.className = 'zip-badge-danger'; badge.textContent = 'EXECUTABLE';
@@ -499,6 +505,21 @@ class EmlRenderer {
         }
       }
 
+      // ── 4b. TNEF containers with heuristic inner names ─────────────────
+      for (const att of email.attachments) {
+        if (att._tnefInnerNames && att._tnefInnerNames.length) {
+          const names = att._tnefInnerNames.slice(0, 8).join(', ');
+          const more = att._tnefInnerNames.length > 8 ? ` (+${att._tnefInnerNames.length - 8} more)` : '';
+          pushIOC(f, {
+            type: IOC.PATTERN,
+            url: `TNEF container (${att.filename}) — heuristic inner attachment names: ${names}${more}`,
+            severity: 'medium',
+            bucket: 'externalRefs',
+          });
+          if (f.risk === 'low') escalateRisk(f, 'medium');
+        }
+      }
+
       // ── 5. Dangerous attachments ───────────────────────────────────────
       const dangerExts = /\.(exe|scr|com|pif|bat|cmd|vbs|vbe|js|jse|wsf|wsh|ps1|hta|lnk|cpl|msi|dll|reg|inf|sct|gadget)$/i;
       const imageExts = /\.(png|jpe?g|gif|bmp|webp)$/i;
@@ -715,19 +736,20 @@ class EmlRenderer {
       }
 
       // TNEF / winmail.dat (MS-OXRTNEF) — Exchange/Outlook rich-text transport wrapper.
-      // Extract any inner attachments we can identify and always surface the container
-      // so the analyst can drill into it (future dedicated TnefRenderer can improve).
-      const pctLower = pct;
+      // Surface the container for drill-down; heuristic inner names (signature-
+      // gated) are attached as metadata on the container row, not synthetic rows.
       const ctRaw = partHeaders['content-type'] || '';
       const fnGuess = this._extractFilename(cd) || this._extractFilename(ctRaw) || '';
-      if (pctLower.includes('ms-tnef') || /winmail\.dat/i.test(fnGuess) || /name=.*winmail/i.test(ctRaw)) {
+      if (pct.includes('ms-tnef') || /winmail\.dat/i.test(fnGuess) || /name=.*winmail/i.test(ctRaw)) {
         const decoded = this._decodeBodyBinary(partBody, cte);
-        const inners = this._extractTnefAttachments(decoded, fnGuess || 'winmail.dat');
-        for (const a of inners) {
-          if (a) email.attachments.push(a);
-        }
-        // Always expose the raw TNEF container (named appropriately) for drill-down.
-        email.attachments.push({ filename: fnGuess || 'winmail.dat', size: decoded.length, data: decoded });
+        const innerNames = this._extractTnefInnerNames(decoded);
+        const container = {
+          filename: fnGuess || 'winmail.dat',
+          size: decoded.length,
+          data: decoded,
+        };
+        if (innerNames.length) container._tnefInnerNames = innerNames;
+        email.attachments.push(container);
         continue;
       }
 
@@ -929,44 +951,34 @@ class EmlRenderer {
     );
   }
 
-  // Minimal TNEF extractor (MS-OXRTNEF). Real TNEF is a stream of attributes
-  // (lvl, name, type, len, data, checksum). For highest-value triage we:
-  //   • recognise the container and always surface it under its real name
-  //   • attempt a best-effort scan for embedded filenames inside the blob
-  //     (common in attachment records) and emit zero-length placeholder
-  //     entries so the UI at least shows "there were more things inside".
-  // A full attribute walker + data extraction can be added later without
-  // changing the call site.
-  _extractTnefAttachments(tnefBytes, containerName) {
-    const atts = [];
-    if (!tnefBytes || tnefBytes.length < 4) return atts;
+  // Minimal TNEF inner-name heuristic (MS-OXRTNEF). Requires the canonical
+  // signature before scanning; names are surfaced as metadata on the container
+  // attachment and as a single PATTERN IOC in analyzeForSecurity — not as
+  // synthetic zero-byte attachment rows.
+  _extractTnefInnerNames(tnefBytes) {
+    const names = [];
+    if (!tnefBytes || tnefBytes.length < 4) return names;
 
-    // Signature check (little-endian 0x223E9F78 appears as 78 9f 3e 22 on disk)
     const sig = (tnefBytes[0] === 0x78 && tnefBytes[1] === 0x9f && tnefBytes[2] === 0x3e && tnefBytes[3] === 0x22);
-    if (!sig) {
-      // Still surface whatever we have; some truncated samples may vary.
-    }
+    if (!sig) return names;
 
-    // Heuristic filename hunt inside the whole blob (covers many real samples).
-    // Look for typical attachment filename records or plain ASCII names with
-    // dangerous exts.
     try {
       const latin = new TextDecoder('latin1', { fatal: false }).decode(tnefBytes);
-      const re = /([A-Za-z0-9_.\- ]{2,60}\.(?:exe|dll|scr|com|bat|cmd|ps1|js|vbs|hta|lnk|url|docx?|xlsx?|pptx?|pdf|zip|rar|7z))/gi;
+      // Require a path separator or underscore before the extension to reduce
+      // false positives from binary noise.
+      const re = /(?:^|[\s/\\])([A-Za-z0-9][A-Za-z0-9_.\-]{1,58}\.(?:exe|dll|scr|com|bat|cmd|ps1|js|vbs|hta|lnk|url|docx?|xlsx?|pptx?|pdf|zip|rar|7z))(?:[\s\x00]|$)/gi;
       const seen = new Set();
       let m;
       while ((m = re.exec(latin)) !== null) {
         const name = m[1].trim();
-        if (seen.has(name.toLowerCase())) continue;
+        if (!name || seen.has(name.toLowerCase())) continue;
         seen.add(name.toLowerCase());
-        // We don't have reliable data offsets without full parser; emit a
-        // size=0 marker so the table shows "something was here".
-        atts.push({ filename: name, size: 0, data: null, _tnefNote: 'extracted name only (TNEF)' });
-        if (atts.length >= 8) break;
+        names.push(name);
+        if (names.length >= 8) break;
       }
     } catch (_) {}
 
-    return atts;
+    return names;
   }
 
   _getFileIcon(name) {

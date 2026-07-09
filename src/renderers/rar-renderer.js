@@ -52,7 +52,6 @@ class RarRenderer {
     }
 
     this._parsed = parsed;
-    this._parsedBytes = bytes; // for store-entry re-slicing in _maybeOpenRarEntry
 
     // Summary chip
     const files = parsed.files.length;
@@ -276,16 +275,12 @@ class RarRenderer {
           hostOs,
           encrypted,
           isDir: dir2 || isDir,
+          headFlags,
         };
-        // Store-method (0x30) entries have their payload immediately after the
-        // file header block. Attach a slice so the ArchiveTree open path can
-        // turn it into a drillable File. Only for non-dirs, non-encrypted.
+        // Store-method (0x30) candidates record their payload offset; solid
+        // archives defer slicing until we know which entry ends the block.
         if (method === 0x30 && !encrypted && !(dir2 || isDir) && packSize > 0) {
-          // data starts after the variable-length header (headSize covers up to
-          // end of name + extras for this block).
-          const dataStart = off + headSize;
-          const dataEnd = Math.min(bytes.length, dataStart + packSize);
-          if (dataEnd > dataStart) fileObj.data = bytes.subarray(dataStart, dataEnd);
+          fileObj.dataStart = off + headSize;
         }
         files.push(fileObj);
         if (files.length >= PARSER_LIMITS.MAX_ENTRIES) break;
@@ -301,6 +296,8 @@ class RarRenderer {
       off = blockEnd;
       if (off <= 0 || off > bytes.length) break;
     }
+
+    this._attachRar4StorePayloads(files, bytes, solid);
 
     return {
       version: '4',
@@ -405,6 +402,14 @@ class RarRenderer {
         const name = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(off, off + nameLength));
         off += nameLength;
 
+        const headerEnd = headerStart + headerSize;
+        const extraStart = off;
+        const extraEnd = headerEnd;
+        let fileEncrypted = encryptedHeaders || !!(fileFlags & 0x0004);
+        if (extraEnd > extraStart) {
+          fileEncrypted = fileEncrypted || RarRenderer._rar5ExtraHasCrypt(bytes, extraStart, extraEnd, readVuint);
+        }
+
         if (headerType === 2) {
           // Actual file entry
           const path = name.replace(/\\/g, '/');
@@ -425,16 +430,14 @@ class RarRenderer {
             packedSize: dataSize,
             date,
             isDir,
-            encrypted: false, // determined by encryption extra record; listed separately
+            encrypted: fileEncrypted,
+            compressionInfo,
+            dataSize,
           };
-          // Basic store detection for v5: compressionInfo == 0 typically means
-          // "store" (no compression). When dataSize matches and we are not
-          // encrypted, attach the raw payload slice so drill-down works.
-          const headerEnd = headerStart + headerSize;
-          if (compressionInfo === 0 && !isDir && dataSize > 0 && dataSize === unpSize) {
-            const dataStart = headerEnd;
-            const dataEnd = Math.min(bytes.length, dataStart + dataSize);
-            if (dataEnd > dataStart) fileRec.data = bytes.subarray(dataStart, dataEnd);
+          // Store (algorithm 0) candidates record payload offset; solid blocks
+          // and encryption are resolved in _attachRar5StorePayloads.
+          if ((compressionInfo & 0x7) === 0 && !fileEncrypted && !isDir && dataSize > 0 && dataSize === unpSize) {
+            fileRec.dataStart = headerEnd;
           }
           files.push(fileRec);
           if (files.length >= PARSER_LIMITS.MAX_ENTRIES) break;
@@ -446,10 +449,11 @@ class RarRenderer {
       }
 
       // Advance past the rest of the header + data payload.
-      const headerEnd = headerStart + headerSize;
-      off = headerEnd + dataSize;
+      off = headerStart + headerSize + dataSize;
       if (off <= 0 || off > bytes.length) break;
     }
+
+    this._attachRar5StorePayloads(files, bytes, solid);
 
     return {
       version: '5',
@@ -462,6 +466,89 @@ class RarRenderer {
 
 
   // ── Helpers ───────────────────────────────────────────────────────────
+
+  _attachRar4StorePayloads(files, bytes, solid) {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (f.dataStart == null || f.method !== 0x30 || f.encrypted || f.isDir || !f.packedSize) {
+        delete f.headFlags;
+        delete f.dataStart;
+        continue;
+      }
+      if (solid) {
+        const nextContinuesSolid = i + 1 < files.length && !!(files[i + 1].headFlags & 0x0010);
+        if (nextContinuesSolid) {
+          delete f.headFlags;
+          delete f.dataStart;
+          continue;
+        }
+      }
+      const dataStart = f.dataStart;
+      const packSize = f.packedSize;
+      if (dataStart + packSize > bytes.length) {
+        delete f.headFlags;
+        delete f.dataStart;
+        continue;
+      }
+      f.data = bytes.subarray(dataStart, dataStart + packSize);
+      delete f.headFlags;
+      delete f.dataStart;
+    }
+  }
+
+  _attachRar5StorePayloads(files, bytes, solid) {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (f.dataStart == null || f.encrypted || f.isDir || !f.dataSize) {
+        delete f.compressionInfo;
+        delete f.dataStart;
+        delete f.dataSize;
+        continue;
+      }
+      if ((f.compressionInfo & 0x7) !== 0 || f.dataSize !== f.size) {
+        delete f.compressionInfo;
+        delete f.dataStart;
+        delete f.dataSize;
+        continue;
+      }
+      if (solid) {
+        const nextContinuesSolid = i + 1 < files.length && !!(files[i + 1].compressionInfo & 0x8);
+        if (nextContinuesSolid) {
+          delete f.compressionInfo;
+          delete f.dataStart;
+          delete f.dataSize;
+          continue;
+        }
+      }
+      const dataStart = f.dataStart;
+      const dataSize = f.dataSize;
+      if (dataStart + dataSize > bytes.length) {
+        delete f.compressionInfo;
+        delete f.dataStart;
+        delete f.dataSize;
+        continue;
+      }
+      f.data = bytes.subarray(dataStart, dataStart + dataSize);
+      delete f.compressionInfo;
+      delete f.dataStart;
+      delete f.dataSize;
+    }
+  }
+
+  static _rar5ExtraHasCrypt(bytes, start, end, readVuint) {
+    let p = start;
+    while (p < end) {
+      const recordStart = p;
+      const v = readVuint(p);
+      const totalSize = v.value;
+      p = v.pos;
+      if (totalSize < 1 || recordStart + totalSize > end) break;
+      const v2 = readVuint(p);
+      if (v2.value === 0x01) return true;
+      p = recordStart + totalSize;
+    }
+    return false;
+  }
 
   _dosDate(ftime) {
     if (!ftime) return null;

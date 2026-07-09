@@ -28,17 +28,20 @@ class IcsRenderer {
     const wrap = document.createElement('div');
     wrap.className = 'ics-view';
 
+    const parsed = IcsRenderer._parseIcs(text);
+
     const banner = document.createElement('div');
     banner.className = 'doc-extraction-banner';
     const strong = document.createElement('strong');
     strong.textContent = 'Calendar Invite (.ics)';
     banner.appendChild(strong);
-    banner.appendChild(document.createTextNode(
-      ' — iCalendar file. Opening in a real calendar app may follow embedded URLs or ATTACHments. Triage the event details and any links here instead.'
-    ));
+    let bannerNote = ' — iCalendar file. Opening in a real calendar app may follow embedded URLs or ATTACHments. Triage the event details and any links here instead.';
+    if (parsed.unsupportedEncoding) {
+      bannerNote += ' Some properties use encodings Loupe does not fully decode — check the raw source for garbled fields.';
+    }
+    banner.appendChild(document.createTextNode(bannerNote));
     wrap.appendChild(banner);
 
-    const parsed = IcsRenderer._parseIcs(text);
     const evCount = parsed.events.length;
     const info = document.createElement('div');
     info.className = 'plaintext-info';
@@ -50,6 +53,13 @@ class IcsRenderer {
       pid.className = 'ics-prodid';
       pid.textContent = `ProdID: ${parsed.prodId}`;
       wrap.appendChild(pid);
+    }
+
+    if (parsed.method && !evCount) {
+      const meth = document.createElement('div');
+      meth.className = 'ics-prodid';
+      meth.textContent = `Method: ${parsed.method}`;
+      wrap.appendChild(meth);
     }
 
     // Render events as cards
@@ -67,13 +77,14 @@ class IcsRenderer {
 
         const meta = document.createElement('div');
         meta.className = 'ics-meta';
+        const method = ev.method || parsed.method;
         const rows = [];
         if (ev.dtstart) rows.push(['Start', ev.dtstart]);
         if (ev.dtend) rows.push(['End', ev.dtend]);
         if (ev.organizer) rows.push(['Organizer', ev.organizer]);
         if (ev.location) rows.push(['Location', ev.location]);
         if (ev.status) rows.push(['Status', ev.status]);
-        if (ev.method) rows.push(['Method', ev.method]);
+        if (method) rows.push(['Method', method]);
         for (const [k, v] of rows) {
           const r = document.createElement('div');
           r.className = 'ics-meta-row';
@@ -137,7 +148,7 @@ class IcsRenderer {
       wrap.appendChild(empty);
     }
 
-    this._addRawView(wrap, text, bytes.length);
+    this._addRawView(wrap, text);
     return wrap;
   }
 
@@ -183,6 +194,7 @@ class IcsRenderer {
           value: url,
           severity: 'medium',
           note: note || 'ICS',
+          bucket: 'externalRefs',
         });
       }
     }
@@ -211,6 +223,7 @@ class IcsRenderer {
           highlightText: url,
           sourceOffset: m.index,
           sourceLength: url.length,
+          bucket: 'externalRefs',
         });
       }
     }
@@ -249,6 +262,7 @@ class IcsRenderer {
       method: null,
       calendarUrls: [],
       events: [],
+      unsupportedEncoding: false,
     };
 
     let current = null;
@@ -257,12 +271,11 @@ class IcsRenderer {
       if (!line) continue;
       const colon = line.indexOf(':');
       if (colon < 0) continue;
-      let keyPart = line.slice(0, colon);
-      let val = line.slice(colon + 1).trim();
-
-      // Strip params (e.g. DTSTART;TZID=... )
-      const semi = keyPart.indexOf(';');
-      const key = (semi >= 0 ? keyPart.slice(0, semi) : keyPart).toUpperCase();
+      const keyPart = line.slice(0, colon);
+      const rawVal = line.slice(colon + 1);
+      const params = IcsRenderer._parseIcsParams(keyPart);
+      const key = params.key;
+      let val = IcsRenderer._decodeIcsValue(rawVal, params, out);
 
       if (key === 'BEGIN' && val.toUpperCase() === 'VCALENDAR') {
         current = null;
@@ -280,7 +293,11 @@ class IcsRenderer {
 
       if (key === 'VERSION') { out.version = val; continue; }
       if (key === 'PRODID') { out.prodId = val; continue; }
-      if (key === 'METHOD') { out.method = val; continue; }
+      if (key === 'METHOD') {
+        out.method = val;
+        if (current) current.method = val;
+        continue;
+      }
 
       if (key === 'URL' || key === 'ATTACH') {
         if (current) current.links.push(val);
@@ -306,11 +323,65 @@ class IcsRenderer {
       }
     }
 
+    if (out.method) {
+      for (const ev of out.events) {
+        if (!ev.method) ev.method = out.method;
+      }
+    }
+
     return out;
   }
 
+  static _parseIcsParams(keyPart) {
+    const semi = keyPart.indexOf(';');
+    if (semi < 0) return { key: keyPart.toUpperCase(), encoding: null, charset: null };
+    const key = keyPart.slice(0, semi).toUpperCase();
+    let encoding = null;
+    let charset = null;
+    for (const part of keyPart.slice(semi + 1).split(';')) {
+      const eq = part.indexOf('=');
+      if (eq < 0) continue;
+      const pKey = part.slice(0, eq).trim().toUpperCase();
+      const pVal = part.slice(eq + 1).trim();
+      if (pKey === 'ENCODING') encoding = pVal.toUpperCase();
+      else if (pKey === 'CHARSET') charset = pVal;
+    }
+    return { key, encoding, charset };
+  }
+
+  static _decodeIcsValue(rawVal, params, out) {
+    let val = rawVal.trim();
+    const enc = (params.encoding || '').toUpperCase();
+    if (enc === 'QUOTED-PRINTABLE' || enc === 'QP') {
+      val = val
+        .replace(/=\r?\n/g, '')
+        .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    } else if (enc === 'BASE64' || enc === 'B') {
+      try {
+        val = atob(val.replace(/\s/g, ''));
+      } catch (_) {
+        out.unsupportedEncoding = true;
+      }
+    } else if (enc && enc !== '8BIT' && enc !== '7BIT') {
+      out.unsupportedEncoding = true;
+    }
+    if (params.charset && !/^utf-?8$/i.test(params.charset)) {
+      out.unsupportedEncoding = true;
+    }
+    return IcsRenderer._unescapeIcsText(val);
+  }
+
+  static _unescapeIcsText(val) {
+    return val
+      .replace(/\\n/gi, '\n')
+      .replace(/\\N/g, '\n')
+      .replace(/\\,/g, ',')
+      .replace(/\\;/g, ';')
+      .replace(/\\\\/g, '\\');
+  }
+
   // ── Render helpers (modeled on scf/url/library-ms) ───────────────────────
-  _addRawView(wrap, text, byteLen) {
+  _addRawView(wrap, text) {
     const normalizedText = lfNormalize(text);
     const lines = normalizedText.split('\n');
 
@@ -344,6 +415,12 @@ class IcsRenderer {
       table.appendChild(tr);
     }
     sourcePane.appendChild(table);
+    if (lines.length > maxLines) {
+      const more = document.createElement('div');
+      more.className = 'plaintext-info';
+      more.textContent = `… +${lines.length - maxLines} more lines (truncated)`;
+      sourcePane.appendChild(more);
+    }
     wrap.appendChild(sourcePane);
 
     wrap._rawText = lfNormalize(text);
