@@ -68,11 +68,23 @@ run `python scripts/gen_dispatch_manifest.py` and commit
 the default chain) verifies registry, manifest, dispatch keys, and caps
 stay aligned.
 
-**Experimental esbuild:** `LOUPE_ESBUILD=1 python scripts/build.py`
-bundles APP script blocks via esbuild IIFE instead of concat. Concat
-remains the supported release path until cross-block global semantics
-are proven; do not enable esbuild in CI or Pages without that smoke
-test.
+**Experimental bundle shrink:** `LOUPE_ESBUILD=full LOUPE_ESBUILD_MINIFY=1 python scripts/build.py`
+collapses the four App `<script>` blocks into one concat slice, then
+runs esbuild as a single-file minifier (whitespace + syntax only —
+preserves Loupe's flat-global concat semantics). Import-graph bundling
+(`LOUPE_ESBUILD=1`, per-block IIFE) remains for bisect only; it breaks
+cross-file globals. `LOUPE_ESBUILD=1` is legacy; prefer `full` + minify.
+
+Verify before any default cutover:
+
+```bash
+LOUPE_ESBUILD=full LOUPE_ESBUILD_MINIFY=1 python make.py test-build
+LOUPE_BUNDLE_SMOKE=1 python make.py test-unit
+python make.py bundle-metrics
+```
+
+Concat remains the supported release path until the smoke test rides in
+the default test pipeline.
 
 ### Determinism & `SOURCE_DATE_EPOCH`
 

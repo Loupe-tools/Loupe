@@ -115,6 +115,7 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
     # or test pipeline — fuzzing is a deliberate, manual activity. See
     # tests/fuzz/README.md for the runbook.
     'fuzz':       ('Run fuzz harness (Jazzer.js)', 'scripts/run_fuzz.py',          []),
+    'bundle-metrics': ('Emit bundle size breakdown', 'scripts/check_bundle_metrics.py', []),
 }
 
 DEFAULT_STEPS = [

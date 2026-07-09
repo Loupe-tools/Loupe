@@ -767,23 +767,43 @@ assert _covered == APP_JS_FILES, (
     "Tier-5 block split: APP_BLOCKS slices don't cover APP_JS_FILES exactly."
 )
 
-_USE_ESBUILD = os.environ.get('LOUPE_ESBUILD') == '1'
+_ESBUILD_MODE = os.environ.get('LOUPE_ESBUILD', '')
+_USE_ESBUILD_BLOCKS = _ESBUILD_MODE == '1'
+_USE_ESBUILD_FULL = _ESBUILD_MODE == 'full'
+_ESBUILD_MINIFY = os.environ.get('LOUPE_ESBUILD_MINIFY') == '1'
 
 
 def _join_app_block(files):
     """Concatenate an APP_BLOCKS slice, or esbuild-bundle it when opted in."""
-    if not _USE_ESBUILD:
+    if not _USE_ESBUILD_BLOCKS:
         return '\n'.join(read(f) for f in files)
     from pathlib import Path
     from build.bundle_esbuild import bundle_iife
     paths = [Path(BASE) / f for f in files]
-    return bundle_iife(paths)
+    return bundle_iife(paths, minify=_ESBUILD_MINIFY)
 
 
-if _USE_ESBUILD:
-    print('NOTE  LOUPE_ESBUILD=1 — app script blocks via esbuild IIFE (concat fallback when unset)')
+def _join_app_full():
+    """Concatenate all of APP_JS_FILES into one block (optionally minified)."""
+    body = '\n'.join(read(f) for f in APP_JS_FILES)
+    if not _ESBUILD_MINIFY:
+        return body
+    from build.bundle_esbuild import minify_concat_script
+    return minify_concat_script(body)
 
-_block_srcs = [_join_app_block(g) for g in APP_BLOCKS]
+
+if _USE_ESBUILD_BLOCKS:
+    print('NOTE  LOUPE_ESBUILD=1 — per-block esbuild IIFE (legacy bisect path)')
+elif _USE_ESBUILD_FULL:
+    note = 'NOTE  LOUPE_ESBUILD=full — single-app concat block'
+    if _ESBUILD_MINIFY:
+        note += ' + esbuild minify (whitespace/syntax)'
+    print(note)
+
+if _USE_ESBUILD_FULL:
+    _block_srcs = [_join_app_full()]
+else:
+    _block_srcs = [_join_app_block(g) for g in APP_BLOCKS]
 
 # Stamp `LOUPE_VERSION`, the YARA-rules constant, and the three worker-
 # bundle constants at the top of Block 1. Order matters at runtime:
