@@ -1044,6 +1044,10 @@ APP_JS_FILES = [
     # `RenderRoute.run(...)` without a forward reference. The
     # `_rendererDispatch` table itself lives in `app-load.js`.
     'src/render-route.js',
+    # renderer-dispatch-factory.js — declarative `_rendererDispatch` handler
+    # factory merged with bespoke overrides in app-load.js. Must load AFTER
+    # every renderer class the SPEC references and BEFORE app-load.js.
+    'src/renderer-dispatch-factory.js',
     # app-bg.js — subtle per-theme animated landing-surface background
     # (plasma drift on light/dark, floating hearts on mocha, floating
     # kittens on latte, golden-ratio phyllotaxis spiral on solarized,

@@ -1128,7 +1128,7 @@ extendApp({
   // `RendererRegistry.ENTRIES`. The catch-all `plaintext` handler is the
   // last-resort fallback that `_loadFile` selects when the registry can't
   // find any match.
-  _rendererDispatch: {
+  _rendererDispatch: Object.assign(RendererDispatchFactory.build(), {
     // ── Synthetic folder root (drag-drop directory / multi-file drop) ──
     //
     // The `file` arg here is a `FolderFile` (`src/folder-file.js`)
@@ -1169,40 +1169,8 @@ extendApp({
       return { docEl, analyzer };
     },
 
-    // ── OOXML / OLE workbooks + ODS — all route through XlsxRenderer ────
-    async xlsx(file, buffer) {
-      const r = new XlsxRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
     async xls(file, buffer) { return this._rendererDispatch.xlsx.call(this, file, buffer); },
     async ods(file, buffer) { return this._rendererDispatch.xlsx.call(this, file, buffer); },
-
-    async pptx(file, buffer) {
-      const r = new PptxRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      return { docEl: await r.render(buffer) };
-    },
-    async odt(file, buffer) {
-      const r = new OdtRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      return { docEl: await r.render(buffer) };
-    },
-    async odp(file, buffer) {
-      const r = new OdpRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      return { docEl: await r.render(buffer) };
-    },
-    async ppt(file, buffer) {
-      const r = new PptBinaryRenderer();
-      this.findings = r.analyzeForSecurity(buffer);
-      return { docEl: r.render(buffer) };
-    },
-    async doc(file, buffer) {
-      const r = new DocBinaryRenderer();
-      this.findings = r.analyzeForSecurity(buffer);
-      return { docEl: r.render(buffer) };
-    },
 
     // ── CSV / TSV ─────────────────────────────────────────────────────────
     // Decode from the ArrayBuffer we already have rather than calling
@@ -1232,114 +1200,6 @@ extendApp({
       return { docEl: r.render(text, file.name) };
     },
 
-    // ── Forensic / structured-binary formats ────────────────────────────
-    async evtx(file, buffer) {
-      const r = new EvtxRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    sqlite(file, buffer) {
-      const r = new SqliteRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    lnk(file, buffer) {
-      const r = new LnkRenderer();
-      this.findings = r.analyzeForSecurity(buffer);
-      return { docEl: r.render(buffer) };
-    },
-    iso(file, buffer) {
-      const r = new IsoRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      const docEl = r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-    dmg(file, buffer) {
-      const r = new DmgRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    async pkg(file, buffer) {
-      const r = new PkgRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      const docEl = await r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-
-    async onenote(file, buffer) {
-      const r = new OneNoteRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-
-    // ── Email / message containers (drill-down via open-inner-file) ─────
-    msg(file, buffer) {
-      const r = new MsgRenderer();
-      this.findings = r.analyzeForSecurity(buffer);
-      const docEl = r.render(buffer);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-    async eml(file, buffer) {
-      const r = new EmlRenderer();
-      this.findings = await r.analyzeForSecurity(buffer);
-      const docEl = r.render(buffer);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-
-    // ── Archives + package formats (all expose drill-down) ──────────────
-    async zip(file, buffer) {
-      const r = new ZipRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      const docEl = await r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-    async cab(file, buffer) {
-      const r = new CabRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      const docEl = await r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-    async rar(file, buffer) {
-      const r = new RarRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      const docEl = await r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-    async sevenz(file, buffer) {
-      const r = new SevenZRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      const docEl = await r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-    async msix(file, buffer) {
-      const r = new MsixRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      const docEl = await r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-    async browserext(file, buffer) {
-      const r = new BrowserExtRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      const docEl = await r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-    async npm(file, buffer) {
-      const r = new NpmRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      const docEl = await r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
     async jar(file, buffer) {
       // body.jar-active clamps the sidebar to 33vw (vs the default 50vw)
       // — JAR viewers have dense tables, file tree, and a tab strip that
@@ -1352,14 +1212,6 @@ extendApp({
       this._wireInnerFileListener(docEl, file.name);
       return { docEl };
     },
-    msi(file, buffer) {
-      const r = new MsiRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      const docEl = r.render(buffer, file.name);
-      this._wireInnerFileListener(docEl, file.name);
-      return { docEl };
-    },
-
     // ── PDF (drill-down via embedded /Filespec attachments) ─────────────
     async pdf(file, buffer) {
       const r = new PdfRenderer();
@@ -1369,51 +1221,11 @@ extendApp({
       return { docEl };
     },
 
-    // ── Misc text / config formats ──────────────────────────────────────
-    rtf(file, buffer) {
-      const r = new RtfRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    hta(file, buffer) {
-      const r = new HtaRenderer();
-      this.findings = r.analyzeForSecurity(buffer);
-      return { docEl: r.render(buffer) };
-    },
+    // ── Misc text / config formats (bespoke) ────────────────────────────
     html(file, buffer) {
       const r = new HtmlRenderer();
       this.findings = r.analyzeForSecurity(buffer, file.name);
       if (this.findings.augmentedBuffer) this.currentResult.yaraBuffer = this.findings.augmentedBuffer;
-      return { docEl: r.render(buffer, file.name) };
-    },
-    url(file, buffer) {
-      const r = new UrlShortcutRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    ics(file, buffer) {
-      const r = new IcsRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    scf(file, buffer) {
-      const r = new ScfRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    libraryms(file, buffer) {
-      const r = new LibraryMsRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    mof(file, buffer) {
-      const r = new MofRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    xslt(file, buffer) {
-      const r = new XsltRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
       return { docEl: r.render(buffer, file.name) };
     },
     async wasm(file, buffer) {
@@ -1442,64 +1254,13 @@ extendApp({
       this.currentResult.yaraBuffer = buffer;
       return { docEl: r.render(buffer, file.name) };
     },
-    reg(file, buffer) {
-      const r = new RegRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    inf(file, buffer) {
-      const r = new InfSctRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    iqyslk(file, buffer) {
-      const r = new IqySlkRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    wsf(file, buffer) {
-      const r = new WsfRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    clickonce(file, buffer) {
-      const r = new ClickOnceRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-
-    // ── SVG / Plist / AppleScript — augmentedBuffer goes to YARA ────────
+    // ── SVG — augmentedBuffer goes to YARA (plist/scpt via factory) ────
     async svg(file, buffer) {
       const r = new SvgRenderer();
       this.findings = await r.analyzeForSecurity(buffer, file.name);
       if (this.findings.augmentedBuffer) this.currentResult.yaraBuffer = this.findings.augmentedBuffer;
       return { docEl: r.render(buffer, file.name) };
     },
-    plist(file, buffer) {
-      const r = new PlistRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      if (this.findings.augmentedBuffer) this.currentResult.yaraBuffer = this.findings.augmentedBuffer;
-      return { docEl: r.render(buffer, file.name) };
-    },
-    scpt(file, buffer) {
-      const r = new OsascriptRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      if (this.findings.augmentedBuffer) this.currentResult.yaraBuffer = this.findings.augmentedBuffer;
-      return { docEl: r.render(buffer, file.name) };
-    },
-
-    // ── Crypto material ─────────────────────────────────────────────────
-    pgp(file, buffer) {
-      const r = new PgpRenderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-    x509(file, buffer) {
-      const r = new X509Renderer();
-      this.findings = r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-
     // ── Native binaries ─────────────────────────────────────────────────
     //
     // Each dispatcher stamps the format identity + parsed-header struct
@@ -1570,13 +1331,6 @@ extendApp({
       return { docEl };
     },
 
-    // ── Images ──────────────────────────────────────────────────────────
-    async image(file, buffer) {
-      const r = new ImageRenderer();
-      this.findings = await r.analyzeForSecurity(buffer, file.name);
-      return { docEl: r.render(buffer, file.name) };
-    },
-
     // ── Catch-all — invoked by `_loadFile` when the registry can't find
     //    any match, OR when the chosen handler is unknown (defensive).
     plaintext(file, buffer) {
@@ -1584,7 +1338,7 @@ extendApp({
       this.findings = r.analyzeForSecurity(buffer, file.name);
       return { docEl: r.render(buffer, file.name, file.type) };
     },
-  },
+  }),
 
   // ── Unified inner-file drill-down ────────────────────────────
   //

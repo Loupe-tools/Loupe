@@ -115,7 +115,7 @@ def _parse_registry() -> list[tuple[str, str]]:
 
 def _parse_dispatch_keys() -> set[str]:
     text = _read('src/app/app-load.js')
-    block = re.search(r'_rendererDispatch:\s*\{', text)
+    block = re.search(r'_rendererDispatch:\s*(?:Object\.assign\s*\([^,]+,\s*)?\{', text)
     if not block:
         raise SystemExit('Could not find _rendererDispatch block')
     start = block.end()

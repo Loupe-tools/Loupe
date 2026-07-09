@@ -25,9 +25,24 @@ def _parse_registry_ids() -> set[str]:
     return set(re.findall(r"id:\s*'([^']+)'", text))
 
 
-def _parse_dispatch_keys() -> set[str]:
+def _parse_factory_dispatch_ids() -> set[str]:
+    text = _read('src/renderer-dispatch-factory.js')
+    override_block = re.search(
+        r'OVERRIDE_IDS:\s*Object\.freeze\(new Set\(\[([\s\S]*?)\]\)\)',
+        text,
+    )
+    overrides: set[str] = set()
+    if override_block:
+        overrides = set(re.findall(r"'([a-z][a-z0-9]*)'", override_block.group(1)))
+    ids = set(re.findall(r"\{\s*id:\s*'([^']+)'", text))
+    return ids - overrides
+
+
+def _parse_override_dispatch_keys() -> set[str]:
     text = _read('src/app/app-load.js')
-    block = re.search(r'_rendererDispatch:\s*\{', text)
+    block = re.search(r'_rendererDispatch:\s*Object\.assign\([^,]+,\s*\{', text)
+    if not block:
+        block = re.search(r'_rendererDispatch:\s*\{', text)
     if not block:
         raise RuntimeError('_rendererDispatch block not found')
     start = block.end()
@@ -41,6 +56,10 @@ def _parse_dispatch_keys() -> set[str]:
         i += 1
     body = text[start:i - 1]
     return set(re.findall(r'^\s{4}(?:async\s+)?([a-z][a-z0-9]*)\s*\(', body, re.M))
+
+
+def _parse_dispatch_keys() -> set[str]:
+    return _parse_factory_dispatch_ids() | _parse_override_dispatch_keys()
 
 
 def _parse_cap_keys() -> set[str]:
