@@ -12,7 +12,10 @@ const REPO = path.resolve(__dirname, '..', '..');
 const BUNDLE = path.join(REPO, 'docs', 'index.test.html');
 
 test('bundle globals smoke (LOUPE_BUNDLE_SMOKE=1)', { skip: process.env.LOUPE_BUNDLE_SMOKE !== '1' ? 'set LOUPE_BUNDLE_SMOKE=1' : false }, async () => {
-  assert.ok(fs.existsSync(BUNDLE), `${BUNDLE} missing — run test-build first`);
+  assert.ok(fs.existsSync(BUNDLE), `${BUNDLE} missing — run LOUPE_ESBUILD=full LOUPE_ESBUILD_MINIFY=1 python make.py test-build first`);
+  const html = fs.readFileSync(BUNDLE, 'utf8');
+  assert.match(html, /__LOUPE_TEST_API__/,
+    'index.test.html lacks __LOUPE_TEST_API__ — rebuild with python make.py test-build');
 
   let chromium;
   try {
