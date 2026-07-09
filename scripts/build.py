@@ -605,9 +605,6 @@ APP_JS_FILES = [
     # calibrateRiskFromEvidence primitives for format handlers. Must load
     # immediately after constants.js (depends on pushIOC / escalateRisk / IOC.*).
     'src/renderer-helpers.js',
-    # decoder-ioc.js — shared with encoded worker via _DETECTOR_FILES; host
-    # bundle includes it here for symmetry with merge-helper docs.
-    'src/decoder-ioc.js',
 
     # util/url-normalize.js — pure deobfuscator for URL strings (unicode /
     # hex inline escapes, percent-encoding in host+path, hex/octal/decimal
@@ -1579,7 +1576,23 @@ assert _covered == APP_JS_FILES, (
     "Tier-5 block split: APP_BLOCKS slices don't cover APP_JS_FILES exactly."
 )
 
-_block_srcs = ['\n'.join(read(f) for f in g) for g in APP_BLOCKS]
+_USE_ESBUILD = os.environ.get('LOUPE_ESBUILD') == '1'
+
+
+def _join_app_block(files):
+    """Concatenate an APP_BLOCKS slice, or esbuild-bundle it when opted in."""
+    if not _USE_ESBUILD:
+        return '\n'.join(read(f) for f in files)
+    from pathlib import Path
+    from build.bundle_esbuild import bundle_iife
+    paths = [Path(BASE) / f for f in files]
+    return bundle_iife(paths)
+
+
+if _USE_ESBUILD:
+    print('NOTE  LOUPE_ESBUILD=1 — app script blocks via esbuild IIFE (concat fallback when unset)')
+
+_block_srcs = [_join_app_block(g) for g in APP_BLOCKS]
 
 # Stamp `LOUPE_VERSION`, the YARA-rules constant, and the three worker-
 # bundle constants at the top of Block 1. Order matters at runtime:
