@@ -46,7 +46,7 @@ const { loadModules } = require('../helpers/load-bundle.js');
 // `analyzeForSecurity` operates entirely on the raw bytes and never
 // touches the DOM or any host-only globals.
 const ctx = loadModules(
-  ['src/constants.js', 'src/renderers/x509-renderer.js'],
+  ['src/constants.js', 'src/renderer-helpers.js', 'src/renderers/x509-renderer.js'],
   { expose: ['X509Renderer', 'IOC', 'escalateRisk'] },
 );
 const { X509Renderer, IOC } = ctx;

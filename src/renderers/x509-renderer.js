@@ -1216,11 +1216,8 @@ class X509Renderer {
         // matches what every other X.509 branch produces.
         findings.metadata = {};
         for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
-        findings.externalRefs = findings.detections.map(d => ({
-          type: IOC.PATTERN,
-          url: `${d.name} — ${d.description}`,
-          severity: d.severity,
-        }));
+        findings.externalRefs = [];
+        mirrorDetectionsToExternalRefs(findings);
         escalateRisk(findings, findings.riskLevel);
         return findings;
       } else if (this._isDER(bytes)) {
@@ -1240,11 +1237,8 @@ class X509Renderer {
           : 'No certificates could be parsed';
         findings.metadata = {};
         for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
-        findings.externalRefs = findings.detections.map(d => ({
-          type: IOC.PATTERN,
-          url: `${d.name} — ${d.description}`,
-          severity: d.severity,
-        }));
+        findings.externalRefs = [];
+        mirrorDetectionsToExternalRefs(findings);
         // Set risk level from accumulated riskScore so escalateRisk has
         // the right starting point (matches the post-loop block at
         // line ~1415).
@@ -1445,11 +1439,8 @@ class X509Renderer {
       escalateRisk(findings, findings.riskLevel);
       findings.metadata = {};
       for (const fs of findings.formatSpecific) findings.metadata[fs.label] = fs.value;
-      findings.externalRefs = findings.detections.map(d => ({
-        type: IOC.PATTERN,
-        url: `${d.name} — ${d.description}`,
-        severity: d.severity,
-      }));
+      findings.externalRefs = [];
+      mirrorDetectionsToExternalRefs(findings);
 
       // Mirror classic-pivot fingerprints into the IOC table. X.509
       // certs are pivoted on SHA-1 and SHA-256 thumbprints — treat any

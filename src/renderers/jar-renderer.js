@@ -1304,7 +1304,6 @@ class JarRenderer {
       uniqueUrls.push(url);
       pushIOC(f, { type: IOC.URL, value: url, severity: 'info' });
     }
-    f.externalRefs = uniqueUrls.map(u => ({ type: IOC.URL, url: u, severity: 'info' }));
 
     // IPs (deduped)
     const seenIps = new Set();

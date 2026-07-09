@@ -27,14 +27,8 @@
 // — the build's `scripts/check_shim_parity.py` gate diffs them.
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── IOC type constants (mirrors src/constants.js, IOC table) ────────────────
-//
-// `extractInterestingStringsCore` shapes its output rows with `type: IOC.URL`,
-// `IOC.EMAIL`, `IOC.IP`, `IOC.FILE_PATH`, `IOC.UNC_PATH`, `IOC.REGISTRY_KEY`.
-// The host's `app-load.js` post-scan loop merges these rows into
-// `findings.interestingStrings` verbatim, so the values must match the
-// canonical strings defined in `src/constants.js`. Keep this object in sync
-// with the real `IOC` table — `scripts/check_shim_parity.py` diffs them.
+// ── Mirrored constants (codegen from src/constants.js) ─────────────────────
+// @loupe-codegen:start
 const IOC = Object.freeze({
   URL: 'URL',
   EMAIL: 'Email',
@@ -60,26 +54,26 @@ const IOC = Object.freeze({
   SECRET: 'Secret',
 });
 
-// ── looksLikeIpVersionString (mirrors src/constants.js) ─────────────────────
-//
-// Suppresses `v1.2.3.4`, `build 2.0.0.1`, etc. — anything where fewer than 4
-// digits appear across all four octets. Body byte-equivalent with
-// `src/constants.js`.
+const DER_TAIL_RX_TERMINATED = /([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/;
+
+const DER_TAIL_RX_TLD = /(\.[A-Za-z]{2,})[0-9]{1,3}$/;
+
+const _KNOWN_EXT_RE = /^\.(exe|dll|sys|drv|ocx|cpl|scr|com|pdb|lib|obj|exp|pif|lnk|url|bat|cmd|ps1|py|vbs|vbe|js|jse|wsh|wsf|wsc|hta|sct|inf|reg|msi|msp|mst|txt|log|ini|cfg|conf|config|xml|html?|json|ya?ml|toml|csv|tsv|sql|sqlite|db|mdb|accdb|doc[xm]?|xls[xmb]?|ppt[xm]?|pdf|rtf|odt|ods|odp|one|eml|msg|pst|evtx?|zip|rar|7z|gz|tar|bz2|xz|cab|iso|img|vhdx?|vmdk|dmp|bak|tmp|old|dat|bin|pyc|pyo|pyw|rb|java|class|jar|war|apk|cpp|hpp|cs|go|rs|php|aspx?|jsp|sh|so|dylib|manifest|pem|crt|cer|der|key|pfx|ico|png|jpe?g|gif|bmp|svg|webp|tiff?|mp[34]|avi|mov|wmv|wav|ogg|woff2?|ttf|otf|eot)/i;
+
+const _UNRESOLVED_SENTINEL_RE = /\u27E8[^\u27E8\u27E9]{0,256}\u27E9/;
+
 function looksLikeIpVersionString(ipPart) {
   if (!ipPart) return false;
   return String(ipPart).replace(/\D/g, '').length < 4;
 }
 
-// ── stripDerTail (mirrors src/constants.js) ─────────────────────────────────
-//
-// Strips DER tag/length bytes that fuse onto URLs scraped from binary string
-// dumps and ASN.1 IA5String fields. Body byte-equivalent with
-// `src/constants.js`.
-const DER_TAIL_RX_TERMINATED = /([^0-9])0[\d]{0,2}[^a-zA-Z0-9]{1,3}$/;
-const DER_TAIL_RX_TLD        = /(\.[A-Za-z]{2,})[0-9]{1,3}$/;
 function stripDerTail(s) {
   if (typeof s !== 'string') return s;
   s = s.replace(DER_TAIL_RX_TERMINATED, '$1');
+  // Bare-host scoping for the TLD rule: only fire when the string has no
+  // path/query/fragment past the protocol (or none at all for IA5String /
+  // raw hostname inputs). `_afterProto` slices off `proto://` so the test
+  // ignores the slashes that are part of the protocol separator itself.
   const protoIdx = s.indexOf('://');
   const afterProto = protoIdx >= 0 ? s.slice(protoIdx + 3) : s;
   if (!/[\/?#]/.test(afterProto)) {
@@ -88,14 +82,6 @@ function stripDerTail(s) {
   return s;
 }
 
-// ── _trimPathExtGarbage (mirrors src/constants.js + encoded-worker-shim.js) ─
-//
-// `extractInterestingStringsCore` calls this on every Windows-style path it
-// finds in the scan surface to trim string-extraction garbage that fused
-// adjacent printable bytes onto the end of a path (e.g.
-// `"file.pdbtEXtSoftwareAdobe…"` → `"file.pdb"`). Body byte-equivalent with
-// `src/constants.js`.
-const _KNOWN_EXT_RE = /^\.(exe|dll|sys|drv|ocx|cpl|scr|com|pdb|lib|obj|exp|pif|lnk|url|bat|cmd|ps1|py|vbs|vbe|js|jse|wsh|wsf|wsc|hta|sct|inf|reg|msi|msp|mst|txt|log|ini|cfg|conf|config|xml|html?|json|ya?ml|toml|csv|tsv|sql|sqlite|db|mdb|accdb|doc[xm]?|xls[xmb]?|ppt[xm]?|pdf|rtf|odt|ods|odp|one|eml|msg|pst|evtx?|zip|rar|7z|gz|tar|bz2|xz|cab|iso|img|vhdx?|vmdk|dmp|bak|tmp|old|dat|bin|pyc|pyo|pyw|rb|java|class|jar|war|apk|cpp|hpp|cs|go|rs|php|aspx?|jsp|sh|so|dylib|manifest|pem|crt|cer|der|key|pfx|ico|png|jpe?g|gif|bmp|svg|webp|tiff?|mp[34]|avi|mov|wmv|wav|ogg|woff2?|ttf|otf|eot)/i;
 function _trimPathExtGarbage(path) {
   const ls = path.lastIndexOf('\\');
   if (ls < 0) return path;
@@ -103,39 +89,12 @@ function _trimPathExtGarbage(path) {
   const dot = fn.lastIndexOf('.');
   if (dot < 0) return path;
   const ext = fn.slice(dot + 1);
-  if (ext.length <= 10) return path;
-  const tail = fn.slice(dot);
+  if (ext.length <= 10) return path;           // extension is a reasonable length
+  const tail = fn.slice(dot);                   // e.g. ".pdbtEXtSoftwareAdobe"
   const extM = tail.match(_KNOWN_EXT_RE);
   return extM ? path.slice(0, ls + 1 + dot + extM[0].length) : path;
 }
 
-// ── hasUnresolvedSentinel (mirrors src/constants.js + encoded-worker-shim.js)
-//
-// `extractInterestingStringsCore` (src/ioc-extract.js) calls this from its
-// `add()` helper to reject IOC values carrying ⟨unresolved:NAME⟩ /
-// ⟨VAR:~start,len⟩ / ⟨!cleaned!⟩ / ⟨…⟩ sentinels (U+27E8 / U+27E9) emitted
-// by obfuscation decoder partial-resolution output. The encoded-content
-// reassembler splices this decoder output into the stitched reconstructed
-// script which is then re-scanned by the IOC extractor — if the helper is
-// missing from this shim, the IOC-extract worker throws
-// `ReferenceError: hasUnresolvedSentinel is not defined` and silently
-// returns no IOCs (the same failure mode that blanked the Deobfuscation
-// section before the encoded-worker-shim mirror was added).
-//
-// Keep the regex body byte-equivalent with `src/constants.js`;
-// `scripts/check_shim_parity.py` diffs it at build time.
-/* safeRegex: builtin */
-const _UNRESOLVED_SENTINEL_RE = /\u27E8[^\u27E8\u27E9]{0,256}\u27E9/;
-function hasUnresolvedSentinel(s) {
-  return typeof s === 'string' && _UNRESOLVED_SENTINEL_RE.test(s);
-}
-
-// ── safeMatchAll (mirrors src/constants.js) ─────────────────────────────────
-//
-// Bounded regex-match iterator used by `extractInterestingStringsCore` so a
-// single pathological regex on a long single-line input cannot monopolise
-// the worker. Body byte-equivalent with `src/constants.js`; the parity gate
-// (`scripts/check_shim_parity.py`) diffs them.
 function safeMatchAll(re, str, budgetMs, maxMatches) {
   const matches = [];
   if (!re || typeof str !== 'string') return { matches, truncated: false, timedOut: false };
@@ -167,3 +126,8 @@ function safeMatchAll(re, str, budgetMs, maxMatches) {
   } catch (_e) { /* swallow */ }
   return { matches, truncated, timedOut };
 }
+
+function hasUnresolvedSentinel(s) {
+  return typeof s === 'string' && _UNRESOLVED_SENTINEL_RE.test(s);
+}
+// @loupe-codegen:end

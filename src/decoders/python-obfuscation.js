@@ -592,12 +592,10 @@ Object.assign(EncodedContentDetector.prototype, {
         length: m[0].length,
         deobfuscated: preview,
         _executeOutput: true,
-        _patternIocs: [{
-          type: 'pattern',
-          value: 'Python pickle.loads() RCE primitive (CWE-502)',
-          severity: 'high',
-          note: 'T1059.006 — unpickling attacker-controlled bytes executes __reduce__',
-        }],
+        _patternIocs: [DecoderIoc.pattern(
+          'Python pickle.loads() RCE primitive (CWE-502)',
+          'high',
+        )].filter(Boolean),
       });
     }
 

@@ -175,8 +175,15 @@ class HtmlRenderer {
    */
   analyzeForSecurity(buffer, fileName) {
     const text = this._decode(buffer);
-    const refs = [];
-    let risk = 'low';
+    const f = {
+      risk: 'low',
+      externalRefs: [],
+      metadata: {},
+      hasMacros: false,
+      modules: [],
+      autoExec: [],
+      signatureMatches: [],
+    };
 
     // Length cap — DOM-text scans below run unbounded `matchAll` and
     // `test()` over the raw HTML; cap at 5 MB to avoid the worst case
@@ -185,10 +192,10 @@ class HtmlRenderer {
     const SCAN_CAP = 5 * 1024 * 1024;
     const scanText = text.length > SCAN_CAP ? text.slice(0, SCAN_CAP) : text;
     if (text.length > SCAN_CAP) {
-      refs.push({
+      pushExternalRef(f, {
         type: IOC.PATTERN,
         url: `HTML body >${(SCAN_CAP / (1024 * 1024)).toFixed(0)} MB — security scan truncated`,
-        severity: 'info'
+        severity: 'info',
       });
     }
 
@@ -213,17 +220,17 @@ class HtmlRenderer {
       if (normalized.startsWith('data:image/')) continue;
       // eslint-disable-next-line no-script-url -- detecting, not navigating
       if (normalized.startsWith('javascript:') || normalized.startsWith('vbscript:') || normalized.startsWith('data:')) {
-
         sev = 'high';
-        if (risk !== 'high') risk = 'high';
+        escalateRisk(f, 'high');
       } else if (normalized.startsWith('http:') || normalized.startsWith('https:')) {
         sev = 'medium';
-        if (risk === 'low') risk = 'medium';
+        escalateRisk(f, 'medium');
       }
-      refs.push({
+      pushExternalRef(f, {
         type: IOC.URL,
         url: url,
-        severity: sev
+        severity: sev,
+        _highlightText: url,
       });
     }
 
@@ -238,14 +245,14 @@ class HtmlRenderer {
         } else if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(action)) {
           isCrossOrigin = true;
         }
-        refs.push({
+        pushExternalRef(f, {
           type: IOC.PATTERN,
           url: isCrossOrigin
             ? `Cross-origin form with password field → action="${action.slice(0, 120)}" — likely credential phishing`
             : `Form with password field → action="${action || '(same page)'}"`,
-          severity: isCrossOrigin ? 'critical' : 'high'
+          severity: isCrossOrigin ? 'critical' : 'high',
         });
-        risk = 'high';
+        escalateRisk(f, isCrossOrigin ? 'critical' : 'high');
       }
     }
 
@@ -255,19 +262,19 @@ class HtmlRenderer {
       const hasPayload = /powershell|mshta|cmd\s*\/c|cmd\.exe|regsvr32|certutil|bitsadmin|wscript|cscript/i.test(scanText);
       const hasInstruction = /press\s+win\s*\+\s*r|win\+r|ctrl\s*\+\s*v|paste|verify\s+you\s+are\s+human|captcha|i\s*'?\s*m\s+not\s+a\s+robot|click\s+to\s+verify/i.test(scanText);
       if (hasClipboard && (hasPayload || hasInstruction)) {
-        refs.push({
+        pushExternalRef(f, {
           type: IOC.PATTERN,
           url: 'ClickFix / fake-captcha pattern — instructs user to paste malicious command (T1204.001)',
-          severity: 'critical'
+          severity: 'critical',
         });
-        risk = 'high';
+        escalateRisk(f, 'critical');
       } else if (hasClipboard && /base64|atob|fromcharcode/i.test(scanText)) {
-        refs.push({
+        pushExternalRef(f, {
           type: IOC.PATTERN,
           url: 'Clipboard write with encoded content — possible ClickFix variant',
-          severity: 'high'
+          severity: 'high',
         });
-        risk = 'high';
+        escalateRisk(f, 'high');
       }
     }
 
@@ -280,14 +287,14 @@ class HtmlRenderer {
       for (const m of scanText.matchAll(dataUriRE)) {
         const tag = m[1] || m[2];
         const isImg = tag === 'img';
-        refs.push({
+        pushExternalRef(f, {
           type: IOC.PATTERN,
           url: isImg
             ? 'Data-URI <img> with text/html MIME — HTML smuggling technique'
             : `Data-URI <${tag}> — HTML smuggling technique`,
-          severity: 'high'
+          severity: 'high',
         });
-        risk = 'high';
+        escalateRisk(f, 'high');
       }
     }
 
@@ -308,7 +315,6 @@ class HtmlRenderer {
     // Pattern detection is handled entirely by YARA (auto-scan on file load)
 
     // ── 4. Metadata extraction ───────────────────────────────────────────
-    const metadata = {};
     const titleMatch = text.match(/<title[^>]*>([\s\S]*?)<\/title\b[^>]*>/i);
     if (titleMatch) {
       // Fixed-point tag strip — a single pass can be bypassed by fragments
@@ -317,20 +323,10 @@ class HtmlRenderer {
       let stripped = titleMatch[1];
       let prev;
       do { prev = stripped; stripped = stripped.replace(/<[^>]*>/g, ''); } while (stripped !== prev);
-      metadata.title = stripped.trim().slice(0, 200);
+      f.metadata.title = stripped.trim().slice(0, 200);
     }
 
-
-    return {
-      risk,
-      externalRefs: refs,
-      metadata,
-      hasMacros: false,
-      modules: [],
-      autoExec: [],
-      signatureMatches: [],
-      augmentedBuffer: augmentedBuffer.buffer
-    };
+    return Object.assign(f, { augmentedBuffer: augmentedBuffer.buffer });
   }
 
   // ── Internal: Parse HTML into DOM and extract content ──────────────────

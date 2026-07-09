@@ -64,6 +64,13 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
     'regex':      ('Check regex safety annotations', 'scripts/check_regex_safety.py', []),
     'parity':     ('Check worker shim parity',     'scripts/check_shim_parity.py',   []),
     'yara-lint':  ('Lint YARA rule house style',   'scripts/lint_yara.py',           []),
+    'dispatch-sync': ('Check dispatch manifest sync', 'scripts/check_renderer_dispatch_sync.py', []),
+    'decoder-ioc': ('Check decoder IOC chokepoints', 'scripts/check_decoder_ioc.py', []),
+    'timeline-contract': ('Check timeline composite contract', 'scripts/check_timeline_contract.py', []),
+    'shim-codegen': ('Check worker shim codegen', 'scripts/gen_worker_shims.py', []),
+    'renderer-ioc': ('Check renderer IOC contract', 'scripts/check_renderer_ioc.py', []),
+    'chokepoint-apis': ('Check chokepoint API allow-list', 'scripts/check_chokepoint_apis.py', []),
+    'gate-tests': ('Run Python gate unit tests', 'scripts/run_gate_tests.py', []),
     'build':      ('Build docs/index.html',        'scripts/build.py',               []),
     'contract':   ('Check renderer contract',      'scripts/check_renderer_contract.py', []),
     'sbom':       ('Generate CycloneDX SBOM',      'scripts/generate_sbom.py',       []),
@@ -93,9 +100,15 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
     'fuzz':       ('Run fuzz harness (Jazzer.js)', 'scripts/run_fuzz.py',          []),
 }
 
-DEFAULT_STEPS = ['verify', 'regex', 'parity', 'yara-lint', 'build', 'contract']
+DEFAULT_STEPS = [
+    'verify', 'regex', 'shim-codegen', 'parity', 'yara-lint', 'dispatch-sync',
+    'decoder-ioc', 'timeline-contract', 'renderer-ioc', 'chokepoint-apis',
+    'gate-tests', 'build', 'contract',
+]
+# Pre-build gates shared by the test pipeline (release build + contract omitted).
+TEST_PIPELINE_GATES = [s for s in DEFAULT_STEPS if s not in ('build', 'contract')]
 # `test` is a pseudo-alias expanded by `_parse_args`. Real steps are in STEPS.
-TEST_STEPS = ['test-build', 'test-unit', 'test-e2e']
+TEST_STEPS = TEST_PIPELINE_GATES + ['test-build', 'test-unit', 'test-e2e']
 ALL_STEPS = list(STEPS.keys())
 
 

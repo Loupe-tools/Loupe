@@ -466,6 +466,9 @@ _DETECTOR_FILES = [
     # source mentions an XOR operator. See PLAN.md → D1.
     'src/decoders/xor-bruteforce.js',
     'src/decoders/ioc-extract.js',
+    # decoder-ioc.js — sentinel-gated pattern IOC helpers for encoded-content
+    # decoders. Must load before cmd-obfuscation.js and siblings.
+    'src/decoder-ioc.js',
     'src/decoders/base64-hex.js',
     'src/decoders/zlib.js',
     'src/decoders/encoding-finders.js',
@@ -597,6 +600,11 @@ EARLY_JS_FILES = [
 
 APP_JS_FILES = [
     'src/constants.js',
+
+    # renderer-helpers.js — shared pushExternalRef / mirrorDetectionsToExternalRefs /
+    # calibrateRiskFromEvidence primitives for format handlers. Must load
+    # immediately after constants.js (depends on pushIOC / escalateRisk / IOC.*).
+    'src/renderer-helpers.js',
 
     # util/url-normalize.js — pure deobfuscator for URL strings (unicode /
     # hex inline escapes, percent-encoding in host+path, hex/octal/decimal
@@ -1039,6 +1047,10 @@ APP_JS_FILES = [
     # `RenderRoute.run(...)` without a forward reference. The
     # `_rendererDispatch` table itself lives in `app-load.js`.
     'src/render-route.js',
+    # renderer-dispatch-factory.js — declarative `_rendererDispatch` handler
+    # factory merged with bespoke overrides in app-load.js. Must load AFTER
+    # every renderer class the SPEC references and BEFORE app-load.js.
+    'src/renderer-dispatch-factory.js',
     # app-bg.js — subtle per-theme animated landing-surface background
     # (plasma drift on light/dark, floating hearts on mocha, floating
     # kittens on latte, golden-ratio phyllotaxis spiral on solarized,
@@ -1564,7 +1576,23 @@ assert _covered == APP_JS_FILES, (
     "Tier-5 block split: APP_BLOCKS slices don't cover APP_JS_FILES exactly."
 )
 
-_block_srcs = ['\n'.join(read(f) for f in g) for g in APP_BLOCKS]
+_USE_ESBUILD = os.environ.get('LOUPE_ESBUILD') == '1'
+
+
+def _join_app_block(files):
+    """Concatenate an APP_BLOCKS slice, or esbuild-bundle it when opted in."""
+    if not _USE_ESBUILD:
+        return '\n'.join(read(f) for f in files)
+    from pathlib import Path
+    from build.bundle_esbuild import bundle_iife
+    paths = [Path(BASE) / f for f in files]
+    return bundle_iife(paths)
+
+
+if _USE_ESBUILD:
+    print('NOTE  LOUPE_ESBUILD=1 — app script blocks via esbuild IIFE (concat fallback when unset)')
+
+_block_srcs = [_join_app_block(g) for g in APP_BLOCKS]
 
 # Stamp `LOUPE_VERSION`, the YARA-rules constant, and the three worker-
 # bundle constants at the top of Block 1. Order matters at runtime:

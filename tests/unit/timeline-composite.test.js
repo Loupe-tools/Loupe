@@ -446,3 +446,11 @@ test('M365-audit-schema CSVs produce a zero-empty-canonical composite', () => {
   assert.ok(nativeNames.includes('raw'),
     'Raw must survive as a native composite column');
 });
+
+test('TIMELINE_CANONICAL_COLS frozen at nine trimmed slots', () => {
+  assert.equal(TIMELINE_CANONICAL_COLS.length, 9);
+  assert.deepEqual(
+    Array.from(TIMELINE_CANONICAL_COLS),
+    ['__source', 'Timestamp', 'Host', 'User', 'EventID', 'Severity', 'Category', 'SourceIP', 'DestIP'],
+  );
+});
