@@ -1,6 +1,7 @@
 """Dispatch manifest ↔ registry ↔ dispatch ↔ caps sync gate."""
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import sys
@@ -90,9 +91,30 @@ def _parse_app_js_files() -> set[str]:
     return files
 
 
+def _check_manifest_freshness() -> list[str]:
+    """Fail when on-disk TOML differs from gen_dispatch_manifest output."""
+    spec = importlib.util.spec_from_file_location(
+        'gen_dispatch_manifest',
+        os.path.join(BASE, 'gen_dispatch_manifest.py'),
+    )
+    if spec is None or spec.loader is None:
+        return ['gen_dispatch_manifest.py: failed to load module spec']
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    generated = mod.generate_toml()
+    with open(MANIFEST_PATH, encoding='utf-8') as fh:
+        on_disk = fh.read()
+    if on_disk != generated:
+        return [
+            'dispatch-manifest.toml is stale — run: python scripts/gen_dispatch_manifest.py'
+        ]
+    return []
+
+
 def check_dispatch_sync() -> list[str]:
     """Return human-readable violation strings. Empty list means OK."""
     violations: list[str] = []
+    violations.extend(_check_manifest_freshness())
     entries = load_manifest()
     manifest_ids_set = {e.id for e in entries}
     registry_ids = _parse_registry_ids()

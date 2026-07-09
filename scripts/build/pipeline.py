@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Build pipeline orchestrator (experimental).
-
-Today this module only runs pre-build gates. The concat bundle in
-``scripts/build.py`` remains authoritative until the esbuild cutover
-lands in a later phase.
-"""
+"""Build pipeline orchestrator — pre-build gates shared with make.py."""
 from __future__ import annotations
 
 import subprocess
@@ -14,8 +9,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent.parent
 REPO = SCRIPTS.parent
 
-# Gates that must pass before concatenation. Order is intentional:
-# cheap static checks first, manifest sync before bundle emit.
+# Must match make.py TEST_PIPELINE_GATES script names (order intentional).
 PRE_BUILD_GATES: tuple[tuple[str, str], ...] = (
     ('verify', 'verify_vendored.py'),
     ('regex', 'check_regex_safety.py'),
@@ -27,6 +21,16 @@ PRE_BUILD_GATES: tuple[tuple[str, str], ...] = (
     ('timeline-contract', 'check_timeline_contract.py'),
     ('renderer-ioc', 'check_renderer_ioc.py'),
     ('chokepoint-apis', 'check_chokepoint_apis.py'),
+    ('risk-pre-stamp', 'check_risk_pre_stamp.py'),
+    ('bare-ioc-types', 'check_bare_ioc_types.py'),
+    ('pushioc-only', 'check_pushioc_only.py'),
+    ('raw-text-lf', 'check_raw_text_lf.py'),
+    ('worker-spawn', 'check_worker_spawn.py'),
+    ('silent-catch', 'check_silent_catch.py'),
+    ('storage-access', 'check_storage_access.py'),
+    ('extend-app', 'check_extend_app.py'),
+    ('backtick-comment', 'check_backtick_comment.py'),
+    ('gate-tests', 'run_gate_tests.py'),
 )
 
 

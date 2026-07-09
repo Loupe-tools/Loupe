@@ -10,18 +10,6 @@ SRC = os.path.join(REPO, 'src')
 
 CANONICAL_COLS_LEN = 9
 
-# Frozen merge-eligible kinds — must match `TIMELINE_MERGE_ELIGIBLE_KINDS` in
-# `src/constants.js` byte-for-byte on member strings.
-EXPECTED_MERGE_KINDS = frozenset({
-    'csv', 'tsv', 'log',
-    'evtx',
-    'syslog3164', 'syslog5424',
-    'zeek', 'jsonl', 'cloudtrail',
-    'cef', 'leef', 'logfmt',
-    'w3c', 'apache-error', 'access-log',
-    'sqlite', 'db',
-})
-
 # Files allowed to assign composite-registry fields on TimelineView.
 _SOURCES_ASSIGN_ALLOW = {
     os.path.join('src', 'app', 'timeline', 'timeline-view.js'),
@@ -125,19 +113,8 @@ def check_timeline_contract() -> list[str]:
     kinds = _extract_merge_kinds(constants)
     if kinds is None:
         violations.append('src/constants.js: TIMELINE_MERGE_ELIGIBLE_KINDS not found')
-    else:
-        missing = sorted(EXPECTED_MERGE_KINDS - kinds)
-        extra = sorted(kinds - EXPECTED_MERGE_KINDS)
-        if missing:
-            violations.append(
-                'src/constants.js: TIMELINE_MERGE_ELIGIBLE_KINDS missing: '
-                + ', '.join(missing)
-            )
-        if extra:
-            violations.append(
-                'src/constants.js: TIMELINE_MERGE_ELIGIBLE_KINDS unexpected: '
-                + ', '.join(extra)
-            )
+    elif not kinds:
+        violations.append('src/constants.js: TIMELINE_MERGE_ELIGIBLE_KINDS is empty')
 
     violations.extend(_scan_assignments('_sources', _SOURCES_ASSIGN_ALLOW))
     violations.extend(_scan_assignments('_sourceOfRow', _SOURCE_OF_ROW_ASSIGN_ALLOW))

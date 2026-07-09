@@ -70,8 +70,24 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
     'shim-codegen': ('Check worker shim codegen', 'scripts/gen_worker_shims.py', []),
     'renderer-ioc': ('Check renderer IOC contract', 'scripts/check_renderer_ioc.py', []),
     'chokepoint-apis': ('Check chokepoint API allow-list', 'scripts/check_chokepoint_apis.py', []),
+    'risk-pre-stamp': ('Check risk pre-stamping gate', 'scripts/check_risk_pre_stamp.py', []),
+    'bare-ioc-types': ('Check bare IOC type gate', 'scripts/check_bare_ioc_types.py', []),
+    'pushioc-only': ('Check pushIOC-only chokepoint', 'scripts/check_pushioc_only.py', []),
+    'raw-text-lf': ('Check _rawText LF-normalisation', 'scripts/check_raw_text_lf.py', []),
+    'worker-spawn': ('Check worker spawn allow-list', 'scripts/check_worker_spawn.py', []),
+    'silent-catch': ('Check silent-catch load chain', 'scripts/check_silent_catch.py', []),
+    'storage-access': ('Check safeStorage chokepoint', 'scripts/check_storage_access.py', []),
+    'extend-app': ('Check extendApp mixin chokepoint', 'scripts/check_extend_app.py', []),
+    'backtick-comment': ('Check backtick comment terminator', 'scripts/check_backtick_comment.py', []),
     'gate-tests': ('Run Python gate unit tests', 'scripts/run_gate_tests.py', []),
     'build':      ('Build docs/index.html',        'scripts/build.py',               []),
+    'release-test-api': ('Check release bundle test-API leak', 'scripts/check_release_test_api.py', []),
+    'fuzz-path-leak': ('Check bundle fuzz path leak', 'scripts/check_fuzz_path_leak.py', []),
+    'fuzz-path-leak-test': (
+        'Check test bundle fuzz path leak',
+        'scripts/check_fuzz_path_leak.py',
+        ['--bundle', 'docs/index.test.html'],
+    ),
     'contract':   ('Check renderer contract',      'scripts/check_renderer_contract.py', []),
     'sbom':       ('Generate CycloneDX SBOM',      'scripts/generate_sbom.py',       []),
     # ── Test pipeline (opt-in; not part of DEFAULT_STEPS) ───────────────────
@@ -103,16 +119,27 @@ STEPS: dict[str, tuple[str, str, list[str]]] = {
 DEFAULT_STEPS = [
     'verify', 'regex', 'shim-codegen', 'parity', 'yara-lint', 'dispatch-sync',
     'decoder-ioc', 'timeline-contract', 'renderer-ioc', 'chokepoint-apis',
-    'gate-tests', 'build', 'contract',
+    'risk-pre-stamp', 'bare-ioc-types', 'pushioc-only', 'raw-text-lf',
+    'worker-spawn', 'silent-catch', 'storage-access', 'extend-app',
+    'backtick-comment', 'gate-tests', 'build', 'release-test-api',
+    'fuzz-path-leak', 'contract',
 ]
-# Pre-build gates shared by the test pipeline (release build + contract omitted).
-TEST_PIPELINE_GATES = [s for s in DEFAULT_STEPS if s not in ('build', 'contract')]
+# Pre-build gates shared by the test pipeline (build + post-build bundle gates omitted).
+TEST_PIPELINE_GATES = [
+    s for s in DEFAULT_STEPS
+    if s not in ('build', 'release-test-api', 'fuzz-path-leak', 'contract')
+]
 # `test` is a pseudo-alias expanded by `_parse_args`. Real steps are in STEPS.
-TEST_STEPS = TEST_PIPELINE_GATES + ['test-build', 'test-unit', 'test-e2e']
+TEST_STEPS = TEST_PIPELINE_GATES + [
+    'test-build',
+    'fuzz-path-leak-test',
+    'test-unit',
+    'test-e2e',
+]
 ALL_STEPS = list(STEPS.keys())
 
 
-def _run(step: str) -> int:
+def _run(step: str, *, env: dict[str, str] | None = None) -> int:
     label, script, extra = STEPS[step]
     path = os.path.join(BASE, script)
     if not os.path.isfile(path):
@@ -127,7 +154,8 @@ def _run(step: str) -> int:
     # Run with the same interpreter so a venv / pyenv is honoured. cwd=BASE
     # so the child scripts' relative paths (src/, vendor/, docs/, …) resolve
     # exactly as they do when invoked directly.
-    rc = subprocess.call([sys.executable, path] + list(extra), cwd=BASE)
+    run_env = os.environ.copy() if env is None else env
+    rc = subprocess.call([sys.executable, path] + list(extra), cwd=BASE, env=run_env)
     dt = time.perf_counter() - t0
     status = 'OK' if rc == 0 else f'FAIL ({rc})'
     print(f"[{status}] {step} — {dt:.2f}s")
@@ -179,8 +207,16 @@ def main() -> int:
     steps = _parse_args(sys.argv[1:])
     print(f"Loupe make — running: {', '.join(steps)}")
     t0 = time.perf_counter()
+    ran_pre_build_gates = False
     for step in steps:
-        rc = _run(step)
+        if step in ('build', 'test-build') and ran_pre_build_gates:
+            env = os.environ.copy()
+            env['LOUPE_SKIP_GATES'] = '1'
+            rc = _run(step, env=env)
+        else:
+            rc = _run(step)
+        if step in TEST_PIPELINE_GATES:
+            ran_pre_build_gates = True
         if rc != 0:
             # Bail on first failure. A broken verify or build means the
             # subsequent steps would be operating on a known-bad tree.

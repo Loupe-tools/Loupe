@@ -74,3 +74,45 @@ test('RendererDispatchFactory.build(): plist stamps augmentedBuffer to yaraBuffe
   dispatch.plist.call(app, file, buffer);
   assert.equal(app.currentResult.yaraBuffer, augmented);
 });
+
+test('RendererDispatchFactory.build(): pkg awaits analyze/render and wires inner listener', async () => {
+  const order = [];
+  let wired = null;
+  const ctx = loadFactory({
+    PkgRenderer: class {
+      async analyzeForSecurity() { order.push('analyze'); return {}; }
+      async render() { order.push('render'); return { _tag: 'pkg-doc' }; }
+    },
+  });
+  const dispatch = ctx.RendererDispatchFactory.build();
+  const app = {
+    findings: null,
+    currentResult: { yaraBuffer: null },
+    _wireInnerFileListener(el, name) { wired = { el, name }; },
+  };
+  const file = { name: 'installer.pkg' };
+  const buffer = new ArrayBuffer(4);
+  const out = await dispatch.pkg.call(app, file, buffer);
+  assert.deepEqual(order, ['analyze', 'render']);
+  assert.equal(out.docEl._tag, 'pkg-doc');
+  assert.deepEqual(wired, { el: out.docEl, name: 'installer.pkg' });
+});
+
+test('RendererDispatchFactory._makeHandler: pinYaraRaw stamps yaraBuffer', () => {
+  const ctx = loadFactory({});
+  const handler = ctx.RendererDispatchFactory._makeHandler({
+    Class: class {
+      analyzeForSecurity() { return {}; }
+      render() { return { _tag: 'raw-yara' }; }
+    },
+    pinYaraRaw: true,
+  });
+  const buffer = new ArrayBuffer(16);
+  const app = {
+    findings: null,
+    currentResult: { yaraBuffer: null },
+    _wireInnerFileListener() {},
+  };
+  handler.call(app, { name: 'capture.pcap' }, buffer);
+  assert.equal(app.currentResult.yaraBuffer, buffer);
+});
