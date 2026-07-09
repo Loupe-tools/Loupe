@@ -60,3 +60,15 @@ test('cmd for /f do call: _patternIocs emitted via DecoderIoc', () => {
   assert.match(cand._patternIocs[0].url, /for\s*\/f.*call %X/i);
   assert.equal(cand._patternIocs[0].severity, 'high');
 });
+
+test('DecoderIoc.pattern: rejects invalid severity', () => {
+  const ctx = loadModules(['src/constants.js', 'src/decoder-ioc.js'], {
+    expose: ['DecoderIoc'],
+  });
+  assert.throws(() => ctx.DecoderIoc.pattern('https://x.invalid/', 'hight'), RangeError);
+  assert.throws(() => ctx.DecoderIoc.pattern('https://x.invalid/', 'HIGH'), RangeError);
+  // Valid values pass:
+  for (const sev of ['low', 'medium', 'high', 'critical']) {
+    assert.equal(ctx.DecoderIoc.pattern('https://x.invalid/', sev).severity, sev);
+  }
+});

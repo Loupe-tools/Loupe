@@ -2,6 +2,10 @@
 
 // Smoke-test a built bundle preserves Loupe's flat-global runtime contract.
 // Opt-in: LOUPE_BUNDLE_SMOKE=1 (set alongside LOUPE_ESBUILD=full test-build).
+// Status-quo (Option A per PLAN-code-review-followups S8 / CONTRIBUTING.md:86):
+// concat is the supported release path; smoke is deliberately not wired into
+// DEFAULT_STEPS / TEST_STEPS / CI until a cutover decision. See cutover recipe
+// in CONTRIBUTING.md near "Concat remains the supported release path".
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

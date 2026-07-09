@@ -16,18 +16,19 @@ if BASE not in sys.path:
 from build.manifest import load_manifest, MANIFEST_PATH  # noqa: E402
 
 
-def _read(rel: str) -> str:
-    with open(os.path.join(REPO, rel), encoding='utf-8') as fh:
+def _read(rel: str, root: str | None = None) -> str:
+    base = root or REPO
+    with open(os.path.join(base, rel), encoding='utf-8') as fh:
         return fh.read()
 
 
-def _parse_registry_ids() -> set[str]:
-    text = _read('src/renderer-registry.js')
+def _parse_registry_ids(root: str | None = None) -> set[str]:
+    text = _read('src/renderer-registry.js', root)
     return set(re.findall(r"id:\s*'([^']+)'", text))
 
 
-def _parse_factory_dispatch_ids() -> set[str]:
-    text = _read('src/renderer-dispatch-factory.js')
+def _parse_factory_dispatch_ids(root: str | None = None) -> set[str]:
+    text = _read('src/renderer-dispatch-factory.js', root)
     override_block = re.search(
         r'OVERRIDE_IDS:\s*Object\.freeze\(new Set\(\[([\s\S]*?)\]\)\)',
         text,
@@ -39,8 +40,8 @@ def _parse_factory_dispatch_ids() -> set[str]:
     return ids - overrides
 
 
-def _parse_override_dispatch_keys() -> set[str]:
-    text = _read('src/app/app-load.js')
+def _parse_override_dispatch_keys(root: str | None = None) -> set[str]:
+    text = _read('src/app/app-load.js', root)
     block = re.search(r'_rendererDispatch:\s*Object\.assign\([^,]+,\s*\{', text)
     if not block:
         block = re.search(r'_rendererDispatch:\s*\{', text)
@@ -59,12 +60,12 @@ def _parse_override_dispatch_keys() -> set[str]:
     return set(re.findall(r'^\s{4}(?:async\s+)?([a-z][a-z0-9]*)\s*\(', body, re.M))
 
 
-def _parse_dispatch_keys() -> set[str]:
+def _parse_dispatch_keys(root: str | None = None) -> set[str]:
     return _parse_factory_dispatch_ids() | _parse_override_dispatch_keys()
 
 
-def _parse_cap_keys() -> set[str]:
-    text = _read('src/constants.js')
+def _parse_cap_keys(root: str | None = None) -> set[str]:
+    text = _read('src/constants.js', root)
     block = re.search(
         r'MAX_FILE_BYTES_BY_DISPATCH:\s*Object\.freeze\(\{([\s\S]*?)\n\s*\}\)',
         text,
@@ -74,14 +75,14 @@ def _parse_cap_keys() -> set[str]:
     return set(re.findall(r'^\s*(\w+):', block.group(1), re.M))
 
 
-def _parse_app_js_files() -> set[str]:
+def _parse_app_js_files(root: str | None = None) -> set[str]:
     from build.js_sources import APP_JS_FILES  # noqa: WPS433
 
     return set(APP_JS_FILES)
 
 
-def _parse_factory_override_ids() -> set[str]:
-    text = _read('src/renderer-dispatch-factory.js')
+def _parse_factory_override_ids(root: str | None = None) -> set[str]:
+    text = _read('src/renderer-dispatch-factory.js', root)
     block = re.search(
         r'OVERRIDE_IDS:\s*Object\.freeze\(new Set\(\[([\s\S]*?)\]\)\)',
         text,
@@ -91,7 +92,7 @@ def _parse_factory_override_ids() -> set[str]:
     return set(re.findall(r"'([a-z][a-z0-9]*)'", block.group(1)))
 
 
-def _check_manifest_freshness() -> list[str]:
+def _check_manifest_freshness(root: str | None = None) -> list[str]:
     """Fail when on-disk TOML differs from gen_dispatch_manifest output."""
     spec = importlib.util.spec_from_file_location(
         'gen_dispatch_manifest',
@@ -111,18 +112,18 @@ def _check_manifest_freshness() -> list[str]:
     return []
 
 
-def check_dispatch_sync() -> list[str]:
+def check_dispatch_sync(root: str | None = None) -> list[str]:
     """Return human-readable violation strings. Empty list means OK."""
     violations: list[str] = []
-    violations.extend(_check_manifest_freshness())
+    violations.extend(_check_manifest_freshness(root=root))
     entries = load_manifest()
     manifest_ids_set = {e.id for e in entries}
-    registry_ids = _parse_registry_ids()
-    dispatch_keys = _parse_dispatch_keys()
-    cap_keys = _parse_cap_keys()
-    app_files = _parse_app_js_files()
-    factory_override_ids = _parse_factory_override_ids()
-    app_load_override_keys = _parse_override_dispatch_keys()
+    registry_ids = _parse_registry_ids(root)
+    dispatch_keys = _parse_dispatch_keys(root)
+    cap_keys = _parse_cap_keys(root)
+    app_files = _parse_app_js_files(root)
+    factory_override_ids = _parse_factory_override_ids(root)
+    app_load_override_keys = _parse_override_dispatch_keys(root)
     allowed_override_ids = factory_override_ids | app_load_override_keys
 
     missing_dispatch = sorted(registry_ids - dispatch_keys)

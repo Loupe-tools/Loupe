@@ -31,14 +31,25 @@ _CREATE_OBJECT_URL_ALLOW = {
 }
 
 
-def _iter_src_js() -> list[tuple[str, str]]:
+def _iter_src_js(root: str | None = None) -> list[tuple[str, str]]:
+    """Walk src/ yielding (rel, text) for all .js.
+
+    We intentionally use os.walk (not gate_js_files from build.gate_sources)
+    because gate_js_files() only returns EARLY+APP lists and deliberately
+    excludes src/workers/*.worker.js (they are inlined as data strings for
+    Worker(blob:) construction, never top-level <script> sources). The
+    chokepoint rules (new Worker, localStorage, createObjectURL) must still
+    be enforced inside the worker bodies.
+    """
     out: list[tuple[str, str]] = []
-    for root, _dirs, files in os.walk(SRC):
+    base = root or REPO
+    src = os.path.join(base, 'src')
+    for r, _dirs, files in os.walk(src):
         for fname in files:
             if not fname.endswith('.js'):
                 continue
-            abs_path = os.path.join(root, fname)
-            rel = os.path.relpath(abs_path, REPO).replace(os.sep, '/')
+            abs_path = os.path.join(r, fname)
+            rel = os.path.relpath(abs_path, base).replace(os.sep, '/')
             with open(abs_path, encoding='utf-8') as fh:
                 out.append((rel, fh.read()))
     return out
@@ -50,9 +61,9 @@ def _worker_allowed(rel: str) -> bool:
     return rel.startswith('src/workers/') and rel.endswith(_WORKER_SUFFIX)
 
 
-def check_chokepoint_apis() -> list[str]:
+def check_chokepoint_apis(root: str | None = None) -> list[str]:
     violations: list[str] = []
-    for rel, text in _iter_src_js():
+    for rel, text in _iter_src_js(root):
         for lineno, line in enumerate(text.splitlines(), start=1):
             stripped = line.lstrip()
             if stripped.startswith('//') or stripped.startswith('*'):

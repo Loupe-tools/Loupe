@@ -23,15 +23,17 @@ _FORBIDDEN = [
 ]
 
 
-def check_renderer_ioc() -> list[str]:
+def check_renderer_ioc(root: str | None = None) -> list[str]:
     violations: list[str] = []
-    if not os.path.isdir(RENDERERS_DIR):
+    repo = root or REPO
+    renderers_dir = os.path.join(repo, 'src', 'renderers')
+    if not os.path.isdir(renderers_dir):
         return violations
-    for fname in sorted(os.listdir(RENDERERS_DIR)):
+    for fname in sorted(os.listdir(renderers_dir)):
         if not fname.endswith('.js'):
             continue
         rel = os.path.join('src', 'renderers', fname)
-        with open(os.path.join(RENDERERS_DIR, fname), encoding='utf-8') as fh:
+        with open(os.path.join(renderers_dir, fname), encoding='utf-8') as fh:
             text = fh.read()
         for lineno, line in enumerate(text.splitlines(), start=1):
             stripped = line.lstrip()

@@ -71,13 +71,11 @@ function riskLevelFromScore(score) {
  * escalates monotonically, then lifts again from evidence if IOC rows
  * demand a higher tier (never downgrades the score-derived floor).
  * @param {object} findings
- * @param {{ mirror?: boolean }} [opts]  `mirror: false` when caller already mirrored.
  */
-function finalizeScoreBasedRisk(findings, opts) {
+function finalizeScoreBasedRisk(findings) {
   if (!findings) return;
-  const mirror = !opts || opts.mirror !== false;
   if (!Array.isArray(findings.externalRefs)) findings.externalRefs = [];
-  if (mirror) mirrorDetectionsToExternalRefs(findings);
+  mirrorDetectionsToExternalRefs(findings);
   findings.riskLevel = riskLevelFromScore(findings.riskScore);
   escalateRisk(findings, findings.riskLevel);
   calibrateRiskFromEvidence(findings);

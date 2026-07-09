@@ -7,6 +7,8 @@
 // This module centralises sentinel filtering for pattern labels.
 // ════════════════════════════════════════════════════════════════════════════
 
+const _SEVERITIES = new Set(['low', 'medium', 'high', 'critical']);
+
 const DecoderIoc = {
   /**
    * Build a `_patternIocs` / IOC.PATTERN row, or null if the label carries
@@ -19,7 +21,11 @@ const DecoderIoc = {
     if (url == null || url === '') return null;
     const label = String(url);
     if (hasUnresolvedSentinel(label)) return null;
-    return { url: label, severity: severity || 'high' };
+    const sev = severity || 'high';
+    if (!_SEVERITIES.has(sev)) {
+      throw new RangeError(`DecoderIoc.pattern: invalid severity "${sev}"`);
+    }
+    return { url: label, severity: sev };
   },
 
   /**
