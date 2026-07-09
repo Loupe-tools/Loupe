@@ -16,8 +16,51 @@ REPO = Path(__file__).resolve().parent.parent.parent
 VENDOR = REPO / 'vendor'
 
 
-def bundle_iife(entry_files: list[Path], *, define: dict[str, str] | None = None) -> str:
-    """Bundle ``entry_files`` into one IIFE script via esbuild."""
+def _run_esbuild(cmd: list[str]) -> str:
+    out = REPO / 'dist' / '.esbuild-out.js'
+    full_cmd = cmd + [f'--outfile={out}', '--log-level=warning']
+    env = os.environ.copy()
+    proc = subprocess.run(full_cmd, cwd=str(REPO), env=env, capture_output=True, text=True)
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr or proc.stdout or 'esbuild failed')
+        raise RuntimeError(f'esbuild exited {proc.returncode}')
+    return out.read_text(encoding='utf-8')
+
+
+def minify_concat_script(source: str, *, define: dict[str, str] | None = None) -> str:
+    """Minify a pre-concatenated script while preserving flat global scope.
+
+    Loupe's ``src/`` tree relies on implicit cross-file globals (concat
+    semantics). Import-graph bundling breaks that, so the release path
+    concatenates first, then runs esbuild as a single-file transform.
+    """
+    entry = REPO / 'dist' / '.esbuild-concat-entry.js'
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text(source, encoding='utf-8')
+    cmd = [
+        'npx', '--yes', 'esbuild@0.25.0',
+        str(entry),
+        '--platform=browser',
+        '--target=es2020',
+        '--minify-whitespace',
+        '--minify-syntax',
+    ]
+    for key, val in (define or {}).items():
+        cmd.append(f'--define:{key}={val}')
+    return _run_esbuild(cmd)
+
+
+def bundle_iife(
+    entry_files: list[Path],
+    *,
+    define: dict[str, str] | None = None,
+    minify: bool = False,
+) -> str:
+    """Bundle ``entry_files`` into one IIFE script via esbuild (legacy bisect).
+
+    Prefer ``minify_concat_script`` for the full-app path — import-graph
+    bundling isolates module scope and breaks Loupe's implicit globals.
+    """
     if not entry_files:
         raise ValueError('entry_files must be non-empty')
     for p in entry_files:
@@ -32,27 +75,19 @@ def bundle_iife(entry_files: list[Path], *, define: dict[str, str] | None = None
     entry.parent.mkdir(parents=True, exist_ok=True)
     entry.write_text(import_stmts + '\n', encoding='utf-8')
 
-    out = REPO / 'dist' / '.esbuild-bundle.js'
     cmd = [
         'npx', '--yes', 'esbuild@0.25.0',
         str(entry),
         '--bundle',
         '--format=iife',
-        '--global-name=LoupeBundle',
         '--platform=browser',
         '--target=es2020',
-        f'--outfile={out}',
-        '--log-level=warning',
     ]
+    if minify:
+        cmd.extend(['--minify-whitespace', '--minify-syntax'])
     for key, val in (define or {}).items():
         cmd.append(f'--define:{key}={val}')
-
-    env = os.environ.copy()
-    proc = subprocess.run(cmd, cwd=str(REPO), env=env, capture_output=True, text=True)
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stderr or proc.stdout or 'esbuild failed')
-        raise RuntimeError(f'esbuild exited {proc.returncode}')
-    return out.read_text(encoding='utf-8')
+    return _run_esbuild(cmd)
 
 
 def esbuild_available() -> bool:
