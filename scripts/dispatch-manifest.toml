@@ -41,6 +41,7 @@ class = "XlsxRenderer"
 module = "src/renderers/xlsx-renderer.js"
 max_bytes = 268435456
 alias_of = "xlsx"
+dispatch_override = true
 
 [[dispatch]]
 id = "ppt"
@@ -104,6 +105,7 @@ class = "XlsxRenderer"
 module = "src/renderers/xlsx-renderer.js"
 max_bytes = 268435456
 alias_of = "xlsx"
+dispatch_override = true
 
 [[dispatch]]
 id = "sqlite"
@@ -159,14 +161,12 @@ id = "scpt"
 class = "OsascriptRenderer"
 module = "src/renderers/osascript-renderer.js"
 max_bytes = 67108864
-dispatch_override = true
 
 [[dispatch]]
 id = "plist"
 class = "PlistRenderer"
 module = "src/renderers/plist-renderer.js"
 max_bytes = 67108864
-dispatch_override = true
 
 [[dispatch]]
 id = "pgp"
