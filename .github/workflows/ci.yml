@@ -374,7 +374,7 @@ jobs:
       # pinned version so a bump in `run_tests_e2e.py` invalidates the
       # cache automatically. Saves ~30 s of npm install on warm runs.
       - name: Cache @playwright/test install
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: dist/test-deps/node_modules
           key: ${{ runner.os }}-pw-deps-${{ steps.pw.outputs.version }}
@@ -382,7 +382,7 @@ jobs:
       # Cache the Playwright-managed browser binaries. Keyed on the same
       # pinned version. Saves ~30 s of browser download on warm runs.
       - name: Cache Playwright browsers
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-pw-browsers-${{ steps.pw.outputs.version }}
